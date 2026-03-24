@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import random
 from typing import Protocol
 
 from englishbot.application.errors import EmptyTopicError
 from englishbot.domain.models import UserProgress, VocabularyItem
+
+logger = logging.getLogger(__name__)
 
 
 class WordSelector(Protocol):
@@ -34,6 +37,10 @@ class UnseenFirstWordSelector:
         session_size: int,
     ) -> list[VocabularyItem]:
         if not items:
+            logger.warning(
+                "UnseenFirstWordSelector received empty topic item list for user_id=%s",
+                user_id,
+            )
             raise EmptyTopicError("The selected topic has no words.")
         progress_map = {progress.item_id: progress for progress in progress_items}
 
@@ -50,4 +57,10 @@ class UnseenFirstWordSelector:
         ordered = sorted(items, key=score)
         selected = ordered[: min(session_size, len(ordered))]
         self._rng.shuffle(selected)
+        logger.info(
+            "UnseenFirstWordSelector user_id=%s candidates=%s selected=%s",
+            user_id,
+            len(items),
+            [item.id for item in selected],
+        )
         return selected

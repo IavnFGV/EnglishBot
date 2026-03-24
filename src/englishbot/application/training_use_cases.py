@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 
@@ -29,6 +30,8 @@ from englishbot.domain.repositories import (
     VocabularyRepository,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True, frozen=True)
 class AnswerOutcome:
@@ -39,6 +42,16 @@ class AnswerOutcome:
     @property
     def session_completed(self) -> bool:
         return self.summary is not None
+
+
+@dataclass(slots=True, frozen=True)
+class ActiveSessionInfo:
+    session_id: str
+    topic_id: str
+    lesson_id: str | None
+    mode: TrainingMode
+    current_position: int
+    total_items: int
 
 
 class StartTrainingSessionUseCase:
@@ -70,8 +83,18 @@ class StartTrainingSessionUseCase:
         session_size: int = 5,
         lesson_id: str | None = None,
     ) -> TrainingQuestion:
+        logger.info(
+            "StartTrainingSessionUseCase user_id=%s topic_id=%s lesson_id=%s "
+            "mode=%s session_size=%s",
+            user_id,
+            topic_id,
+            lesson_id,
+            mode.value,
+            session_size,
+        )
         topic = self._topic_repository.get_by_id(topic_id)
         if topic is None:
+            logger.warning("StartTrainingSessionUseCase unknown topic_id=%s", topic_id)
             raise TopicNotFoundError(f"Unknown topic: {topic_id}")
         self._validate_topic_lesson.execute(topic_id=topic_id, lesson_id=lesson_id)
         topic_items = self._vocabulary_repository.list_by_topic(topic_id, lesson_id)
@@ -92,6 +115,12 @@ class StartTrainingSessionUseCase:
                 SessionItem(order=index, vocabulary_item_id=item.id)
                 for index, item in enumerate(selected_items)
             ],
+        )
+        logger.info(
+            "StartTrainingSessionUseCase created session_id=%s user_id=%s items=%s",
+            session.id,
+            user_id,
+            [session_item.vocabulary_item_id for session_item in session.items],
         )
         self._session_repository.save(session)
         return self._question_factory.create_question(
@@ -120,6 +149,7 @@ class GetCurrentQuestionUseCase:
         self._question_factory = question_factory
 
     def execute(self, *, user_id: int) -> TrainingQuestion:
+        logger.debug("GetCurrentQuestionUseCase user_id=%s", user_id)
         session = self._require_active_session(user_id)
         try:
             item_id = session.current_item_id()
@@ -159,6 +189,7 @@ class SubmitAnswerUseCase:
         self._summary_calculator = summary_calculator
 
     def execute(self, *, user_id: int, answer: str) -> AnswerOutcome:
+        logger.info("SubmitAnswerUseCase user_id=%s answer_length=%s", user_id, len(answer.strip()))
         session = self._require_active_session(user_id)
         question = self._get_current_question.execute(user_id=user_id)
         result = self._answer_checker.check(question=question, answer=answer)
@@ -173,6 +204,13 @@ class SubmitAnswerUseCase:
         except ValueError as error:
             raise InvalidSessionStateError(str(error)) from error
         self._session_repository.save(session)
+        logger.info(
+            "SubmitAnswerUseCase session_id=%s item_id=%s is_correct=%s completed=%s",
+            session.id,
+            question.item_id,
+            result.is_correct,
+            session.completed,
+        )
         if session.completed:
             summary = self._summary_calculator.calculate(session)
             return AnswerOutcome(result=result, summary=summary, next_question=None)
@@ -186,6 +224,41 @@ class SubmitAnswerUseCase:
         return session
 
 
+class GetActiveSessionUseCase:
+    def __init__(self, session_repository: SessionRepository) -> None:
+        self._session_repository = session_repository
+
+    def execute(self, *, user_id: int) -> ActiveSessionInfo | None:
+        session = self._session_repository.get_active_by_user(user_id)
+        if session is None:
+            logger.debug("GetActiveSessionUseCase user_id=%s found=False", user_id)
+            return None
+        logger.info(
+            "GetActiveSessionUseCase user_id=%s session_id=%s current_position=%s total_items=%s",
+            user_id,
+            session.id,
+            session.current_index + 1,
+            session.total_items,
+        )
+        return ActiveSessionInfo(
+            session_id=session.id,
+            topic_id=session.topic_id,
+            lesson_id=session.lesson_id,
+            mode=session.mode,
+            current_position=session.current_index + 1,
+            total_items=session.total_items,
+        )
+
+
+class DiscardActiveSessionUseCase:
+    def __init__(self, session_repository: SessionRepository) -> None:
+        self._session_repository = session_repository
+
+    def execute(self, *, user_id: int) -> None:
+        logger.info("DiscardActiveSessionUseCase user_id=%s", user_id)
+        self._session_repository.discard_active_by_user(user_id)
+
+
 class TrainingFacade:
     """Thin facade used by Telegram adapters and tests."""
 
@@ -195,13 +268,17 @@ class TrainingFacade:
         list_topics: ListTopicsUseCase,
         list_lessons_by_topic: ListLessonsByTopicUseCase,
         start_training_session: StartTrainingSessionUseCase,
+        get_active_session: GetActiveSessionUseCase,
         get_current_question: GetCurrentQuestionUseCase,
+        discard_active_session: DiscardActiveSessionUseCase,
         submit_answer: SubmitAnswerUseCase,
     ) -> None:
         self._list_topics = list_topics
         self._list_lessons_by_topic = list_lessons_by_topic
         self._start_training_session = start_training_session
+        self._get_active_session = get_active_session
         self._get_current_question = get_current_question
+        self._discard_active_session = discard_active_session
         self._submit_answer = submit_answer
 
     def list_topics(self):
@@ -209,6 +286,9 @@ class TrainingFacade:
 
     def list_lessons_by_topic(self, *, topic_id: str):
         return self._list_lessons_by_topic.execute(topic_id=topic_id)
+
+    def get_active_session(self, *, user_id: int) -> ActiveSessionInfo | None:
+        return self._get_active_session.execute(user_id=user_id)
 
     def start_session(
         self,
@@ -229,6 +309,9 @@ class TrainingFacade:
 
     def get_current_question(self, *, user_id: int) -> TrainingQuestion:
         return self._get_current_question.execute(user_id=user_id)
+
+    def discard_active_session(self, *, user_id: int) -> None:
+        self._discard_active_session.execute(user_id=user_id)
 
     def submit_answer(self, *, user_id: int, answer: str) -> AnswerOutcome:
         return self._submit_answer.execute(user_id=user_id, answer=answer)

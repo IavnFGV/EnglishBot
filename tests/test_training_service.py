@@ -6,7 +6,9 @@ import pytest
 
 from englishbot.application.services import (
     AnswerChecker,
+    DiscardActiveSessionUseCase,
     EmptyTopicError,
+    GetActiveSessionUseCase,
     GetCurrentQuestionUseCase,
     InvalidSessionStateError,
     InvalidTopicLessonSelectionError,
@@ -70,7 +72,9 @@ def build_service(
             word_selector=UnseenFirstWordSelector(rng),
             question_factory=question_factory,
         ),
+        get_active_session=GetActiveSessionUseCase(session_repository),
         get_current_question=get_current_question,
+        discard_active_session=DiscardActiveSessionUseCase(session_repository),
         submit_answer=SubmitAnswerUseCase(
             progress_repository=progress_repository,
             session_repository=session_repository,
@@ -198,6 +202,43 @@ def test_starting_session_for_specific_lesson_filters_items(
         session_size=2,
     )
     assert question.item_id in {"1", "2"}
+
+
+def test_active_session_info_is_available(
+    topics: list[Topic],
+    lessons: list[Lesson],
+    vocabulary_items: list[VocabularyItem],
+) -> None:
+    service = build_service(topics=topics, lessons=lessons, items=vocabulary_items)
+    service.start_session(
+        user_id=10,
+        topic_id="weather",
+        lesson_id="lesson-1",
+        mode=TrainingMode.HARD,
+        session_size=2,
+    )
+    active_session = service.get_active_session(user_id=10)
+    assert active_session is not None
+    assert active_session.topic_id == "weather"
+    assert active_session.lesson_id == "lesson-1"
+    assert active_session.current_position == 1
+
+
+def test_discard_active_session_clears_current_game(
+    topics: list[Topic],
+    lessons: list[Lesson],
+    vocabulary_items: list[VocabularyItem],
+) -> None:
+    service = build_service(topics=topics, lessons=lessons, items=vocabulary_items)
+    service.start_session(
+        user_id=10,
+        topic_id="weather",
+        lesson_id="lesson-1",
+        mode=TrainingMode.HARD,
+        session_size=2,
+    )
+    service.discard_active_session(user_id=10)
+    assert service.get_active_session(user_id=10) is None
 
 
 def test_start_session_rejects_invalid_topic_lesson_combination(

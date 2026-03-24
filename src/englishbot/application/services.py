@@ -16,7 +16,10 @@ from englishbot.application.question_factory import QuestionFactory
 from englishbot.application.session_summary import SessionSummaryCalculator
 from englishbot.application.topic_use_cases import ListTopicsUseCase
 from englishbot.application.training_use_cases import (
+    ActiveSessionInfo,
     AnswerOutcome,
+    DiscardActiveSessionUseCase,
+    GetActiveSessionUseCase,
     GetCurrentQuestionUseCase,
     StartTrainingSessionUseCase,
     SubmitAnswerUseCase,
@@ -26,9 +29,12 @@ from englishbot.application.word_selection import UnseenFirstWordSelector, WordS
 
 __all__ = [
     "AnswerChecker",
+    "ActiveSessionInfo",
     "AnswerOutcome",
     "ApplicationError",
+    "DiscardActiveSessionUseCase",
     "EmptyTopicError",
+    "GetActiveSessionUseCase",
     "GetCurrentQuestionUseCase",
     "InvalidSessionStateError",
     "InvalidTopicLessonSelectionError",

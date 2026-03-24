@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 from englishbot.domain.models import Lesson, Topic, TrainingSession, UserProgress, VocabularyItem
+
+logger = logging.getLogger(__name__)
 
 
 class InMemoryTopicRepository:
@@ -8,10 +12,14 @@ class InMemoryTopicRepository:
         self._topics = {topic.id: topic for topic in topics}
 
     def list_topics(self) -> list[Topic]:
-        return list(self._topics.values())
+        topics = list(self._topics.values())
+        logger.debug("TopicRepository.list_topics returned %s topics", len(topics))
+        return topics
 
     def get_by_id(self, topic_id: str) -> Topic | None:
-        return self._topics.get(topic_id)
+        topic = self._topics.get(topic_id)
+        logger.debug("TopicRepository.get_by_id topic_id=%s found=%s", topic_id, topic is not None)
+        return topic
 
 
 class InMemoryVocabularyRepository:
@@ -26,13 +34,26 @@ class InMemoryVocabularyRepository:
             and item.is_active
             and (lesson_id is None or item.lesson_id == lesson_id)
         ]
-        return sorted(result, key=lambda item: item.english_word)
+        sorted_result = sorted(result, key=lambda item: item.english_word)
+        logger.debug(
+            "VocabularyRepository.list_by_topic topic_id=%s lesson_id=%s returned=%s",
+            topic_id,
+            lesson_id,
+            len(sorted_result),
+        )
+        return sorted_result
 
     def list_all(self) -> list[VocabularyItem]:
         return sorted(self._items.values(), key=lambda item: item.english_word)
 
     def get_by_id(self, item_id: str) -> VocabularyItem | None:
-        return self._items.get(item_id)
+        item = self._items.get(item_id)
+        logger.debug(
+            "VocabularyRepository.get_by_id item_id=%s found=%s",
+            item_id,
+            item is not None,
+        )
+        return item
 
 
 class InMemoryLessonRepository:
@@ -41,10 +62,22 @@ class InMemoryLessonRepository:
 
     def list_by_topic(self, topic_id: str) -> list[Lesson]:
         lessons = [lesson for lesson in self._lessons.values() if lesson.topic_id == topic_id]
-        return sorted(lessons, key=lambda lesson: lesson.title)
+        sorted_lessons = sorted(lessons, key=lambda lesson: lesson.title)
+        logger.debug(
+            "LessonRepository.list_by_topic topic_id=%s returned=%s",
+            topic_id,
+            len(sorted_lessons),
+        )
+        return sorted_lessons
 
     def get_by_id(self, lesson_id: str) -> Lesson | None:
-        return self._lessons.get(lesson_id)
+        lesson = self._lessons.get(lesson_id)
+        logger.debug(
+            "LessonRepository.get_by_id lesson_id=%s found=%s",
+            lesson_id,
+            lesson is not None,
+        )
+        return lesson
 
 
 class InMemoryUserProgressRepository:
@@ -52,17 +85,38 @@ class InMemoryUserProgressRepository:
         self._storage: dict[tuple[int, str], UserProgress] = {}
 
     def get(self, user_id: int, item_id: str) -> UserProgress | None:
-        return self._storage.get((user_id, item_id))
+        progress = self._storage.get((user_id, item_id))
+        logger.debug(
+            "UserProgressRepository.get user_id=%s item_id=%s found=%s",
+            user_id,
+            item_id,
+            progress is not None,
+        )
+        return progress
 
     def save(self, progress: UserProgress) -> None:
         self._storage[(progress.user_id, progress.item_id)] = progress
+        logger.debug(
+            "UserProgressRepository.save user_id=%s item_id=%s seen=%s correct=%s incorrect=%s",
+            progress.user_id,
+            progress.item_id,
+            progress.times_seen,
+            progress.correct_answers,
+            progress.incorrect_answers,
+        )
 
     def list_by_user(self, user_id: int) -> list[UserProgress]:
-        return [
+        progress_list = [
             progress
             for (progress_user_id, _), progress in self._storage.items()
             if progress_user_id == user_id
         ]
+        logger.debug(
+            "UserProgressRepository.list_by_user user_id=%s returned=%s",
+            user_id,
+            len(progress_list),
+        )
+        return progress_list
 
 
 class InMemorySessionRepository:
@@ -76,12 +130,45 @@ class InMemorySessionRepository:
             self._active_by_user.pop(session.user_id, None)
         else:
             self._active_by_user[session.user_id] = session.id
+        logger.debug(
+            "SessionRepository.save session_id=%s user_id=%s completed=%s "
+            "current_index=%s total_items=%s",
+            session.id,
+            session.user_id,
+            session.completed,
+            session.current_index,
+            session.total_items,
+        )
 
     def get_active_by_user(self, user_id: int) -> TrainingSession | None:
         session_id = self._active_by_user.get(user_id)
         if session_id is None:
+            logger.debug("SessionRepository.get_active_by_user user_id=%s found=False", user_id)
             return None
-        return self._sessions.get(session_id)
+        session = self._sessions.get(session_id)
+        logger.debug(
+            "SessionRepository.get_active_by_user user_id=%s found=%s session_id=%s",
+            user_id,
+            session is not None,
+            session_id,
+        )
+        return session
 
     def get_by_id(self, session_id: str) -> TrainingSession | None:
-        return self._sessions.get(session_id)
+        session = self._sessions.get(session_id)
+        logger.debug(
+            "SessionRepository.get_by_id session_id=%s found=%s",
+            session_id,
+            session is not None,
+        )
+        return session
+
+    def discard_active_by_user(self, user_id: int) -> None:
+        session_id = self._active_by_user.pop(user_id, None)
+        if session_id is not None:
+            self._sessions.pop(session_id, None)
+        logger.info(
+            "SessionRepository.discard_active_by_user user_id=%s discarded=%s",
+            user_id,
+            session_id is not None,
+        )

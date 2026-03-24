@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from englishbot.domain.models import Lesson, Topic, VocabularyItem
+
+logger = logging.getLogger(__name__)
 
 
 class ContentPackError(ValueError):
@@ -27,7 +30,9 @@ class LoadedContent:
 
 class JsonContentPackLoader:
     def load_directory(self, directory: Path) -> LoadedContent:
+        logger.info("Loading content packs from directory %s", directory)
         packs = [self.load_file(path) for path in sorted(directory.glob("*.json"))]
+        logger.info("Loaded %s content pack files from %s", len(packs), directory)
         return LoadedContent(
             topics=[pack.topic for pack in packs],
             lessons=[lesson for pack in packs for lesson in pack.lessons],
@@ -35,13 +40,24 @@ class JsonContentPackLoader:
         )
 
     def load_file(self, path: Path) -> ContentPack:
+        logger.debug("Loading content pack file %s", path)
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as error:
+            logger.error("Invalid JSON in content pack %s: %s", path, error)
             raise ContentPackError(f"Invalid JSON in {path.name}: {error.msg}") from error
         except OSError as error:
+            logger.error("Unable to read content pack %s: %s", path, error)
             raise ContentPackError(f"Unable to read content pack {path.name}.") from error
-        return self._parse_pack(raw, source_name=path.name)
+        pack = self._parse_pack(raw, source_name=path.name)
+        logger.info(
+            "Loaded content pack %s topic=%s lessons=%s vocabulary_items=%s",
+            path.name,
+            pack.topic.id,
+            len(pack.lessons),
+            len(pack.vocabulary_items),
+        )
+        return pack
 
     def _parse_pack(self, raw: object, *, source_name: str) -> ContentPack:
         if not isinstance(raw, dict):
@@ -71,6 +87,13 @@ class JsonContentPackLoader:
             )
             for item in vocabulary_raw
         ]
+        logger.debug(
+            "Validated content pack %s topic=%s lessons=%s vocabulary_items=%s",
+            source_name,
+            topic.id,
+            len(lessons),
+            len(vocabulary_items),
+        )
         return ContentPack(topic=topic, lessons=lessons, vocabulary_items=vocabulary_items)
 
     def _parse_topic(self, raw: dict[str, object], source_name: str) -> Topic:

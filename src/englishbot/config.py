@@ -5,6 +5,7 @@ from dataclasses import dataclass
 @dataclass(slots=True)
 class Settings:
     telegram_token: str
+    log_level: str
 
 
     @classmethod
@@ -14,4 +15,7 @@ class Settings:
             raise RuntimeError(
                 "TELEGRAM_BOT_TOKEN is not set. Add it to your environment or .env file."
             )
-        return cls(telegram_token=token)
+        return cls(
+            telegram_token=token,
+            log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        )

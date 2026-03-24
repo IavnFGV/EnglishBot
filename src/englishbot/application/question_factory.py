@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import random
 
 from englishbot.application.errors import NotEnoughOptionsError
 from englishbot.domain.models import TrainingMode, TrainingQuestion, TrainingSession, VocabularyItem
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionFactory:
@@ -18,6 +21,12 @@ class QuestionFactory:
         all_topic_items: list[VocabularyItem],
     ) -> TrainingQuestion:
         image_line = item.image_ref or "No image yet. Use the translation clue."
+        logger.info(
+            "QuestionFactory.create_question session_id=%s item_id=%s mode=%s",
+            session.id,
+            item.id,
+            session.mode.value,
+        )
         if session.mode is TrainingMode.EASY:
             options = self._build_choice_options(item, all_topic_items)
             prompt = (
@@ -77,11 +86,21 @@ class QuestionFactory:
         ]
         unique_distractors = sorted(set(distractors))
         if len(unique_distractors) < 2:
+            logger.warning(
+                "QuestionFactory cannot build distractors for item_id=%s available=%s",
+                correct_item.id,
+                len(unique_distractors),
+            )
             raise NotEnoughOptionsError(
                 "At least three distinct words are required for multiple choice."
             )
         options = [correct_item.english_word, *self._rng.sample(unique_distractors, 2)]
         self._rng.shuffle(options)
+        logger.debug(
+            "QuestionFactory built options for item_id=%s options=%s",
+            correct_item.id,
+            options,
+        )
         return options
 
     def _scramble_word(self, word: str) -> str:

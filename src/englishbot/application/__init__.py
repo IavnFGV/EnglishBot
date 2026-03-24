@@ -1,10 +1,13 @@
 """Application layer for EnglishBot."""
 
 from englishbot.application.services import (
+    ActiveSessionInfo,
     AnswerChecker,
     AnswerOutcome,
     ApplicationError,
+    DiscardActiveSessionUseCase,
     EmptyTopicError,
+    GetActiveSessionUseCase,
     GetCurrentQuestionUseCase,
     InvalidSessionStateError,
     InvalidTopicLessonSelectionError,
@@ -25,9 +28,12 @@ from englishbot.application.services import (
 
 __all__ = [
     "AnswerChecker",
+    "ActiveSessionInfo",
     "AnswerOutcome",
     "ApplicationError",
+    "DiscardActiveSessionUseCase",
     "EmptyTopicError",
+    "GetActiveSessionUseCase",
     "GetCurrentQuestionUseCase",
     "InvalidSessionStateError",
     "InvalidTopicLessonSelectionError",

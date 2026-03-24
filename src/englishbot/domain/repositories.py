@@ -52,3 +52,6 @@ class SessionRepository(Protocol):
 
     def get_by_id(self, session_id: str) -> TrainingSession | None:
         ...
+
+    def discard_active_by_user(self, user_id: int) -> None:
+        ...
