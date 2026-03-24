@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "englishbot"
+version = "0.1.0"
+description = "Telegram bot starter project"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "EnglishBot Team" }
+]
+dependencies = [
+  "python-telegram-bot>=21.0,<22.0",
+  "python-dotenv>=1.0.1,<2.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.6.0,<1.0.0"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
