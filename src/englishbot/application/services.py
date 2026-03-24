@@ -3,8 +3,14 @@ from englishbot.application.errors import (
     ApplicationError,
     EmptyTopicError,
     InvalidSessionStateError,
+    InvalidTopicLessonSelectionError,
     NotEnoughOptionsError,
     TopicNotFoundError,
+)
+from englishbot.application.lesson_use_cases import (
+    LessonSelectionOption,
+    ListLessonsByTopicUseCase,
+    ValidateTopicLessonUseCase,
 )
 from englishbot.application.question_factory import QuestionFactory
 from englishbot.application.session_summary import SessionSummaryCalculator
@@ -25,6 +31,9 @@ __all__ = [
     "EmptyTopicError",
     "GetCurrentQuestionUseCase",
     "InvalidSessionStateError",
+    "InvalidTopicLessonSelectionError",
+    "LessonSelectionOption",
+    "ListLessonsByTopicUseCase",
     "ListTopicsUseCase",
     "NotEnoughOptionsError",
     "QuestionFactory",
@@ -34,5 +43,6 @@ __all__ = [
     "TopicNotFoundError",
     "TrainingFacade",
     "UnseenFirstWordSelector",
+    "ValidateTopicLessonUseCase",
     "WordSelector",
 ]

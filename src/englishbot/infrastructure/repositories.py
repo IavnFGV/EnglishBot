@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from englishbot.domain.models import Topic, TrainingSession, UserProgress, VocabularyItem
+from englishbot.domain.models import Lesson, Topic, TrainingSession, UserProgress, VocabularyItem
 
 
 class InMemoryTopicRepository:
@@ -33,6 +33,18 @@ class InMemoryVocabularyRepository:
 
     def get_by_id(self, item_id: str) -> VocabularyItem | None:
         return self._items.get(item_id)
+
+
+class InMemoryLessonRepository:
+    def __init__(self, lessons: list[Lesson]) -> None:
+        self._lessons = {lesson.id: lesson for lesson in lessons}
+
+    def list_by_topic(self, topic_id: str) -> list[Lesson]:
+        lessons = [lesson for lesson in self._lessons.values() if lesson.topic_id == topic_id]
+        return sorted(lessons, key=lambda lesson: lesson.title)
+
+    def get_by_id(self, lesson_id: str) -> Lesson | None:
+        return self._lessons.get(lesson_id)
 
 
 class InMemoryUserProgressRepository:

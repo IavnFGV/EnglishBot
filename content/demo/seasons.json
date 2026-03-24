@@ -1,0 +1,33 @@
+{
+  "topic": {
+    "id": "seasons",
+    "title": "Seasons"
+  },
+  "lessons": [],
+  "vocabulary_items": [
+    {
+      "id": "seasons-spring",
+      "english_word": "spring",
+      "translation": "весна",
+      "image_ref": "flowers in spring"
+    },
+    {
+      "id": "seasons-summer",
+      "english_word": "summer",
+      "translation": "лето",
+      "image_ref": "bright summer day"
+    },
+    {
+      "id": "seasons-autumn",
+      "english_word": "autumn",
+      "translation": "осень",
+      "image_ref": "orange autumn leaves"
+    },
+    {
+      "id": "seasons-winter",
+      "english_word": "winter",
+      "translation": "зима",
+      "image_ref": "snowy winter scene"
+    }
+  ]
+}

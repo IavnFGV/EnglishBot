@@ -1,0 +1,42 @@
+{
+  "topic": {
+    "id": "weather",
+    "title": "Weather"
+  },
+  "lessons": [
+    {
+      "id": "weather-1",
+      "title": "Weather Lesson 1"
+    }
+  ],
+  "vocabulary_items": [
+    {
+      "id": "weather-sun",
+      "english_word": "sun",
+      "translation": "солнце",
+      "lesson_id": "weather-1",
+      "image_ref": "bright yellow sun"
+    },
+    {
+      "id": "weather-rain",
+      "english_word": "rain",
+      "translation": "дождь",
+      "lesson_id": "weather-1",
+      "image_ref": "cloud with rain drops"
+    },
+    {
+      "id": "weather-cloud",
+      "english_word": "cloud",
+      "translation": "облако",
+      "lesson_id": "weather-1",
+      "image_ref": "white cloud"
+    },
+    {
+      "id": "weather-wind",
+      "english_word": "wind",
+      "translation": "ветер",
+      "lesson_id": "weather-1",
+      "image_ref": "windy sky"
+    }
+  ]
+}

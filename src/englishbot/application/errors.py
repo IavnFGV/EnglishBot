@@ -16,3 +16,7 @@ class InvalidSessionStateError(ApplicationError):
 
 class NotEnoughOptionsError(ApplicationError):
     """Raised when a multiple choice question cannot be formed."""
+
+
+class InvalidTopicLessonSelectionError(ApplicationError):
+    """Raised when the selected lesson does not belong to the selected topic."""

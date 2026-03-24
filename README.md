@@ -4,7 +4,7 @@ EnglishBot is a Telegram bot MVP for lightweight English vocabulary practice for
 
 ## MVP scope
 
-- Topic-based vocabulary practice
+- Topic- and lesson-aware vocabulary practice
 - Three training modes:
   - Easy: choose the correct English word from three options
   - Medium: see shuffled letters as a hint and type the English word
@@ -12,7 +12,7 @@ EnglishBot is a Telegram bot MVP for lightweight English vocabulary practice for
 - Per-user progress tracking in memory
 - Short session summary after training
 - Demo content for `weather`, `school`, and `seasons`
-- Lesson-aware data model and filtering support in the application layer
+- Structured JSON content packs loaded from `content/demo/`
 
 ## Architecture summary
 
@@ -27,6 +27,7 @@ The project is a simple modular monolith:
 The application layer is split into clear responsibilities:
 
 - topic listing
+- lesson listing and topic/lesson validation
 - training session startup
 - current question resolution
 - answer submission
@@ -36,6 +37,42 @@ The application layer is split into clear responsibilities:
 - session summary calculation
 
 More details are in `ARCHITECTURE.md`.
+
+## Learner flow
+
+1. Choose a topic
+2. Choose `All Topic Words` or a specific lesson when lessons exist
+3. Choose a training mode
+4. Answer the session questions
+5. Receive a short session summary
+
+If a topic has no lessons, the bot skips the lesson step and goes directly to mode selection.
+
+## Content pack JSON format
+
+Demo content is loaded from JSON packs in `content/demo/`.
+
+```json
+{
+  "topic": {"id": "weather", "title": "Weather"},
+  "lessons": [{"id": "weather-1", "title": "Weather Lesson 1"}],
+  "vocabulary_items": [
+    {
+      "id": "weather-sun",
+      "english_word": "sun",
+      "translation": "солнце",
+      "lesson_id": "weather-1",
+      "image_ref": "bright yellow sun"
+    }
+  ]
+}
+```
+
+Notes:
+
+- `lesson_id` is optional, which allows topic-only packs.
+- Packs are validated on load, including lesson references.
+- This format is suitable for manual teacher-prepared content before a future admin bot exists.
 
 ## Quick start in VS Code Dev Container
 
@@ -70,16 +107,17 @@ python -m englishbot
 pytest
 ```
 
-## Future extensions
-
-- Separate admin bot that reuses the same domain and application services
-- Content import from teacher text, spreadsheets, or photo-derived OCR
-- Review scheduling and spaced repetition
-- Manual moderation and editing of imported vocabulary
-
 ## Current simplifications
 
 - Storage is in memory for now, so progress is reset on restart.
 - `Medium` mode is intentionally simplified to typed input with a shuffled-letter hint.
 - Images are represented by placeholder references, not Telegram file uploads.
-- Lesson-aware filtering exists in the architecture, but lesson selection is not yet exposed in the Telegram UI.
+- Demo content is loaded from local JSON files rather than a database or admin-managed import pipeline.
+
+## Future extensions
+
+- Separate admin bot that reuses the same domain and application services
+- Teacher/admin workflow for preparing and validating JSON packs before full in-app content management
+- Content import from teacher text, spreadsheets, or photo-derived OCR
+- Review scheduling and spaced repetition
+- Manual moderation and editing of imported vocabulary

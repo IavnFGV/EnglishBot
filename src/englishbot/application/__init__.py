@@ -7,6 +7,9 @@ from englishbot.application.services import (
     EmptyTopicError,
     GetCurrentQuestionUseCase,
     InvalidSessionStateError,
+    InvalidTopicLessonSelectionError,
+    LessonSelectionOption,
+    ListLessonsByTopicUseCase,
     ListTopicsUseCase,
     NotEnoughOptionsError,
     QuestionFactory,
@@ -16,6 +19,7 @@ from englishbot.application.services import (
     TopicNotFoundError,
     TrainingFacade,
     UnseenFirstWordSelector,
+    ValidateTopicLessonUseCase,
     WordSelector,
 )
 
@@ -26,6 +30,9 @@ __all__ = [
     "EmptyTopicError",
     "GetCurrentQuestionUseCase",
     "InvalidSessionStateError",
+    "InvalidTopicLessonSelectionError",
+    "LessonSelectionOption",
+    "ListLessonsByTopicUseCase",
     "ListTopicsUseCase",
     "NotEnoughOptionsError",
     "QuestionFactory",
@@ -35,5 +42,6 @@ __all__ = [
     "TopicNotFoundError",
     "TrainingFacade",
     "UnseenFirstWordSelector",
+    "ValidateTopicLessonUseCase",
     "WordSelector",
 ]

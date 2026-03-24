@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import random
+from pathlib import Path
 
 from englishbot.application.services import (
     AnswerChecker,
     GetCurrentQuestionUseCase,
+    ListLessonsByTopicUseCase,
     ListTopicsUseCase,
     QuestionFactory,
     SessionSummaryCalculator,
@@ -12,9 +14,11 @@ from englishbot.application.services import (
     SubmitAnswerUseCase,
     TrainingFacade,
     UnseenFirstWordSelector,
+    ValidateTopicLessonUseCase,
 )
-from englishbot.infrastructure.demo_data import TOPICS, VOCABULARY_ITEMS
+from englishbot.infrastructure.content_loader import JsonContentPackLoader
 from englishbot.infrastructure.repositories import (
+    InMemoryLessonRepository,
     InMemorySessionRepository,
     InMemoryTopicRepository,
     InMemoryUserProgressRepository,
@@ -24,8 +28,10 @@ from englishbot.infrastructure.repositories import (
 
 def build_training_service(seed: int = 42) -> TrainingFacade:
     rng = random.Random(seed)
-    topic_repository = InMemoryTopicRepository(TOPICS)
-    vocabulary_repository = InMemoryVocabularyRepository(VOCABULARY_ITEMS)
+    loaded_content = JsonContentPackLoader().load_directory(Path("content/demo"))
+    topic_repository = InMemoryTopicRepository(loaded_content.topics)
+    lesson_repository = InMemoryLessonRepository(loaded_content.lessons)
+    vocabulary_repository = InMemoryVocabularyRepository(loaded_content.vocabulary_items)
     progress_repository = InMemoryUserProgressRepository()
     session_repository = InMemorySessionRepository()
     question_factory = QuestionFactory(rng)
@@ -41,6 +47,7 @@ def build_training_service(seed: int = 42) -> TrainingFacade:
         vocabulary_repository=vocabulary_repository,
         progress_repository=progress_repository,
         session_repository=session_repository,
+        validate_topic_lesson=ValidateTopicLessonUseCase(lesson_repository),
         word_selector=UnseenFirstWordSelector(rng),
         question_factory=question_factory,
     )
@@ -53,6 +60,7 @@ def build_training_service(seed: int = 42) -> TrainingFacade:
     )
     return TrainingFacade(
         list_topics=list_topics,
+        list_lessons_by_topic=ListLessonsByTopicUseCase(lesson_repository),
         start_training_session=start_training_session,
         get_current_question=get_current_question,
         submit_answer=submit_answer,

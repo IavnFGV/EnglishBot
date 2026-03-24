@@ -10,5 +10,5 @@ class AnswerChecker:
         return CheckResult(
             is_correct=normalized_answer == expected_answer,
             expected_answer=question.correct_answer,
-            normalized_answer=answer.strip(),
+            normalized_answer=normalized_answer,
         )

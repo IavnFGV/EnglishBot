@@ -26,6 +26,7 @@ def build_application(token: str) -> Application:
     app.bot_data["training_service"] = service
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CallbackQueryHandler(topic_selected_handler, pattern=r"^topic:"))
+    app.add_handler(CallbackQueryHandler(lesson_selected_handler, pattern=r"^lesson:"))
     app.add_handler(CallbackQueryHandler(mode_selected_handler, pattern=r"^mode:"))
     app.add_handler(CallbackQueryHandler(choice_answer_handler, pattern=r"^answer:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_answer_handler))
@@ -53,9 +54,29 @@ async def topic_selected_handler(update: Update, context: ContextTypes.DEFAULT_T
         return
     await query.answer()
     topic_id = query.data.removeprefix("topic:")
+    lesson_selection = _service(context).list_lessons_by_topic(topic_id=topic_id)
+    if lesson_selection.has_lessons:
+        await query.edit_message_text(
+            "Choose all words in the topic or a specific lesson.",
+            reply_markup=_lesson_keyboard(topic_id, lesson_selection.lessons),
+        )
+        return
     await query.edit_message_text(
         "Choose a training mode.",
-        reply_markup=_mode_keyboard(topic_id),
+        reply_markup=_mode_keyboard(topic_id, None),
+    )
+
+
+async def lesson_selected_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    _, topic_id, lesson_id = query.data.split(":")
+    selected_lesson_id = None if lesson_id == "all" else lesson_id
+    await query.edit_message_text(
+        "Choose a training mode.",
+        reply_markup=_mode_keyboard(topic_id, selected_lesson_id),
     )
 
 
@@ -64,7 +85,7 @@ async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if query is None:
         return
     await query.answer()
-    _, topic_id, mode_value = query.data.split(":")
+    _, topic_id, lesson_id, mode_value = query.data.split(":")
     service = _service(context)
     user = update.effective_user
     if user is None:
@@ -73,6 +94,7 @@ async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TY
         question = service.start_session(
             user_id=user.id,
             topic_id=topic_id,
+            lesson_id=None if lesson_id == "all" else lesson_id,
             mode=TrainingMode(mode_value),
         )
     except ApplicationError as error:
@@ -170,18 +192,31 @@ def _topic_keyboard(topics: list[Topic]) -> InlineKeyboardMarkup:
     )
 
 
-def _mode_keyboard(topic_id: str) -> InlineKeyboardMarkup:
+def _lesson_keyboard(topic_id: str, lessons) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton("All Topic Words", callback_data=f"lesson:{topic_id}:all")]]
+    rows.extend(
+        [[InlineKeyboardButton(lesson.title, callback_data=f"lesson:{topic_id}:{lesson.id}")]]
+        for lesson in lessons
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def _mode_keyboard(topic_id: str, lesson_id: str | None) -> InlineKeyboardMarkup:
+    lesson_part = lesson_id or "all"
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    "Easy", callback_data=f"mode:{topic_id}:{TrainingMode.EASY.value}"
+                    "Easy",
+                    callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.EASY.value}",
                 ),
                 InlineKeyboardButton(
-                    "Medium", callback_data=f"mode:{topic_id}:{TrainingMode.MEDIUM.value}"
+                    "Medium",
+                    callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.MEDIUM.value}",
                 ),
                 InlineKeyboardButton(
-                    "Hard", callback_data=f"mode:{topic_id}:{TrainingMode.HARD.value}"
+                    "Hard",
+                    callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.HARD.value}",
                 ),
             ]
         ]

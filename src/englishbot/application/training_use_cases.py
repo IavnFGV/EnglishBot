@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 
 from englishbot.application.answer_checker import AnswerChecker
 from englishbot.application.errors import InvalidSessionStateError, TopicNotFoundError
+from englishbot.application.lesson_use_cases import (
+    ListLessonsByTopicUseCase,
+    ValidateTopicLessonUseCase,
+)
 from englishbot.application.question_factory import QuestionFactory
 from englishbot.application.session_summary import SessionSummaryCalculator
 from englishbot.application.topic_use_cases import ListTopicsUseCase
@@ -44,6 +49,7 @@ class StartTrainingSessionUseCase:
         vocabulary_repository: VocabularyRepository,
         progress_repository: UserProgressRepository,
         session_repository: SessionRepository,
+        validate_topic_lesson: ValidateTopicLessonUseCase,
         word_selector: WordSelector,
         question_factory: QuestionFactory,
     ) -> None:
@@ -51,6 +57,7 @@ class StartTrainingSessionUseCase:
         self._vocabulary_repository = vocabulary_repository
         self._progress_repository = progress_repository
         self._session_repository = session_repository
+        self._validate_topic_lesson = validate_topic_lesson
         self._word_selector = word_selector
         self._question_factory = question_factory
 
@@ -66,6 +73,7 @@ class StartTrainingSessionUseCase:
         topic = self._topic_repository.get_by_id(topic_id)
         if topic is None:
             raise TopicNotFoundError(f"Unknown topic: {topic_id}")
+        self._validate_topic_lesson.execute(topic_id=topic_id, lesson_id=lesson_id)
         topic_items = self._vocabulary_repository.list_by_topic(topic_id, lesson_id)
         progress_items = self._progress_repository.list_by_user(user_id)
         selected_items = self._word_selector.select_words(
@@ -75,7 +83,7 @@ class StartTrainingSessionUseCase:
             session_size=session_size,
         )
         session = TrainingSession(
-            id=f"{user_id}:{topic_id}:{mode.value}",
+            id=str(uuid.uuid4()),
             user_id=user_id,
             topic_id=topic_id,
             lesson_id=lesson_id,
@@ -185,17 +193,22 @@ class TrainingFacade:
         self,
         *,
         list_topics: ListTopicsUseCase,
+        list_lessons_by_topic: ListLessonsByTopicUseCase,
         start_training_session: StartTrainingSessionUseCase,
         get_current_question: GetCurrentQuestionUseCase,
         submit_answer: SubmitAnswerUseCase,
     ) -> None:
         self._list_topics = list_topics
+        self._list_lessons_by_topic = list_lessons_by_topic
         self._start_training_session = start_training_session
         self._get_current_question = get_current_question
         self._submit_answer = submit_answer
 
     def list_topics(self):
         return self._list_topics.execute()
+
+    def list_lessons_by_topic(self, *, topic_id: str):
+        return self._list_lessons_by_topic.execute(topic_id=topic_id)
 
     def start_session(
         self,

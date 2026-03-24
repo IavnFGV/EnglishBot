@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from englishbot.domain.models import Topic, TrainingSession, UserProgress, VocabularyItem
+from englishbot.domain.models import Lesson, Topic, TrainingSession, UserProgress, VocabularyItem
 
 
 class TopicRepository(Protocol):
@@ -21,6 +21,14 @@ class VocabularyRepository(Protocol):
         ...
 
     def get_by_id(self, item_id: str) -> VocabularyItem | None:
+        ...
+
+
+class LessonRepository(Protocol):
+    def list_by_topic(self, topic_id: str) -> list[Lesson]:
+        ...
+
+    def get_by_id(self, lesson_id: str) -> Lesson | None:
         ...
 
 

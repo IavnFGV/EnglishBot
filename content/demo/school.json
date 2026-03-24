@@ -1,0 +1,42 @@
+{
+  "topic": {
+    "id": "school",
+    "title": "School"
+  },
+  "lessons": [
+    {
+      "id": "school-1",
+      "title": "School Lesson 1"
+    }
+  ],
+  "vocabulary_items": [
+    {
+      "id": "school-book",
+      "english_word": "book",
+      "translation": "книга",
+      "lesson_id": "school-1",
+      "image_ref": "open school book"
+    },
+    {
+      "id": "school-pencil",
+      "english_word": "pencil",
+      "translation": "карандаш",
+      "lesson_id": "school-1",
+      "image_ref": "yellow pencil"
+    },
+    {
+      "id": "school-desk",
+      "english_word": "desk",
+      "translation": "парта",
+      "lesson_id": "school-1",
+      "image_ref": "classroom desk"
+    },
+    {
+      "id": "school-bag",
+      "english_word": "bag",
+      "translation": "рюкзак",
+      "lesson_id": "school-1",
+      "image_ref": "school bag"
+    }
+  ]
+}
