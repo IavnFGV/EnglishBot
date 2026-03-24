@@ -58,6 +58,13 @@ class SessionItem:
     vocabulary_item_id: str
 
 
+@dataclass(slots=True, frozen=True)
+class SessionAnswer:
+    item_id: str
+    submitted_answer: str
+    is_correct: bool
+
+
 @dataclass(slots=True)
 class TrainingSession:
     id: str
@@ -67,7 +74,7 @@ class TrainingSession:
     items: list[SessionItem]
     lesson_id: str | None = None
     current_index: int = 0
-    answers: list[bool] = field(default_factory=list)
+    answer_history: list[SessionAnswer] = field(default_factory=list)
     completed: bool = False
 
     @property
@@ -75,14 +82,24 @@ class TrainingSession:
         return len(self.items)
 
     def current_item_id(self) -> str:
+        if self.completed:
+            raise ValueError("Session is already completed.")
         if self.current_index >= len(self.items):
             raise ValueError("Session has no current item.")
         return self.items[self.current_index].vocabulary_item_id
 
-    def record_answer(self, is_correct: bool) -> None:
+    def record_answer(self, *, answer: str, is_correct: bool) -> None:
         if self.completed:
             raise ValueError("Session is already completed.")
-        self.answers.append(is_correct)
+        if self.current_index >= len(self.items):
+            raise ValueError("Session index is out of bounds.")
+        self.answer_history.append(
+            SessionAnswer(
+                item_id=self.items[self.current_index].vocabulary_item_id,
+                submitted_answer=answer.strip(),
+                is_correct=is_correct,
+            )
+        )
         self.current_index += 1
         if self.current_index >= len(self.items):
             self.completed = True
@@ -105,6 +122,7 @@ class TrainingQuestion:
     correct_answer: str
     options: list[str] | None = None
     input_hint: str | None = None
+    letter_hint: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -115,4 +133,3 @@ class SessionSummary:
     @property
     def incorrect_answers(self) -> int:
         return self.total_questions - self.correct_answers
-

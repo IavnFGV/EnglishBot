@@ -1,0 +1,93 @@
+Extend the current MVP toward real lesson-based content usage.
+
+Important constraints:
+- Do not rewrite the current architecture
+- Keep the modular monolith structure
+- Reuse the existing domain/application/infrastructure design
+- Keep Telegram handlers thin
+- Do not add admin bot yet
+- Do not add OCR or photo parsing yet
+- Focus on lesson-aware vocabulary delivery and structured content packs
+
+Goal of this phase:
+Prepare the bot to work with real school materials organized by topics and lessons, using structured importable content.
+
+Please implement the following.
+
+1. Add lesson-aware learner flow
+Extend the Telegram learner flow so the user can:
+- choose a topic
+- then choose either:
+  - all words in the topic
+  - or a specific lesson within that topic
+- then choose training mode
+- then start a session
+
+If a topic has no lessons, fall back to topic-only flow cleanly.
+
+2. Introduce lesson repository support if needed
+If the current storage layer does not yet expose lesson retrieval cleanly, add the required repository abstraction and in-memory implementation.
+
+At minimum support:
+- list lessons by topic
+- get lesson by id
+- validate lesson belongs to selected topic
+
+3. Make content packs explicit
+Introduce a simple structured content format for import-ready vocabulary packs.
+
+Use JSON for this phase.
+
+Example concept:
+- topic
+- lessons
+- vocabulary items
+
+Implement:
+- a loader/parser for local JSON content packs
+- validation of references (topic ids, lesson ids)
+- clear error handling for malformed content
+
+This is not OCR and not admin import yet.
+It is a structured content-pack foundation that future manual import or admin tools can use.
+
+4. Provide demo content as JSON
+Move or duplicate the current demo data into one or more JSON files under a clear content/demo directory.
+
+Example:
+- content/demo/weather.json
+- content/demo/school.json
+
+Load them through the new content pack loader instead of hardcoding all demo items in Python lists.
+
+5. Keep application logic clean
+Update use cases and bootstrap wiring so lesson-aware flow and JSON-loaded content work without leaking parsing logic into Telegram handlers.
+
+6. Add tests
+Add focused tests for:
+- listing lessons by topic
+- validating topic/lesson combination
+- starting a session for a specific lesson
+- content pack loading
+- malformed JSON/content validation
+- fallback when a topic has no lessons
+
+7. Documentation
+Update README and ARCHITECTURE:
+- explain topic -> lesson -> vocabulary structure
+- explain content pack JSON format
+- explain how demo content is loaded
+- explain how future teacher/admin workflows can prepare JSON packs manually before a full admin bot exists
+
+8. Cleanup if easy
+If low-risk and easy, also do the following small cleanup items while working:
+- use unique session ids
+- fix normalized answer consistency
+- make unseen-first logic explicit
+
+Final output:
+- summary of changes
+- content pack format description
+- files changed
+- any migration notes from hardcoded demo data
+- next recommended step after this phase

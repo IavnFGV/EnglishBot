@@ -14,7 +14,7 @@ from englishbot.application.services import (
     AnswerOutcome,
     ApplicationError,
     InvalidSessionStateError,
-    TrainingApplicationService,
+    TrainingFacade,
 )
 from englishbot.bootstrap import build_training_service
 from englishbot.domain.models import Topic, TrainingMode, TrainingQuestion
@@ -32,7 +32,7 @@ def build_application(token: str) -> Application:
     return app
 
 
-def _service(context: ContextTypes.DEFAULT_TYPE) -> TrainingApplicationService:
+def _service(context: ContextTypes.DEFAULT_TYPE) -> TrainingFacade:
     return context.application.bot_data["training_service"]
 
 
@@ -78,7 +78,10 @@ async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TY
     except ApplicationError as error:
         await query.edit_message_text(str(error))
         return
-    context.user_data["awaiting_text_answer"] = question.mode is TrainingMode.HARD
+    context.user_data["awaiting_text_answer"] = question.mode in {
+        TrainingMode.MEDIUM,
+        TrainingMode.HARD,
+    }
     await query.edit_message_text("Session started.")
     await _send_question(update, context, question)
 
@@ -121,7 +124,8 @@ async def _process_answer(
         await message.reply_text(str(error))
         return
     context.user_data["awaiting_text_answer"] = bool(
-        outcome.next_question is not None and outcome.next_question.mode is TrainingMode.HARD
+        outcome.next_question is not None
+        and outcome.next_question.mode in {TrainingMode.MEDIUM, TrainingMode.HARD}
     )
     await _send_feedback(message, outcome)
     if outcome.next_question is not None:
