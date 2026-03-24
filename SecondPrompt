@@ -1,0 +1,127 @@
+Review the current implementation and refactor it incrementally.
+
+Important constraints:
+- Do NOT rewrite the project from scratch
+- Keep the current modular monolith architecture
+- Preserve working behavior
+- Improve separation of concerns, test coverage, and extensibility
+- Make focused, production-like refinements
+
+Current goal:
+Strengthen the MVP architecture so it is easier to extend with:
+- a future admin bot
+- lesson filtering
+- better review/repetition logic
+- content import pipeline
+- more reliable Telegram session flow
+
+Please do the following.
+
+1. Refactor the application layer
+The current application layer is too coarse if too much logic is concentrated in a single services module.
+
+Refactor into smaller responsibilities such as:
+- topic/listing use case
+- training session orchestration
+- word selection
+- question generation
+- answer checking
+- progress update / summary calculation
+
+You may choose file names, but keep them clear and simple.
+The goal is to avoid a god-service.
+
+2. Make word selection explicit and replaceable
+Introduce a dedicated selector/strategy component for session word selection.
+
+Requirements:
+- current strategy should prefer unseen words first
+- allow repeated words after unseen words are exhausted
+- support topic filtering
+- support optional lesson filtering even if lesson UI is not fully exposed yet
+- keep this logic isolated so it can later be replaced by spaced repetition logic
+
+3. Improve medium mode
+The current medium mode must be meaningfully different from easy mode.
+
+Implement medium mode as:
+- show image if present, otherwise fallback text
+- provide shuffled letters as a hint
+- user submits the answer as text
+
+Hard mode:
+- same typed answer flow, but without shuffled-letter hint
+
+This distinction must exist in the application layer, not just in Telegram text rendering.
+
+4. Strengthen the session model
+Ensure TrainingSession is a real stateful object for the session lifecycle.
+
+Requirements:
+- session stores selected question items or enough deterministic state to continue safely
+- session tracks current position
+- session tracks completed status
+- session preserves answer history
+- invalid state transitions are handled defensively
+- duplicate completion or answering after finish is handled safely
+
+5. Keep Telegram adapter thin
+Review bot handlers and move any business logic out of the Telegram adapter.
+
+Telegram layer should only:
+- parse update/callback/message input
+- call application use cases
+- map results to Telegram responses
+
+Move out any logic related to:
+- choosing next question
+- checking correctness
+- building distractors
+- selecting words
+- computing progress or summary
+
+6. Expand tests substantially
+Current tests are not enough unless core logic is covered in a granular way.
+
+Add focused unit tests for:
+- word selection priority
+- lesson filtering
+- easy-mode distractor generation
+- medium-mode hint generation
+- answer normalization/checking
+- progress update
+- session summary
+- empty topic behavior
+- not enough distractors
+- repeated answers / invalid session state
+- completing a session and refusing extra answers afterwards
+
+Add at least one integration-style test for the main training flow if practical in the current stack.
+
+7. Validate and document simplifications
+Where the MVP is intentionally simplified, document it explicitly in comments or docs.
+
+Examples:
+- in-memory storage for now
+- simplified medium mode input model
+- image placeholders instead of real Telegram file flow
+
+8. Update documentation
+Update ARCHITECTURE.md and README.md to reflect the refactor:
+- explain application layer responsibilities
+- explain session lifecycle
+- explain current training modes precisely
+- mention lesson-aware architecture even if lesson selection UI is not fully implemented
+- describe next extension points: admin bot, import pipeline, spaced repetition
+
+9. Final output
+At the end provide:
+- concise refactor summary
+- files changed
+- design decisions
+- known limitations
+- recommended next step
+
+Do not overengineer.
+Do not add microservices, message brokers, CQRS, event sourcing, or unnecessary abstractions.
+Keep the code readable and practical.

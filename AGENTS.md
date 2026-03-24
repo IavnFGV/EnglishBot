@@ -40,3 +40,15 @@ On the host, the workspace root is:
 
 - Codex sessions are shared via a bind mount from the host into `/home/vscode/.codex`.
 - Avoid assumptions that Docker named volumes are host directories.
+
+
+## Additional notes 
+
+Do NOT:
+- build microservices
+- introduce event buses or message brokers
+- add unnecessary CQRS/event sourcing
+- put business logic into Telegram handlers
+- hardcode vocabulary inside handlers
+- tightly couple session logic to Telegram callback payloads
+- skip tests for domain/application services

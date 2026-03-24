@@ -1,0 +1,205 @@
+You are a senior backend engineer and solution architect.
+
+Task:
+Design and implement the base architecture for a Telegram bot project that helps a child learn English vocabulary in a lightweight, non-intrusive way.
+
+Repository:
+https://github.com/IavnFGV/EnglishBot
+
+Important:
+- First inspect the existing repository structure and reuse what is already there when reasonable.
+- Do not rewrite everything from scratch if the repo already contains useful foundations.
+- Keep changes incremental, clean, and extensible.
+- The goal of this iteration is NOT a full product. The goal is a solid base architecture, core domain model, first working training flow, and automated tests.
+
+Product context:
+This is a Telegram bot for a child.
+Main idea:
+- show English words by themes and lessons
+- gently remind already studied words
+- support several training modes
+- later add a separate admin bot for content management and scheduling
+- for now only learner bot is needed, but architecture must be prepared for future admin capabilities
+
+Business goal of MVP:
+- organize vocabulary by themes and optional lesson numbers
+- allow running simple training sessions in Telegram
+- track user progress for each word
+- support future spaced repetition and admin-controlled content updates
+
+Core content concepts:
+- Topic (examples: weather, friends, school, seasons)
+- Lesson (optional grouping, e.g. lesson number from school material)
+- Word card / vocabulary item:
+  - id
+  - english word
+  - native translation (for example Russian/Ukrainian, choose one field name that is neutral enough)
+  - optional image reference
+  - topic id
+  - optional lesson id
+  - status/metadata
+- Training mode:
+  1. EASY:
+     - show image (or fallback text if image absent)
+     - show 3 answer options in English
+     - user picks correct one
+  2. MEDIUM:
+     - show image
+     - show shuffled letters
+     - user assembles the word (for MVP this may be simplified to choosing the correct ordered variant or entering text assembled from hints)
+  3. HARD:
+     - show image
+     - user types the English word manually
+
+User-facing behavior for MVP:
+- /start
+- choose topic
+- choose training mode
+- start short session of N words
+- after each answer show whether it is correct
+- save answer result
+- at end show small summary
+
+Future requirements that architecture must support:
+- separate admin bot
+- content import from teacher materials
+- manual review/editing of parsed words
+- scheduling of reminders
+- spaced repetition / review queue
+- filtering by lesson, topic, or “already studied”
+- multiple children/users
+
+Technical goals:
+1. Propose a clean project architecture
+2. Implement the minimum working vertical slice
+3. Cover core logic with tests
+4. Keep Telegram layer thin
+5. Put training logic into application/domain services
+6. Design storage interfaces so that persistence can evolve later
+7. Add seed/demo content for local run
+
+Please do the following.
+
+Step 1. Inspect current repository
+- Read existing project structure and tech stack
+- Explain briefly what already exists
+- Reuse or adapt existing code where possible
+- If something is missing, add it cleanly
+
+Step 2. Propose architecture
+Create a concise architecture plan in the repository (for example ARCHITECTURE.md or README section) that includes:
+- modules/layers
+- main entities
+- use cases
+- Telegram adapter responsibilities
+- storage abstraction
+- how future admin bot can share the same domain/application services
+- how future import/parsing pipeline can plug in without breaking the bot
+
+Preferred architectural style:
+- simple modular monolith
+- domain/application/infrastructure split
+- no overengineering
+- avoid microservices
+
+Step 3. Implement domain model
+At minimum implement:
+- Topic
+- Lesson (optional link to Topic if appropriate)
+- VocabularyItem / WordCard
+- TrainingMode enum
+- UserProgress
+- TrainingSession / SessionItem if needed
+- AnswerResult / CheckResult value object if useful
+
+Step 4. Implement repositories/interfaces
+Create interfaces for:
+- TopicRepository
+- VocabularyRepository
+- UserProgressRepository
+- SessionRepository (optional if needed)
+
+For MVP provide an in-memory implementation or lightweight local persistence depending on existing repo stack.
+If the repo already uses a database, adapt to it but keep repository abstractions.
+
+Step 5. Implement core use cases
+At minimum:
+- list available topics
+- start training session by topic + mode
+- select words for a session
+- generate easy mode question with 1 correct answer + 2 distractors
+- check answer for easy mode
+- check answer for hard mode
+- support a simplified medium mode for MVP
+- record progress
+- return session summary
+
+Rules for word selection in MVP:
+- support filtering by topic
+- support optional lesson filter if available
+- prefer unseen words first, but allow repeated words too
+- keep selection logic isolated in a service so it can later be replaced by spaced repetition logic
+
+Step 6. Telegram bot layer
+Implement only the minimum Telegram interaction flow:
+- /start
+- topic selection
+- mode selection
+- start session
+- answer question
+- next question
+- finish with summary
+
+Requirements:
+- thin handlers/controllers
+- no business logic inside Telegram handlers
+- clear mapping from Telegram updates to application use cases
+
+Step 7. Test coverage
+Add unit tests for the core logic:
+- word selection service
+- easy mode question generation
+- answer checking
+- progress update
+- session summary calculation
+- edge cases (not enough distractors, empty topic, invalid answer, repeated word)
+
+If integration testing is easy in current stack, add at least one integration test for the main training flow.
+Focus on deterministic, readable tests.
+
+Step 8. Demo data
+Add a small seed dataset with a few topics and words, for example:
+- weather
+- school
+- seasons
+Each with several words and optional image placeholders
+
+Step 9. Documentation
+Update README with:
+- what the bot does
+- MVP scope
+- architecture summary
+- how to run locally
+- how to run tests
+- future extensions:
+  - admin bot
+  - content import from teacher text/photos
+  - spaced repetition
+
+Implementation constraints:
+- Keep code production-like and readable
+- Use strict typing if the language supports it
+- No placeholders like “TODO implement later” in core paths
+- If a feature is intentionally simplified, state it explicitly in comments or docs
+- Prefer clean names over clever names
+- Validate inputs
+- Add error handling for empty datasets and invalid session state
+
+Output format:
+1. First provide a short architecture summary
+2. Then implement the changes
+3. Then provide a final change summary:
+   - files added/changed
+   - architectural decisions
+   - known simplifications
+   - next recommended steps
