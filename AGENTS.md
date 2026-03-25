@@ -172,3 +172,9 @@ For editor/import flows specifically:
 - show draft extraction status while parsing is running
 - show item counts in previews and summaries
 - for image review or generation, keep one persistent summary message and update its counters as the flow advances
+
+
+# Testing is mandatory.
+Do not substitute test coverage with helper scripts, demo scripts, CLI flows, or manual verification notes.
+For every scenario implemented, add pytest coverage.
+If a scenario is hard to test, simplify the production code until it becomes testable.

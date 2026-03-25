@@ -11,6 +11,7 @@ from englishbot.application.add_words_use_cases import (
     StartAddWordsFlowUseCase,
 )
 from englishbot.application.answer_checker import AnswerChecker
+from englishbot.application.clock import Clock, FixedClock, SystemClock
 from englishbot.application.errors import (
     ApplicationError,
     EmptyTopicError,
@@ -25,6 +26,7 @@ from englishbot.application.lesson_use_cases import (
     ValidateTopicLessonUseCase,
 )
 from englishbot.application.question_factory import QuestionFactory
+from englishbot.application.review_use_cases import CheckMorningReviewUseCase, ReviewCheckResult
 from englishbot.application.session_summary import SessionSummaryCalculator
 from englishbot.application.topic_use_cases import ListTopicsUseCase
 from englishbot.application.training_use_cases import (
@@ -48,9 +50,12 @@ __all__ = [
     "ApproveAddWordsDraftUseCase",
     "ApplicationError",
     "build_publish_output_path",
+    "CheckMorningReviewUseCase",
+    "Clock",
     "CancelAddWordsFlowUseCase",
     "DiscardActiveSessionUseCase",
     "EmptyTopicError",
+    "FixedClock",
     "GetActiveAddWordsFlowUseCase",
     "GetActiveSessionUseCase",
     "GetCurrentQuestionUseCase",
@@ -61,11 +66,13 @@ __all__ = [
     "ListTopicsUseCase",
     "NotEnoughOptionsError",
     "QuestionFactory",
+    "ReviewCheckResult",
     "RegenerateAddWordsDraftUseCase",
     "SessionSummaryCalculator",
     "StartAddWordsFlowUseCase",
     "StartTrainingSessionUseCase",
     "SubmitAnswerUseCase",
+    "SystemClock",
     "TopicNotFoundError",
     "TrainingFacade",
     "UnseenFirstWordSelector",

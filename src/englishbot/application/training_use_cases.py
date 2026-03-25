@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass
 
 from englishbot.application.answer_checker import AnswerChecker
+from englishbot.application.clock import Clock, SystemClock
 from englishbot.application.errors import InvalidSessionStateError, TopicNotFoundError
 from englishbot.application.lesson_use_cases import (
     ListLessonsByTopicUseCase,
@@ -183,12 +184,14 @@ class SubmitAnswerUseCase:
         get_current_question: GetCurrentQuestionUseCase,
         answer_checker: AnswerChecker,
         summary_calculator: SessionSummaryCalculator,
+        clock: Clock | None = None,
     ) -> None:
         self._progress_repository = progress_repository
         self._session_repository = session_repository
         self._get_current_question = get_current_question
         self._answer_checker = answer_checker
         self._summary_calculator = summary_calculator
+        self._clock = clock or SystemClock()
 
     @logged_service_call(
         "SubmitAnswerUseCase.execute",
@@ -211,6 +214,7 @@ class SubmitAnswerUseCase:
             item_id=question.item_id,
         )
         progress.record(result.is_correct)
+        progress.last_seen_at = self._clock.now()
         self._progress_repository.save(progress)
         try:
             session.record_answer(answer=answer, is_correct=result.is_correct)

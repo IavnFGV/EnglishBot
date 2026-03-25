@@ -11,6 +11,18 @@ from englishbot.importing.models import (
 
 def format_draft_preview(result: ImportLessonResult) -> str:
     draft = result.draft
+    if not isinstance(draft, LessonExtractionDraft):
+        lines = [
+            "Draft preview",
+            "Topic: (missing)",
+            "Lesson: -",
+            "Items: -",
+        ]
+        if result.validation.errors:
+            lines.append(f"Validation errors: {len(result.validation.errors)}")
+            for error in result.validation.errors[:5]:
+                lines.append(f"- {error.message}")
+        return "\n".join(lines)
     lines = [
         "Draft preview",
         f"Topic: {draft.topic_title or '(missing)'}",

@@ -4,9 +4,12 @@ import json
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Protocol
 
+from englishbot.config import resolve_ollama_model
 from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtractionDraft
+from englishbot.importing.prompt_loader import load_prompt_text
 from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
@@ -14,6 +17,13 @@ _SOURCE_SPLIT_RE = re.compile(r"\s*[—–-]\s*")
 _CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
 _PAIR_SPLIT_RE = re.compile(r"\s*/\s*")
+
+
+def _short_text(value: str, *, limit: int = 180) -> str:
+    normalized = " ".join(value.split())
+    if len(normalized) <= limit:
+        return normalized
+    return f"{normalized[: limit - 3]}..."
 
 
 class LessonExtractionClient(Protocol):
@@ -75,13 +85,25 @@ class OllamaLessonExtractionClient:
         base_url: str | None = None,
         timeout: int = 120,
         include_image_prompts: bool = False,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        num_predict: int | None = None,
+        extract_line_prompt_path: Path | None = None,
     ) -> None:
-        self._model = model or os.getenv("OLLAMA_PULL_MODEL", "llama3.2:3b")
+        self._model = model or resolve_ollama_model()
         self._base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip(
             "/"
         )
         self._timeout = timeout
         self._include_image_prompts = include_image_prompts
+        self._options = self._build_options(
+            temperature=temperature,
+            top_p=top_p,
+            num_predict=num_predict,
+        )
+        self._extract_line_prompt_path = extract_line_prompt_path or Path(
+            os.getenv("OLLAMA_EXTRACT_LINE_PROMPT_PATH", "prompts/ollama_extract_line_prompt.txt")
+        )
 
     @logged_service_call(
         "OllamaLessonExtractionClient.extract",
@@ -102,29 +124,8 @@ class OllamaLessonExtractionClient:
         except ImportError as error:
             logger.error("requests is required for OllamaLessonExtractionClient")
             return {"error": f"Missing dependency: {error}"}
-
-        payload = {
-            "model": self._model,
-            "stream": False,
-            "format": "json",
-            "messages": [
-                {"role": "system", "content": self._system_prompt()},
-                {"role": "user", "content": raw_text},
-            ],
-        }
-
         try:
-            response = requests.post(
-                f"{self._base_url}/api/chat",
-                json=payload,
-                timeout=self._timeout,
-            )
-            response.raise_for_status()
-            response_payload = response.json()
-            content = response_payload["message"]["content"]
-            parsed = self._parse_content(content)
-            draft = self._build_draft(parsed, raw_text=raw_text)
-            return draft
+            return self._extract_line_by_line(raw_text=raw_text, requests_module=requests)
         except Exception as error:
             logger.exception("OllamaLessonExtractionClient failed: %s", error)
             return {"error": str(error)}
@@ -151,6 +152,176 @@ class OllamaLessonExtractionClient:
             "Do not invent extra words that are not supported by the text."
         )
 
+    def _line_system_prompt(self) -> str:
+        return load_prompt_text(
+            path=self._extract_line_prompt_path,
+            fallback=(
+                "Extract vocabulary pairs from one lesson line. "
+                "Return only valid JSON with the key vocabulary_items. "
+                "vocabulary_items must be an array of objects with keys: "
+                "english_word, translation, notes, image_prompt, source_fragment. "
+                "One input line may contain multiple aligned pairs separated by '/'. "
+                "If the line is 'Princess / Prince — принцесса / принц', return two items. "
+                "Preserve the translation text exactly as written in the source language. "
+                "Use the original input line as source_fragment unless a cleaner equivalent "
+                "is needed. "
+                "Set notes and image_prompt to null unless explicitly present. "
+                "If the line cannot be parsed into vocabulary pairs, return an empty array."
+            ),
+        )
+
+    def _extract_line_by_line(self, *, raw_text: str, requests_module) -> LessonExtractionDraft:
+        lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+        topic_title = "Imported Topic"
+        candidate_lines = lines
+        if lines and not _SOURCE_SPLIT_RE.search(lines[0]):
+            topic_title = lines[0]
+            candidate_lines = lines[1:]
+
+        source_lines = [line for line in candidate_lines if _SOURCE_SPLIT_RE.search(line)]
+        unparsed_lines = [line for line in candidate_lines if not _SOURCE_SPLIT_RE.search(line)]
+        logger.debug(
+            "OllamaLessonExtractionClient line-by-line topic=%s source_lines=%s ignored_lines=%s",
+            topic_title,
+            len(source_lines),
+            len(unparsed_lines),
+        )
+
+        items: list[ExtractedVocabularyItemDraft] = []
+        warnings: list[str] = []
+        for index, source_line in enumerate(source_lines, start=1):
+            line_items = self._extract_line_items(
+                line_index=index,
+                source_line=source_line,
+                requests_module=requests_module,
+            )
+            if not line_items:
+                logger.warning(
+                    "OllamaLessonExtractionClient line parse returned no items line_index=%s "
+                    "source_line=%s",
+                    index,
+                    _short_text(source_line),
+                )
+                unparsed_lines.append(source_line)
+                warnings.append(f"Could not confidently parse line: {source_line}")
+                continue
+            items.extend(line_items)
+
+        return LessonExtractionDraft(
+            topic_title=topic_title,
+            lesson_title=None,
+            vocabulary_items=items,
+            warnings=warnings,
+            unparsed_lines=unparsed_lines,
+            confidence_notes=[],
+        )
+
+    def _extract_line_items(
+        self,
+        *,
+        line_index: int,
+        source_line: str,
+        requests_module,
+    ) -> list[ExtractedVocabularyItemDraft]:
+        logger.debug(
+            "OllamaLessonExtractionClient line request line_index=%s model=%s timeout=%s "
+            "options=%s prompt_path=%s source_line=%s",
+            line_index,
+            self._model,
+            self._timeout,
+            self._options,
+            self._extract_line_prompt_path,
+            _short_text(source_line),
+        )
+        payload = {
+            "model": self._model,
+            "stream": False,
+            "format": "json",
+            "messages": [
+                {"role": "system", "content": self._line_system_prompt()},
+                {"role": "user", "content": source_line},
+            ],
+        }
+        if self._options:
+            payload["options"] = dict(self._options)
+        response = requests_module.post(
+            f"{self._base_url}/api/chat",
+            json=payload,
+            timeout=self._timeout,
+        )
+        response.raise_for_status()
+        content = response.json()["message"]["content"]
+        logger.debug(
+            "OllamaLessonExtractionClient line response line_index=%s raw_content=%s",
+            line_index,
+            _short_text(content, limit=240),
+        )
+        raw_items = self._parse_line_content(content)
+        items: list[ExtractedVocabularyItemDraft] = []
+        for raw_item in raw_items:
+            source_fragment = self._string_or_empty(raw_item.get("source_fragment")) or source_line
+            draft_item = ExtractedVocabularyItemDraft(
+                english_word=self._string_or_empty(raw_item.get("english_word")),
+                translation=self._string_or_empty(raw_item.get("translation")),
+                source_fragment=source_fragment,
+                notes=self._optional_string(raw_item.get("notes")),
+                image_prompt=(
+                    self._optional_string(raw_item.get("image_prompt"))
+                    if self._include_image_prompts
+                    else None
+                ),
+            )
+            repaired_item = self._repair_item_from_source(draft_item)
+            items.extend(self._split_paired_item(repaired_item))
+        logger.debug(
+            (
+                "OllamaLessonExtractionClient line parsed "
+                "line_index=%s raw_item_count=%s final_item_count=%s english_words=%s"
+            ),
+            line_index,
+            len(raw_items),
+            len(items),
+            [item.english_word for item in items],
+        )
+        return items
+
+    def _build_options(
+        self,
+        *,
+        temperature: float | None,
+        top_p: float | None,
+        num_predict: int | None,
+    ) -> dict[str, float | int]:
+        resolved_temperature = (
+            temperature
+            if temperature is not None
+            else self._optional_float_env("OLLAMA_TEMPERATURE")
+        )
+        resolved_top_p = (
+            top_p if top_p is not None else self._optional_float_env("OLLAMA_TOP_P")
+        )
+        resolved_num_predict = (
+            num_predict
+            if num_predict is not None
+            else self._optional_int_env("OLLAMA_NUM_PREDICT")
+        )
+        options: dict[str, float | int] = {}
+        if resolved_temperature is not None:
+            options["temperature"] = resolved_temperature
+        if resolved_top_p is not None:
+            options["top_p"] = resolved_top_p
+        if resolved_num_predict is not None:
+            options["num_predict"] = resolved_num_predict
+        return options
+
+    def _optional_float_env(self, name: str) -> float | None:
+        value = os.getenv(name, "").strip()
+        return float(value) if value else None
+
+    def _optional_int_env(self, name: str) -> int | None:
+        value = os.getenv(name, "").strip()
+        return int(value) if value else None
+
     def _parse_content(self, content: str) -> dict[str, object]:
         stripped = content.strip()
         if stripped.startswith("```"):
@@ -165,6 +336,34 @@ class OllamaLessonExtractionClient:
         if not isinstance(parsed, dict):
             raise ValueError("Ollama response root must be a JSON object.")
         return parsed
+
+    def _parse_line_content(self, content: str) -> list[dict[str, object]]:
+        stripped = content.strip()
+        if stripped.startswith("```"):
+            stripped = stripped.strip("`")
+            if stripped.startswith("json"):
+                stripped = stripped[4:].strip()
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start != -1 and end != -1:
+            parsed = json.loads(stripped[start : end + 1])
+        else:
+            parsed = json.loads(stripped)
+
+        if isinstance(parsed, dict):
+            raw_items = parsed.get("vocabulary_items")
+            if raw_items is None and any(
+                key in parsed for key in ("english_word", "translation", "source_fragment")
+            ):
+                raw_items = [parsed]
+        elif isinstance(parsed, list):
+            raw_items = parsed
+        else:
+            raise ValueError("Line extraction response must be a JSON object or array.")
+
+        if not isinstance(raw_items, list):
+            raise ValueError("Line extraction vocabulary_items must be an array.")
+        return [item for item in raw_items if isinstance(item, dict)]
 
     def _build_draft(self, parsed: dict[str, object], *, raw_text: str) -> LessonExtractionDraft:
         raw_items = parsed.get("vocabulary_items", [])
@@ -227,10 +426,17 @@ class OllamaLessonExtractionClient:
         source_translation_parts = self._split_pair_parts(parsed_translation)
         item_english_parts = self._split_pair_parts(english_word)
         item_translation_parts = self._split_pair_parts(translation)
+        item_already_matches_aligned_source_pair = self._matches_aligned_source_pair(
+            english_word=english_word,
+            translation=translation,
+            source_english_parts=source_english_parts,
+            source_translation_parts=source_translation_parts,
+        )
 
         if (
             len(source_english_parts) >= 2
             and len(source_english_parts) == len(source_translation_parts)
+            and not item_already_matches_aligned_source_pair
             and (
                 len(item_english_parts) != len(source_english_parts)
                 or len(item_translation_parts) != len(source_translation_parts)
@@ -391,3 +597,31 @@ class OllamaLessonExtractionClient:
         if "/" not in value:
             return [value.strip()] if value.strip() else []
         return [part.strip() for part in _PAIR_SPLIT_RE.split(value) if part.strip()]
+
+    def _matches_aligned_source_pair(
+        self,
+        *,
+        english_word: str,
+        translation: str,
+        source_english_parts: list[str],
+        source_translation_parts: list[str],
+    ) -> bool:
+        normalized_english = self._normalize_text(english_word).lower()
+        normalized_translation = self._normalize_text(translation).lower()
+        if not normalized_english or not normalized_translation:
+            return False
+        for source_english, source_translation in zip(
+            source_english_parts,
+            source_translation_parts,
+            strict=False,
+        ):
+            normalized_source_english = self._normalize_text(source_english).lower()
+            normalized_source_translation = self._normalize_text(source_translation).lower()
+            if (
+                normalized_source_english == normalized_english
+                and normalized_source_translation == normalized_translation
+            ):
+                return True
+            if normalized_source_translation == normalized_translation:
+                return True
+        return False

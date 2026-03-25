@@ -62,6 +62,11 @@ def build_application(settings: Settings) -> Application:
     lesson_import_pipeline = build_lesson_import_pipeline(
         ollama_model=settings.ollama_model,
         ollama_base_url=settings.ollama_base_url,
+        ollama_temperature=settings.ollama_temperature,
+        ollama_top_p=settings.ollama_top_p,
+        ollama_num_predict=settings.ollama_num_predict,
+        ollama_extract_line_prompt_path=settings.ollama_extract_line_prompt_path,
+        ollama_image_prompt_path=settings.ollama_image_prompt_path,
     )
     add_words_flow_repository = InMemoryAddWordsFlowRepository()
     add_words_harness = AddWordsFlowHarness(
@@ -199,6 +204,21 @@ def _get_preview_message_id(user_id: int, context: ContextTypes.DEFAULT_TYPE) ->
 def _clear_active_word_flow(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
     _cancel_add_words_flow(context).execute(user_id=user_id)
     _preview_message_ids(context).pop(user_id, None)
+
+
+def _draft_item_count(result) -> int | None:
+    draft = result.draft
+    return len(draft.vocabulary_items) if hasattr(draft, "vocabulary_items") else None
+
+
+def _draft_status_text(result) -> str:
+    item_count = _draft_item_count(result)
+    rendered_item_count = item_count if item_count is not None else "-"
+    return (
+        "Parsing draft... done\n"
+        f"Items found: {rendered_item_count}\n"
+        f"Validation errors: {len(result.validation.errors)}"
+    )
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -420,15 +440,19 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             user_id=user.id,
             raw_text=message.text,
         )
+    except Exception:  # noqa: BLE001
+        logger.exception("Add-words draft extraction failed for user=%s", user.id)
+        await status_message.edit_text(
+            "Parsing draft... failed\n"
+            "Could not parse this text. Please try again or simplify the input."
+        )
+        context.user_data.pop("words_flow_mode", None)
+        return
     finally:
         stop_event.set()
         await heartbeat_task
     context.user_data.pop("words_flow_mode", None)
-    await status_message.edit_text(
-        "Parsing draft... done\n"
-        f"Items found: {len(flow.draft_result.draft.vocabulary_items)}\n"
-        f"Validation errors: {len(flow.draft_result.validation.errors)}"
-    )
+    await status_message.edit_text(_draft_status_text(flow.draft_result))
     preview_message = await message.reply_text(
         format_draft_preview(flow.draft_result),
         reply_markup=_draft_review_keyboard(flow.flow_id, flow.draft_result.validation.is_valid),
@@ -507,6 +531,13 @@ async def add_words_regenerate_draft_handler(
             user_id=user.id,
             flow_id=flow.flow_id,
         )
+    except Exception:  # noqa: BLE001
+        logger.exception("Add-words draft regeneration failed for user=%s", user.id)
+        await query.edit_message_text(
+            "Regenerating draft... failed\n"
+            "Could not parse this text. Please try again or simplify the input."
+        )
+        return
     finally:
         stop_event.set()
         await heartbeat_task
@@ -770,7 +801,7 @@ async def _run_status_heartbeat(
     *,
     stage: str,
     stop_event: asyncio.Event,
-    interval_seconds: float = 3.0,
+    interval_seconds: float = 10.0,
 ) -> None:
     elapsed_seconds = 0
     while not stop_event.is_set():

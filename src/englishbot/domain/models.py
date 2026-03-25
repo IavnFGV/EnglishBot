@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -42,6 +43,7 @@ class UserProgress:
     correct_answers: int = 0
     incorrect_answers: int = 0
     last_result: bool | None = None
+    last_seen_at: datetime | None = None
 
     def record(self, is_correct: bool) -> None:
         self.times_seen += 1

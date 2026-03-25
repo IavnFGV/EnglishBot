@@ -5,7 +5,10 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
+from englishbot.config import resolve_ollama_model
+from englishbot.importing.prompt_loader import load_prompt_text
 from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
@@ -27,12 +30,24 @@ class OllamaImagePromptEnricher:
         model: str | None = None,
         base_url: str | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        num_predict: int | None = None,
+        prompt_path: Path | None = None,
     ) -> None:
-        self._model = model or os.getenv("OLLAMA_PULL_MODEL", "llama3.2:3b")
+        self._model = model or resolve_ollama_model()
         self._base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip(
             "/"
         )
         self._timeout = timeout or int(os.getenv("OLLAMA_IMAGE_PROMPT_TIMEOUT_SEC", "30"))
+        self._options = self._build_options(
+            temperature=temperature,
+            top_p=top_p,
+            num_predict=num_predict,
+        )
+        self._prompt_path = prompt_path or Path(
+            os.getenv("OLLAMA_IMAGE_PROMPT_PATH", "prompts/ollama_image_prompt_prompt.txt")
+        )
 
     @logged_service_call(
         "OllamaImagePromptEnricher.enrich",
@@ -121,6 +136,17 @@ class OllamaImagePromptEnricher:
                 },
             ],
         }
+        if self._options:
+            payload["options"] = dict(self._options)
+        logger.debug(
+            "OllamaImagePromptEnricher request model=%s timeout=%s options=%s prompt_path=%s "
+            "english_word=%s",
+            self._model,
+            self._timeout,
+            self._options,
+            self._prompt_path,
+            item.get("english_word"),
+        )
         response = requests.post(
             f"{self._base_url}/api/chat",
             json=payload,
@@ -210,38 +236,79 @@ class OllamaImagePromptEnricher:
         return items
 
     def _system_prompt(self) -> str:
-        return (
-            "You generate image prompts for a children's vocabulary flashcard app. "
-            "Return only valid JSON with one key: image_prompts. "
-            "Each item must contain: id, english_word, translation, image_prompt. "
-            "You will receive exactly one vocabulary_item. Return exactly one prompt item. "
-            "Use the following instruction exactly when generating image_prompt. "
-            "STRICT RULES: "
-            "- Output ONLY one line. "
-            "- No explanations. "
-            "- One object only. "
-            "- No scenes. "
-            "- No background descriptions. "
-            "- White background only. "
-            "- If word somehow about human - say - girl or boy, man or women. Years - old or young"
-            "- Keep it simple and clear. "
-            "- Use at most 1-2 short descriptive attributes. "
-            "If the vocabulary item names alternatives such as 'Princess / Prince', "
-            "choose the exact single object named by the current vocabulary item "
-            "and do not combine multiple objects. "
-            "FORMAT: "
-            "\" illustration of <OBJECT WITH OPTIONAL 1-2 ATTRIBUTES>, "
-            "simple cartoon style, centered, white background, colorful, no text\". "
-            "EXAMPLES: "
-            "Input: king. "
-            "Output: illustration of a king - older man with a golden crown, "
-            "simple cartoon style, centered, white background, colorful, no text. "
-            "Input: dragon. "
-            "Output: illustration of a green dragon, "
-            "simple cartoon style, centered, white background, colorful, no text. "
-            "TASK: Generate the prompt. "
-            "INPUT WORD: use the english_word from the provided vocabulary_item."
+        return load_prompt_text(
+            path=self._prompt_path,
+            fallback=(
+                "You generate image prompts for a children's vocabulary flashcard app. "
+                "Return only valid JSON with one key: image_prompts. "
+                "Each item must contain: id, english_word, translation, image_prompt. "
+                "You will receive exactly one vocabulary_item. Return exactly one prompt item. "
+                "Use the following instruction exactly when generating image_prompt. "
+                "STRICT RULES: "
+                "- Output ONLY one line. "
+                "- No explanations. "
+                "- One object only. "
+                "- No scenes. "
+                "- No background descriptions. "
+                "- White background only. "
+                "- If word somehow about human - say - girl or boy, man or women. "
+                "Years - old or young"
+                "- Keep it simple and clear. "
+                "- Use at most 1-2 short descriptive attributes. "
+                "If the vocabulary item names alternatives such as 'Princess / Prince', "
+                "choose the exact single object named by the current vocabulary item "
+                "and do not combine multiple objects. "
+                "FORMAT: "
+                "\" illustration of <OBJECT WITH OPTIONAL 1-2 ATTRIBUTES>, "
+                "simple cartoon style, centered, white background, colorful, no text\". "
+                "EXAMPLES: "
+                "Input: king. "
+                "Output: illustration of a king - older man with a golden crown, "
+                "simple cartoon style, centered, white background, colorful, no text. "
+                "Input: dragon. "
+                "Output: illustration of a green dragon, "
+                "simple cartoon style, centered, white background, colorful, no text. "
+                "TASK: Generate the prompt. "
+                "INPUT WORD: use the english_word from the provided vocabulary_item."
+            ),
         )
+
+    def _build_options(
+        self,
+        *,
+        temperature: float | None,
+        top_p: float | None,
+        num_predict: int | None,
+    ) -> dict[str, float | int]:
+        resolved_temperature = (
+            temperature
+            if temperature is not None
+            else self._optional_float_env("OLLAMA_TEMPERATURE")
+        )
+        resolved_top_p = (
+            top_p if top_p is not None else self._optional_float_env("OLLAMA_TOP_P")
+        )
+        resolved_num_predict = (
+            num_predict
+            if num_predict is not None
+            else self._optional_int_env("OLLAMA_NUM_PREDICT")
+        )
+        options: dict[str, float | int] = {}
+        if resolved_temperature is not None:
+            options["temperature"] = resolved_temperature
+        if resolved_top_p is not None:
+            options["top_p"] = resolved_top_p
+        if resolved_num_predict is not None:
+            options["num_predict"] = resolved_num_predict
+        return options
+
+    def _optional_float_env(self, name: str) -> float | None:
+        value = os.getenv(name, "").strip()
+        return float(value) if value else None
+
+    def _optional_int_env(self, name: str) -> int | None:
+        value = os.getenv(name, "").strip()
+        return int(value) if value else None
 
     def _parse_content(self, content: str) -> dict[str, object]:
         stripped = content.strip()

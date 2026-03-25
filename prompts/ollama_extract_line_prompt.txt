@@ -1,0 +1,10 @@
+Extract vocabulary pairs from one lesson line.
+Return only valid JSON with the key vocabulary_items.
+vocabulary_items must be an array of objects with keys:
+english_word, translation, notes, image_prompt, source_fragment.
+One input line may contain multiple aligned pairs separated by "/".
+If the line is "Princess / Prince — принцесса / принц", return two items.
+Preserve the translation text exactly as written in the source language.
+Use the original input line as source_fragment unless a cleaner equivalent is needed.
+Set notes and image_prompt to null unless explicitly present.
+If the line cannot be parsed into vocabulary pairs, return an empty array.

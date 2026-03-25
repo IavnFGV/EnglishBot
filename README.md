@@ -128,7 +128,7 @@ Useful Ollama options:
 ```bash
 python -m englishbot.import_lesson_text extract-draft \
   --extractor ollama \
-  --ollama-model llama3.2:3b \
+  --ollama-model qwen2.5:7b \
   --ollama-base-url http://127.0.0.1:11434 \
   --include-image-prompts \
   --input lesson.txt \

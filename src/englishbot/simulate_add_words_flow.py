@@ -15,6 +15,7 @@ from englishbot.application.add_words_use_cases import (
     StartAddWordsFlowUseCase,
 )
 from englishbot.bootstrap import build_lesson_import_pipeline
+from englishbot.config import resolve_ollama_model
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.repositories import InMemoryAddWordsFlowRepository
@@ -27,6 +28,13 @@ app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
     help="Run add-words scenarios locally without Telegram.",
+)
+
+_DEFAULT_EXTRACT_PROMPT_PATH = Path(
+    os.getenv("OLLAMA_EXTRACT_LINE_PROMPT_PATH", "prompts/ollama_extract_line_prompt.txt")
+)
+_DEFAULT_IMAGE_PROMPT_PATH = Path(
+    os.getenv("OLLAMA_IMAGE_PROMPT_PATH", "prompts/ollama_image_prompt_prompt.txt")
 )
 
 
@@ -60,11 +68,39 @@ def run_scenario(
     ollama_model: Annotated[
         str,
         typer.Option("--ollama-model", help="Ollama model name for extraction."),
-    ] = os.getenv("OLLAMA_PULL_MODEL", "llama3.2:3b"),
+    ] = resolve_ollama_model(),
     ollama_base_url: Annotated[
         str,
         typer.Option("--ollama-base-url", help="Base URL for the local Ollama server."),
     ] = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+    ollama_temperature: Annotated[
+        float | None,
+        typer.Option("--ollama-temperature", help="Optional Ollama temperature."),
+    ] = float(os.getenv("OLLAMA_TEMPERATURE")) if os.getenv("OLLAMA_TEMPERATURE") else None,
+    ollama_top_p: Annotated[
+        float | None,
+        typer.Option("--ollama-top-p", help="Optional Ollama top_p."),
+    ] = float(os.getenv("OLLAMA_TOP_P")) if os.getenv("OLLAMA_TOP_P") else None,
+    ollama_num_predict: Annotated[
+        int | None,
+        typer.Option("--ollama-num-predict", help="Optional Ollama num_predict."),
+    ] = int(os.getenv("OLLAMA_NUM_PREDICT")) if os.getenv("OLLAMA_NUM_PREDICT") else None,
+    ollama_extract_line_prompt_path: Annotated[
+        Path,
+        typer.Option(
+            "--ollama-extract-line-prompt-path",
+            dir_okay=False,
+            help="Path to the extraction prompt file.",
+        ),
+    ] = _DEFAULT_EXTRACT_PROMPT_PATH,
+    ollama_image_prompt_path: Annotated[
+        Path,
+        typer.Option(
+            "--ollama-image-prompt-path",
+            dir_okay=False,
+            help="Path to the image prompt file.",
+        ),
+    ] = _DEFAULT_IMAGE_PROMPT_PATH,
     log_level: Annotated[
         str,
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
@@ -74,6 +110,11 @@ def run_scenario(
     pipeline = build_lesson_import_pipeline(
         ollama_model=ollama_model,
         ollama_base_url=ollama_base_url,
+        ollama_temperature=ollama_temperature,
+        ollama_top_p=ollama_top_p,
+        ollama_num_predict=ollama_num_predict,
+        ollama_extract_line_prompt_path=ollama_extract_line_prompt_path,
+        ollama_image_prompt_path=ollama_image_prompt_path,
     )
     repository = InMemoryAddWordsFlowRepository()
     harness = AddWordsFlowHarness(

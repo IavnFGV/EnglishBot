@@ -317,15 +317,13 @@ def test_ollama_extraction_client_builds_draft_from_http_response(
         @staticmethod
         def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
             assert url == "http://127.0.0.1:11434/api/chat"
-            assert json["model"] == "llama3.2:3b"
+            assert json["model"] == "qwen2.5:7b"
             assert timeout == 120
             return FakeResponse()
 
     monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
-    client = OllamaLessonExtractionClient(model="llama3.2:3b", base_url="http://127.0.0.1:11434")
-    draft = client.extract(
-        "Fairy Tales\n\nPrincess / Prince — принцесса / принц\nCastle — замок"
-    )
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+    draft = client.extract("Fairy Tales\n\nPrincess / Prince — принцесса / принц")
     assert isinstance(draft, LessonExtractionDraft)
     assert draft.topic_title == "Fairy Tales"
     assert len(draft.vocabulary_items) == 2
@@ -373,17 +371,147 @@ def test_ollama_extraction_client_repairs_half_paired_item_from_source_fragment(
         @staticmethod
         def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
             assert url == "http://127.0.0.1:11434/api/chat"
-            assert json["model"] == "llama3.2:3b"
+            assert json["model"] == "qwen2.5:7b"
             assert timeout == 120
             return FakeResponse()
 
     monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
-    client = OllamaLessonExtractionClient(model="llama3.2:3b", base_url="http://127.0.0.1:11434")
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
     draft = client.extract("Fairy Tales\n\nKing / Queen — король / королева")
 
     assert isinstance(draft, LessonExtractionDraft)
     assert [item.english_word for item in draft.vocabulary_items] == ["King", "Queen"]
     assert [item.translation for item in draft.vocabulary_items] == ["король", "королева"]
+
+
+def test_ollama_extraction_client_does_not_duplicate_already_split_pair_items(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_text = (
+        "Fairy Tales\n\n"
+        "Рrincess / Prince — принцесса / принц\n"
+        "Castle — замок\n"
+        "King / Queen — король / королева\n"
+        "Dragon — дракон\n"
+        "Fairy — фея\n"
+        "Wizard — волшебник\n"
+        "Mermaid — русалка\n"
+        "Giant — великан\n"
+        "Magic lamp — магическая лампа\n"
+        "Jinn — джинн\n"
+        "Ghost — привидение\n"
+        "Dwarf — гномик\n"
+        "Troll — тролль\n"
+        "Ogre — огр (великан)\n"
+        "Werewolf — оборотень\n"
+        "Magic potion — волшебный эликсир\n"
+        "Monster — чудовище\n"
+        "Elf — эльф\n"
+    )
+
+    class FakeResponse:
+        def __init__(self, content: str) -> None:
+            self._content = content
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": self._content
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            assert url == "http://127.0.0.1:11434/api/chat"
+            assert json["model"] == "qwen2.5:7b"
+            assert timeout == 120
+            source_line = json["messages"][-1]["content"]
+            dumps = __import__("json").dumps
+            if source_line == "Рrincess / Prince — принцесса / принц":
+                return FakeResponse(
+                    dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Princess",
+                                    "translation": "принцесса",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                                {
+                                    "english_word": "Prince",
+                                    "translation": "принц",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                            ]
+                        }
+                    )
+                )
+            if source_line == "King / Queen — король / королева":
+                return FakeResponse(
+                    dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "King",
+                                    "translation": "король",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                                {
+                                    "english_word": "Queen",
+                                    "translation": "королева",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                            ]
+                        }
+                    )
+                )
+            english_word, translation = [
+                part.strip() for part in source_line.split("—", maxsplit=1)
+            ]
+            return FakeResponse(
+                dumps(
+                    {
+                        "vocabulary_items": [
+                            {
+                                "english_word": english_word,
+                                "translation": translation,
+                                "notes": None,
+                                "image_prompt": None,
+                                "source_fragment": source_line,
+                            }
+                        ]
+                    }
+                )
+            )
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+    draft = client.extract(raw_text)
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert len(draft.vocabulary_items) == 20
+    assert [item.english_word for item in draft.vocabulary_items[:5]] == [
+        "Princess",
+        "Prince",
+        "Castle",
+        "King",
+        "Queen",
+    ]
+    assert [item.english_word for item in draft.vocabulary_items].count("King") == 1
+    assert [item.english_word for item in draft.vocabulary_items].count("Queen") == 1
+    assert [item.english_word for item in draft.vocabulary_items].count("Prince") == 1
 
 
 def test_ollama_extraction_client_repairs_translation_from_source_fragment(
@@ -468,7 +596,7 @@ def test_ollama_extraction_client_recovers_missing_source_fragment_from_raw_text
 
     monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
     client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
-    draft = client.extract("Fairy Tales\n\nCastle — замок\nDragon — дракон")
+    draft = client.extract("Fairy Tales\n\nCastle — замок")
     assert isinstance(draft, LessonExtractionDraft)
     assert draft.vocabulary_items[0].source_fragment == "Castle — замок"
 

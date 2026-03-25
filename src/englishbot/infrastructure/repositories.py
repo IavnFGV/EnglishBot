@@ -183,11 +183,12 @@ class InMemoryAddWordsFlowRepository:
     def save(self, flow: AddWordsFlowState) -> None:
         self._flows[flow.flow_id] = flow
         self._active_by_user[flow.editor_user_id] = flow.flow_id
+        draft = flow.draft_result.draft
         logger.debug(
             "AddWordsFlowRepository.save flow_id=%s user_id=%s items=%s",
             flow.flow_id,
             flow.editor_user_id,
-            len(flow.draft_result.draft.vocabulary_items),
+            len(draft.vocabulary_items) if hasattr(draft, "vocabulary_items") else None,
         )
 
     def get_active_by_user(self, user_id: int) -> AddWordsFlowState | None:

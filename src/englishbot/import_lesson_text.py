@@ -10,6 +10,7 @@ from typing import Annotated
 import typer
 
 from englishbot.__main__ import configure_logging
+from englishbot.config import resolve_ollama_model
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import OllamaLessonExtractionClient, StubLessonExtractionClient
 from englishbot.importing.draft_io import JsonDraftReader, JsonDraftWriter
@@ -24,6 +25,13 @@ app = typer.Typer(
     help="Extract editable lesson drafts from text and finalize reviewed drafts.",
 )
 
+_DEFAULT_EXTRACT_PROMPT_PATH = Path(
+    os.getenv("OLLAMA_EXTRACT_LINE_PROMPT_PATH", "prompts/ollama_extract_line_prompt.txt")
+)
+_DEFAULT_IMAGE_PROMPT_PATH = Path(
+    os.getenv("OLLAMA_IMAGE_PROMPT_PATH", "prompts/ollama_image_prompt_prompt.txt")
+)
+
 
 def _build_pipeline(
     *,
@@ -31,12 +39,21 @@ def _build_pipeline(
     ollama_model: str,
     ollama_base_url: str,
     image_prompt_timeout_sec: int,
+    ollama_temperature: float | None,
+    ollama_top_p: float | None,
+    ollama_num_predict: int | None,
+    ollama_extract_line_prompt_path: Path,
+    ollama_image_prompt_path: Path,
 ) -> LessonImportPipeline:
     extraction_client = StubLessonExtractionClient()
     if extractor == "ollama":
         extraction_client = OllamaLessonExtractionClient(
             model=ollama_model,
             base_url=ollama_base_url,
+            temperature=ollama_temperature,
+            top_p=ollama_top_p,
+            num_predict=ollama_num_predict,
+            extract_line_prompt_path=ollama_extract_line_prompt_path,
         )
     return LessonImportPipeline(
         extraction_client=extraction_client,
@@ -50,6 +67,10 @@ def _build_pipeline(
                 model=ollama_model,
                 base_url=ollama_base_url,
                 timeout=image_prompt_timeout_sec,
+                temperature=ollama_temperature,
+                top_p=ollama_top_p,
+                num_predict=ollama_num_predict,
+                prompt_path=ollama_image_prompt_path,
             )
             if extractor == "ollama"
             else None
@@ -97,7 +118,7 @@ def extract_draft(
     ollama_model: Annotated[
         str,
         typer.Option("--ollama-model", help="Ollama model name for extraction."),
-    ] = os.getenv("OLLAMA_PULL_MODEL", "llama3.2:3b"),
+    ] = resolve_ollama_model(),
     ollama_base_url: Annotated[
         str,
         typer.Option("--ollama-base-url", help="Base URL for the local Ollama server."),
@@ -116,6 +137,34 @@ def extract_draft(
             help="Timeout in seconds for one image-prompt generation request.",
         ),
     ] = int(os.getenv("OLLAMA_IMAGE_PROMPT_TIMEOUT_SEC", "30")),
+    ollama_temperature: Annotated[
+        float | None,
+        typer.Option("--ollama-temperature", help="Optional Ollama temperature."),
+    ] = float(os.getenv("OLLAMA_TEMPERATURE")) if os.getenv("OLLAMA_TEMPERATURE") else None,
+    ollama_top_p: Annotated[
+        float | None,
+        typer.Option("--ollama-top-p", help="Optional Ollama top_p."),
+    ] = float(os.getenv("OLLAMA_TOP_P")) if os.getenv("OLLAMA_TOP_P") else None,
+    ollama_num_predict: Annotated[
+        int | None,
+        typer.Option("--ollama-num-predict", help="Optional Ollama num_predict."),
+    ] = int(os.getenv("OLLAMA_NUM_PREDICT")) if os.getenv("OLLAMA_NUM_PREDICT") else None,
+    ollama_extract_line_prompt_path: Annotated[
+        Path,
+        typer.Option(
+            "--ollama-extract-line-prompt-path",
+            help="Path to the extraction prompt file.",
+            dir_okay=False,
+        ),
+    ] = _DEFAULT_EXTRACT_PROMPT_PATH,
+    ollama_image_prompt_path: Annotated[
+        Path,
+        typer.Option(
+            "--ollama-image-prompt-path",
+            help="Path to the image prompt file.",
+            dir_okay=False,
+        ),
+    ] = _DEFAULT_IMAGE_PROMPT_PATH,
     log_level: Annotated[
         str,
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
@@ -134,6 +183,11 @@ def extract_draft(
         ollama_model=ollama_model,
         ollama_base_url=ollama_base_url,
         image_prompt_timeout_sec=image_prompt_timeout_sec,
+        ollama_temperature=ollama_temperature,
+        ollama_top_p=ollama_top_p,
+        ollama_num_predict=ollama_num_predict,
+        ollama_extract_line_prompt_path=ollama_extract_line_prompt_path,
+        ollama_image_prompt_path=ollama_image_prompt_path,
     )
     result = pipeline.extract_draft(
         raw_text=raw_text,

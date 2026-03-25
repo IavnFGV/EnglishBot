@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from englishbot.bot import add_words_text_handler, build_application, text_answer_handler
 from englishbot.config import Settings
 
@@ -9,7 +11,12 @@ def test_text_answer_handler_is_registered_after_add_words_handler() -> None:
             log_level="INFO",
             editor_user_ids=(),
             ollama_base_url="http://127.0.0.1:11434",
-            ollama_model="llama3.2:3b",
+            ollama_model="qwen2.5:7b",
+            ollama_temperature=None,
+            ollama_top_p=None,
+            ollama_num_predict=None,
+            ollama_extract_line_prompt_path=Path("prompts/ollama_extract_line_prompt.txt"),
+            ollama_image_prompt_path=Path("prompts/ollama_image_prompt_prompt.txt"),
         )
     )
 

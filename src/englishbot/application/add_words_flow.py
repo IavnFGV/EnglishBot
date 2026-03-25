@@ -14,6 +14,11 @@ from englishbot.presentation.add_words_text import parse_edited_draft_text
 _CUSTOM_CONTENT_DIR = Path("content/custom")
 
 
+def _draft_item_count(result: ImportLessonResult) -> int | None:
+    draft = result.draft
+    return len(draft.vocabulary_items) if hasattr(draft, "vocabulary_items") else None
+
+
 class AddWordsFlowHarness:
     def __init__(
         self,
@@ -33,7 +38,7 @@ class AddWordsFlowHarness:
         transforms={"raw_text": lambda value: {"text_length": len(value)}},
         result=lambda value: {
             "flow_id": value.flow_id,
-            "item_count": len(value.draft_result.draft.vocabulary_items),
+            "item_count": _draft_item_count(value.draft_result),
             "error_count": len(value.draft_result.validation.errors),
         },
     )
@@ -54,7 +59,7 @@ class AddWordsFlowHarness:
         transforms={"flow": lambda value: {"flow_id": value.flow_id}},
         result=lambda value: {
             "flow_id": value.flow_id,
-            "item_count": len(value.draft_result.draft.vocabulary_items),
+            "item_count": _draft_item_count(value.draft_result),
             "error_count": len(value.draft_result.validation.errors),
         },
     )
@@ -77,7 +82,7 @@ class AddWordsFlowHarness:
         },
         result=lambda value: {
             "flow_id": value.flow_id,
-            "item_count": len(value.draft_result.draft.vocabulary_items),
+            "item_count": _draft_item_count(value.draft_result),
             "error_count": len(value.draft_result.validation.errors),
         },
     )
@@ -134,6 +139,8 @@ class AddWordsFlowHarness:
             import_result=finalized,
             output_path=resolved_output_path,
         )
+
+
 def build_publish_output_path(
     content_pack: dict[str, object],
     *,

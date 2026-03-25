@@ -8,6 +8,11 @@ from englishbot.domain.repositories import AddWordsFlowRepository
 from englishbot.logging_utils import logged_service_call
 
 
+def _flow_item_count(flow: AddWordsFlowState) -> int | None:
+    draft = flow.draft_result.draft
+    return len(draft.vocabulary_items) if hasattr(draft, "vocabulary_items") else None
+
+
 class StartAddWordsFlowUseCase:
     def __init__(
         self,
@@ -24,7 +29,7 @@ class StartAddWordsFlowUseCase:
         transforms={"raw_text": lambda value: {"text_length": len(value)}},
         result=lambda value: {
             "flow_id": value.flow_id,
-            "item_count": len(value.draft_result.draft.vocabulary_items),
+            "item_count": _flow_item_count(value),
             "error_count": len(value.draft_result.validation.errors),
         },
     )
@@ -66,7 +71,7 @@ class ApplyAddWordsEditUseCase:
         transforms={"edited_text": lambda value: {"text_length": len(value)}},
         result=lambda value: {
             "flow_id": value.flow_id,
-            "item_count": len(value.draft_result.draft.vocabulary_items),
+            "item_count": _flow_item_count(value),
             "error_count": len(value.draft_result.validation.errors),
         },
     )
@@ -104,7 +109,7 @@ class RegenerateAddWordsDraftUseCase:
         include=("user_id", "flow_id"),
         result=lambda value: {
             "flow_id": value.flow_id,
-            "item_count": len(value.draft_result.draft.vocabulary_items),
+            "item_count": _flow_item_count(value),
             "error_count": len(value.draft_result.validation.errors),
         },
     )

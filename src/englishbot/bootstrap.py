@@ -116,11 +116,31 @@ def build_lesson_import_pipeline(
     ollama_model: str,
     ollama_base_url: str,
     image_prompt_timeout_sec: int = 30,
+    ollama_temperature: float | None = None,
+    ollama_top_p: float | None = None,
+    ollama_num_predict: int | None = None,
+    ollama_extract_line_prompt_path: Path | None = None,
+    ollama_image_prompt_path: Path | None = None,
 ) -> LessonImportPipeline:
+    logger.info(
+        "Building lesson import pipeline model=%s base_url=%s temperature=%s top_p=%s "
+        "num_predict=%s extract_prompt=%s image_prompt=%s",
+        ollama_model,
+        ollama_base_url,
+        ollama_temperature,
+        ollama_top_p,
+        ollama_num_predict,
+        ollama_extract_line_prompt_path,
+        ollama_image_prompt_path,
+    )
     return LessonImportPipeline(
         extraction_client=OllamaLessonExtractionClient(
             model=ollama_model,
             base_url=ollama_base_url,
+            temperature=ollama_temperature,
+            top_p=ollama_top_p,
+            num_predict=ollama_num_predict,
+            extract_line_prompt_path=ollama_extract_line_prompt_path,
         ),
         validator=LessonExtractionValidator(),
         canonicalizer=DraftToContentPackCanonicalizer(),
@@ -131,5 +151,9 @@ def build_lesson_import_pipeline(
             model=ollama_model,
             base_url=ollama_base_url,
             timeout=image_prompt_timeout_sec,
+            temperature=ollama_temperature,
+            top_p=ollama_top_p,
+            num_predict=ollama_num_predict,
+            prompt_path=ollama_image_prompt_path,
         ),
     )
