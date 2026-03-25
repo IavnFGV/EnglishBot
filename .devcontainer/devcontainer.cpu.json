@@ -1,20 +1,9 @@
 {
-  "name": "EnglishBot Dev (GPU)",
+  "name": "EnglishBot Dev (CPU)",
   "build": {
     "dockerfile": "Dockerfile",
     "context": ".."
   },
-  "initializeCommand": "bash .devcontainer/check-host-gpu.sh",
-  "features": {
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/nvidia-cuda:1": {}
-  },
-  "runArgs": [
-    "--gpus",
-    "all",
-    "--env-file",
-    "${localWorkspaceFolder}/.devcontainer/ollama.env"
-  ],
   "mounts": [
     "source=englishbot-pip-cache,target=/home/vscode/.cache/pip,type=volume",
     "source=${localEnv:HOME}/.ollama,target=/home/vscode/.ollama,type=bind",
@@ -24,6 +13,14 @@
   "remoteEnv": {
     "PIP_CACHE_DIR": "/home/vscode/.cache/pip",
     "ENGLISHBOT_OLLAMA_MODEL_NOTE": "Change Ollama model in .devcontainer/ollama.env"
+  },
+  "runArgs": [
+    "--env-file",
+    "${localWorkspaceFolder}/.devcontainer/ollama.env"
+  ],
+  "remoteUser": "vscode",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
   },
   "postCreateCommand": "bash .devcontainer/fix-container-perms.sh && pip install -e .[dev,llm] --no-deps",
   "postStartCommand": "bash .devcontainer/fix-container-perms.sh && bash .devcontainer/start-ollama.sh",

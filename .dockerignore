@@ -1,0 +1,13 @@
+.git
+.pytest_cache
+.ruff_cache
+.vscode
+.venv
+venv
+output
+projects
+docs
+__pycache__
+*.pyc
+*.pyo
+*.pyd

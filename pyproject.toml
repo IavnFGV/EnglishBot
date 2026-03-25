@@ -21,6 +21,9 @@ dev = [
   "pytest>=8.0.0,<9.0.0",
   "ruff>=0.6.0,<1.0.0"
 ]
+llm = [
+  "requests>=2.32.0,<3.0.0"
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

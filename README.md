@@ -130,6 +130,47 @@ cp .env.example .env
 python -m englishbot
 ```
 
+## Ollama Devcontainer Pattern
+
+This repository includes a reusable Ollama devcontainer setup.
+
+What it does:
+
+- installs the Ollama binary into the devcontainer image
+- reuses the host model cache by bind-mounting `${HOME}/.ollama` to `/home/vscode/.ollama`
+- reuses pip cache through a named Docker volume mounted to `/home/vscode/.cache/pip`
+- runs `.devcontainer/start-ollama.sh` on container start to:
+  - normalize permissions on mounted directories
+  - start `ollama serve` if it is not already running
+  - wait for readiness on `http://127.0.0.1:11434/api/tags`
+  - pull the configured model only if it is missing
+
+Configuration files:
+
+- `.devcontainer/devcontainer.cpu.json`
+- `.devcontainer/devcontainer.gpu.json`
+- `.devcontainer/ollama.env`
+- `.devcontainer/start-ollama.sh`
+- `.devcontainer/fix-container-perms.sh`
+- `.devcontainer/check-host-gpu.sh`
+- `scripts/switch-devcontainer-profile.sh`
+
+Switch profiles:
+
+```bash
+bash scripts/switch-devcontainer-profile.sh cpu
+bash scripts/switch-devcontainer-profile.sh gpu
+```
+
+The default active profile in `.devcontainer/devcontainer.json` is the CPU profile.
+
+Python-side Ollama integration is intentionally lightweight:
+
+- use HTTP requests to `http://localhost:11434/api/chat`
+- install only the minimal `requests` dependency through the optional `llm` extra
+
+Docker build context is reduced through `.dockerignore`, which excludes `.git`, caches, virtual environments, `docs`, `projects`, `output`, and Python bytecode so `load build context` stays fast.
+
 ## Quick start locally
 
 ```bash
