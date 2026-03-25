@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 _SOURCE_SPLIT_RE = re.compile(r"\s*[—–-]\s*")
 _CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
+_PAIR_SPLIT_RE = re.compile(r"\s*/\s*")
 
 
 class LessonExtractionClient(Protocol):
@@ -137,7 +138,10 @@ class OllamaLessonExtractionClient:
             "Each vocabulary item must contain: english_word, translation, "
             "notes, image_prompt, source_fragment. "
             "Use null for missing optional fields. "
-            "Preserve paired forms like 'Princess / Prince'. "
+            "If one source line contains alternative forms separated by '/' such as "
+            "'Princess / Prince — принцесса / принц' or "
+            "'Child / Children — ребенок / дети', return separate vocabulary items "
+            "for each aligned pair instead of one combined item. "
             "Preserve translations exactly from the source text language; "
             "do not transliterate Russian or Bulgarian words into Latin. "
             "Keep source_fragment close to the original line. "
@@ -183,7 +187,8 @@ class OllamaLessonExtractionClient:
                 ),
             )
             repaired_item = self._repair_item_from_source(draft_item)
-            items.append(self._ensure_source_fragment(repaired_item, source_lines))
+            ensured_item = self._ensure_source_fragment(repaired_item, source_lines)
+            items.extend(self._split_paired_item(ensured_item))
         return LessonExtractionDraft(
             topic_title=self._string_or_empty(parsed.get("topic_title")),
             lesson_title=self._optional_string(parsed.get("lesson_title")),
@@ -335,3 +340,34 @@ class OllamaLessonExtractionClient:
 
     def _normalize_text(self, value: str) -> str:
         return re.sub(r"\s+", " ", value.strip())
+
+    def _split_paired_item(
+        self,
+        item: ExtractedVocabularyItemDraft,
+    ) -> list[ExtractedVocabularyItemDraft]:
+        english_parts = self._split_pair_parts(item.english_word)
+        translation_parts = self._split_pair_parts(item.translation)
+        if len(english_parts) < 2 or len(english_parts) != len(translation_parts):
+            return [item]
+
+        logger.info(
+            "Splitting paired vocabulary item english_word=%s parts=%s",
+            item.english_word,
+            len(english_parts),
+        )
+        return [
+            ExtractedVocabularyItemDraft(
+                english_word=english_part,
+                translation=translation_part,
+                source_fragment=f"{english_part} — {translation_part}",
+                item_id=item.item_id,
+                notes=item.notes,
+                image_prompt=None,
+            )
+            for english_part, translation_part in zip(english_parts, translation_parts, strict=True)
+        ]
+
+    def _split_pair_parts(self, value: str) -> list[str]:
+        if "/" not in value:
+            return [value.strip()] if value.strip() else []
+        return [part.strip() for part in _PAIR_SPLIT_RE.split(value) if part.strip()]

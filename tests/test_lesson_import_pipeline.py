@@ -328,9 +328,13 @@ def test_ollama_extraction_client_builds_draft_from_http_response(
     )
     assert isinstance(draft, LessonExtractionDraft)
     assert draft.topic_title == "Fairy Tales"
-    assert len(draft.vocabulary_items) == 1
-    assert draft.vocabulary_items[0].english_word == "Princess / Prince"
-    assert draft.vocabulary_items[0].translation == "принцесса / принц"
+    assert len(draft.vocabulary_items) == 2
+    assert draft.vocabulary_items[0].english_word == "Princess"
+    assert draft.vocabulary_items[0].translation == "принцесса"
+    assert draft.vocabulary_items[0].source_fragment == "Princess — принцесса"
+    assert draft.vocabulary_items[1].english_word == "Prince"
+    assert draft.vocabulary_items[1].translation == "принц"
+    assert draft.vocabulary_items[1].source_fragment == "Prince — принц"
     assert draft.vocabulary_items[0].image_prompt is None
 
 
@@ -516,6 +520,55 @@ def test_pipeline_can_enrich_image_prompts_per_item(tmp_path: Path) -> None:
     assert data["vocabulary_items"][1]["image_prompt"] == "Prompt for Fairy"
 
 
+def test_extract_draft_writes_intermediate_parsed_output_before_enrichment(
+    tmp_path: Path,
+) -> None:
+    draft = LessonExtractionDraft(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            ExtractedVocabularyItemDraft(
+                english_word="Dragon",
+                translation="дракон",
+                source_fragment="Dragon — дракон",
+            )
+        ],
+    )
+
+    class FakeEnricher:
+        def enrich(
+            self,
+            *,
+            topic_title: str,
+            vocabulary_items: list[dict[str, object]],
+        ) -> list[dict[str, object]]:
+            updated = dict(vocabulary_items[0])
+            updated["image_prompt"] = "Prompt for Dragon"
+            return [updated]
+
+    output_path = tmp_path / "fairy-tales.draft.json"
+    parsed_output_path = tmp_path / "fairy-tales.draft.parsed.json"
+    pipeline = LessonImportPipeline(
+        extraction_client=FakeLessonExtractionClient(draft),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        image_prompt_enricher=FakeEnricher(),  # type: ignore[arg-type]
+    )
+
+    result = pipeline.extract_draft(
+        raw_text="fairy tale words",
+        output_path=output_path,
+        intermediate_output_path=parsed_output_path,
+        enrich_image_prompts=True,
+    )
+
+    assert result.validation.is_valid is True
+    parsed_data = json.loads(parsed_output_path.read_text(encoding="utf-8"))
+    final_data = json.loads(output_path.read_text(encoding="utf-8"))
+    assert parsed_data["vocabulary_items"][0]["image_prompt"] is None
+    assert final_data["vocabulary_items"][0]["image_prompt"] == "Prompt for Dragon"
+
+
 def test_ollama_image_prompt_enricher_builds_prompts_from_http_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -546,6 +599,18 @@ def test_ollama_image_prompt_enricher_builds_prompts_from_http_response(
         def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
             assert url == "http://127.0.0.1:11434/api/chat"
             assert json["model"] == "qwen2.5:7b"
+            system_prompt = json["messages"][0]["content"]
+            assert "children's vocabulary flashcard app" in system_prompt
+            assert "One object only." in system_prompt
+            assert "White background only." in system_prompt
+            assert (
+                "simple cartoon style, centered, white background, colorful, no text"
+                in system_prompt
+            )
+            assert "Input: king." in system_prompt
+            assert "Input: dragon." in system_prompt
+            assert "TASK: Generate the prompt." in system_prompt
+            assert "INPUT WORD:" in system_prompt
             return FakeResponse()
 
     monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
@@ -612,3 +677,98 @@ def test_ollama_image_prompt_enricher_falls_back_to_english_word_matching(
         ],
     )
     assert enriched[0]["image_prompt"] == "A cheerful dwarf with a lantern."
+
+
+def test_ollama_image_prompt_enricher_accepts_plain_text_prompt_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": (
+                        "cute children's flashcard illustration of a green dragon, "
+                        "simple cartoon style, centered, white background, colorful, no text"
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    enricher = OllamaImagePromptEnricher(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+    )
+    enriched = enricher.enrich(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            {
+                "id": "fairy-tales-dragon",
+                "english_word": "Dragon",
+                "translation": "дракон",
+                "image_ref": None,
+            }
+        ],
+    )
+    assert (
+        enriched[0]["image_prompt"]
+        == "cute children's flashcard illustration of a green dragon, "
+        "simple cartoon style, centered, white background, colorful, no text"
+    )
+
+
+def test_ollama_image_prompt_enricher_accepts_single_json_object_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "image_prompt": (
+                                "cute children's flashcard illustration of a green dragon, "
+                                "simple cartoon style, centered, white background, "
+                                "colorful, no text"
+                            )
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    enricher = OllamaImagePromptEnricher(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+    )
+    enriched = enricher.enrich(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            {
+                "id": "fairy-tales-dragon",
+                "english_word": "Dragon",
+                "translation": "дракон",
+                "image_ref": None,
+            }
+        ],
+    )
+    assert (
+        enriched[0]["image_prompt"]
+        == "cute children's flashcard illustration of a green dragon, "
+        "simple cartoon style, centered, white background, colorful, no text"
+    )

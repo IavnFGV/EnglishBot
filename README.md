@@ -176,6 +176,17 @@ python -m englishbot.generate_lesson_images \
   --assets-dir assets
 ```
 
+Use a running local ComfyUI backend instead of the placeholder renderer:
+
+```bash
+python -m englishbot.generate_lesson_images \
+  --input content/custom/fairy-tales.json \
+  --assets-dir assets \
+  --backend comfyui \
+  --comfyui-base-url http://127.0.0.1:8188 \
+  --comfyui-checkpoint v1-5-pruned-emaonly.safetensors
+```
+
 Force regeneration even when the referenced local file already exists:
 
 ```bash
@@ -207,11 +218,55 @@ Learner bot behavior:
 
 What is still stubbed:
 
-- actual generative image backend
 - OCR
 - web image search
 
-The current local image backend is a placeholder PNG renderer for offline development. It is intentionally isolated behind a small image generation client interface so it can later be replaced with a real local image model backend.
+Current backends:
+
+- `placeholder`: local offline PNG renderer for development and tests
+- `comfyui`: local HTTP backend for a running ComfyUI server
+
+The image generation layer is intentionally isolated behind a small client interface so additional backends can be added later without changing learner-bot handlers or content-pack structure.
+
+### Optional ComfyUI Devcontainer Pattern
+
+The devcontainer now includes a managed ComfyUI setup similar in spirit to the Ollama setup:
+
+- `.devcontainer/comfyui.env`
+- `.devcontainer/start-comfyui.sh`
+- ComfyUI code installed into the devcontainer image at `/opt/ComfyUI`
+- host bind mounts for persistent data:
+  - `${HOME}/.comfyui/models -> /opt/ComfyUI/models`
+  - `${HOME}/.comfyui/output -> /opt/ComfyUI/output`
+
+This keeps the setup reproducible while still avoiding repeated model downloads across rebuilds.
+
+CPU/GPU behavior:
+
+- CPU profile builds ComfyUI with CPU PyTorch wheels and starts it with `--cpu`
+- GPU profile builds ComfyUI with CUDA PyTorch wheels
+
+If you want persistent model storage across rebuilds:
+
+1. Ensure host directories exist:
+   - `${HOME}/.comfyui/models`
+   - `${HOME}/.comfyui/output`
+2. Place checkpoints/models into `${HOME}/.comfyui/models`
+3. Rebuild/reopen the devcontainer
+
+If the configured checkpoint file is missing, `.devcontainer/start-comfyui.sh` now behaves similarly to the Ollama startup flow:
+
+- checks whether `COMFYUI_CHECKPOINT_NAME` already exists under `/opt/ComfyUI/models/checkpoints`
+- if the file is missing and `COMFYUI_CHECKPOINT_URL` is configured, downloads it automatically
+- if the file already exists, skips the download
+
+The startup script will:
+
+- start managed ComfyUI from `/opt/ComfyUI`
+- prefer `/opt/ComfyUI/venv/bin/python`
+- use `COMFYUI_EXTRA_ARGS` from env/profile
+- keep model/output data outside the image through bind mounts
+- auto-download the configured checkpoint on first use when missing
 
 ## Quick start in VS Code Dev Container
 

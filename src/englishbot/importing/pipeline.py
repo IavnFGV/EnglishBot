@@ -44,6 +44,7 @@ class LessonImportPipeline:
         transforms={
             "raw_text": lambda value: {"text_length": len(value)},
             "output_path": lambda value: {"output_path": value},
+            "intermediate_output_path": lambda value: {"intermediate_output_path": value},
         },
         include=("enrich_image_prompts",),
         result=lambda result: {
@@ -61,6 +62,7 @@ class LessonImportPipeline:
         *,
         raw_text: str,
         output_path: Path | None = None,
+        intermediate_output_path: Path | None = None,
         enrich_image_prompts: bool = False,
     ) -> ImportLessonResult:
         draft = self._extraction_client.extract(raw_text)
@@ -68,6 +70,11 @@ class LessonImportPipeline:
         if not isinstance(draft, LessonExtractionDraft):
             logger.warning("LessonImportPipeline draft extraction returned malformed result")
             return ImportLessonResult(draft=draft, validation=validation)  # type: ignore[arg-type]
+        parsed_output_path = intermediate_output_path
+        if parsed_output_path is None and enrich_image_prompts and output_path is not None:
+            parsed_output_path = self._default_intermediate_output_path(output_path)
+        if parsed_output_path is not None:
+            self._draft_writer.write(draft=draft, output_path=parsed_output_path)
         if validation.is_valid and enrich_image_prompts:
             if self._image_prompt_enricher is None:
                 raise ValueError("Image prompt enrichment requested but no enricher is configured.")
@@ -206,3 +213,6 @@ class LessonImportPipeline:
             unparsed_lines=list(draft.unparsed_lines),
             confidence_notes=list(draft.confidence_notes),
         )
+
+    def _default_intermediate_output_path(self, output_path: Path) -> Path:
+        return output_path.with_name(f"{output_path.stem}.parsed{output_path.suffix}")

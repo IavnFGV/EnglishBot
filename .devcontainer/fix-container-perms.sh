@@ -16,3 +16,8 @@ ensure_owned_dir() {
 ensure_owned_dir "/home/vscode/.ollama"
 ensure_owned_dir "/home/vscode/.cache/pip"
 ensure_owned_dir "/home/vscode/.codex"
+ensure_owned_dir "/opt/ComfyUI"
+ensure_owned_dir "/opt/ComfyUI/user"
+ensure_owned_dir "/opt/ComfyUI/input"
+ensure_owned_dir "/opt/ComfyUI/temp"
+ensure_owned_dir "/opt/ComfyUI/output"

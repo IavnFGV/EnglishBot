@@ -2,14 +2,20 @@
   "name": "EnglishBot Dev (GPU)",
   "build": {
     "dockerfile": "Dockerfile",
-    "context": ".."
+    "context": "..",
+    "args": {
+      "COMFYUI_INSTALL": "1",
+      "COMFYUI_TORCH_INDEX_URL": "https://download.pytorch.org/whl/cu124"
+    }
   },
-  "initializeCommand": "bash .devcontainer/check-host-gpu.sh",
+  "initializeCommand": "bash .devcontainer/check-host-gpu.sh && bash .devcontainer/prepare-host-dirs.sh",
   "features": {
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/nvidia-cuda:1": {}
   },
   "runArgs": [
+    "--env-file",
+    "${localWorkspaceFolder}/.devcontainer/comfyui.env",
     "--gpus",
     "all",
     "--env-file",
@@ -18,15 +24,18 @@
   "mounts": [
     "source=englishbot-pip-cache,target=/home/vscode/.cache/pip,type=volume",
     "source=${localEnv:HOME}/.ollama,target=/home/vscode/.ollama,type=bind",
+    "source=${localEnv:HOME}/.comfyui/models,target=/opt/ComfyUI/models,type=bind",
+    "source=${localEnv:HOME}/.comfyui/output,target=/opt/ComfyUI/output,type=bind",
     "source=${localEnv:HOME}/.codex,target=/home/vscode/.codex,type=bind"
   ],
   "workspaceFolder": "/workspaces/EnglishBot",
   "remoteEnv": {
     "PIP_CACHE_DIR": "/home/vscode/.cache/pip",
-    "ENGLISHBOT_OLLAMA_MODEL_NOTE": "Change Ollama model in .devcontainer/ollama.env"
+    "ENGLISHBOT_OLLAMA_MODEL_NOTE": "Change Ollama model in .devcontainer/ollama.env",
+    "ENGLISHBOT_COMFYUI_NOTE": "Optional ComfyUI backend config lives in .devcontainer/comfyui.env"
   },
   "postCreateCommand": "bash .devcontainer/fix-container-perms.sh && pip install -e .[dev,llm] --no-deps",
-  "postStartCommand": "bash .devcontainer/fix-container-perms.sh && bash .devcontainer/start-ollama.sh",
+  "postStartCommand": "bash .devcontainer/fix-container-perms.sh && bash .devcontainer/start-ollama.sh && bash .devcontainer/start-comfyui.sh",
   "customizations": {
     "vscode": {
       "settings": {

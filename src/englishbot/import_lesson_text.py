@@ -80,6 +80,14 @@ def extract_draft(
         Path,
         typer.Option("--output", help="Path to the editable draft JSON file.", dir_okay=False),
     ],
+    parsed_output_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--parsed-output",
+            help="Optional path for the parsed draft saved before image-prompt generation.",
+            dir_okay=False,
+        ),
+    ] = None,
     extractor: Annotated[
         str,
         typer.Option("--extractor", help="Extraction backend to use."),
@@ -120,6 +128,7 @@ def extract_draft(
     result = pipeline.extract_draft(
         raw_text=raw_text,
         output_path=output_path,
+        intermediate_output_path=parsed_output_path,
         enrich_image_prompts=include_image_prompts,
     )
     if not result.validation.is_valid:

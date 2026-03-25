@@ -122,8 +122,39 @@ class OllamaImagePromptEnricher:
         response.raise_for_status()
         content = response.json()["message"]["content"]
         logger.debug("OllamaImagePromptEnricher raw content=%s", content)
-        parsed = self._parse_content(content)
+        items = self._parse_items(content=content, source_item=item)
+        logger.info("OllamaImagePromptEnricher parsed prompts=%s", len(items))
+        return items
+
+    def _parse_items(
+        self,
+        *,
+        content: str,
+        source_item: dict[str, object],
+    ) -> list[ImagePromptItem]:
+        try:
+            parsed = self._parse_content(content)
+        except ValueError:
+            direct_prompt = self._normalize_direct_prompt(content)
+            if direct_prompt is None:
+                return []
+            return [
+                ImagePromptItem(
+                    item_id=str(source_item.get("id", "")).strip(),
+                    english_word=str(source_item.get("english_word", "")).strip(),
+                    translation=str(source_item.get("translation", "")).strip(),
+                    image_prompt=direct_prompt,
+                )
+            ]
+
         raw_items = self._extract_items(parsed)
+        if raw_items == []:
+            direct_json_prompt = self._extract_direct_prompt_from_object(
+                parsed=parsed,
+                source_item=source_item,
+            )
+            if direct_json_prompt is not None:
+                return [direct_json_prompt]
         if not isinstance(raw_items, list):
             raise ValueError("image prompt payload must be an array.")
         items: list[ImagePromptItem] = []
@@ -147,19 +178,39 @@ class OllamaImagePromptEnricher:
                         image_prompt=image_prompt,
                     )
                 )
-        logger.info("OllamaImagePromptEnricher parsed prompts=%s", len(items))
         return items
 
     def _system_prompt(self) -> str:
         return (
-            "You generate short, concrete image prompts for children's English flashcards. "
+            "You generate image prompts for a children's vocabulary flashcard app. "
             "Return only valid JSON with one key: image_prompts. "
             "Each item must contain: id, english_word, translation, image_prompt. "
             "You will receive exactly one vocabulary_item. Return exactly one prompt item. "
-            "Keep prompts visually clear, age-appropriate, and specific to the vocabulary item. "
-            "Do not add background stories, violence, horror, or extra characters "
-            "unless necessary. "
-            "Each image_prompt should be one short sentence."
+            "Use the following instruction exactly when generating image_prompt. "
+            "STRICT RULES: "
+            "- Output ONLY one line. "
+            "- No explanations. "
+            "- One object only. "
+            "- No scenes. "
+            "- No background descriptions. "
+            "- White background only. "
+            "- Keep it simple and clear. "
+            "- Use at most 1-2 short descriptive attributes. "
+            "If the vocabulary item names alternatives such as 'Princess / Prince', "
+            "choose the exact single object named by the current vocabulary item "
+            "and do not combine multiple objects. "
+            "FORMAT: "
+            "\"cute children's flashcard illustration of <OBJECT WITH OPTIONAL 1-2 ATTRIBUTES>, "
+            "simple cartoon style, centered, white background, colorful, no text\". "
+            "EXAMPLES: "
+            "Input: king. "
+            "Output: cute children's flashcard illustration of a king with a golden crown, "
+            "simple cartoon style, centered, white background, colorful, no text. "
+            "Input: dragon. "
+            "Output: cute children's flashcard illustration of a green dragon, "
+            "simple cartoon style, centered, white background, colorful, no text. "
+            "TASK: Generate the prompt. "
+            "INPUT WORD: use the english_word from the provided vocabulary_item."
         )
 
     def _parse_content(self, content: str) -> dict[str, object]:
@@ -193,3 +244,42 @@ class OllamaImagePromptEnricher:
 
     def _normalize_word(self, value: str) -> str:
         return _WHITESPACE_RE.sub(" ", value.strip()).lower()
+
+    def _normalize_direct_prompt(self, content: str) -> str | None:
+        stripped = content.strip()
+        if stripped.startswith("```"):
+            stripped = stripped.strip("`").strip()
+            if stripped.startswith("json"):
+                stripped = stripped[4:].strip()
+        normalized = self._first_non_empty(stripped)
+        if normalized is None:
+            return None
+        if normalized.startswith("{") and normalized.endswith("}"):
+            return None
+        return normalized
+
+    def _extract_direct_prompt_from_object(
+        self,
+        *,
+        parsed: dict[str, object],
+        source_item: dict[str, object],
+    ) -> ImagePromptItem | None:
+        image_prompt = self._first_non_empty(
+            parsed.get("image_prompt"),
+            parsed.get("prompt"),
+            parsed.get("description"),
+        )
+        if image_prompt is None:
+            return None
+        return ImagePromptItem(
+            item_id=self._first_non_empty(parsed.get("id"), source_item.get("id")) or "",
+            english_word=(
+                self._first_non_empty(parsed.get("english_word"), source_item.get("english_word"))
+                or ""
+            ),
+            translation=(
+                self._first_non_empty(parsed.get("translation"), source_item.get("translation"))
+                or ""
+            ),
+            image_prompt=image_prompt,
+        )

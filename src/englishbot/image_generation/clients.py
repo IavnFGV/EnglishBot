@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
+import time
+import uuid
 from pathlib import Path
 from typing import Protocol
 
@@ -86,6 +90,188 @@ class LocalPlaceholderImageGenerationClient:
         image.save(output_path, format="PNG")
 
 
+class ComfyUIImageGenerationClient:
+    def __init__(
+        self,
+        *,
+        base_url: str | None = None,
+        timeout: int = 120,
+        poll_interval_seconds: float = 1.0,
+        checkpoint_name: str | None = None,
+        seed: int | None = None,
+    ) -> None:
+        self._base_url = (base_url or os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8188")).rstrip(
+            "/"
+        )
+        self._timeout = timeout
+        self._poll_interval_seconds = poll_interval_seconds
+        self._checkpoint_name = checkpoint_name or os.getenv(
+            "COMFYUI_CHECKPOINT_NAME",
+            "v1-5-pruned-emaonly.safetensors",
+        )
+        self._seed = seed if seed is not None else int(os.getenv("COMFYUI_SEED", "5"))
+
+    @logged_service_call(
+        "ComfyUIImageGenerationClient.generate",
+        transforms={
+            "english_word": lambda value: {"english_word": value},
+            "output_path": lambda value: {"output_path": value},
+        },
+    )
+    def generate(
+        self,
+        *,
+        prompt: str,
+        english_word: str,
+        output_path: Path,
+    ) -> None:
+        try:
+            import requests
+        except ImportError as error:
+            raise RuntimeError("requests is required for ComfyUI image generation.") from error
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        client_id = str(uuid.uuid4())
+        prompt_id = str(uuid.uuid4())
+        workflow = self._build_workflow(
+            prompt=prompt,
+            english_word=english_word,
+        )
+        queue_response = requests.post(
+            f"{self._base_url}/prompt",
+            json={"prompt": workflow, "client_id": client_id, "prompt_id": prompt_id},
+            timeout=self._timeout,
+        )
+        queue_response.raise_for_status()
+        prompt_id = str(queue_response.json().get("prompt_id", prompt_id))
+        image_data = self._wait_for_image_bytes(
+            requests_module=requests,
+            prompt_id=prompt_id,
+        )
+        output_path.write_bytes(image_data)
+
+    def _wait_for_image_bytes(self, *, requests_module, prompt_id: str) -> bytes:
+        deadline = time.time() + self._timeout
+        while time.time() < deadline:
+            response = requests_module.get(
+                f"{self._base_url}/history/{prompt_id}",
+                timeout=self._timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            history = payload.get(prompt_id)
+            if not isinstance(history, dict):
+                time.sleep(self._poll_interval_seconds)
+                continue
+            outputs = history.get("outputs", {})
+            if not isinstance(outputs, dict):
+                time.sleep(self._poll_interval_seconds)
+                continue
+            image_descriptor = self._extract_first_image_descriptor(outputs)
+            if image_descriptor is None:
+                time.sleep(self._poll_interval_seconds)
+                continue
+            image_response = requests_module.get(
+                f"{self._base_url}/view",
+                params=image_descriptor,
+                timeout=self._timeout,
+            )
+            image_response.raise_for_status()
+            return image_response.content
+        raise TimeoutError(f"Timed out waiting for ComfyUI prompt_id={prompt_id}")
+
+    def _extract_first_image_descriptor(self, outputs: dict[str, object]) -> dict[str, str] | None:
+        for node_output in outputs.values():
+            if not isinstance(node_output, dict):
+                continue
+            images = node_output.get("images")
+            if not isinstance(images, list) or not images:
+                continue
+            image = images[0]
+            if not isinstance(image, dict):
+                continue
+            filename = image.get("filename")
+            subfolder = image.get("subfolder", "")
+            folder_type = image.get("type", "output")
+            if not isinstance(filename, str) or not filename.strip():
+                continue
+            return {
+                "filename": filename,
+                "subfolder": str(subfolder),
+                "type": str(folder_type),
+            }
+        return None
+
+    def _build_workflow(self, *, prompt: str, english_word: str) -> dict[str, object]:
+        negative_prompt = (
+            "blurry, distorted, text, watermark, horror, gore, scary, low quality, dark"
+        )
+        filename_prefix = f"EnglishBot_{_safe_prefix(english_word)}"
+        return json.loads(
+            json.dumps(
+                {
+                    "3": {
+                        "class_type": "KSampler",
+                        "inputs": {
+                            "cfg": 7,
+                            "denoise": 1,
+                            "latent_image": ["5", 0],
+                            "model": ["4", 0],
+                            "negative": ["7", 0],
+                            "positive": ["6", 0],
+                            "sampler_name": "euler",
+                            "scheduler": "normal",
+                            "seed": self._seed,
+                            "steps": 20,
+                        },
+                    },
+                    "4": {
+                        "class_type": "CheckpointLoaderSimple",
+                        "inputs": {
+                            "ckpt_name": self._checkpoint_name,
+                        },
+                    },
+                    "5": {
+                        "class_type": "EmptyLatentImage",
+                        "inputs": {
+                            "batch_size": 1,
+                            "height": 512,
+                            "width": 512,
+                        },
+                    },
+                    "6": {
+                        "class_type": "CLIPTextEncode",
+                        "inputs": {
+                            "clip": ["4", 1],
+                            "text": prompt,
+                        },
+                    },
+                    "7": {
+                        "class_type": "CLIPTextEncode",
+                        "inputs": {
+                            "clip": ["4", 1],
+                            "text": negative_prompt,
+                        },
+                    },
+                    "8": {
+                        "class_type": "VAEDecode",
+                        "inputs": {
+                            "samples": ["3", 0],
+                            "vae": ["4", 2],
+                        },
+                    },
+                    "9": {
+                        "class_type": "SaveImage",
+                        "inputs": {
+                            "filename_prefix": filename_prefix,
+                            "images": ["8", 0],
+                        },
+                    },
+                }
+            )
+        )
+
+
 def _wrap_text(text: str, *, max_line_length: int) -> list[str]:
     words = text.strip().split()
     if not words:
@@ -102,3 +288,7 @@ def _wrap_text(text: str, *, max_line_length: int) -> list[str]:
     if current:
         lines.append(" ".join(current))
     return lines
+
+
+def _safe_prefix(value: str) -> str:
+    return "".join(ch if ch.isalnum() else "_" for ch in value.strip())[:48] or "image"

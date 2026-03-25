@@ -10,7 +10,7 @@ from englishbot.image_generation.paths import (
     build_item_image_ref,
     resolve_existing_image_path,
 )
-from englishbot.image_generation.prompts import fallback_image_prompt
+from englishbot.image_generation.prompts import compose_image_prompt, fallback_image_prompt
 from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
@@ -99,8 +99,11 @@ class ContentPackImageEnricher:
                 updated_items.append(item)
                 continue
 
-            prompt = str(item.get("image_prompt", "")).strip() or fallback_image_prompt(
-                english_word
+            raw_prompt = str(item.get("image_prompt", "")).strip()
+            prompt = (
+                compose_image_prompt(raw_prompt)
+                if raw_prompt
+                else fallback_image_prompt(english_word)
             )
             asset_path = build_item_asset_path(
                 assets_dir=assets_dir,
