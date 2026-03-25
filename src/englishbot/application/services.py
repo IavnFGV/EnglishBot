@@ -1,3 +1,15 @@
+from englishbot.application.add_words_flow import (
+    AddWordsFlowHarness,
+    build_publish_output_path,
+)
+from englishbot.application.add_words_use_cases import (
+    ApplyAddWordsEditUseCase,
+    ApproveAddWordsDraftUseCase,
+    CancelAddWordsFlowUseCase,
+    GetActiveAddWordsFlowUseCase,
+    RegenerateAddWordsDraftUseCase,
+    StartAddWordsFlowUseCase,
+)
 from englishbot.application.answer_checker import AnswerChecker
 from englishbot.application.errors import (
     ApplicationError,
@@ -28,12 +40,18 @@ from englishbot.application.training_use_cases import (
 from englishbot.application.word_selection import UnseenFirstWordSelector, WordSelector
 
 __all__ = [
+    "AddWordsFlowHarness",
+    "ApplyAddWordsEditUseCase",
     "AnswerChecker",
     "ActiveSessionInfo",
     "AnswerOutcome",
+    "ApproveAddWordsDraftUseCase",
     "ApplicationError",
+    "build_publish_output_path",
+    "CancelAddWordsFlowUseCase",
     "DiscardActiveSessionUseCase",
     "EmptyTopicError",
+    "GetActiveAddWordsFlowUseCase",
     "GetActiveSessionUseCase",
     "GetCurrentQuestionUseCase",
     "InvalidSessionStateError",
@@ -43,7 +61,9 @@ __all__ = [
     "ListTopicsUseCase",
     "NotEnoughOptionsError",
     "QuestionFactory",
+    "RegenerateAddWordsDraftUseCase",
     "SessionSummaryCalculator",
+    "StartAddWordsFlowUseCase",
     "StartTrainingSessionUseCase",
     "SubmitAnswerUseCase",
     "TopicNotFoundError",

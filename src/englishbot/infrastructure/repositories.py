@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from englishbot.domain.add_words_models import AddWordsFlowState
 from englishbot.domain.models import Lesson, Topic, TrainingSession, UserProgress, VocabularyItem
 
 logger = logging.getLogger(__name__)
@@ -172,3 +173,33 @@ class InMemorySessionRepository:
             user_id,
             session_id is not None,
         )
+
+
+class InMemoryAddWordsFlowRepository:
+    def __init__(self) -> None:
+        self._flows: dict[str, AddWordsFlowState] = {}
+        self._active_by_user: dict[int, str] = {}
+
+    def save(self, flow: AddWordsFlowState) -> None:
+        self._flows[flow.flow_id] = flow
+        self._active_by_user[flow.editor_user_id] = flow.flow_id
+        logger.debug(
+            "AddWordsFlowRepository.save flow_id=%s user_id=%s items=%s",
+            flow.flow_id,
+            flow.editor_user_id,
+            len(flow.draft_result.draft.vocabulary_items),
+        )
+
+    def get_active_by_user(self, user_id: int) -> AddWordsFlowState | None:
+        flow_id = self._active_by_user.get(user_id)
+        if flow_id is None:
+            return None
+        return self._flows.get(flow_id)
+
+    def get_by_id(self, flow_id: str) -> AddWordsFlowState | None:
+        return self._flows.get(flow_id)
+
+    def discard_active_by_user(self, user_id: int) -> None:
+        flow_id = self._active_by_user.pop(user_id, None)
+        if flow_id is not None:
+            self._flows.pop(flow_id, None)

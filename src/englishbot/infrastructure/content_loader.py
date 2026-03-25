@@ -31,13 +31,23 @@ class LoadedContent:
 class JsonContentPackLoader:
     def load_directory(self, directory: Path) -> LoadedContent:
         logger.info("Loading content packs from directory %s", directory)
-        packs = [self.load_file(path) for path in sorted(directory.glob("*.json"))]
+        packs = [self.load_file(path) for path in self._iter_content_pack_files(directory)]
         logger.info("Loaded %s content pack files from %s", len(packs), directory)
         return LoadedContent(
             topics=[pack.topic for pack in packs],
             lessons=[lesson for pack in packs for lesson in pack.lessons],
             vocabulary_items=[item for pack in packs for item in pack.vocabulary_items],
         )
+
+    def _iter_content_pack_files(self, directory: Path) -> list[Path]:
+        paths = sorted(directory.glob("*.json"))
+        filtered_paths: list[Path] = []
+        for path in paths:
+            if path.name.endswith(".draft.json") or path.name.endswith(".parsed.json"):
+                logger.info("Skipping non-runtime content file %s", path.name)
+                continue
+            filtered_paths.append(path)
+        return filtered_paths
 
     def load_file(self, path: Path) -> ContentPack:
         logger.debug("Loading content pack file %s", path)

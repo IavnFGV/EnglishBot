@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from englishbot.domain.add_words_models import AddWordsFlowState
 from englishbot.domain.models import Lesson, Topic, TrainingSession, UserProgress, VocabularyItem
 
 
@@ -51,6 +52,20 @@ class SessionRepository(Protocol):
         ...
 
     def get_by_id(self, session_id: str) -> TrainingSession | None:
+        ...
+
+    def discard_active_by_user(self, user_id: int) -> None:
+        ...
+
+
+class AddWordsFlowRepository(Protocol):
+    def save(self, flow: AddWordsFlowState) -> None:
+        ...
+
+    def get_active_by_user(self, user_id: int) -> AddWordsFlowState | None:
+        ...
+
+    def get_by_id(self, flow_id: str) -> AddWordsFlowState | None:
         ...
 
     def discard_active_by_user(self, user_id: int) -> None:

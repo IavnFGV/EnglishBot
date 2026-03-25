@@ -1,5 +1,17 @@
 """Application layer for EnglishBot."""
 
+from englishbot.application.add_words_flow import (
+    AddWordsFlowHarness,
+    build_publish_output_path,
+)
+from englishbot.application.add_words_use_cases import (
+    ApplyAddWordsEditUseCase,
+    ApproveAddWordsDraftUseCase,
+    CancelAddWordsFlowUseCase,
+    GetActiveAddWordsFlowUseCase,
+    RegenerateAddWordsDraftUseCase,
+    StartAddWordsFlowUseCase,
+)
 from englishbot.application.services import (
     ActiveSessionInfo,
     AnswerChecker,
@@ -27,12 +39,18 @@ from englishbot.application.services import (
 )
 
 __all__ = [
+    "AddWordsFlowHarness",
+    "ApplyAddWordsEditUseCase",
     "AnswerChecker",
     "ActiveSessionInfo",
     "AnswerOutcome",
+    "ApproveAddWordsDraftUseCase",
     "ApplicationError",
+    "build_publish_output_path",
+    "CancelAddWordsFlowUseCase",
     "DiscardActiveSessionUseCase",
     "EmptyTopicError",
+    "GetActiveAddWordsFlowUseCase",
     "GetActiveSessionUseCase",
     "GetCurrentQuestionUseCase",
     "InvalidSessionStateError",
@@ -42,7 +60,9 @@ __all__ = [
     "ListTopicsUseCase",
     "NotEnoughOptionsError",
     "QuestionFactory",
+    "RegenerateAddWordsDraftUseCase",
     "SessionSummaryCalculator",
+    "StartAddWordsFlowUseCase",
     "StartTrainingSessionUseCase",
     "SubmitAnswerUseCase",
     "TopicNotFoundError",

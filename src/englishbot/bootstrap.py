@@ -19,6 +19,13 @@ from englishbot.application.services import (
     UnseenFirstWordSelector,
     ValidateTopicLessonUseCase,
 )
+from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
+from englishbot.importing.clients import OllamaLessonExtractionClient
+from englishbot.importing.draft_io import JsonDraftReader, JsonDraftWriter
+from englishbot.importing.enrichment import OllamaImagePromptEnricher
+from englishbot.importing.pipeline import LessonImportPipeline
+from englishbot.importing.validator import LessonExtractionValidator
+from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.content_loader import JsonContentPackLoader
 from englishbot.infrastructure.repositories import (
     InMemoryLessonRepository,
@@ -31,21 +38,41 @@ from englishbot.infrastructure.repositories import (
 logger = logging.getLogger(__name__)
 
 
-def build_training_service(seed: int = 42) -> TrainingFacade:
+def _load_content_directories(content_directories: list[Path]) -> tuple[list, list, list]:
+    loader = JsonContentPackLoader()
+    all_topics = []
+    all_lessons = []
+    all_vocabulary_items = []
+    for directory in content_directories:
+        if not directory.exists():
+            logger.info("Skipping missing content directory %s", directory)
+            continue
+        loaded_content = loader.load_directory(directory)
+        logger.info(
+            "Loaded content packs from %s: topics=%s lessons=%s vocabulary_items=%s",
+            directory,
+            len(loaded_content.topics),
+            len(loaded_content.lessons),
+            len(loaded_content.vocabulary_items),
+        )
+        all_topics.extend(loaded_content.topics)
+        all_lessons.extend(loaded_content.lessons)
+        all_vocabulary_items.extend(loaded_content.vocabulary_items)
+    return all_topics, all_lessons, all_vocabulary_items
+
+
+def build_training_service(
+    seed: int = 42,
+    *,
+    content_directories: list[Path] | None = None,
+) -> TrainingFacade:
     logger.info("Building training service with seed=%s", seed)
     rng = random.Random(seed)
-    content_dir = Path("content/demo")
-    loaded_content = JsonContentPackLoader().load_directory(content_dir)
-    logger.info(
-        "Loaded content packs from %s: topics=%s lessons=%s vocabulary_items=%s",
-        content_dir,
-        len(loaded_content.topics),
-        len(loaded_content.lessons),
-        len(loaded_content.vocabulary_items),
-    )
-    topic_repository = InMemoryTopicRepository(loaded_content.topics)
-    lesson_repository = InMemoryLessonRepository(loaded_content.lessons)
-    vocabulary_repository = InMemoryVocabularyRepository(loaded_content.vocabulary_items)
+    resolved_directories = content_directories or [Path("content/demo"), Path("content/custom")]
+    topics, lessons, vocabulary_items = _load_content_directories(resolved_directories)
+    topic_repository = InMemoryTopicRepository(topics)
+    lesson_repository = InMemoryLessonRepository(lessons)
+    vocabulary_repository = InMemoryVocabularyRepository(vocabulary_items)
     progress_repository = InMemoryUserProgressRepository()
     session_repository = InMemorySessionRepository()
     question_factory = QuestionFactory(rng)
@@ -81,4 +108,28 @@ def build_training_service(seed: int = 42) -> TrainingFacade:
         get_current_question=get_current_question,
         discard_active_session=DiscardActiveSessionUseCase(session_repository),
         submit_answer=submit_answer,
+    )
+
+
+def build_lesson_import_pipeline(
+    *,
+    ollama_model: str,
+    ollama_base_url: str,
+    image_prompt_timeout_sec: int = 30,
+) -> LessonImportPipeline:
+    return LessonImportPipeline(
+        extraction_client=OllamaLessonExtractionClient(
+            model=ollama_model,
+            base_url=ollama_base_url,
+        ),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        draft_writer=JsonDraftWriter(),
+        draft_reader=JsonDraftReader(),
+        image_prompt_enricher=OllamaImagePromptEnricher(
+            model=ollama_model,
+            base_url=ollama_base_url,
+            timeout=image_prompt_timeout_sec,
+        ),
     )

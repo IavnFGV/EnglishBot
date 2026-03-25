@@ -148,3 +148,27 @@ Do NOT:
 - hardcode vocabulary inside handlers
 - tightly couple session logic to Telegram callback payloads
 - skip tests for domain/application services
+
+## Telegram UX Conventions
+
+For Telegram flows that trigger background or long-running work:
+
+- always inform the user that work has started
+- do not leave the user waiting silently while LLM, import, image generation, or file-processing steps are running
+- send a short status message before the expensive step starts
+- when possible, update progress with concrete counters such as `processed 3/20`, `generated 2/5`, `validated 18/18`
+- prefer editing one status/summary message over sending many noisy progress messages
+- if a flow is step-based, show the current stage explicitly, for example:
+  - `Parsing draft`
+  - `Generating prompts`
+  - `Reviewing images 4/12`
+  - `Publishing content pack`
+- on failure, replace the in-progress status with a clear error state instead of leaving the last visible message as "working"
+- on success, replace the in-progress status with a short completion summary
+
+For editor/import flows specifically:
+
+- acknowledge the uploaded text immediately
+- show draft extraction status while parsing is running
+- show item counts in previews and summaries
+- for image review or generation, keep one persistent summary message and update its counters as the flow advances

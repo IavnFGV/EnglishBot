@@ -338,6 +338,54 @@ def test_ollama_extraction_client_builds_draft_from_http_response(
     assert draft.vocabulary_items[0].image_prompt is None
 
 
+def test_ollama_extraction_client_repairs_half_paired_item_from_source_fragment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "topic_title": "Fairy Tales",
+                            "lesson_title": None,
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "King",
+                                    "translation": "король / королева",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "King / Queen — король / королева",
+                                }
+                            ],
+                            "warnings": [],
+                            "unparsed_lines": [],
+                            "confidence_notes": [],
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            assert url == "http://127.0.0.1:11434/api/chat"
+            assert json["model"] == "llama3.2:3b"
+            assert timeout == 120
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="llama3.2:3b", base_url="http://127.0.0.1:11434")
+    draft = client.extract("Fairy Tales\n\nKing / Queen — король / королева")
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert [item.english_word for item in draft.vocabulary_items] == ["King", "Queen"]
+    assert [item.translation for item in draft.vocabulary_items] == ["король", "королева"]
+
+
 def test_ollama_extraction_client_repairs_translation_from_source_fragment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

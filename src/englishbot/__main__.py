@@ -19,7 +19,7 @@ def main() -> None:
     settings = Settings.from_env()
     configure_logging(settings.log_level)
     logger = logging.getLogger(__name__)
-    app = build_application(settings.telegram_token)
+    app = build_application(settings)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:

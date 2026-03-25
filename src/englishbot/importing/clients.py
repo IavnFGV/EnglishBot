@@ -223,6 +223,26 @@ class OllamaLessonExtractionClient:
         parsed_english, parsed_translation = parsed
         english_word = item.english_word
         translation = item.translation
+        source_english_parts = self._split_pair_parts(parsed_english)
+        source_translation_parts = self._split_pair_parts(parsed_translation)
+        item_english_parts = self._split_pair_parts(english_word)
+        item_translation_parts = self._split_pair_parts(translation)
+
+        if (
+            len(source_english_parts) >= 2
+            and len(source_english_parts) == len(source_translation_parts)
+            and (
+                len(item_english_parts) != len(source_english_parts)
+                or len(item_translation_parts) != len(source_translation_parts)
+            )
+        ):
+            logger.info(
+                "Repairing paired item from source_fragment english_word=%s source_fragment=%s",
+                english_word or parsed_english,
+                item.source_fragment,
+            )
+            english_word = parsed_english
+            translation = parsed_translation
 
         if self._looks_like_bad_translation(translation, parsed_translation):
             logger.info(
