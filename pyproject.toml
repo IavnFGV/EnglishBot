@@ -12,6 +12,7 @@ authors = [
   { name = "EnglishBot Team" }
 ]
 dependencies = [
+  "Pillow>=10.4.0,<12.0.0",
   "python-telegram-bot>=21.0,<22.0",
   "python-dotenv>=1.0.1,<2.0.0",
   "typer>=0.16.0,<1.0.0"

@@ -20,6 +20,7 @@ from englishbot.application.services import (
 )
 from englishbot.bootstrap import build_training_service
 from englishbot.domain.models import Topic, TrainingMode, TrainingQuestion
+from englishbot.image_generation.paths import resolve_existing_image_path
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,21 @@ async def _send_question(
         question.mode.value,
         bool(question.options),
     )
+    image_path = resolve_existing_image_path(question.image_ref)
+    if image_path is not None:
+        logger.info(
+            "Sending local image for session_id=%s item_id=%s image_path=%s",
+            question.session_id,
+            question.item_id,
+            image_path,
+        )
+        with image_path.open("rb") as photo_file:
+            await message.reply_photo(
+                photo=photo_file,
+                caption=question.prompt,
+                reply_markup=reply_markup,
+            )
+        return
     await message.reply_text(question.prompt, reply_markup=reply_markup)
 
 

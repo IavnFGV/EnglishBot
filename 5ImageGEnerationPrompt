@@ -1,0 +1,80 @@
+Extend the current EnglishBot project with a separate image-generation stage for vocabulary items.
+
+Current state:
+- learner bot already uses content packs
+- teacher text import pipeline is being added
+- content packs can contain `image_ref`
+- next we need a simple local-first pipeline that generates simple child-friendly images for vocabulary items and stores them as local assets
+
+Goal:
+Allow a content pack to be enriched with locally generated images using `image_prompt`, then let the learner bot send those images in Telegram when available.
+
+Important constraints:
+- Keep image generation as a separate step from teacher text import
+- Do not generate images inside Telegram handlers
+- Do not add OCR yet
+- Do not add web image search
+- Keep the implementation local-first
+- Keep the design simple and practical
+- The project should support a future local image backend, but tests must stay offline
+
+Please implement the following.
+
+1. Vocabulary item image metadata
+- Ensure canonical vocabulary items support:
+  - `image_ref` (nullable)
+  - `image_prompt` (nullable)
+- Keep backward compatibility with existing content packs
+
+2. Fallback image prompt
+- If a vocabulary item has no explicit `image_prompt`, generate a fallback prompt from the English word using a consistent child-friendly template
+- Keep prompt generation centralized in one helper/service
+
+3. Image generation client abstraction
+- Add a small image generation client interface
+- Add a fake client for tests
+- Add a local/stub client placeholder for future real local image generation integration
+- Keep backend-specific logic isolated
+
+4. Image enrichment pipeline
+- Add a separate enrichment flow that:
+  - loads a content pack
+  - iterates vocabulary items
+  - skips items that already have an existing valid `image_ref`
+  - generates images for items without images
+  - saves files under a structured assets directory
+  - updates the content pack with generated `image_ref` values
+- Keep file naming stable and deterministic, preferably based on item id
+
+5. Local CLI
+- Add a CLI command such as:
+  - `python -m englishbot.generate_lesson_images --input content/custom/fairy-tales.json --assets-dir assets`
+- Support a `--force` option to regenerate images even if `image_ref` already exists
+
+6. Telegram image sending
+- Update learner bot question rendering:
+  - if `image_ref` exists and the local file exists, send photo + caption
+  - otherwise fall back to text-only question
+- Keep handlers thin
+
+7. Tests
+- Add offline tests for:
+  - fallback image prompt generation
+  - deterministic asset path generation
+  - content pack update after image enrichment
+  - skip behavior when image already exists
+  - bot rendering fallback when image file is missing
+
+8. Documentation
+- Update README with:
+  - how image generation enrichment works
+  - where images are stored
+  - how `image_ref` and `image_prompt` behave
+  - how learner bot uses local images when available
+
+Final output:
+- summary of changes
+- files changed
+- example command usage
+- expected assets directory layout
+- what remains stubbed for later real local image generation integration

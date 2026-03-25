@@ -157,6 +157,62 @@ Manual review is part of the design, not an edge case. If a reviewer removes ite
 - accept the reviewed draft and produce a final content pack
 - or return structured validation errors for required fields such as missing `translation` or `source_fragment`
 
+## Local Image Generation
+
+Image generation is a separate local-first enrichment step applied to an already finalized content pack.
+
+Current behavior:
+
+- content packs may contain nullable `image_ref`
+- content packs may contain nullable `image_prompt`
+- if `image_prompt` is missing, the image pipeline generates a fallback child-friendly prompt from `english_word`
+- generated images are stored as local assets under a stable deterministic path based on `topic.id` and item `id`
+
+Generate local images for a content pack:
+
+```bash
+python -m englishbot.generate_lesson_images \
+  --input content/custom/fairy-tales.json \
+  --assets-dir assets
+```
+
+Force regeneration even when the referenced local file already exists:
+
+```bash
+python -m englishbot.generate_lesson_images \
+  --input content/custom/fairy-tales.json \
+  --assets-dir assets \
+  --force
+```
+
+Expected assets layout:
+
+```text
+assets/
+  fairy-tales/
+    fairy-tales-dragon.png
+    fairy-tales-castle.png
+    fairy-tales-elf.png
+```
+
+After enrichment the content pack is updated in place, for example:
+
+- `image_ref`: `assets/fairy-tales/fairy-tales-dragon.png`
+- `image_prompt`: preserved from the pack if already present, otherwise generated from fallback prompt logic
+
+Learner bot behavior:
+
+- if `image_ref` exists and the local file exists, the bot sends a Telegram photo with the question as caption
+- if the file is missing, the bot falls back to the existing text-only question flow
+
+What is still stubbed:
+
+- actual generative image backend
+- OCR
+- web image search
+
+The current local image backend is a placeholder PNG renderer for offline development. It is intentionally isolated behind a small image generation client interface so it can later be replaced with a real local image model backend.
+
 ## Quick start in VS Code Dev Container
 
 1. Open the project in VS Code.
