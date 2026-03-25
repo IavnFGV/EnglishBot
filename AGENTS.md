@@ -41,6 +41,102 @@ On the host, the workspace root is:
 - Codex sessions are shared via a bind mount from the host into `/home/vscode/.codex`.
 - Avoid assumptions that Docker named volumes are host directories.
 
+## Logging Conventions
+
+Use standard Python `logging` with one shared formatter configured at application startup:
+
+- format: `%(asctime)s %(levelname)s [%(name)s] %(message)s`
+- configure logging once at the application entrypoint
+- prefer module-level loggers via `logging.getLogger(__name__)`
+
+For service and use-case methods:
+
+- log method entry and exit through a decorator, not by hand in every method
+- use `englishbot.logging_utils.logged_service_call(...)` for atomic service calls
+- include only meaningful inputs in decorator logs
+- use transforms to log compact derived fields like `item_count`, `session_id`, `mode`, `answer_length`
+- use `result=...` in the decorator to log meaningful outputs like `is_valid`, `error_count`, `session_completed`, `item_id`
+- do not log `self`, `cls`, or large raw payloads directly unless needed for debugging
+
+Keep direct logs only for:
+
+- intermediate branch decisions
+- warnings on invalid or suspicious states
+- exceptions
+- low-level repository diagnostics
+- adapter-layer events such as Telegram updates
+
+Recommended pattern:
+
+```python
+from englishbot.logging_utils import logged_service_call
+
+
+@logged_service_call(
+    "SomeUseCase.execute",
+    include=("user_id", "topic_id"),
+    transforms={"items": lambda value: {"item_count": len(value)}},
+    result=lambda value: {"result_count": len(value)},
+)
+def execute(...):
+    ...
+```
+
+Do not:
+
+- duplicate the same start/done logs manually inside decorated methods
+- put business-event logging only in Telegram handlers while leaving application services silent
+- dump full objects into logs when a compact derived field is enough
+
+## Startup Conventions
+
+Application startup should be explicit and centralized:
+
+- keep one entrypoint for the bot runtime in `src/.../__main__.py`
+- load `.env` at startup
+- build settings from environment
+- configure logging before building services
+- create and register an explicit asyncio event loop before `run_polling()` on modern Python
+
+Current bot startup pattern:
+
+```bash
+python -m englishbot
+```
+
+Expected responsibilities of `__main__.py`:
+
+- `load_dotenv()`
+- `Settings.from_env()`
+- `configure_logging(...)`
+- build the Telegram application
+- create `asyncio.new_event_loop()`
+- `asyncio.set_event_loop(loop)`
+- `app.run_polling()`
+- close the loop in `finally`
+
+CLI startup conventions:
+
+- prefer `typer` for user-facing CLI tools
+- keep argument parsing and orchestration in the CLI module
+- keep business logic in application/importing services, not inside CLI parsing code
+- call shared `configure_logging(...)` from CLI commands
+
+Current import CLI pattern:
+
+```bash
+python -m englishbot.import_lesson_text --help
+python -m englishbot.import_lesson_text --input lesson.txt --output content/custom/topic.json
+```
+
+CLI modules should:
+
+- define a `typer.Typer(...)` app
+- expose one clear command for the task
+- validate option values early
+- return machine-readable validation errors when possible
+- exit with non-zero code on validation failure
+
 
 ## Additional notes 
 

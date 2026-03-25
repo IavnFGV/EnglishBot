@@ -6,6 +6,7 @@ from typing import Protocol
 
 from englishbot.application.errors import EmptyTopicError
 from englishbot.domain.models import UserProgress, VocabularyItem
+from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,15 @@ class UnseenFirstWordSelector:
     def __init__(self, rng: random.Random | None = None) -> None:
         self._rng = rng or random.Random()
 
+    @logged_service_call(
+        "UnseenFirstWordSelector.select_words",
+        include=("user_id", "session_size"),
+        transforms={
+            "items": lambda value: {"candidate_count": len(value)},
+            "progress_items": lambda value: {"progress_count": len(value)},
+        },
+        result=lambda items: {"selected_ids": [item.id for item in items]},
+    )
     def select_words(
         self,
         *,
@@ -57,10 +67,4 @@ class UnseenFirstWordSelector:
         ordered = sorted(items, key=score)
         selected = ordered[: min(session_size, len(ordered))]
         self._rng.shuffle(selected)
-        logger.info(
-            "UnseenFirstWordSelector user_id=%s candidates=%s selected=%s",
-            user_id,
-            len(items),
-            [item.id for item in selected],
-        )
         return selected

@@ -5,6 +5,7 @@ import random
 
 from englishbot.application.errors import NotEnoughOptionsError
 from englishbot.domain.models import TrainingMode, TrainingQuestion, TrainingSession, VocabularyItem
+from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,21 @@ class QuestionFactory:
     def __init__(self, rng: random.Random | None = None) -> None:
         self._rng = rng or random.Random()
 
+    @logged_service_call(
+        "QuestionFactory.create_question",
+        transforms={
+            "session": lambda value: {
+                "session_id": value.id,
+                "mode": value.mode.value,
+            },
+            "item": lambda value: {"item_id": value.id},
+            "all_topic_items": lambda value: {"topic_item_count": len(value)},
+        },
+        result=lambda question: {
+            "question_mode": question.mode.value,
+            "has_options": bool(question.options),
+        },
+    )
     def create_question(
         self,
         *,
@@ -21,12 +37,6 @@ class QuestionFactory:
         all_topic_items: list[VocabularyItem],
     ) -> TrainingQuestion:
         image_line = item.image_ref or "No image yet. Use the translation clue."
-        logger.info(
-            "QuestionFactory.create_question session_id=%s item_id=%s mode=%s",
-            session.id,
-            item.id,
-            session.mode.value,
-        )
         if session.mode is TrainingMode.EASY:
             options = self._build_choice_options(item, all_topic_items)
             prompt = (

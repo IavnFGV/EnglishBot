@@ -111,7 +111,32 @@ There is a local CLI entrypoint for the import pipeline:
 python -m englishbot.import_lesson_text --input lesson.txt --output content/custom/fairy-tales.json
 ```
 
-Right now it uses a stub extraction client, not a production LLM integration. That is intentional: tests stay offline, and a real extraction client can be plugged in later without changing validation or canonicalization.
+By default the CLI now uses a real Ollama-backed extractor over HTTP. You can still switch to the offline stub extractor when needed:
+
+```bash
+python -m englishbot.import_lesson_text --extractor stub --input lesson.txt --output content/custom/fairy-tales.json
+```
+
+Useful Ollama options:
+
+```bash
+python -m englishbot.import_lesson_text \
+  --extractor ollama \
+  --ollama-model llama3.2:3b \
+  --ollama-base-url http://127.0.0.1:11434 \
+  --include-image-prompts \
+  --input lesson.txt \
+  --output content/custom/fairy-tales.json
+```
+
+Tests still stay offline because they use fake/mock extraction clients instead of a live Ollama server.
+
+By default the Ollama extraction path is conservative:
+
+- it does not keep model-generated `image_prompt` values unless `--include-image-prompts` is passed
+- it tries to repair obvious translation mistakes from `source_fragment`, for example when the model transliterates Russian text into Latin characters
+
+When `--include-image-prompts` is enabled, prompts are generated in a second stage after the lesson structure has already been validated and canonicalized. The current implementation sends one vocabulary pair per request, which keeps the flow simple: first parse the text into pairs, then generate one image prompt for each pair.
 
 ## Quick start in VS Code Dev Container
 

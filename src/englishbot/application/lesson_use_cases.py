@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from englishbot.application.errors import InvalidTopicLessonSelectionError
 from englishbot.domain.models import Lesson
 from englishbot.domain.repositories import LessonRepository
+from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +22,16 @@ class ListLessonsByTopicUseCase:
     def __init__(self, lesson_repository: LessonRepository) -> None:
         self._lesson_repository = lesson_repository
 
+    @logged_service_call(
+        "ListLessonsByTopicUseCase.execute",
+        include=("topic_id",),
+        result=lambda option: {
+            "has_lessons": option.has_lessons,
+            "lesson_count": len(option.lessons),
+        },
+    )
     def execute(self, *, topic_id: str) -> LessonSelectionOption:
         lessons = self._lesson_repository.list_by_topic(topic_id)
-        logger.info(
-            "ListLessonsByTopicUseCase topic_id=%s has_lessons=%s count=%s",
-            topic_id,
-            bool(lessons),
-            len(lessons),
-        )
         return LessonSelectionOption(
             topic_id=topic_id,
             has_lessons=bool(lessons),
@@ -40,9 +43,12 @@ class ValidateTopicLessonUseCase:
     def __init__(self, lesson_repository: LessonRepository) -> None:
         self._lesson_repository = lesson_repository
 
+    @logged_service_call(
+        "ValidateTopicLessonUseCase.execute",
+        include=("topic_id", "lesson_id"),
+    )
     def execute(self, *, topic_id: str, lesson_id: str | None) -> None:
         if lesson_id is None:
-            logger.debug("ValidateTopicLessonUseCase topic_id=%s lesson_id=None accepted", topic_id)
             return
         lesson = self._lesson_repository.get_by_id(lesson_id)
         if lesson is None or lesson.topic_id != topic_id:
@@ -54,8 +60,3 @@ class ValidateTopicLessonUseCase:
             raise InvalidTopicLessonSelectionError(
                 "The selected lesson does not belong to the selected topic."
             )
-        logger.debug(
-            "ValidateTopicLessonUseCase accepted topic_id=%s lesson_id=%s",
-            topic_id,
-            lesson_id,
-        )

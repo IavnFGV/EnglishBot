@@ -29,6 +29,7 @@ from englishbot.domain.repositories import (
     UserProgressRepository,
     VocabularyRepository,
 )
+from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,15 @@ class StartTrainingSessionUseCase:
         self._word_selector = word_selector
         self._question_factory = question_factory
 
+    @logged_service_call(
+        "StartTrainingSessionUseCase.execute",
+        include=("user_id", "topic_id", "lesson_id", "session_size"),
+        transforms={"mode": lambda value: {"mode": value.value}},
+        result=lambda question: {
+            "session_id": question.session_id,
+            "item_id": question.item_id,
+        },
+    )
     def execute(
         self,
         *,
@@ -83,15 +93,6 @@ class StartTrainingSessionUseCase:
         session_size: int = 5,
         lesson_id: str | None = None,
     ) -> TrainingQuestion:
-        logger.info(
-            "StartTrainingSessionUseCase user_id=%s topic_id=%s lesson_id=%s "
-            "mode=%s session_size=%s",
-            user_id,
-            topic_id,
-            lesson_id,
-            mode.value,
-            session_size,
-        )
         topic = self._topic_repository.get_by_id(topic_id)
         if topic is None:
             logger.warning("StartTrainingSessionUseCase unknown topic_id=%s", topic_id)
@@ -115,12 +116,6 @@ class StartTrainingSessionUseCase:
                 SessionItem(order=index, vocabulary_item_id=item.id)
                 for index, item in enumerate(selected_items)
             ],
-        )
-        logger.info(
-            "StartTrainingSessionUseCase created session_id=%s user_id=%s items=%s",
-            session.id,
-            user_id,
-            [session_item.vocabulary_item_id for session_item in session.items],
         )
         self._session_repository.save(session)
         return self._question_factory.create_question(
@@ -148,8 +143,15 @@ class GetCurrentQuestionUseCase:
         self._session_repository = session_repository
         self._question_factory = question_factory
 
+    @logged_service_call(
+        "GetCurrentQuestionUseCase.execute",
+        include=("user_id",),
+        result=lambda question: {
+            "session_id": question.session_id,
+            "item_id": question.item_id,
+        },
+    )
     def execute(self, *, user_id: int) -> TrainingQuestion:
-        logger.debug("GetCurrentQuestionUseCase user_id=%s", user_id)
         session = self._require_active_session(user_id)
         try:
             item_id = session.current_item_id()
@@ -188,8 +190,19 @@ class SubmitAnswerUseCase:
         self._answer_checker = answer_checker
         self._summary_calculator = summary_calculator
 
+    @logged_service_call(
+        "SubmitAnswerUseCase.execute",
+        include=("user_id",),
+        transforms={"answer": lambda value: {"answer_length": len(value.strip())}},
+        result=lambda outcome: {
+            "is_correct": outcome.result.is_correct,
+            "session_completed": outcome.session_completed,
+            "next_item_id": (
+                outcome.next_question.item_id if outcome.next_question is not None else None
+            ),
+        },
+    )
     def execute(self, *, user_id: int, answer: str) -> AnswerOutcome:
-        logger.info("SubmitAnswerUseCase user_id=%s answer_length=%s", user_id, len(answer.strip()))
         session = self._require_active_session(user_id)
         question = self._get_current_question.execute(user_id=user_id)
         result = self._answer_checker.check(question=question, answer=answer)
@@ -204,13 +217,6 @@ class SubmitAnswerUseCase:
         except ValueError as error:
             raise InvalidSessionStateError(str(error)) from error
         self._session_repository.save(session)
-        logger.info(
-            "SubmitAnswerUseCase session_id=%s item_id=%s is_correct=%s completed=%s",
-            session.id,
-            question.item_id,
-            result.is_correct,
-            session.completed,
-        )
         if session.completed:
             summary = self._summary_calculator.calculate(session)
             return AnswerOutcome(result=result, summary=summary, next_question=None)
@@ -228,18 +234,20 @@ class GetActiveSessionUseCase:
     def __init__(self, session_repository: SessionRepository) -> None:
         self._session_repository = session_repository
 
+    @logged_service_call(
+        "GetActiveSessionUseCase.execute",
+        include=("user_id",),
+        result=lambda session: {
+            "found": session is not None,
+            "session_id": session.session_id if session is not None else None,
+            "current_position": session.current_position if session is not None else None,
+            "total_items": session.total_items if session is not None else None,
+        },
+    )
     def execute(self, *, user_id: int) -> ActiveSessionInfo | None:
         session = self._session_repository.get_active_by_user(user_id)
         if session is None:
-            logger.debug("GetActiveSessionUseCase user_id=%s found=False", user_id)
             return None
-        logger.info(
-            "GetActiveSessionUseCase user_id=%s session_id=%s current_position=%s total_items=%s",
-            user_id,
-            session.id,
-            session.current_index + 1,
-            session.total_items,
-        )
         return ActiveSessionInfo(
             session_id=session.id,
             topic_id=session.topic_id,
@@ -254,8 +262,11 @@ class DiscardActiveSessionUseCase:
     def __init__(self, session_repository: SessionRepository) -> None:
         self._session_repository = session_repository
 
+    @logged_service_call(
+        "DiscardActiveSessionUseCase.execute",
+        include=("user_id",),
+    )
     def execute(self, *, user_id: int) -> None:
-        logger.info("DiscardActiveSessionUseCase user_id=%s", user_id)
         self._session_repository.discard_active_by_user(user_id)
 
 

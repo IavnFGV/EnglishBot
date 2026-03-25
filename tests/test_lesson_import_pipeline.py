@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
+import pytest
+
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
-from englishbot.importing.clients import FakeLessonExtractionClient
+from englishbot.importing.clients import FakeLessonExtractionClient, OllamaLessonExtractionClient
+from englishbot.importing.enrichment import OllamaImagePromptEnricher
 from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtractionDraft
 from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.validator import LessonExtractionValidator
@@ -170,3 +174,335 @@ def test_malformed_extraction_results_do_not_crash_pipeline() -> None:
     assert result.validation.is_valid is False
     assert result.validation.errors[0].code == "malformed_result"
     assert result.canonicalization is None
+
+
+def test_ollama_extraction_client_builds_draft_from_http_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "topic_title": "Fairy Tales",
+                            "lesson_title": None,
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Princess / Prince",
+                                    "translation": "принцесса / принц",
+                                    "notes": None,
+                                    "image_prompt": "storybook prince and princess",
+                                    "source_fragment": "Princess / Prince — принцесса / принц",
+                                }
+                            ],
+                            "warnings": [],
+                            "unparsed_lines": [],
+                            "confidence_notes": ["high confidence"],
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            assert url == "http://127.0.0.1:11434/api/chat"
+            assert json["model"] == "llama3.2:3b"
+            assert timeout == 120
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="llama3.2:3b", base_url="http://127.0.0.1:11434")
+    draft = client.extract(
+        "Fairy Tales\n\nPrincess / Prince — принцесса / принц\nCastle — замок"
+    )
+    assert isinstance(draft, LessonExtractionDraft)
+    assert draft.topic_title == "Fairy Tales"
+    assert len(draft.vocabulary_items) == 1
+    assert draft.vocabulary_items[0].english_word == "Princess / Prince"
+    assert draft.vocabulary_items[0].translation == "принцесса / принц"
+    assert draft.vocabulary_items[0].image_prompt is None
+
+
+def test_ollama_extraction_client_repairs_translation_from_source_fragment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "topic_title": "Fairy Tales",
+                            "lesson_title": None,
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Dwarf",
+                                    "translation": "gnomik",
+                                    "notes": None,
+                                    "image_prompt": "small dwarf in a cave",
+                                    "source_fragment": "Dwarf — гномик",
+                                }
+                            ],
+                            "warnings": [],
+                            "unparsed_lines": [],
+                            "confidence_notes": [],
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+    draft = client.extract("Dwarf — гномик")
+    assert isinstance(draft, LessonExtractionDraft)
+    assert draft.vocabulary_items[0].translation == "гномик"
+    assert draft.vocabulary_items[0].image_prompt is None
+
+
+def test_ollama_extraction_client_recovers_missing_source_fragment_from_raw_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "topic_title": "Fairy Tales",
+                            "lesson_title": None,
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Castle",
+                                    "translation": "замок",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "",
+                                }
+                            ],
+                            "warnings": [],
+                            "unparsed_lines": [],
+                            "confidence_notes": [],
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+    draft = client.extract("Fairy Tales\n\nCastle — замок\nDragon — дракон")
+    assert isinstance(draft, LessonExtractionDraft)
+    assert draft.vocabulary_items[0].source_fragment == "Castle — замок"
+
+
+def test_ollama_extraction_client_recovers_source_fragment_before_translation_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "topic_title": "Fairy Tales",
+                            "lesson_title": None,
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Dwarf",
+                                    "translation": "gnomik",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "",
+                                }
+                            ],
+                            "warnings": [],
+                            "unparsed_lines": [],
+                            "confidence_notes": [],
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+    draft = client.extract("Fairy Tales\n\nDwarf — гномик")
+    assert isinstance(draft, LessonExtractionDraft)
+    assert draft.vocabulary_items[0].source_fragment == "Dwarf — гномик"
+    assert draft.vocabulary_items[0].translation == "гномик"
+
+
+def test_pipeline_can_enrich_image_prompts_per_item(tmp_path: Path) -> None:
+    draft = LessonExtractionDraft(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            ExtractedVocabularyItemDraft(
+                english_word="Dragon",
+                translation="дракон",
+                source_fragment="Dragon — дракон",
+            ),
+            ExtractedVocabularyItemDraft(
+                english_word="Fairy",
+                translation="фея",
+                source_fragment="Fairy — фея",
+            ),
+        ],
+    )
+
+    class FakeEnricher:
+        def enrich(
+            self,
+            *,
+            topic_title: str,
+            vocabulary_items: list[dict[str, object]],
+        ) -> list[dict[str, object]]:
+            assert topic_title == "Fairy Tales"
+            enriched = []
+            for item in vocabulary_items:
+                updated = dict(item)
+                updated["image_prompt"] = f"Prompt for {item['english_word']}"
+                enriched.append(updated)
+            return enriched
+
+    output_path = tmp_path / "fairy.json"
+    pipeline = LessonImportPipeline(
+        extraction_client=FakeLessonExtractionClient(draft),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        image_prompt_enricher=FakeEnricher(),  # type: ignore[arg-type]
+    )
+    result = pipeline.run(
+        raw_text="fairy tale words",
+        output_path=output_path,
+        enrich_image_prompts=True,
+    )
+    assert result.canonicalization is not None
+    data = json.loads(output_path.read_text(encoding="utf-8"))
+    assert data["vocabulary_items"][0]["image_prompt"] == "Prompt for Dragon"
+    assert data["vocabulary_items"][1]["image_prompt"] == "Prompt for Fairy"
+
+
+def test_ollama_image_prompt_enricher_builds_prompts_from_http_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "image_prompts": [
+                                {
+                                    "id": "fairy-tales-dragon",
+                                    "english_word": "Dragon",
+                                    "translation": "дракон",
+                                    "image_prompt": "A friendly dragon beside a castle.",
+                                }
+                            ]
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            assert url == "http://127.0.0.1:11434/api/chat"
+            assert json["model"] == "qwen2.5:7b"
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    enricher = OllamaImagePromptEnricher(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+    )
+    enriched = enricher.enrich(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            {
+                "id": "fairy-tales-dragon",
+                "english_word": "Dragon",
+                "translation": "дракон",
+                "image_ref": None,
+            }
+        ],
+    )
+    assert enriched[0]["image_prompt"] == "A friendly dragon beside a castle."
+
+
+def test_ollama_image_prompt_enricher_falls_back_to_english_word_matching(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "items": [
+                                {
+                                    "word": "Dwarf",
+                                    "description": "A cheerful dwarf with a lantern.",
+                                }
+                            ]
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    enricher = OllamaImagePromptEnricher(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+    )
+    enriched = enricher.enrich(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            {
+                "id": "fairy-tales-dwarf",
+                "english_word": "Dwarf",
+                "translation": "гномик",
+                "image_ref": None,
+            }
+        ],
+    )
+    assert enriched[0]["image_prompt"] == "A cheerful dwarf with a lantern."

@@ -9,6 +9,7 @@ from englishbot.importing.models import (
     CanonicalizationResult,
     LessonExtractionDraft,
 )
+from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,20 @@ def _slugify(value: str) -> str:
 
 
 class DraftToContentPackCanonicalizer:
+    @logged_service_call(
+        "DraftToContentPackCanonicalizer.convert",
+        transforms={
+            "draft": lambda value: {
+                "topic_title": value.topic_title,
+                "item_count": len(value.vocabulary_items),
+                "has_lesson": value.lesson_title is not None,
+            }
+        },
+        result=lambda result: {
+            "item_count": len(result.content_pack.data.get("vocabulary_items", [])),
+            "warning_count": len(result.warnings),
+        },
+    )
     def convert(self, draft: LessonExtractionDraft) -> CanonicalizationResult:
         topic_title = _normalize_text(draft.topic_title) or "Imported Topic"
         lesson_title = _normalize_text(draft.lesson_title)
@@ -78,12 +93,6 @@ class DraftToContentPackCanonicalizer:
             "review_recommended": True,
         }
         pack["metadata"] = metadata
-        logger.info(
-            "DraftToContentPackCanonicalizer topic_id=%s lesson_id=%s items=%s",
-            topic_id,
-            lesson_id,
-            len(vocabulary_items),
-        )
         return CanonicalizationResult(
             content_pack=CanonicalContentPack(data=pack),
             warnings=list(draft.warnings),

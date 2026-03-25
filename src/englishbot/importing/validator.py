@@ -9,6 +9,7 @@ from englishbot.importing.models import (
     ValidationError,
     ValidationResult,
 )
+from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,20 @@ def _normalize_word(value: str) -> str:
 
 
 class LessonExtractionValidator:
+    @logged_service_call(
+        "LessonExtractionValidator.validate",
+        transforms={
+            "draft": lambda value: (
+                {
+                    "topic_title": value.topic_title,
+                    "item_count": len(value.vocabulary_items),
+                }
+                if isinstance(value, LessonExtractionDraft)
+                else {"draft_type": type(value).__name__}
+            )
+        },
+        result=lambda result: {"error_count": len(result.errors), "is_valid": result.is_valid},
+    )
     def validate(self, draft: LessonExtractionDraft | object) -> ValidationResult:
         errors: list[ValidationError] = []
         if not isinstance(draft, LessonExtractionDraft):
@@ -76,12 +91,6 @@ class LessonExtractionValidator:
                         )
                     )
                 normalized_words.add(normalized_word)
-
-        logger.info(
-            "LessonExtractionValidator validated items=%s errors=%s",
-            len(draft.vocabulary_items),
-            len(errors),
-        )
         return ValidationResult(errors=errors)
 
     def _validate_item(
