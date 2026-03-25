@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from englishbot.application.image_review_flow import ImageReviewFlowHarness
@@ -36,6 +37,43 @@ class StartImageReviewUseCase:
             editor_user_id=user_id,
             draft=draft,
             model_names=model_names,
+        )
+        self._repository.save(flow)
+        return flow
+
+
+class StartPublishedWordImageEditUseCase:
+    def __init__(
+        self,
+        *,
+        harness: ImageReviewFlowHarness,
+        repository: ImageReviewFlowRepository,
+        content_dir: Path,
+    ) -> None:
+        self._harness = harness
+        self._repository = repository
+        self._content_dir = content_dir
+
+    @logged_service_call(
+        "StartPublishedWordImageEditUseCase.execute",
+        include=("user_id", "topic_id", "item_id"),
+        result=lambda value: {"flow_id": value.flow_id, "item_count": len(value.items)},
+    )
+    def execute(
+        self,
+        *,
+        user_id: int,
+        topic_id: str,
+        item_id: str,
+        model_names: tuple[str, ...] | None = None,
+    ) -> ImageReviewFlowState:
+        content_path = self._content_dir / f"{topic_id}.json"
+        content_pack = json.loads(content_path.read_text(encoding="utf-8"))
+        flow = self._harness.start_from_content_pack(
+            editor_user_id=user_id,
+            content_pack=content_pack,
+            model_names=model_names,
+            selected_item_id=item_id,
         )
         self._repository.save(flow)
         return flow

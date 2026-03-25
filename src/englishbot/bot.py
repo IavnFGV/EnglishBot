@@ -39,6 +39,9 @@ from englishbot.application.add_words_use_cases import (
     SaveApprovedAddWordsDraftUseCase,
     StartAddWordsFlowUseCase,
 )
+from englishbot.application.content_pack_image_use_cases import (
+    GenerateContentPackImagesUseCase,
+)
 from englishbot.application.image_review_flow import ImageReviewFlowHarness
 from englishbot.application.image_review_use_cases import (
     AttachUploadedImageUseCase,
@@ -48,6 +51,7 @@ from englishbot.application.image_review_use_cases import (
     SelectImageCandidateUseCase,
     SkipImageReviewItemUseCase,
     StartImageReviewUseCase,
+    StartPublishedWordImageEditUseCase,
     UpdateImageReviewPromptUseCase,
 )
 from englishbot.application.services import (
@@ -59,7 +63,9 @@ from englishbot.application.services import (
 from englishbot.bootstrap import build_lesson_import_pipeline, build_training_service
 from englishbot.config import Settings
 from englishbot.domain.models import Topic, TrainingMode, TrainingQuestion
+from englishbot.image_generation.clients import ComfyUIImageGenerationClient
 from englishbot.image_generation.paths import resolve_existing_image_path
+from englishbot.image_generation.pipeline import ContentPackImageEnricher
 from englishbot.image_generation.review import ComfyUIImageCandidateGenerator
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.draft_io import draft_to_data
@@ -103,6 +109,9 @@ def build_application(settings: Settings) -> Application:
         writer=JsonContentPackWriter(),
         candidate_generator=ComfyUIImageCandidateGenerator(),
         assets_dir=Path("assets"),
+    )
+    content_pack_image_enricher = ContentPackImageEnricher(
+        ComfyUIImageGenerationClient()
     )
     app.bot_data["lesson_import_pipeline"] = lesson_import_pipeline
     app.bot_data["editor_user_ids"] = set(settings.editor_user_ids)
@@ -148,6 +157,13 @@ def build_application(settings: Settings) -> Application:
         harness=image_review_harness,
         repository=image_review_repository,
     )
+    app.bot_data["image_review_start_published_word_use_case"] = (
+        StartPublishedWordImageEditUseCase(
+            harness=image_review_harness,
+            repository=image_review_repository,
+            content_dir=Path("content/custom"),
+        )
+    )
     app.bot_data["image_review_get_active_use_case"] = GetActiveImageReviewUseCase(
         image_review_repository
     )
@@ -176,6 +192,9 @@ def build_application(settings: Settings) -> Application:
         repository=image_review_repository,
     )
     app.bot_data["image_review_assets_dir"] = Path("assets")
+    app.bot_data["content_pack_generate_images_use_case"] = GenerateContentPackImagesUseCase(
+        enricher=content_pack_image_enricher
+    )
     app.bot_data["word_import_preview_message_ids"] = {}
 
     app.add_handler(CommandHandler("start", start_handler))
@@ -190,6 +209,18 @@ def build_application(settings: Settings) -> Application:
     app.add_handler(CallbackQueryHandler(mode_selected_handler, pattern=r"^mode:"))
     app.add_handler(CallbackQueryHandler(choice_answer_handler, pattern=r"^answer:"))
     app.add_handler(CallbackQueryHandler(words_menu_callback_handler, pattern=r"^words:menu$"))
+    app.add_handler(
+        CallbackQueryHandler(words_topics_callback_handler, pattern=r"^words:topics$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(words_add_words_callback_handler, pattern=r"^words:add_words$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            add_words_approve_auto_images_handler,
+            pattern=r"^words:approve_auto_images:",
+        )
+    )
     app.add_handler(
         CallbackQueryHandler(
             add_words_publish_without_images_handler,
@@ -210,6 +241,18 @@ def build_application(settings: Settings) -> Application:
     )
     app.add_handler(CallbackQueryHandler(add_words_edit_text_handler, pattern=r"^words:edit_text:"))
     app.add_handler(CallbackQueryHandler(add_words_show_json_handler, pattern=r"^words:show_json:"))
+    app.add_handler(
+        CallbackQueryHandler(
+            published_images_menu_handler,
+            pattern=r"^words:edit_images_menu:",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            published_image_item_handler,
+            pattern=r"^words:edit_published_image:",
+        )
+    )
     app.add_handler(
         CallbackQueryHandler(image_review_pick_handler, pattern=r"^words:image_pick:")
     )
@@ -307,6 +350,12 @@ def _start_image_review(context: ContextTypes.DEFAULT_TYPE) -> StartImageReviewU
     return context.application.bot_data["image_review_start_use_case"]
 
 
+def _start_published_word_image_review(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> StartPublishedWordImageEditUseCase:
+    return context.application.bot_data["image_review_start_published_word_use_case"]
+
+
 def _get_active_image_review(context: ContextTypes.DEFAULT_TYPE) -> GetActiveImageReviewUseCase:
     return context.application.bot_data["image_review_get_active_use_case"]
 
@@ -341,6 +390,12 @@ def _attach_uploaded_image(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> AttachUploadedImageUseCase:
     return context.application.bot_data["image_review_attach_uploaded_image_use_case"]
+
+
+def _generate_content_pack_images(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> GenerateContentPackImagesUseCase:
+    return context.application.bot_data["content_pack_generate_images_use_case"]
 
 
 def _image_review_assets_dir(context: ContextTypes.DEFAULT_TYPE) -> Path:
@@ -505,6 +560,40 @@ async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFA
             logger.debug("Words menu message unchanged")
             return
         raise
+
+
+async def words_topics_callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    topics = _service(context).list_topics()
+    await query.edit_message_text(
+        "Choose a topic to start training.",
+        reply_markup=_topic_keyboard(topics),
+    )
+
+
+async def words_add_words_callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    if not _is_editor(user.id, context):
+        await query.edit_message_text("Only editors can add words.")
+        return
+    context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
+    await query.edit_message_text(
+        "Send the raw lesson text in one message. The format can be messy.\n"
+        "Use /cancel to stop."
+    )
 
 
 async def add_words_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -905,6 +994,134 @@ async def add_words_approve_draft_handler(
         image_review_flow_id=image_review_flow.flow_id,
     )
     await _prepare_and_send_image_review_step(query.message, context, user.id, image_review_flow)
+
+
+async def add_words_approve_auto_images_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, flow_id = query.data.split(":")
+    flow = _active_word_flow_for_user(user.id, context)
+    if flow is None or flow.flow_id != flow_id:
+        await query.edit_message_text("This draft is no longer active.")
+        return
+    result = flow.draft_result
+    if not result.validation.is_valid:
+        await query.edit_message_text(
+            format_draft_preview(result),
+            reply_markup=_draft_review_keyboard(flow.flow_id, False),
+        )
+        return
+
+    await query.edit_message_text("Saving approved draft... 0/1")
+    saved_flow = await asyncio.to_thread(
+        _save_approved_add_words_draft(context).execute,
+        user_id=user.id,
+        flow_id=flow.flow_id,
+    )
+    await query.edit_message_text(
+        "Approved draft saved.\n"
+        f"Draft path: {saved_flow.draft_output_path}\n"
+        "Generating image prompts... 0/1"
+    )
+    prompt_flow = await asyncio.to_thread(
+        _generate_add_words_image_prompts(context).execute,
+        user_id=user.id,
+        flow_id=flow.flow_id,
+    )
+    await query.edit_message_text(
+        "Image prompts generated.\n"
+        f"Draft path: {prompt_flow.draft_output_path}\n"
+        f"Image prompts: {_draft_prompt_count(prompt_flow.draft_result) or 0}\n"
+        "Publishing content pack... 0/1"
+    )
+    approved = await asyncio.to_thread(
+        _approve_add_words_draft(context).execute,
+        user_id=user.id,
+        flow_id=flow.flow_id,
+    )
+    await query.edit_message_text(
+        "Content pack published.\n"
+        f"Saved to: {approved.output_path}\n"
+        f"Added words: {len(approved.import_result.draft.vocabulary_items)}\n"
+        "Generating images... 0/1"
+    )
+    enriched_pack = await asyncio.to_thread(
+        _generate_content_pack_images(context).execute,
+        input_path=approved.output_path,
+        assets_dir=Path("assets"),
+    )
+    context.application.bot_data["training_service"] = build_training_service()
+    _preview_message_ids(context).pop(user.id, None)
+    topic = enriched_pack.get("topic", {})
+    topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
+    generated_image_count = sum(
+        1 for item in enriched_pack.get("vocabulary_items", []) if item.get("image_ref")
+    )
+    await query.edit_message_text(
+        "Draft approved and images generated.\n"
+        f"Saved to: {approved.output_path}\n"
+        f"Generated images: {generated_image_count}\n"
+        "You can edit the image for a specific word if needed.",
+        reply_markup=(
+            _published_images_menu_keyboard(topic_id=topic_id)
+            if topic_id
+            else None
+        ),
+    )
+
+
+async def published_images_menu_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, topic_id = query.data.split(":")
+    content_path = Path("content/custom") / f"{topic_id}.json"
+    if not content_path.exists():
+        await query.edit_message_text("Published content pack not found.")
+        return
+    content_pack = json.loads(content_path.read_text(encoding="utf-8"))
+    raw_items = content_pack.get("vocabulary_items", [])
+    if not isinstance(raw_items, list) or not raw_items:
+        await query.edit_message_text("No vocabulary items found in this content pack.")
+        return
+    await query.edit_message_text(
+        "Choose a word to edit its image.",
+        reply_markup=_published_image_items_keyboard(
+            topic_id=topic_id,
+            raw_items=raw_items,
+        ),
+    )
+
+
+async def published_image_item_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, topic_id, item_id = query.data.split(":")
+    review_flow = await asyncio.to_thread(
+        _start_published_word_image_review(context).execute,
+        user_id=user.id,
+        topic_id=topic_id,
+        item_id=item_id,
+    )
+    await _send_current_published_image_preview(query.message, review_flow)
+    await _prepare_and_send_image_review_step(query.message, context, user.id, review_flow)
 
 
 async def image_review_pick_handler(
@@ -1372,6 +1589,40 @@ async def _prepare_and_send_image_review_step(
     await _send_image_review_step(message, prepared_flow)
 
 
+async def _send_current_published_image_preview(message, flow) -> None:
+    current_item = flow.current_item
+    if current_item is None:
+        return
+    raw_items = flow.content_pack.get("vocabulary_items", [])
+    if not isinstance(raw_items, list):
+        return
+    image_ref: str | None = None
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        if str(raw_item.get("id", "")).strip() != current_item.item_id:
+            continue
+        raw_image_ref = raw_item.get("image_ref")
+        if isinstance(raw_image_ref, str) and raw_image_ref.strip():
+            image_ref = raw_image_ref
+        break
+    image_path = resolve_existing_image_path(image_ref)
+    if image_path is None:
+        await message.reply_text(
+            "No current image is saved for this word yet.\n"
+            "You can generate new variants, edit the prompt, or attach your own photo."
+        )
+        return
+    with image_path.open("rb") as photo_file:
+        await message.reply_photo(
+            photo=photo_file,
+            caption=(
+                "Current image.\n"
+                "You can keep it, generate new variants, edit the prompt, or attach your own photo."
+            ),
+        )
+
+
 async def _send_image_review_step(message, flow) -> None:
     current_item = flow.current_item
     if current_item is None:
@@ -1412,9 +1663,15 @@ def _draft_review_keyboard(flow_id: str, is_valid: bool) -> InlineKeyboardMarkup
     rows = [
         [
             InlineKeyboardButton(
-                "Approve + Review Images",
+                "Approve + Auto Images",
+                callback_data=f"words:approve_auto_images:{flow_id}",
+            ),
+            InlineKeyboardButton(
+                "Manual Image Review",
                 callback_data=f"words:start_image_review:{flow_id}",
             ),
+        ],
+        [
             InlineKeyboardButton(
                 "Publish Without Images",
                 callback_data=f"words:approve_draft:{flow_id}",
@@ -1443,7 +1700,8 @@ def _draft_review_keyboard(flow_id: str, is_valid: bool) -> InlineKeyboardMarkup
     ]
     if not is_valid:
         rows[0][0] = InlineKeyboardButton("Approve Disabled", callback_data="words:menu")
-        rows[0][1] = InlineKeyboardButton("Publish Disabled", callback_data="words:menu")
+        rows[0][1] = InlineKeyboardButton("Review Disabled", callback_data="words:menu")
+        rows[1][0] = InlineKeyboardButton("Publish Disabled", callback_data="words:menu")
     return InlineKeyboardMarkup(rows)
 
 
@@ -1485,9 +1743,50 @@ def _image_review_keyboard(
 
 
 def _words_menu_keyboard(*, is_editor: bool) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton("Training Topics", callback_data="words:menu")]]
+    rows = [[InlineKeyboardButton("Training Topics", callback_data="words:topics")]]
     if is_editor:
-        rows.append([InlineKeyboardButton("Add Words", callback_data="words:menu")])
+        rows.append([InlineKeyboardButton("Add Words", callback_data="words:add_words")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _published_images_menu_keyboard(*, topic_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Edit Word Image",
+                    callback_data=f"words:edit_images_menu:{topic_id}",
+                )
+            ]
+        ]
+    )
+
+
+def _published_image_items_keyboard(
+    *,
+    topic_id: str,
+    raw_items: list[object],
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        item_id = str(raw_item.get("id", "")).strip()
+        english_word = str(raw_item.get("english_word", "")).strip()
+        translation = str(raw_item.get("translation", "")).strip()
+        if not item_id or not english_word:
+            continue
+        label = f"{english_word} — {translation}" if translation else english_word
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label[:64],
+                    callback_data=f"words:edit_published_image:{topic_id}:{item_id}",
+                )
+            ]
+        )
+    if not rows:
+        rows = [[InlineKeyboardButton("No items", callback_data="words:menu")]]
     return InlineKeyboardMarkup(rows)
 
 

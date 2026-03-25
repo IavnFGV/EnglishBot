@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import uuid
 from pathlib import Path
 from typing import Protocol
@@ -64,14 +65,41 @@ class ImageReviewFlowHarness:
         model_names: tuple[str, ...] | None = None,
     ) -> ImageReviewFlowState:
         canonical = self._canonicalizer.convert(draft)
-        content_pack = copy.deepcopy(canonical.content_pack.data)
-        topic = content_pack.get("topic", {})
+        return self.start_from_content_pack(
+            editor_user_id=editor_user_id,
+            content_pack=canonical.content_pack.data,
+            model_names=model_names,
+        )
+
+    @logged_service_call(
+        "ImageReviewFlowHarness.start_from_content_pack",
+        transforms={
+            "content_pack": lambda value: {
+                "item_count": (
+                    len(value.get("vocabulary_items", [])) if isinstance(value, dict) else None
+                )
+            }
+        },
+        include=("editor_user_id",),
+        result=lambda value: {"flow_id": value.flow_id, "item_count": len(value.items)},
+    )
+    def start_from_content_pack(
+        self,
+        *,
+        editor_user_id: int,
+        content_pack: dict[str, object],
+        model_names: tuple[str, ...] | None = None,
+        selected_item_id: str | None = None,
+    ) -> ImageReviewFlowState:
+        normalized_content_pack = json.loads(json.dumps(content_pack))
+        topic = normalized_content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
         if not topic_id:
             raise ValueError("topic.id is required to start image review.")
         configured_models = model_names or self._default_model_names
         review_items: list[ImageReviewItem] = []
-        for raw_item in content_pack.get("vocabulary_items", []):
+        found_selected_item = selected_item_id is None
+        for raw_item in normalized_content_pack.get("vocabulary_items", []):
             if not isinstance(raw_item, dict):
                 continue
             item_id = str(raw_item.get("id", "")).strip()
@@ -79,6 +107,9 @@ class ImageReviewFlowHarness:
             translation = str(raw_item.get("translation", "")).strip()
             if not item_id or not english_word:
                 continue
+            if selected_item_id is not None and item_id != selected_item_id:
+                continue
+            found_selected_item = True
             raw_prompt = str(raw_item.get("image_prompt", "")).strip()
             prompt = (
                 compose_image_prompt(raw_prompt, english_word=english_word)
@@ -94,16 +125,17 @@ class ImageReviewFlowHarness:
                     candidates=[],
                 )
             )
-        content_pack.setdefault(
-            "metadata",
-            {},
-        )
-        if isinstance(content_pack["metadata"], dict):
-            content_pack["metadata"]["image_review_model_names"] = list(configured_models)
+        if not found_selected_item:
+            raise ValueError("Selected vocabulary item was not found in the content pack.")
+        normalized_content_pack.setdefault("metadata", {})
+        if isinstance(normalized_content_pack["metadata"], dict):
+            normalized_content_pack["metadata"]["image_review_model_names"] = list(
+                configured_models
+            )
         return ImageReviewFlowState(
             flow_id=uuid.uuid4().hex[:12],
             editor_user_id=editor_user_id,
-            content_pack=content_pack,
+            content_pack=normalized_content_pack,
             items=review_items,
         )
 

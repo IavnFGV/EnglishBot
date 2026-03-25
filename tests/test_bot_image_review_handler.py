@@ -4,13 +4,16 @@ from types import SimpleNamespace
 import pytest
 
 from englishbot.bot import (
+    add_words_approve_auto_images_handler,
     add_words_approve_draft_handler,
     add_words_text_handler,
     image_review_attach_photo_handler,
     image_review_edit_prompt_handler,
     image_review_photo_handler,
+    published_image_item_handler,
+    published_images_menu_handler,
 )
-from englishbot.domain.add_words_models import AddWordsFlowState
+from englishbot.domain.add_words_models import AddWordsApprovalResult, AddWordsFlowState
 from englishbot.domain.image_review_models import (
     ImageCandidate,
     ImageReviewFlowState,
@@ -233,6 +236,69 @@ class _FakePhotoSize:
         return _FakePhotoFile(self._content)
 
 
+class _FakeApproveAddWordsDraftUseCase:
+    def execute(self, *, user_id: int, flow_id: str, output_path=None):  # noqa: ARG002
+        draft = LessonExtractionDraft(
+            topic_title="Fairy Tales",
+            vocabulary_items=[
+                ExtractedVocabularyItemDraft(
+                    item_id="dragon",
+                    english_word="Dragon",
+                    translation="дракон",
+                    source_fragment="Dragon — дракон",
+                    image_prompt="a green dragon",
+                ),
+                ExtractedVocabularyItemDraft(
+                    item_id="fairy",
+                    english_word="Fairy",
+                    translation="фея",
+                    source_fragment="Fairy — фея",
+                    image_prompt="a tiny fairy",
+                ),
+            ],
+        )
+        return AddWordsApprovalResult(
+            import_result=ImportLessonResult(
+                draft=draft,
+                validation=ValidationResult(errors=[]),
+            ),
+            output_path=Path("content/custom/fairy-tales.json"),
+        )
+
+
+class _FakeGenerateContentPackImagesUseCase:
+    def execute(self, *, input_path: Path, assets_dir: Path, force: bool = False):  # noqa: ARG002
+        assert input_path == Path("content/custom/fairy-tales.json")
+        assert assets_dir == Path("assets")
+        return {
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "vocabulary_items": [
+                {
+                    "id": "dragon",
+                    "english_word": "Dragon",
+                    "translation": "дракон",
+                    "image_ref": "assets/fairy-tales/dragon.png",
+                },
+                {
+                    "id": "fairy",
+                    "english_word": "Fairy",
+                    "translation": "фея",
+                    "image_ref": "assets/fairy-tales/fairy.png",
+                },
+            ],
+        }
+
+
+class _FakeStartPublishedWordImageEditUseCase:
+    def __init__(self, flow: ImageReviewFlowState) -> None:
+        self._flow = flow
+
+    def execute(self, *, user_id: int, topic_id: str, item_id: str, model_names=None):  # noqa: ARG002
+        assert topic_id == "fairy-tales"
+        assert item_id == "dragon"
+        return self._flow
+
+
 @pytest.mark.anyio
 async def test_approve_draft_handler_starts_image_review_and_sends_first_step(
     tmp_path: Path,
@@ -341,6 +407,156 @@ async def test_approve_draft_handler_starts_image_review_and_sends_first_step(
     assert "A. Dreamshaper" in message.reply_photo_captions
     assert "B. Realistic Vision" in message.reply_photo_captions
     assert "C. SD 1.5" in message.reply_photo_captions
+
+
+@pytest.mark.anyio
+async def test_approve_auto_images_handler_generates_images_and_offers_word_edit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("englishbot.bot.build_training_service", lambda: "training-service")
+    draft = LessonExtractionDraft(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            ExtractedVocabularyItemDraft(
+                english_word="Dragon",
+                translation="дракон",
+                source_fragment="Dragon — дракон",
+            )
+        ],
+    )
+    add_words_flow = AddWordsFlowState(
+        flow_id="flow123",
+        editor_user_id=42,
+        raw_text="Fairy Tales\nDragon — дракон",
+        draft_result=ImportLessonResult(draft=draft, validation=ValidationResult(errors=[])),
+    )
+    message = _FakeCallbackMessage(tmp_path)
+    query = _FakeQuery("words:approve_auto_images:flow123", message)
+    update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "add_words_get_active_use_case": _FakeGetActiveFlowUseCase(add_words_flow),
+                "add_words_cancel_use_case": _FakeCancelAddWordsUseCase(),
+                "add_words_save_approved_draft_use_case": _FakeSaveApprovedDraftUseCase(
+                    add_words_flow
+                ),
+                "add_words_generate_image_prompts_use_case": (
+                    _FakeGenerateAddWordsImagePromptsUseCase(add_words_flow)
+                ),
+                "add_words_approve_use_case": _FakeApproveAddWordsDraftUseCase(),
+                "content_pack_generate_images_use_case": _FakeGenerateContentPackImagesUseCase(),
+                "word_import_preview_message_ids": {},
+            }
+        ),
+    )
+
+    await add_words_approve_auto_images_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.edits[0] == "Saving approved draft... 0/1"
+    assert "Publishing content pack... 0/1" in query.edits[2]
+    assert "Generating images... 0/1" in query.edits[3]
+    assert "Draft approved and images generated." in query.edits[4]
+
+
+@pytest.mark.anyio
+async def test_published_image_menu_and_item_handlers_start_single_word_review(
+    tmp_path: Path,
+) -> None:
+    content_dir = tmp_path / "content" / "custom"
+    content_dir.mkdir(parents=True)
+    current_image_path = tmp_path / "assets" / "fairy-tales" / "dragon.png"
+    current_image_path.parent.mkdir(parents=True, exist_ok=True)
+    current_image_path.write_bytes(b"current")
+    (content_dir / "fairy-tales.json").write_text(
+        '{\n'
+        '  "topic": {"id": "fairy-tales", "title": "Fairy Tales"},\n'
+        '  "lessons": [],\n'
+        '  "vocabulary_items": [\n'
+        '    {"id": "dragon", "english_word": "Dragon", "translation": "дракон", '
+        '"image_ref": "assets/fairy-tales/dragon.png"},\n'
+        '    {"id": "fairy", "english_word": "Fairy", "translation": "фея"}\n'
+        "  ]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    candidate_path = tmp_path / "dragon-a.png"
+    candidate_path.write_bytes(b"a")
+    review_flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "vocabulary_items": [
+                {
+                    "id": "dragon",
+                    "english_word": "Dragon",
+                    "translation": "дракон",
+                    "image_ref": "assets/fairy-tales/dragon.png",
+                }
+            ],
+        },
+        items=[
+            ImageReviewItem(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                prompt="Prompt for Dragon",
+                candidates=[
+                    ImageCandidate(
+                        model_name="dreamshaper",
+                        image_ref="assets/fairy-tales/review/dragon--dreamshaper.png",
+                        output_path=candidate_path,
+                        prompt="Prompt for Dragon",
+                    )
+                ],
+            )
+        ],
+    )
+    menu_message = _FakeCallbackMessage(tmp_path)
+    menu_query = _FakeQuery("words:edit_images_menu:fairy-tales", menu_message)
+    menu_update = SimpleNamespace(callback_query=menu_query, effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "image_review_start_published_word_use_case": (
+                    _FakeStartPublishedWordImageEditUseCase(review_flow)
+                ),
+                "image_review_generate_use_case": _FakeGenerateImageReviewCandidatesUseCase(
+                    review_flow
+                ),
+            }
+        ),
+    )
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.chdir(tmp_path)
+    try:
+        await published_images_menu_handler(menu_update, context)  # type: ignore[arg-type]
+        assert menu_query.edits[-1] == "Choose a word to edit its image."
+
+        item_message = _FakeCallbackMessage(tmp_path)
+        item_query = _FakeQuery(
+            "words:edit_published_image:fairy-tales:dragon",
+            item_message,
+        )
+        item_update = SimpleNamespace(
+            callback_query=item_query,
+            effective_user=SimpleNamespace(id=42),
+        )
+        await published_image_item_handler(item_update, context)  # type: ignore[arg-type]
+
+        assert any(
+            caption.startswith("Current image.")
+            for caption in item_message.reply_photo_captions
+        )
+        assert any(
+            "Generating image candidates 1/1..." in text
+            for text in item_message.reply_text_calls
+        )
+        assert any("Reviewing images 1/1" in text for text in item_message.reply_text_calls)
+    finally:
+        monkeypatch.undo()
 
 
 @pytest.mark.anyio
