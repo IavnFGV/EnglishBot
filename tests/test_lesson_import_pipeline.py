@@ -645,6 +645,213 @@ def test_ollama_extraction_client_recovers_source_fragment_before_translation_re
     assert draft.vocabulary_items[0].translation == "гномик"
 
 
+def test_ollama_extraction_client_accepts_parentheses_style_multi_pair_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_line = "kind (добрый), shy (застенчивый), friendly (дружелюбный)"
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "kind",
+                                    "translation": "добрый",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                                {
+                                    "english_word": "shy",
+                                    "translation": "застенчивый",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                                {
+                                    "english_word": "friendly",
+                                    "translation": "дружелюбный",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                            ]
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            assert url == "http://127.0.0.1:11434/api/chat"
+            assert json["messages"][-1]["content"] == source_line
+            assert timeout == 120
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+
+    draft = client.extract(f"Character traits\n\n{source_line}")
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert draft.topic_title == "Character traits"
+    assert draft.unparsed_lines == []
+    assert [item.english_word for item in draft.vocabulary_items] == [
+        "kind",
+        "shy",
+        "friendly",
+    ]
+    assert [item.translation for item in draft.vocabulary_items] == [
+        "добрый",
+        "застенчивый",
+        "дружелюбный",
+    ]
+
+
+def test_ollama_extraction_client_uses_bracketed_first_line_as_explicit_topic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_line = "kind (добрый), shy (застенчивый)"
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "kind",
+                                    "translation": "добрый",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                                {
+                                    "english_word": "shy",
+                                    "translation": "застенчивый",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                            ]
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            assert json["messages"][-1]["content"] == source_line
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+
+    draft = client.extract(f"[Character Traits]\n{source_line}")
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert draft.topic_title == "Character Traits"
+    assert [item.english_word for item in draft.vocabulary_items] == ["kind", "shy"]
+
+
+def test_ollama_extraction_client_infers_topic_when_first_line_is_not_explicit_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_line = "kind (добрый), shy (застенчивый)"
+    second_line = "friendly (дружелюбный), honest (честный)"
+
+    class FakeResponse:
+        def __init__(self, content: str) -> None:
+            self._content = content
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"message": {"content": self._content}}
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            user_content = json["messages"][-1]["content"]
+            assert timeout == 120
+            if user_content == first_line:
+                return FakeResponse(
+                    json_module.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "kind",
+                                    "translation": "добрый",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": first_line,
+                                },
+                                {
+                                    "english_word": "shy",
+                                    "translation": "застенчивый",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": first_line,
+                                },
+                            ]
+                        }
+                    )
+                )
+            if user_content == second_line:
+                return FakeResponse(
+                    json_module.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "friendly",
+                                    "translation": "дружелюбный",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": second_line,
+                                },
+                                {
+                                    "english_word": "honest",
+                                    "translation": "честный",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": second_line,
+                                },
+                            ]
+                        }
+                    )
+                )
+            assert "Extracted words:" in user_content
+            return FakeResponse("Character Traits")
+
+    json_module = json
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+
+    draft = client.extract(f"{first_line}\n{second_line}")
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert draft.topic_title == "Character Traits"
+    assert [item.english_word for item in draft.vocabulary_items] == [
+        "kind",
+        "shy",
+        "friendly",
+        "honest",
+    ]
+
+
 def test_pipeline_can_enrich_image_prompts_per_item(tmp_path: Path) -> None:
     draft = LessonExtractionDraft(
         topic_title="Fairy Tales",

@@ -5,6 +5,7 @@ from englishbot.application.add_words_use_cases import (
     ApplyAddWordsEditUseCase,
     ApproveAddWordsDraftUseCase,
     GetActiveAddWordsFlowUseCase,
+    RegenerateAddWordsDraftUseCase,
     StartAddWordsFlowUseCase,
 )
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
@@ -88,6 +89,51 @@ def test_add_words_use_cases_support_extract_and_edit() -> None:
         "принцесса",
         "королева",
     ]
+    assert updated.raw_text.startswith("Topic: Fairy Tales\nLesson: Royal Family")
+
+
+def test_regenerate_uses_edited_text_as_new_source() -> None:
+    repository = InMemoryAddWordsFlowRepository()
+    harness = AddWordsFlowHarness(
+        pipeline=LessonImportPipeline(
+            extraction_client=FakeLessonExtractionClient(
+                LessonExtractionDraft(
+                    topic_title="Fairy Tales",
+                    lesson_title=None,
+                    vocabulary_items=[
+                        ExtractedVocabularyItemDraft(
+                            english_word="Dragon",
+                            translation="дракон",
+                            source_fragment="Dragon — дракон",
+                        )
+                    ],
+                )
+            ),
+            validator=LessonExtractionValidator(),
+            canonicalizer=DraftToContentPackCanonicalizer(),
+            writer=JsonContentPackWriter(),
+        ),
+        validator=LessonExtractionValidator(),
+        writer=JsonContentPackWriter(),
+    )
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+    apply_edit = ApplyAddWordsEditUseCase(harness=harness, flow_repository=repository)
+    regenerate = RegenerateAddWordsDraftUseCase(harness=harness, flow_repository=repository)
+
+    flow = start.execute(user_id=7, raw_text="messy fairy tale text")
+    updated = apply_edit.execute(
+        user_id=7,
+        flow_id=flow.flow_id,
+        edited_text=(
+            "Topic: Fairy Tales\n"
+            "Lesson: Royal Family\n\n"
+            "Dragon: дракон\n"
+        ),
+    )
+    regenerated = regenerate.execute(user_id=7, flow_id=flow.flow_id)
+
+    assert updated.raw_text.startswith("Topic: Fairy Tales\nLesson: Royal Family")
+    assert regenerated.raw_text == updated.raw_text
 
 
 def test_add_words_use_cases_can_approve_and_write_content_pack(tmp_path: Path) -> None:

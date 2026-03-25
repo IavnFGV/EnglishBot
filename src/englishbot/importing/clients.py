@@ -104,6 +104,9 @@ class OllamaLessonExtractionClient:
         self._extract_line_prompt_path = extract_line_prompt_path or Path(
             os.getenv("OLLAMA_EXTRACT_LINE_PROMPT_PATH", "prompts/ollama_extract_line_prompt.txt")
         )
+        self._infer_topic_prompt_path = Path(
+            os.getenv("OLLAMA_INFER_TOPIC_PROMPT_PATH", "prompts/ollama_infer_topic_prompt.txt")
+        )
 
     @logged_service_call(
         "OllamaLessonExtractionClient.extract",
@@ -171,20 +174,14 @@ class OllamaLessonExtractionClient:
         )
 
     def _extract_line_by_line(self, *, raw_text: str, requests_module) -> LessonExtractionDraft:
-        lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
-        topic_title = "Imported Topic"
-        candidate_lines = lines
-        if lines and not _SOURCE_SPLIT_RE.search(lines[0]):
-            topic_title = lines[0]
-            candidate_lines = lines[1:]
+        topic_title, candidate_lines = self._extract_explicit_topic_and_candidate_lines(raw_text)
 
-        source_lines = [line for line in candidate_lines if _SOURCE_SPLIT_RE.search(line)]
-        unparsed_lines = [line for line in candidate_lines if not _SOURCE_SPLIT_RE.search(line)]
+        source_lines = list(candidate_lines)
+        unparsed_lines: list[str] = []
         logger.debug(
-            "OllamaLessonExtractionClient line-by-line topic=%s source_lines=%s ignored_lines=%s",
+            "OllamaLessonExtractionClient line-by-line topic=%s source_lines=%s",
             topic_title,
             len(source_lines),
-            len(unparsed_lines),
         )
 
         items: list[ExtractedVocabularyItemDraft] = []
@@ -207,6 +204,13 @@ class OllamaLessonExtractionClient:
                 continue
             items.extend(line_items)
 
+        if not topic_title.strip():
+            topic_title = self._infer_topic_title(
+                items=items,
+                raw_text=raw_text,
+                requests_module=requests_module,
+            )
+
         return LessonExtractionDraft(
             topic_title=topic_title,
             lesson_title=None,
@@ -215,6 +219,117 @@ class OllamaLessonExtractionClient:
             unparsed_lines=unparsed_lines,
             confidence_notes=[],
         )
+
+    def _extract_explicit_topic_and_candidate_lines(self, raw_text: str) -> tuple[str, list[str]]:
+        raw_lines = raw_text.splitlines()
+        nonempty_lines = [line.strip() for line in raw_lines if line.strip()]
+        if not nonempty_lines:
+            return "Imported Topic", []
+
+        first_content_index = next(
+            (index for index, line in enumerate(raw_lines) if line.strip()),
+            None,
+        )
+        if first_content_index is None:
+            return "Imported Topic", []
+
+        first_line = raw_lines[first_content_index].strip()
+        if self._is_bracketed_topic_line(first_line):
+            topic_title = first_line[1:-1].strip() or "Imported Topic"
+            candidate_lines = [
+                line.strip() for line in raw_lines[first_content_index + 1 :] if line.strip()
+            ]
+            return topic_title, candidate_lines
+
+        next_line_index = first_content_index + 1
+        if next_line_index < len(raw_lines) and not raw_lines[next_line_index].strip():
+            candidate_lines = [
+                line.strip()
+                for line in raw_lines[next_line_index + 1 :]
+                if line.strip()
+            ]
+            return first_line, candidate_lines
+
+        return "", nonempty_lines
+
+    def _is_bracketed_topic_line(self, line: str) -> bool:
+        return line.startswith("[") and line.endswith("]") and len(line) > 2
+
+    def _infer_topic_title(
+        self,
+        *,
+        items: list[ExtractedVocabularyItemDraft],
+        raw_text: str,
+        requests_module,
+    ) -> str:
+        if not items:
+            return "Imported Topic"
+
+        item_summary = ", ".join(item.english_word for item in items if item.english_word.strip())
+        prompt_input = (
+            f"Extracted words: {item_summary}\n"
+            f"Source text:\n{raw_text.strip()}"
+        )
+        logger.debug(
+            (
+                "OllamaLessonExtractionClient infer topic "
+                "model=%s timeout=%s prompt_path=%s item_count=%s"
+            ),
+            self._model,
+            self._timeout,
+            self._infer_topic_prompt_path,
+            len(items),
+        )
+        payload = {
+            "model": self._model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": self._infer_topic_system_prompt()},
+                {"role": "user", "content": prompt_input},
+            ],
+        }
+        if self._options:
+            payload["options"] = dict(self._options)
+        response = requests_module.post(
+            f"{self._base_url}/api/chat",
+            json=payload,
+            timeout=self._timeout,
+        )
+        response.raise_for_status()
+        content = response.json()["message"]["content"].strip()
+        topic_title = self._parse_topic_inference_content(content)
+        logger.debug(
+            "OllamaLessonExtractionClient inferred topic_title=%s raw_content=%s",
+            topic_title,
+            _short_text(content, limit=120),
+        )
+        return topic_title or "Imported Topic"
+
+    def _infer_topic_system_prompt(self) -> str:
+        return load_prompt_text(
+            path=self._infer_topic_prompt_path,
+            fallback=(
+                "You receive extracted English vocabulary for one lesson. "
+                "Return only a short topic title in plain text. "
+                "Use 1 to 4 words. "
+                "Do not return JSON, explanations, punctuation-only text, or lists."
+            ),
+        )
+
+    def _parse_topic_inference_content(self, content: str) -> str:
+        stripped = content.strip().strip('"').strip("'")
+        if not stripped:
+            return ""
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                return stripped
+            if isinstance(parsed, dict):
+                value = parsed.get("topic_title")
+                if isinstance(value, str):
+                    return value.strip()
+        return stripped
 
     def _extract_line_items(
         self,
@@ -520,7 +635,7 @@ class OllamaLessonExtractionClient:
         candidates: list[str] = []
         for line in raw_text.splitlines():
             stripped = line.strip()
-            if stripped and _SOURCE_SPLIT_RE.search(stripped):
+            if stripped:
                 candidates.append(stripped)
         return candidates
 

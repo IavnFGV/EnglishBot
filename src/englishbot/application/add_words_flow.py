@@ -100,7 +100,7 @@ class AddWordsFlowHarness:
         return AddWordsFlowState(
             flow_id=flow.flow_id,
             editor_user_id=flow.editor_user_id,
-            raw_text=flow.raw_text,
+            raw_text=edited_text,
             draft_result=ImportLessonResult(
                 draft=updated_draft,
                 validation=validation,

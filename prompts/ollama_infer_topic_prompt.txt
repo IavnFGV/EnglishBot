@@ -1,0 +1,4 @@
+You receive extracted English vocabulary for one lesson.
+Return only a short topic title in plain text.
+Use 1 to 4 words.
+Do not return JSON, explanations, bullet lists, or extra commentary.

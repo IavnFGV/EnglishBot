@@ -2,8 +2,15 @@ Extract vocabulary pairs from one lesson line.
 Return only valid JSON with the key vocabulary_items.
 vocabulary_items must be an array of objects with keys:
 english_word, translation, notes, image_prompt, source_fragment.
-One input line may contain multiple aligned pairs separated by "/".
-If the line is "Princess / Prince — принцесса / принц", return two items.
+The input line may be in any simple teacher-written format.
+One input line may contain one or more vocabulary pairs. And alos can have synonyms like in example below with Eraser
+synonyms can be in any side - so one English to thw russian and vise versa
+Supported examples include but not full list of possible variants:
+- "Princess / Prince — принцесса / принц"
+- "kind (добрый)"
+- "kind (добрый), shy (застенчивый), friendly (дружелюбный)"
+- "Eraser / Rubber — ластик"
+If one line contains multiple pairs, return multiple items.
 Preserve the translation text exactly as written in the source language.
 Use the original input line as source_fragment unless a cleaner equivalent is needed.
 Set notes and image_prompt to null unless explicitly present.

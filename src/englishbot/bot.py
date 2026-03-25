@@ -516,12 +516,12 @@ async def add_words_regenerate_draft_handler(
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text("This draft is no longer active.")
         return
-    await query.edit_message_text("Regenerating draft... 0/1")
+    await query.edit_message_text("Re-recognizing draft... 0/1")
     stop_event = asyncio.Event()
     heartbeat_task = asyncio.create_task(
         _run_status_heartbeat(
             query,
-            stage="Regenerating draft",
+            stage="Re-recognizing draft",
             stop_event=stop_event,
         )
     )
@@ -534,7 +534,7 @@ async def add_words_regenerate_draft_handler(
     except Exception:  # noqa: BLE001
         logger.exception("Add-words draft regeneration failed for user=%s", user.id)
         await query.edit_message_text(
-            "Regenerating draft... failed\n"
+            "Re-recognizing draft... failed\n"
             "Could not parse this text. Please try again or simplify the input."
         )
         return
@@ -822,7 +822,7 @@ def _draft_review_keyboard(flow_id: str, is_valid: bool) -> InlineKeyboardMarkup
                 callback_data=f"words:approve_draft:{flow_id}",
             ),
             InlineKeyboardButton(
-                "Regenerate Draft",
+                "Re-recognize Draft",
                 callback_data=f"words:regenerate_draft:{flow_id}",
             ),
         ],

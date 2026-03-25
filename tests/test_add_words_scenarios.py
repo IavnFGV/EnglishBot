@@ -94,6 +94,31 @@ def test_editor_regenerates_draft_and_gets_latest_extraction_result() -> None:
     ]
 
 
+def test_editor_regenerate_uses_edited_text_as_current_source() -> None:
+    edited_text = (
+        "Topic: Fairy Tales\n"
+        "Lesson: Royal Family\n\n"
+        "Dragon: дракон\n"
+    )
+    scenario = (
+        build_driver(
+            drafts=[
+                build_draft(items=[("Princess", "принцесса")]),
+                build_draft(items=[("Dragon", "дракон")]),
+            ]
+        )
+        .when_editor_starts_flow(raw_text="raw source text")
+        .when_editor_edits_draft(edited_text=edited_text)
+        .when_editor_regenerates_draft()
+    )
+
+    assert scenario.flow is not None
+    assert scenario.flow.raw_text == edited_text
+    assert [item.english_word for item in scenario.flow.draft_result.draft.vocabulary_items] == [
+        "Dragon",
+    ]
+
+
 def test_editor_cancels_flow_and_old_edit_action_becomes_stale() -> None:
     scenario = build_driver().when_editor_starts_flow()
     stale_flow_id = scenario.flow.flow_id if scenario.flow is not None else ""
