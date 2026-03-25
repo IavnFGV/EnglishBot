@@ -14,6 +14,10 @@ checkpoint_name="${COMFYUI_CHECKPOINT_NAME:-}"
 checkpoint_url="${COMFYUI_CHECKPOINT_URL:-}"
 checkpoint_dir="${workspace}/models/checkpoints"
 checkpoint_path="${checkpoint_dir}/${checkpoint_name}"
+vae_name="${COMFYUI_VAE_NAME:-}"
+vae_url="${COMFYUI_VAE_URL:-}"
+vae_dir="${workspace}/models/vae"
+vae_path="${vae_dir}/${vae_name}"
 startup_timeout_sec="${COMFYUI_STARTUP_TIMEOUT_SEC:-180}"
 log_path="${COMFYUI_LOG_PATH:-/tmp/englishbot-comfyui.log}"
 
@@ -27,6 +31,7 @@ if [[ ! -f "$workspace/main.py" ]]; then
 fi
 
 mkdir -p "$checkpoint_dir"
+mkdir -p "$vae_dir"
 
 if [[ -n "$checkpoint_name" && ! -f "$checkpoint_path" ]]; then
   if [[ -z "$checkpoint_url" ]]; then
@@ -40,6 +45,20 @@ if [[ -n "$checkpoint_name" && ! -f "$checkpoint_path" ]]; then
   mv "$tmp_path" "$checkpoint_path"
 elif [[ -n "$checkpoint_name" ]]; then
   echo "ComfyUI checkpoint already present: $checkpoint_path"
+fi
+
+if [[ -n "$vae_name" && ! -f "$vae_path" ]]; then
+  if [[ -z "$vae_url" ]]; then
+    echo "ComfyUI VAE missing and COMFYUI_VAE_URL is empty: $vae_path" >&2
+    exit 1
+  fi
+  echo "Downloading ComfyUI VAE: $vae_name"
+  tmp_path="${vae_path}.part"
+  rm -f "$tmp_path"
+  curl --fail --location --output "$tmp_path" "$vae_url"
+  mv "$tmp_path" "$vae_path"
+elif [[ -n "$vae_name" ]]; then
+  echo "ComfyUI VAE already present: $vae_path"
 fi
 
 python_bin="python"

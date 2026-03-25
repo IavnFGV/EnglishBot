@@ -772,3 +772,55 @@ def test_ollama_image_prompt_enricher_accepts_single_json_object_response(
         == "cute children's flashcard illustration of a green dragon, "
         "simple cartoon style, centered, white background, colorful, no text"
     )
+
+
+def test_ollama_image_prompt_enricher_accepts_object_under_image_prompts_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "image_prompts": {
+                                "image_prompt": (
+                                    "cute children's flashcard illustration of a green dragon, "
+                                    "simple cartoon style, centered, white background, "
+                                    "colorful, no text"
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    enricher = OllamaImagePromptEnricher(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+    )
+    enriched = enricher.enrich(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            {
+                "id": "fairy-tales-dragon",
+                "english_word": "Dragon",
+                "translation": "дракон",
+                "image_ref": None,
+            }
+        ],
+    )
+    assert (
+        enriched[0]["image_prompt"]
+        == "cute children's flashcard illustration of a green dragon, "
+        "simple cartoon style, centered, white background, colorful, no text"
+    )

@@ -101,7 +101,7 @@ class ContentPackImageEnricher:
 
             raw_prompt = str(item.get("image_prompt", "")).strip()
             prompt = (
-                compose_image_prompt(raw_prompt)
+                compose_image_prompt(raw_prompt, english_word=english_word)
                 if raw_prompt
                 else fallback_image_prompt(english_word)
             )

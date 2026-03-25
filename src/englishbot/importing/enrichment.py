@@ -26,13 +26,13 @@ class OllamaImagePromptEnricher:
         *,
         model: str | None = None,
         base_url: str | None = None,
-        timeout: int = 120,
+        timeout: int | None = None,
     ) -> None:
         self._model = model or os.getenv("OLLAMA_PULL_MODEL", "llama3.2:3b")
         self._base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip(
             "/"
         )
-        self._timeout = timeout
+        self._timeout = timeout or int(os.getenv("OLLAMA_IMAGE_PROMPT_TIMEOUT_SEC", "30"))
 
     @logged_service_call(
         "OllamaImagePromptEnricher.enrich",
@@ -51,7 +51,14 @@ class OllamaImagePromptEnricher:
     ) -> list[dict[str, object]]:
         enriched_items: list[dict[str, object]] = []
         for item in vocabulary_items:
-            prompts = self._generate_item(topic_title=topic_title, item=item)
+            try:
+                prompts = self._generate_item(topic_title=topic_title, item=item)
+            except Exception:
+                logger.exception(
+                    "OllamaImagePromptEnricher failed for english_word=%s",
+                    item.get("english_word"),
+                )
+                prompts = []
             prompts_by_id = {item.item_id: item.image_prompt for item in prompts}
             prompts_by_word = {
                 self._normalize_word(item.english_word): item.image_prompt
@@ -155,8 +162,30 @@ class OllamaImagePromptEnricher:
             )
             if direct_json_prompt is not None:
                 return [direct_json_prompt]
+        if isinstance(raw_items, dict):
+            direct_item_prompt = self._extract_direct_prompt_from_object(
+                parsed=raw_items,
+                source_item=source_item,
+            )
+            return [direct_item_prompt] if direct_item_prompt is not None else []
+        if isinstance(raw_items, str):
+            direct_prompt = self._first_non_empty(raw_items)
+            if direct_prompt is not None:
+                return [
+                    ImagePromptItem(
+                        item_id=str(source_item.get("id", "")).strip(),
+                        english_word=str(source_item.get("english_word", "")).strip(),
+                        translation=str(source_item.get("translation", "")).strip(),
+                        image_prompt=direct_prompt,
+                    )
+                ]
+            return []
         if not isinstance(raw_items, list):
-            raise ValueError("image prompt payload must be an array.")
+            logger.warning(
+                "OllamaImagePromptEnricher received unsupported payload type=%s",
+                type(raw_items).__name__,
+            )
+            return []
         items: list[ImagePromptItem] = []
         for item in raw_items:
             if not isinstance(item, dict):
@@ -194,20 +223,21 @@ class OllamaImagePromptEnricher:
             "- No scenes. "
             "- No background descriptions. "
             "- White background only. "
+            "- If word somehow about human - say - girl or boy, man or women. Years - old or young"
             "- Keep it simple and clear. "
             "- Use at most 1-2 short descriptive attributes. "
             "If the vocabulary item names alternatives such as 'Princess / Prince', "
             "choose the exact single object named by the current vocabulary item "
             "and do not combine multiple objects. "
             "FORMAT: "
-            "\"cute children's flashcard illustration of <OBJECT WITH OPTIONAL 1-2 ATTRIBUTES>, "
+            "\" illustration of <OBJECT WITH OPTIONAL 1-2 ATTRIBUTES>, "
             "simple cartoon style, centered, white background, colorful, no text\". "
             "EXAMPLES: "
             "Input: king. "
-            "Output: cute children's flashcard illustration of a king with a golden crown, "
+            "Output: illustration of a king - older man with a golden crown, "
             "simple cartoon style, centered, white background, colorful, no text. "
             "Input: dragon. "
-            "Output: cute children's flashcard illustration of a green dragon, "
+            "Output: illustration of a green dragon, "
             "simple cartoon style, centered, white background, colorful, no text. "
             "TASK: Generate the prompt. "
             "INPUT WORD: use the english_word from the provided vocabulary_item."

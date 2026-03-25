@@ -42,6 +42,10 @@ def main(
         str,
         typer.Option("--comfyui-checkpoint", help="Checkpoint name available inside ComfyUI."),
     ] = "v1-5-pruned-emaonly.safetensors",
+    comfyui_vae: Annotated[
+        str | None,
+        typer.Option("--comfyui-vae", help="Optional VAE filename available inside ComfyUI."),
+    ] = None,
     force: Annotated[
         bool,
         typer.Option(
@@ -61,6 +65,7 @@ def main(
         image_client = ComfyUIImageGenerationClient(
             base_url=comfyui_base_url,
             checkpoint_name=comfyui_checkpoint,
+            vae_name=comfyui_vae,
         )
     else:
         raise typer.BadParameter(

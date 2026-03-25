@@ -30,6 +30,7 @@ def _build_pipeline(
     extractor: str,
     ollama_model: str,
     ollama_base_url: str,
+    image_prompt_timeout_sec: int,
 ) -> LessonImportPipeline:
     extraction_client = StubLessonExtractionClient()
     if extractor == "ollama":
@@ -48,6 +49,7 @@ def _build_pipeline(
             OllamaImagePromptEnricher(
                 model=ollama_model,
                 base_url=ollama_base_url,
+                timeout=image_prompt_timeout_sec,
             )
             if extractor == "ollama"
             else None
@@ -107,6 +109,13 @@ def extract_draft(
             help="Generate image prompts for each extracted vocabulary pair.",
         ),
     ] = False,
+    image_prompt_timeout_sec: Annotated[
+        int,
+        typer.Option(
+            "--image-prompt-timeout-sec",
+            help="Timeout in seconds for one image-prompt generation request.",
+        ),
+    ] = int(os.getenv("OLLAMA_IMAGE_PROMPT_TIMEOUT_SEC", "30")),
     log_level: Annotated[
         str,
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
@@ -124,6 +133,7 @@ def extract_draft(
         extractor=extractor,
         ollama_model=ollama_model,
         ollama_base_url=ollama_base_url,
+        image_prompt_timeout_sec=image_prompt_timeout_sec,
     )
     result = pipeline.extract_draft(
         raw_text=raw_text,

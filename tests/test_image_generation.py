@@ -6,7 +6,10 @@ import pytest
 
 from englishbot.bot import _send_question
 from englishbot.domain.models import TrainingMode, TrainingQuestion
-from englishbot.image_generation.clients import ComfyUIImageGenerationClient
+from englishbot.image_generation.clients import (
+    ComfyUIImageGenerationClient,
+    _negative_prompt_for_word,
+)
 from englishbot.image_generation.paths import build_item_asset_path
 from englishbot.image_generation.pipeline import ContentPackImageEnricher
 from englishbot.image_generation.prompts import compose_image_prompt, fallback_image_prompt
@@ -15,18 +18,61 @@ from englishbot.image_generation.prompts import compose_image_prompt, fallback_i
 def test_fallback_image_prompt_generation() -> None:
     assert (
         fallback_image_prompt("Dragon")
-        == "Children's vocabulary flashcard, cute cartoon illustration, single main subject, "
-        "centered composition, soft colors, clean light background, thick friendly outlines, "
-        "simple shapes, educational card for a young child. Show dragon."
+        == "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
+        "composition, soft colors, clean light background, thick friendly outlines, simple "
+        "shapes. Show dragon."
     )
 
 
 def test_compose_image_prompt_wraps_subject_in_shared_style() -> None:
     assert compose_image_prompt("a red dragon with small wings.") == (
+        "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
+        "composition, soft colors, clean light background, thick friendly outlines, simple "
+        "shapes. Show a red dragon with small wings."
+    )
+
+
+def test_compose_image_prompt_strengthens_human_royal_roles() -> None:
+    assert compose_image_prompt("a prince with a crown", english_word="Prince") == (
+        "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
+        "composition, soft colors, clean light background, thick friendly outlines, simple "
+        "shapes. "
+        "Show a human prince wearing a golden crown and royal clothes."
+    )
+
+
+def test_compose_image_prompt_deduplicates_already_wrapped_prompt() -> None:
+    raw = (
+        "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
+        "composition, soft colors, clean light background, thick friendly outlines, simple "
+        "shapes. Show illustration of a green dragon, "
+        "simple cartoon style, centered, white background, colorful, no text."
+    )
+
+    assert compose_image_prompt(raw, english_word="Dragon") == raw
+
+
+def test_compose_image_prompt_deduplicates_legacy_wrapped_prompt() -> None:
+    raw = (
         "Children's vocabulary flashcard, cute cartoon illustration, single main subject, "
         "centered composition, soft colors, clean light background, thick friendly outlines, "
-        "simple shapes, educational card for a young child. Show a red dragon with small wings."
+        "simple shapes, educational card for a young child. Show illustration of a green dragon, "
+        "simple cartoon style, centered, white background, colorful, no text."
     )
+
+    assert compose_image_prompt(raw, english_word="Dragon") == (
+        "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
+        "composition, soft colors, clean light background, thick friendly outlines, simple "
+        "shapes. Show illustration of a green dragon, simple cartoon style, centered, white "
+        "background, colorful, no text."
+    )
+
+
+def test_negative_prompt_for_human_royal_roles_blocks_animal_bias() -> None:
+    negative = _negative_prompt_for_word("Prince")
+    assert "dog" in negative
+    assert "animal" in negative
+    assert "snout" in negative
 
 
 def test_deterministic_asset_path_generation() -> None:
@@ -269,3 +315,124 @@ def test_comfyui_client_generates_image_via_http_protocol(
     )
 
     assert output_path.read_bytes() == image_bytes
+
+
+def test_comfyui_client_uses_explicit_vae_loader_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    image_bytes = b"png-data"
+
+    class FakeResponse:
+        def __init__(self, payload=None, content: bytes | None = None) -> None:
+            self._payload = payload or {}
+            self.content = content or b""
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            assert json["prompt"]["10"]["class_type"] == "VAELoader"
+            assert json["prompt"]["10"]["inputs"]["vae_name"] == "ReVAnimatedVAE.safetensors"
+            assert json["prompt"]["8"]["inputs"]["vae"] == ["10", 0]
+            return FakeResponse({"prompt_id": "prompt-123"})
+
+        @staticmethod
+        def get(url: str, params=None, timeout: int = 120) -> FakeResponse:
+            if url.endswith("/history/prompt-123"):
+                return FakeResponse(
+                    {
+                        "prompt-123": {
+                            "outputs": {
+                                "9": {
+                                    "images": [
+                                        {
+                                            "filename": "dragon.png",
+                                            "subfolder": "",
+                                            "type": "output",
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                )
+            if url.endswith("/view"):
+                return FakeResponse(content=image_bytes)
+            raise AssertionError(f"Unexpected URL: {url}")
+
+    import sys
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = ComfyUIImageGenerationClient(
+        base_url="http://127.0.0.1:8188",
+        timeout=5,
+        vae_name="ReVAnimatedVAE.safetensors",
+    )
+    output_path = tmp_path / "dragon.png"
+
+    client.generate(
+        prompt="A child-friendly dragon.",
+        english_word="Dragon",
+        output_path=output_path,
+    )
+
+    assert output_path.read_bytes() == image_bytes
+
+
+def test_comfyui_client_raises_runtime_error_from_execution_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakeResponse:
+        def __init__(self, payload=None, content: bytes | None = None) -> None:
+            self._payload = payload or {}
+            self.content = content or b""
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse({"prompt_id": "prompt-123"})
+
+        @staticmethod
+        def get(url: str, params=None, timeout: int = 120) -> FakeResponse:
+            if url.endswith("/history/prompt-123"):
+                return FakeResponse(
+                    {
+                        "prompt-123": {
+                            "status": {
+                                "messages": [
+                                    [
+                                        "execution_error",
+                                        {"exception_message": "ERROR: VAE is invalid: None"},
+                                    ]
+                                ]
+                            },
+                            "outputs": {},
+                        }
+                    }
+                )
+            raise AssertionError(f"Unexpected URL: {url}")
+
+    import sys
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = ComfyUIImageGenerationClient(base_url="http://127.0.0.1:8188", timeout=5)
+
+    with pytest.raises(RuntimeError, match="VAE is invalid"):
+        client.generate(
+            prompt="A child-friendly dragon.",
+            english_word="Dragon",
+            output_path=tmp_path / "dragon.png",
+        )

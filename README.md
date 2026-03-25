@@ -187,6 +187,32 @@ python -m englishbot.generate_lesson_images \
   --comfyui-checkpoint v1-5-pruned-emaonly.safetensors
 ```
 
+If a checkpoint requires a separate VAE, pass it explicitly:
+
+```bash
+python -m englishbot.generate_lesson_images \
+  --input content/custom/fairy-tales.json \
+  --assets-dir assets \
+  --backend comfyui \
+  --comfyui-checkpoint revAnimated_v121.safetensors \
+  --comfyui-vae vae-ft-mse-840000-ema-pruned.safetensors
+```
+
+`ComfyUI` startup can auto-download both the checkpoint and an optional VAE from `.devcontainer/comfyui.env`:
+
+- `COMFYUI_CHECKPOINT_NAME`
+- `COMFYUI_CHECKPOINT_URL`
+- `COMFYUI_VAE_NAME`
+- `COMFYUI_VAE_URL`
+
+The same env file includes commented presets for:
+
+- Stable Diffusion 1.5
+- DreamShaper 8
+- ReVAnimated 1.2.1
+
+So after checkout you can switch the active model set in one place and restart the container services.
+
 Force regeneration even when the referenced local file already exists:
 
 ```bash

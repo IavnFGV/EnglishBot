@@ -95,9 +95,10 @@ class ComfyUIImageGenerationClient:
         self,
         *,
         base_url: str | None = None,
-        timeout: int = 120,
+        timeout: int = 300,
         poll_interval_seconds: float = 1.0,
         checkpoint_name: str | None = None,
+        vae_name: str | None = None,
         seed: int | None = None,
     ) -> None:
         self._base_url = (base_url or os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8188")).rstrip(
@@ -109,6 +110,7 @@ class ComfyUIImageGenerationClient:
             "COMFYUI_CHECKPOINT_NAME",
             "v1-5-pruned-emaonly.safetensors",
         )
+        self._vae_name = vae_name or os.getenv("COMFYUI_VAE_NAME", "")
         self._seed = seed if seed is not None else int(os.getenv("COMFYUI_SEED", "5"))
 
     @logged_service_call(
@@ -163,6 +165,11 @@ class ComfyUIImageGenerationClient:
             if not isinstance(history, dict):
                 time.sleep(self._poll_interval_seconds)
                 continue
+            status = history.get("status", {})
+            if isinstance(status, dict):
+                failure_message = _extract_comfyui_failure_message(status.get("messages"))
+                if failure_message is not None:
+                    raise RuntimeError(f"ComfyUI prompt failed: {failure_message}")
             outputs = history.get("outputs", {})
             if not isinstance(outputs, dict):
                 time.sleep(self._poll_interval_seconds)
@@ -203,73 +210,76 @@ class ComfyUIImageGenerationClient:
         return None
 
     def _build_workflow(self, *, prompt: str, english_word: str) -> dict[str, object]:
-        negative_prompt = (
-            "blurry, distorted, text, watermark, horror, gore, scary, low quality, dark"
-        )
+        negative_prompt = _negative_prompt_for_word(english_word)
         filename_prefix = f"EnglishBot_{_safe_prefix(english_word)}"
-        return json.loads(
-            json.dumps(
-                {
-                    "3": {
-                        "class_type": "KSampler",
-                        "inputs": {
-                            "cfg": 7,
-                            "denoise": 1,
-                            "latent_image": ["5", 0],
-                            "model": ["4", 0],
-                            "negative": ["7", 0],
-                            "positive": ["6", 0],
-                            "sampler_name": "euler",
-                            "scheduler": "normal",
-                            "seed": self._seed,
-                            "steps": 20,
-                        },
-                    },
-                    "4": {
-                        "class_type": "CheckpointLoaderSimple",
-                        "inputs": {
-                            "ckpt_name": self._checkpoint_name,
-                        },
-                    },
-                    "5": {
-                        "class_type": "EmptyLatentImage",
-                        "inputs": {
-                            "batch_size": 1,
-                            "height": 512,
-                            "width": 512,
-                        },
-                    },
-                    "6": {
-                        "class_type": "CLIPTextEncode",
-                        "inputs": {
-                            "clip": ["4", 1],
-                            "text": prompt,
-                        },
-                    },
-                    "7": {
-                        "class_type": "CLIPTextEncode",
-                        "inputs": {
-                            "clip": ["4", 1],
-                            "text": negative_prompt,
-                        },
-                    },
-                    "8": {
-                        "class_type": "VAEDecode",
-                        "inputs": {
-                            "samples": ["3", 0],
-                            "vae": ["4", 2],
-                        },
-                    },
-                    "9": {
-                        "class_type": "SaveImage",
-                        "inputs": {
-                            "filename_prefix": filename_prefix,
-                            "images": ["8", 0],
-                        },
-                    },
-                }
-            )
-        )
+        workflow: dict[str, object] = {
+            "3": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "cfg": 7,
+                    "denoise": 1,
+                    "latent_image": ["5", 0],
+                    "model": ["4", 0],
+                    "negative": ["7", 0],
+                    "positive": ["6", 0],
+                    "sampler_name": "euler",
+                    "scheduler": "normal",
+                    "seed": self._seed,
+                    "steps": 20,
+                },
+            },
+            "4": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {
+                    "ckpt_name": self._checkpoint_name,
+                },
+            },
+            "5": {
+                "class_type": "EmptyLatentImage",
+                "inputs": {
+                    "batch_size": 1,
+                    "height": 512,
+                    "width": 512,
+                },
+            },
+            "6": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {
+                    "clip": ["4", 1],
+                    "text": prompt,
+                },
+            },
+            "7": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {
+                    "clip": ["4", 1],
+                    "text": negative_prompt,
+                },
+            },
+            "8": {
+                "class_type": "VAEDecode",
+                "inputs": {
+                    "samples": ["3", 0],
+                    "vae": ["4", 2],
+                },
+            },
+            "9": {
+                "class_type": "SaveImage",
+                "inputs": {
+                    "filename_prefix": filename_prefix,
+                    "images": ["8", 0],
+                },
+            },
+        }
+        if self._vae_name:
+            workflow["10"] = {
+                "class_type": "VAELoader",
+                "inputs": {
+                    "vae_name": self._vae_name,
+                },
+            }
+            workflow["8"]["inputs"]["vae"] = ["10", 0]
+        return json.loads(json.dumps(workflow))
 
 
 def _wrap_text(text: str, *, max_line_length: int) -> list[str]:
@@ -292,3 +302,33 @@ def _wrap_text(text: str, *, max_line_length: int) -> list[str]:
 
 def _safe_prefix(value: str) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in value.strip())[:48] or "image"
+
+
+def _negative_prompt_for_word(english_word: str) -> str:
+    base = "blurry, distorted, text, watermark, horror, gore, scary, low quality, dark"
+    normalized = english_word.strip().lower()
+    if normalized in {"king", "queen", "prince", "princess", "wizard"}:
+        return (
+            base
+            + ", animal, dog, wolf, furry, snout, muzzle, beak, paws, tail, animal ears,"
+            " non-human face"
+        )
+    return base
+
+
+def _extract_comfyui_failure_message(messages: object) -> str | None:
+    if not isinstance(messages, list):
+        return None
+    for entry in messages:
+        if not isinstance(entry, list) or len(entry) != 2:
+            continue
+        event_type, payload = entry
+        if event_type != "execution_error" or not isinstance(payload, dict):
+            continue
+        exception_message = payload.get("exception_message")
+        if isinstance(exception_message, str) and exception_message.strip():
+            return exception_message.strip()
+        error = payload.get("error")
+        if isinstance(error, str) and error.strip():
+            return error.strip()
+    return None
