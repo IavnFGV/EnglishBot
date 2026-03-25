@@ -1,0 +1,118 @@
+Refactor the lesson import direction away from rigid text parsing and toward an LLM-assisted extraction pipeline with strict validation.
+
+Goal:
+Support messy teacher-provided lesson text by using an extraction layer that converts raw natural-language input into a structured draft content pack, then validates it in code.
+
+Important constraints:
+- Do not rewrite the existing architecture
+- Reuse the current modular monolith structure
+- Keep learner bot behavior unchanged
+- Do not add OCR yet
+- Do not add admin bot UI yet
+- Focus on import pipeline architecture for messy text inputs
+- The system must remain testable without depending on a live LLM API in tests
+
+Please implement the following.
+
+1. Introduce a lesson extraction pipeline
+Create a small import pipeline with clear stages:
+- raw input ingestion
+- extraction into a structured draft format
+- strict validation
+- canonicalization / normalization
+- content pack writing
+
+2. Extraction interface
+Add an abstraction for semantic extraction from raw text, for example:
+- `LessonExtractionClient`
+or similarly named interface
+
+It should accept raw teacher text and return a structured draft result.
+
+The architecture must allow later plugging in:
+- OpenAI API
+- another hosted LLM
+- a local model
+
+3. Draft extraction schema
+Define a structured draft schema/result for extracted lesson data.
+
+At minimum include:
+- topic title
+- optional lesson title
+- vocabulary items
+
+For each item include:
+- english_word
+- translation
+- optional notes
+- optional image_prompt
+- source_fragment
+
+The schema may also include:
+- warnings
+- unparsed lines
+- confidence notes
+
+4. Validation layer
+Implement code-level validation independent from the LLM.
+
+Validate:
+- required fields
+- empty english_word
+- empty translation
+- duplicate ids
+- duplicate normalized english words inside the same lesson if appropriate
+- invalid structural data
+
+The validator should return structured validation errors, not crash.
+
+5. Canonical content-pack conversion
+Add logic that converts a validated extraction draft into the canonical JSON content-pack format already used by the project.
+
+This step should:
+- generate stable ids/slugs
+- normalize whitespace
+- preserve optional notes/image_prompt/source_fragment if the schema allows
+- keep `image_ref` null by default
+
+6. Testability
+Provide a fake/mock extraction client for tests so the pipeline can be tested without network calls.
+
+Add tests for:
+- valid extracted draft -> canonical content pack
+- validation failures
+- duplicate handling
+- id generation
+- warning propagation
+- malformed extraction results
+
+7. Optional local CLI
+If practical, add a local import CLI such as:
+- `python -m englishbot.import_lesson_text --input lesson.txt --output content/custom/fairy-tales.json`
+
+For now the CLI may use:
+- a fake extraction client for tests/examples
+- or a placeholder/manual injection path
+Do not hardwire a real remote API key requirement into the tests.
+
+8. Documentation
+Update README and ARCHITECTURE to explain:
+- why free-form teacher text is handled via semantic extraction instead of rigid parsing
+- the role of the extraction client
+- the role of strict validation
+- draft vs canonical content pack
+- that a human review step is still recommended before publishing
+
+9. Keep future OCR compatibility in mind
+Design the import pipeline so that future OCR/image import can reuse the same downstream steps:
+- extraction result
+- validation
+- canonicalization
+- content-pack write
+
+Final output:
+- summary of changes
+- files changed
+- extraction pipeline overview
+- what remains stubbed vs production-ready

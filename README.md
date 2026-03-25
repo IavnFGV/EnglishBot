@@ -74,6 +74,45 @@ Notes:
 - Packs are validated on load, including lesson references.
 - This format is suitable for manual teacher-prepared content before a future admin bot exists.
 
+## Lesson Text Import Pipeline
+
+The project now includes a separate import pipeline for messy teacher-provided lesson text.
+
+Flow:
+
+1. raw text ingestion
+2. semantic extraction into a draft structure
+3. strict code-level validation
+4. canonicalization into the JSON content-pack format
+5. JSON content-pack writing
+
+Why this exists:
+
+- free-form teacher text is usually too inconsistent for rigid parsing rules;
+- a semantic extraction client can later use OpenAI or another LLM;
+- strict validation still happens in code, so the system does not trust the extractor blindly.
+
+Draft extraction data includes:
+
+- `topic_title`
+- optional `lesson_title`
+- vocabulary items with `english_word`, `translation`, optional `notes`, optional `image_prompt`, and `source_fragment`
+- optional warnings, unparsed lines, and confidence notes
+
+Canonical output remains the same content-pack JSON family already used by the bot, with stable slugs and `image_ref: null` by default.
+
+Human review is still recommended before publishing extracted packs to learner-facing content.
+
+## Local Import CLI
+
+There is a local CLI entrypoint for the import pipeline:
+
+```bash
+python -m englishbot.import_lesson_text --input lesson.txt --output content/custom/fairy-tales.json
+```
+
+Right now it uses a stub extraction client, not a production LLM integration. That is intentional: tests stay offline, and a real extraction client can be plugged in later without changing validation or canonicalization.
+
 ## Quick start in VS Code Dev Container
 
 1. Open the project in VS Code.
@@ -118,6 +157,7 @@ pytest
 
 - Separate admin bot that reuses the same domain and application services
 - Teacher/admin workflow for preparing and validating JSON packs before full in-app content management
+- OpenAI-backed or other hosted/local semantic extraction clients for lesson import
 - Content import from teacher text, spreadsheets, or photo-derived OCR
 - Review scheduling and spaced repetition
 - Manual moderation and editing of imported vocabulary

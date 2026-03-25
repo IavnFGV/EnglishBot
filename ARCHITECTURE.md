@@ -96,6 +96,38 @@ The loader validates:
 - lesson references inside vocabulary items
 - consistent topic ownership inside the pack
 
+## Lesson Extraction Pipeline
+
+Messy teacher-provided lesson text is handled by a separate import pipeline instead of rigid text parsing.
+
+Stages:
+
+- raw input ingestion
+- semantic extraction into a draft result
+- strict validation in code
+- canonicalization into content-pack JSON
+- file writing
+
+Key components:
+
+- `LessonExtractionClient`: abstraction for semantic extraction
+- `LessonExtractionDraft`: structured draft schema from free-form text
+- `LessonExtractionValidator`: code-level validation that returns structured errors
+- `DraftToContentPackCanonicalizer`: stable slug/id generation and canonical normalization
+- `JsonContentPackWriter`: writes canonical packs to disk
+- `LessonImportPipeline`: orchestration layer joining the steps together
+
+The draft schema supports:
+
+- topic title
+- optional lesson title
+- vocabulary items with English word, translation, optional notes, optional image prompt, and source fragment
+- warnings, unparsed lines, and confidence notes
+
+This keeps future OCR compatibility straightforward: OCR can feed raw text or an extraction draft into the same downstream validation, canonicalization, and writing path.
+
+The current CLI uses a stub extraction client for offline safety. A real OpenAI or other LLM-backed client is still a future integration point, but the downstream pipeline is production-shaped already.
+
 ## Future admin bot and import pipeline
 
 The future admin bot can reuse the same domain model and application services while adding a different Telegram entrypoint and admin-specific use cases for content editing, approval, and scheduling.
