@@ -4,8 +4,10 @@ from englishbot.application.add_words_flow import AddWordsFlowHarness
 from englishbot.application.add_words_use_cases import (
     ApplyAddWordsEditUseCase,
     ApproveAddWordsDraftUseCase,
+    GenerateAddWordsImagePromptsUseCase,
     GetActiveAddWordsFlowUseCase,
     RegenerateAddWordsDraftUseCase,
+    SaveApprovedAddWordsDraftUseCase,
     StartAddWordsFlowUseCase,
 )
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
@@ -15,6 +17,21 @@ from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.repositories import InMemoryAddWordsFlowRepository
+
+
+class FakeImagePromptEnricher:
+    def enrich(
+        self,
+        *,
+        topic_title: str,  # noqa: ARG002
+        vocabulary_items: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        enriched: list[dict[str, object]] = []
+        for item in vocabulary_items:
+            updated = dict(item)
+            updated["image_prompt"] = f"Prompt for {item['english_word']}"
+            enriched.append(updated)
+        return enriched
 
 
 def _pipeline() -> LessonImportPipeline:
@@ -42,6 +59,7 @@ def _pipeline() -> LessonImportPipeline:
         validator=LessonExtractionValidator(),
         canonicalizer=DraftToContentPackCanonicalizer(),
         writer=JsonContentPackWriter(),
+        image_prompt_enricher=FakeImagePromptEnricher(),  # type: ignore[arg-type]
     )
 
 
@@ -90,6 +108,7 @@ def test_add_words_use_cases_support_extract_and_edit() -> None:
         "королева",
     ]
     assert updated.raw_text.startswith("Topic: Fairy Tales\nLesson: Royal Family")
+    assert flow.draft_result.draft.vocabulary_items[0].image_prompt is None
 
 
 def test_regenerate_uses_edited_text_as_new_source() -> None:
@@ -112,6 +131,7 @@ def test_regenerate_uses_edited_text_as_new_source() -> None:
             validator=LessonExtractionValidator(),
             canonicalizer=DraftToContentPackCanonicalizer(),
             writer=JsonContentPackWriter(),
+            image_prompt_enricher=FakeImagePromptEnricher(),  # type: ignore[arg-type]
         ),
         validator=LessonExtractionValidator(),
         writer=JsonContentPackWriter(),
@@ -149,3 +169,35 @@ def test_add_words_use_cases_can_approve_and_write_content_pack(tmp_path: Path) 
     assert approved.output_path == output_path
     assert output_path.exists()
     assert repository.get_active_by_user(8) is None
+
+
+def test_add_words_use_cases_can_save_draft_then_generate_image_prompts(tmp_path: Path) -> None:
+    repository = InMemoryAddWordsFlowRepository()
+    harness = _harness()
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+    save_approved_draft = SaveApprovedAddWordsDraftUseCase(
+        harness=harness,
+        flow_repository=repository,
+    )
+    generate_image_prompts = GenerateAddWordsImagePromptsUseCase(
+        harness=harness,
+        flow_repository=repository,
+    )
+
+    flow = start.execute(user_id=8, raw_text="messy fairy tale text")
+    draft_path = tmp_path / "fairy-tales.draft.json"
+    saved_flow = save_approved_draft.execute(
+        user_id=8,
+        flow_id=flow.flow_id,
+        output_path=draft_path,
+    )
+    prompts_flow = generate_image_prompts.execute(user_id=8, flow_id=flow.flow_id)
+
+    assert saved_flow.stage == "draft_saved"
+    assert saved_flow.draft_output_path == draft_path
+    assert draft_path.exists()
+    assert prompts_flow.stage == "prompts_generated"
+    assert [item.image_prompt for item in prompts_flow.draft_result.draft.vocabulary_items] == [
+        "Prompt for Princess",
+        "Prompt for Prince",
+    ]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 
 from telegram import (
     BotCommand,
@@ -13,6 +14,7 @@ from telegram import (
     ReplyKeyboardMarkup,
     Update,
 )
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -24,14 +26,29 @@ from telegram.ext import (
 
 from englishbot.application.add_words_flow import (
     AddWordsFlowHarness,
+    build_publish_output_path,
 )
 from englishbot.application.add_words_use_cases import (
     ApplyAddWordsEditUseCase,
     ApproveAddWordsDraftUseCase,
     CancelAddWordsFlowUseCase,
+    GenerateAddWordsImagePromptsUseCase,
     GetActiveAddWordsFlowUseCase,
+    MarkAddWordsImageReviewStartedUseCase,
     RegenerateAddWordsDraftUseCase,
+    SaveApprovedAddWordsDraftUseCase,
     StartAddWordsFlowUseCase,
+)
+from englishbot.application.image_review_flow import ImageReviewFlowHarness
+from englishbot.application.image_review_use_cases import (
+    AttachUploadedImageUseCase,
+    GenerateImageReviewCandidatesUseCase,
+    GetActiveImageReviewUseCase,
+    PublishImageReviewUseCase,
+    SelectImageCandidateUseCase,
+    SkipImageReviewItemUseCase,
+    StartImageReviewUseCase,
+    UpdateImageReviewPromptUseCase,
 )
 from englishbot.application.services import (
     AnswerOutcome,
@@ -43,8 +60,14 @@ from englishbot.bootstrap import build_lesson_import_pipeline, build_training_se
 from englishbot.config import Settings
 from englishbot.domain.models import Topic, TrainingMode, TrainingQuestion
 from englishbot.image_generation.paths import resolve_existing_image_path
+from englishbot.image_generation.review import ComfyUIImageCandidateGenerator
+from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.draft_io import draft_to_data
-from englishbot.infrastructure.repositories import InMemoryAddWordsFlowRepository
+from englishbot.importing.writer import JsonContentPackWriter
+from englishbot.infrastructure.repositories import (
+    InMemoryAddWordsFlowRepository,
+    InMemoryImageReviewFlowRepository,
+)
 from englishbot.presentation.add_words_text import (
     format_draft_edit_text,
     format_draft_preview,
@@ -54,6 +77,8 @@ logger = logging.getLogger(__name__)
 
 _ADD_WORDS_AWAITING_TEXT = "awaiting_raw_text"
 _ADD_WORDS_AWAITING_EDIT_TEXT = "awaiting_edit_text"
+_IMAGE_REVIEW_AWAITING_PROMPT_TEXT = "awaiting_image_review_prompt_text"
+_IMAGE_REVIEW_AWAITING_PHOTO = "awaiting_image_review_photo"
 
 
 def build_application(settings: Settings) -> Application:
@@ -71,6 +96,13 @@ def build_application(settings: Settings) -> Application:
     add_words_flow_repository = InMemoryAddWordsFlowRepository()
     add_words_harness = AddWordsFlowHarness(
         pipeline=lesson_import_pipeline,
+    )
+    image_review_repository = InMemoryImageReviewFlowRepository()
+    image_review_harness = ImageReviewFlowHarness(
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        candidate_generator=ComfyUIImageCandidateGenerator(),
+        assets_dir=Path("assets"),
     )
     app.bot_data["lesson_import_pipeline"] = lesson_import_pipeline
     app.bot_data["editor_user_ids"] = set(settings.editor_user_ids)
@@ -93,9 +125,57 @@ def build_application(settings: Settings) -> Application:
         harness=add_words_harness,
         flow_repository=add_words_flow_repository,
     )
+    app.bot_data["add_words_save_approved_draft_use_case"] = SaveApprovedAddWordsDraftUseCase(
+        harness=add_words_harness,
+        flow_repository=add_words_flow_repository,
+    )
+    app.bot_data["add_words_generate_image_prompts_use_case"] = (
+        GenerateAddWordsImagePromptsUseCase(
+            harness=add_words_harness,
+            flow_repository=add_words_flow_repository,
+        )
+    )
+    app.bot_data["add_words_mark_image_review_started_use_case"] = (
+        MarkAddWordsImageReviewStartedUseCase(
+            harness=add_words_harness,
+            flow_repository=add_words_flow_repository,
+        )
+    )
     app.bot_data["add_words_cancel_use_case"] = CancelAddWordsFlowUseCase(
         add_words_flow_repository
     )
+    app.bot_data["image_review_start_use_case"] = StartImageReviewUseCase(
+        harness=image_review_harness,
+        repository=image_review_repository,
+    )
+    app.bot_data["image_review_get_active_use_case"] = GetActiveImageReviewUseCase(
+        image_review_repository
+    )
+    app.bot_data["image_review_generate_use_case"] = GenerateImageReviewCandidatesUseCase(
+        harness=image_review_harness,
+        repository=image_review_repository,
+    )
+    app.bot_data["image_review_select_use_case"] = SelectImageCandidateUseCase(
+        harness=image_review_harness,
+        repository=image_review_repository,
+    )
+    app.bot_data["image_review_skip_use_case"] = SkipImageReviewItemUseCase(
+        harness=image_review_harness,
+        repository=image_review_repository,
+    )
+    app.bot_data["image_review_publish_use_case"] = PublishImageReviewUseCase(
+        harness=image_review_harness,
+        repository=image_review_repository,
+    )
+    app.bot_data["image_review_update_prompt_use_case"] = UpdateImageReviewPromptUseCase(
+        harness=image_review_harness,
+        repository=image_review_repository,
+    )
+    app.bot_data["image_review_attach_uploaded_image_use_case"] = AttachUploadedImageUseCase(
+        harness=image_review_harness,
+        repository=image_review_repository,
+    )
+    app.bot_data["image_review_assets_dir"] = Path("assets")
     app.bot_data["word_import_preview_message_ids"] = {}
 
     app.add_handler(CommandHandler("start", start_handler))
@@ -112,8 +192,14 @@ def build_application(settings: Settings) -> Application:
     app.add_handler(CallbackQueryHandler(words_menu_callback_handler, pattern=r"^words:menu$"))
     app.add_handler(
         CallbackQueryHandler(
-            add_words_approve_draft_handler,
+            add_words_publish_without_images_handler,
             pattern=r"^words:approve_draft:",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            add_words_approve_draft_handler,
+            pattern=r"^words:start_image_review:",
         )
     )
     app.add_handler(
@@ -125,10 +211,32 @@ def build_application(settings: Settings) -> Application:
     app.add_handler(CallbackQueryHandler(add_words_edit_text_handler, pattern=r"^words:edit_text:"))
     app.add_handler(CallbackQueryHandler(add_words_show_json_handler, pattern=r"^words:show_json:"))
     app.add_handler(
+        CallbackQueryHandler(image_review_pick_handler, pattern=r"^words:image_pick:")
+    )
+    app.add_handler(
+        CallbackQueryHandler(image_review_skip_handler, pattern=r"^words:image_skip:")
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            image_review_edit_prompt_handler,
+            pattern=r"^words:image_edit_prompt:",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            image_review_attach_photo_handler,
+            pattern=r"^words:image_attach_photo:",
+        )
+    )
+    app.add_handler(
         CallbackQueryHandler(
             add_words_cancel_callback_handler,
             pattern=r"^words:cancel:",
         )
+    )
+    app.add_handler(
+        MessageHandler(filters.PHOTO, image_review_photo_handler),
+        group=0,
     )
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, add_words_text_handler),
@@ -173,8 +281,70 @@ def _approve_add_words_draft(context: ContextTypes.DEFAULT_TYPE) -> ApproveAddWo
     return context.application.bot_data["add_words_approve_use_case"]
 
 
+def _save_approved_add_words_draft(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> SaveApprovedAddWordsDraftUseCase:
+    return context.application.bot_data["add_words_save_approved_draft_use_case"]
+
+
+def _generate_add_words_image_prompts(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> GenerateAddWordsImagePromptsUseCase:
+    return context.application.bot_data["add_words_generate_image_prompts_use_case"]
+
+
+def _mark_add_words_image_review_started(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> MarkAddWordsImageReviewStartedUseCase:
+    return context.application.bot_data["add_words_mark_image_review_started_use_case"]
+
+
 def _cancel_add_words_flow(context: ContextTypes.DEFAULT_TYPE) -> CancelAddWordsFlowUseCase:
     return context.application.bot_data["add_words_cancel_use_case"]
+
+
+def _start_image_review(context: ContextTypes.DEFAULT_TYPE) -> StartImageReviewUseCase:
+    return context.application.bot_data["image_review_start_use_case"]
+
+
+def _get_active_image_review(context: ContextTypes.DEFAULT_TYPE) -> GetActiveImageReviewUseCase:
+    return context.application.bot_data["image_review_get_active_use_case"]
+
+
+def _generate_image_review_candidates(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> GenerateImageReviewCandidatesUseCase:
+    return context.application.bot_data["image_review_generate_use_case"]
+
+
+def _select_image_review_candidate(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> SelectImageCandidateUseCase:
+    return context.application.bot_data["image_review_select_use_case"]
+
+
+def _skip_image_review_item(context: ContextTypes.DEFAULT_TYPE) -> SkipImageReviewItemUseCase:
+    return context.application.bot_data["image_review_skip_use_case"]
+
+
+def _publish_image_review(context: ContextTypes.DEFAULT_TYPE) -> PublishImageReviewUseCase:
+    return context.application.bot_data["image_review_publish_use_case"]
+
+
+def _update_image_review_prompt(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> UpdateImageReviewPromptUseCase:
+    return context.application.bot_data["image_review_update_prompt_use_case"]
+
+
+def _attach_uploaded_image(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> AttachUploadedImageUseCase:
+    return context.application.bot_data["image_review_attach_uploaded_image_use_case"]
+
+
+def _image_review_assets_dir(context: ContextTypes.DEFAULT_TYPE) -> Path:
+    return context.application.bot_data["image_review_assets_dir"]
 
 
 def _is_editor(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -211,14 +381,25 @@ def _draft_item_count(result) -> int | None:
     return len(draft.vocabulary_items) if hasattr(draft, "vocabulary_items") else None
 
 
+def _draft_prompt_count(result) -> int | None:
+    draft = result.draft
+    if not hasattr(draft, "vocabulary_items"):
+        return None
+    return sum(1 for item in draft.vocabulary_items if getattr(item, "image_prompt", None))
+
+
 def _draft_status_text(result) -> str:
     item_count = _draft_item_count(result)
+    prompt_count = _draft_prompt_count(result)
     rendered_item_count = item_count if item_count is not None else "-"
-    return (
-        "Parsing draft... done\n"
-        f"Items found: {rendered_item_count}\n"
-        f"Validation errors: {len(result.validation.errors)}"
-    )
+    lines = [
+        "Parsing draft... done",
+        f"Items found: {rendered_item_count}",
+        f"Validation errors: {len(result.validation.errors)}",
+    ]
+    if prompt_count is not None and prompt_count > 0:
+        lines.insert(2, f"Image prompts: {prompt_count}")
+    return "\n".join(lines)
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -310,12 +491,20 @@ async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFA
     if query is None:
         return
     await query.answer()
-    await query.edit_message_text(
-        "Words menu.",
-        reply_markup=_words_menu_keyboard(
-            is_editor=bool(update.effective_user and _is_editor(update.effective_user.id, context))
-        ),
-    )
+    try:
+        await query.edit_message_text(
+            "Words menu.",
+            reply_markup=_words_menu_keyboard(
+                is_editor=bool(
+                    update.effective_user and _is_editor(update.effective_user.id, context)
+                )
+            ),
+        )
+    except BadRequest as error:
+        if "message is not modified" in str(error).lower():
+            logger.debug("Words menu message unchanged")
+            return
+        raise
 
 
 async def add_words_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -378,7 +567,12 @@ async def add_words_cancel_callback_handler(
 
 async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     words_flow_mode = context.user_data.get("words_flow_mode")
-    if words_flow_mode not in {_ADD_WORDS_AWAITING_TEXT, _ADD_WORDS_AWAITING_EDIT_TEXT}:
+    if words_flow_mode not in {
+        _ADD_WORDS_AWAITING_TEXT,
+        _ADD_WORDS_AWAITING_EDIT_TEXT,
+        _IMAGE_REVIEW_AWAITING_PROMPT_TEXT,
+        _IMAGE_REVIEW_AWAITING_PHOTO,
+    }:
         return
     message = update.effective_message
     user = update.effective_user
@@ -386,6 +580,58 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
         return
     if not _is_editor(user.id, context):
         context.user_data.pop("words_flow_mode", None)
+        return
+    if words_flow_mode == _IMAGE_REVIEW_AWAITING_PROMPT_TEXT:
+        review_flow_id = context.user_data.get("image_review_flow_id")
+        review_item_id = context.user_data.get("image_review_item_id")
+        review_flow = _get_active_image_review(context).execute(user_id=user.id)
+        if (
+            review_flow is None
+            or review_flow.flow_id != review_flow_id
+            or review_flow.current_item is None
+            or review_flow.current_item.item_id != review_item_id
+        ):
+            context.user_data.pop("words_flow_mode", None)
+            context.user_data.pop("image_review_flow_id", None)
+            context.user_data.pop("image_review_item_id", None)
+            await message.reply_text("This image review task is no longer active.")
+            return
+        context.user_data.pop("words_flow_mode", None)
+        context.user_data.pop("image_review_flow_id", None)
+        context.user_data.pop("image_review_item_id", None)
+        status_message = await message.reply_text("Updating image prompt and regenerating... 0/1")
+        stop_event = asyncio.Event()
+        heartbeat_task = asyncio.create_task(
+            _run_status_heartbeat(
+                status_message,
+                stage="Updating image prompt and regenerating",
+                stop_event=stop_event,
+            )
+        )
+        try:
+            updated_flow = await asyncio.to_thread(
+                _update_image_review_prompt(context).execute,
+                user_id=user.id,
+                flow_id=review_flow.flow_id,
+                item_id=review_item_id,
+                prompt=message.text,
+            )
+        except Exception:  # noqa: BLE001
+            stop_event.set()
+            await heartbeat_task
+            logger.exception("Image review prompt update failed for user=%s", user.id)
+            await status_message.edit_text(
+                "Updating image prompt... failed\n"
+                "Could not update this prompt. Please try again."
+            )
+            return
+        stop_event.set()
+        await heartbeat_task
+        await status_message.edit_text("Prompt updated. Regenerating image candidates...")
+        await _prepare_and_send_image_review_step(message, context, user.id, updated_flow)
+        return
+    if words_flow_mode == _IMAGE_REVIEW_AWAITING_PHOTO:
+        await message.reply_text("Send a photo, not text, for this image review step.")
         return
     if words_flow_mode == _ADD_WORDS_AWAITING_EDIT_TEXT:
         active_flow_id = context.user_data.get("edit_flow_id")
@@ -421,6 +667,15 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
                         flow.draft_result.validation.is_valid,
                     ),
                 )
+            except BadRequest as error:
+                if "message is not modified" in str(error).lower():
+                    logger.debug(
+                        "Preview message unchanged after edit flow_id=%s message_id=%s",
+                        flow.flow_id,
+                        preview_message_id,
+                    )
+                else:
+                    logger.debug("Failed to update preview message after edit", exc_info=True)
             except Exception:  # noqa: BLE001
                 logger.debug("Failed to update preview message after edit", exc_info=True)
         return
@@ -547,7 +802,7 @@ async def add_words_regenerate_draft_handler(
     )
 
 
-async def add_words_approve_draft_handler(
+async def add_words_publish_without_images_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
@@ -593,6 +848,270 @@ async def add_words_approve_draft_handler(
         "Quick actions:",
         reply_markup=_chat_menu_keyboard(is_editor=_is_editor(user.id, context)),
     )
+
+
+async def add_words_approve_draft_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, flow_id = query.data.split(":")
+    flow = _active_word_flow_for_user(user.id, context)
+    if flow is None or flow.flow_id != flow_id:
+        await query.edit_message_text("This draft is no longer active.")
+        return
+    result = flow.draft_result
+    if not result.validation.is_valid:
+        await query.edit_message_text(
+            format_draft_preview(result),
+            reply_markup=_draft_review_keyboard(flow.flow_id, False),
+        )
+        return
+    await query.edit_message_text("Saving approved draft... 0/1")
+    saved_flow = await asyncio.to_thread(
+        _save_approved_add_words_draft(context).execute,
+        user_id=user.id,
+        flow_id=flow.flow_id,
+    )
+    await query.edit_message_text(
+        "Approved draft saved.\n"
+        f"Draft path: {saved_flow.draft_output_path}\n"
+        "Generating image prompts... 0/1"
+    )
+    prompt_flow = await asyncio.to_thread(
+        _generate_add_words_image_prompts(context).execute,
+        user_id=user.id,
+        flow_id=flow.flow_id,
+    )
+    await query.edit_message_text(
+        "Image prompts generated.\n"
+        f"Draft path: {prompt_flow.draft_output_path}\n"
+        f"Image prompts: {_draft_prompt_count(prompt_flow.draft_result) or 0}\n"
+        "Starting image review..."
+    )
+    image_review_flow = await asyncio.to_thread(
+        _start_image_review(context).execute,
+        user_id=user.id,
+        draft=prompt_flow.draft_result.draft,
+    )
+    await asyncio.to_thread(
+        _mark_add_words_image_review_started(context).execute,
+        user_id=user.id,
+        flow_id=flow.flow_id,
+        image_review_flow_id=image_review_flow.flow_id,
+    )
+    await _prepare_and_send_image_review_step(query.message, context, user.id, image_review_flow)
+
+
+async def image_review_pick_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, flow_id, item_id, candidate_index = query.data.split(":")
+    updated_flow = await asyncio.to_thread(
+        _select_image_review_candidate(context).execute,
+        user_id=user.id,
+        flow_id=flow_id,
+        item_id=item_id,
+        candidate_index=int(candidate_index),
+    )
+    if updated_flow.completed:
+        output_path = build_publish_output_path(
+            updated_flow.content_pack,
+            custom_content_dir=Path("content/custom"),
+        )
+        await asyncio.to_thread(
+            _publish_image_review(context).execute,
+            user_id=user.id,
+            flow_id=flow_id,
+            output_path=output_path,
+        )
+        context.application.bot_data["training_service"] = build_training_service()
+        _clear_active_word_flow(user.id, context)
+        await query.edit_message_text(
+            "Image review completed and content pack published.\n"
+            f"Saved to: {output_path}\n"
+            "New words are now available in the bot."
+        )
+        return
+    await query.edit_message_text("Image selected.")
+    await _prepare_and_send_image_review_step(query.message, context, user.id, updated_flow)
+
+
+async def image_review_skip_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, flow_id, item_id = query.data.split(":")
+    updated_flow = await asyncio.to_thread(
+        _skip_image_review_item(context).execute,
+        user_id=user.id,
+        flow_id=flow_id,
+        item_id=item_id,
+    )
+    if updated_flow.completed:
+        output_path = build_publish_output_path(
+            updated_flow.content_pack,
+            custom_content_dir=Path("content/custom"),
+        )
+        await asyncio.to_thread(
+            _publish_image_review(context).execute,
+            user_id=user.id,
+            flow_id=flow_id,
+            output_path=output_path,
+        )
+        context.application.bot_data["training_service"] = build_training_service()
+        _clear_active_word_flow(user.id, context)
+        await query.edit_message_text(
+            "Image review completed and content pack published.\n"
+            f"Saved to: {output_path}\n"
+            "New words are now available in the bot."
+        )
+        return
+    await query.edit_message_text("Image skipped.")
+    await _prepare_and_send_image_review_step(query.message, context, user.id, updated_flow)
+
+
+async def image_review_edit_prompt_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, flow_id, item_id = query.data.split(":")
+    flow = _get_active_image_review(context).execute(user_id=user.id)
+    if (
+        flow is None
+        or flow.flow_id != flow_id
+        or flow.current_item is None
+        or flow.current_item.item_id != item_id
+    ):
+        await query.edit_message_text("This image review flow is no longer active.")
+        return
+    context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_PROMPT_TEXT
+    context.user_data["image_review_flow_id"] = flow_id
+    context.user_data["image_review_item_id"] = item_id
+    await query.message.reply_text(
+        "Send a new full image prompt for this word as one message.",
+        reply_markup=ForceReply(selective=True),
+    )
+    await query.message.reply_text(
+        f"Current prompt:\n{flow.current_item.prompt}",
+    )
+
+
+async def image_review_attach_photo_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, flow_id, item_id = query.data.split(":")
+    flow = _get_active_image_review(context).execute(user_id=user.id)
+    if (
+        flow is None
+        or flow.flow_id != flow_id
+        or flow.current_item is None
+        or flow.current_item.item_id != item_id
+    ):
+        await query.edit_message_text("This image review flow is no longer active.")
+        return
+    context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_PHOTO
+    context.user_data["image_review_flow_id"] = flow_id
+    context.user_data["image_review_item_id"] = item_id
+    await query.message.reply_text(
+        "Attach one photo for this word.",
+        reply_markup=ForceReply(selective=True),
+    )
+
+
+async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get("words_flow_mode") != _IMAGE_REVIEW_AWAITING_PHOTO:
+        return
+    message = update.effective_message
+    user = update.effective_user
+    if message is None or user is None or not getattr(message, "photo", None):
+        return
+    flow_id = context.user_data.get("image_review_flow_id")
+    item_id = context.user_data.get("image_review_item_id")
+    flow = _get_active_image_review(context).execute(user_id=user.id)
+    if (
+        flow is None
+        or flow.flow_id != flow_id
+        or flow.current_item is None
+        or flow.current_item.item_id != item_id
+    ):
+        context.user_data.pop("words_flow_mode", None)
+        context.user_data.pop("image_review_flow_id", None)
+        context.user_data.pop("image_review_item_id", None)
+        await message.reply_text("This image review task is no longer active.")
+        return
+    context.user_data.pop("words_flow_mode", None)
+    context.user_data.pop("image_review_flow_id", None)
+    context.user_data.pop("image_review_item_id", None)
+    status_message = await message.reply_text("Saving uploaded photo... 0/1")
+    photo = message.photo[-1]
+    telegram_file = await photo.get_file()
+    topic = flow.content_pack.get("topic", {})
+    topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
+    output_path = (
+        _image_review_assets_dir(context)
+        / topic_id
+        / "review"
+        / f"{item_id}--user-upload.jpg"
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    await telegram_file.download_to_drive(custom_path=str(output_path))
+    image_ref = output_path.as_posix()
+    updated_flow = await asyncio.to_thread(
+        _attach_uploaded_image(context).execute,
+        user_id=user.id,
+        flow_id=flow_id,
+        item_id=item_id,
+        image_ref=image_ref,
+        output_path=output_path,
+    )
+    await status_message.edit_text("Uploaded photo attached.")
+    if updated_flow.completed:
+        output_path = build_publish_output_path(
+            updated_flow.content_pack,
+            custom_content_dir=Path("content/custom"),
+        )
+        await asyncio.to_thread(
+            _publish_image_review(context).execute,
+            user_id=user.id,
+            flow_id=flow_id,
+            output_path=output_path,
+        )
+        context.application.bot_data["training_service"] = build_training_service()
+        _clear_active_word_flow(user.id, context)
+        await message.reply_text(
+            "Image review completed and content pack published.\n"
+            f"Saved to: {output_path}\n"
+            "New words are now available in the bot."
+        )
+        return
+    await _prepare_and_send_image_review_step(message, context, user.id, updated_flow)
 
 
 async def continue_session_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -814,29 +1333,108 @@ async def _run_status_heartbeat(
         except Exception:  # noqa: BLE001
             logger.debug("Failed to update status heartbeat stage=%s", stage, exc_info=True)
 
+
+async def _prepare_and_send_image_review_step(
+    message,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    flow,
+) -> None:
+    current_item = flow.current_item
+    if current_item is None:
+        await message.reply_text("Image review completed.")
+        return
+    total_items = len(flow.items)
+    current_position = flow.current_index + 1
+    status_message = await message.reply_text(
+        f"Generating image candidates {current_position}/{total_items}..."
+    )
+    stop_event = asyncio.Event()
+    heartbeat_task = asyncio.create_task(
+        _run_status_heartbeat(
+            status_message,
+            stage=f"Generating image candidates {current_position}/{total_items}",
+            stop_event=stop_event,
+        )
+    )
+    try:
+        prepared_flow = await asyncio.to_thread(
+            _generate_image_review_candidates(context).execute,
+            user_id=user_id,
+            flow_id=flow.flow_id,
+        )
+    finally:
+        stop_event.set()
+        await heartbeat_task
+    await status_message.edit_text(
+        f"Image candidates ready {current_position}/{total_items}"
+    )
+    await _send_image_review_step(message, prepared_flow)
+
+
+async def _send_image_review_step(message, flow) -> None:
+    current_item = flow.current_item
+    if current_item is None:
+        await message.reply_text("Image review completed.")
+        return
+    total_items = len(flow.items)
+    current_position = flow.current_index + 1
+    await message.reply_text(
+        "Reviewing images "
+        f"{current_position}/{total_items}\n"
+        f"{current_item.english_word} — {current_item.translation}\n"
+        f"Prompt: {current_item.prompt}",
+        reply_markup=_image_review_keyboard(
+            flow_id=flow.flow_id,
+            item_id=current_item.item_id,
+            candidate_count=len(current_item.candidates),
+        ),
+    )
+    for index, candidate in enumerate(current_item.candidates):
+        with candidate.output_path.open("rb") as photo_file:
+            await message.reply_photo(
+                photo=photo_file,
+                caption=f"{_candidate_label(index)}. {_model_label(candidate.model_name)}",
+            )
+
+
+def _candidate_label(index: int) -> str:
+    return chr(ord("A") + index)
+
+
+def _model_label(model_name: str) -> str:
+    if model_name == "sd15":
+        return "SD 1.5"
+    return model_name.replace("-", " ").title()
+
+
 def _draft_review_keyboard(flow_id: str, is_valid: bool) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
-                "Approve Draft",
+                "Approve + Review Images",
+                callback_data=f"words:start_image_review:{flow_id}",
+            ),
+            InlineKeyboardButton(
+                "Publish Without Images",
                 callback_data=f"words:approve_draft:{flow_id}",
             ),
+        ],
+        [
             InlineKeyboardButton(
                 "Re-recognize Draft",
                 callback_data=f"words:regenerate_draft:{flow_id}",
             ),
-        ],
-        [
             InlineKeyboardButton(
                 "Edit Text",
                 callback_data=f"words:edit_text:{flow_id}",
             ),
+        ],
+        [
             InlineKeyboardButton(
                 "Show JSON",
                 callback_data=f"words:show_json:{flow_id}",
             ),
-        ],
-        [
             InlineKeyboardButton(
                 "Cancel",
                 callback_data=f"words:cancel:{flow_id}",
@@ -845,6 +1443,44 @@ def _draft_review_keyboard(flow_id: str, is_valid: bool) -> InlineKeyboardMarkup
     ]
     if not is_valid:
         rows[0][0] = InlineKeyboardButton("Approve Disabled", callback_data="words:menu")
+        rows[0][1] = InlineKeyboardButton("Publish Disabled", callback_data="words:menu")
+    return InlineKeyboardMarkup(rows)
+
+
+def _image_review_keyboard(
+    *,
+    flow_id: str,
+    item_id: str,
+    candidate_count: int,
+) -> InlineKeyboardMarkup:
+    pick_buttons = [
+        InlineKeyboardButton(
+            f"Use {_candidate_label(index)}",
+            callback_data=f"words:image_pick:{flow_id}:{item_id}:{index}",
+        )
+        for index in range(candidate_count)
+    ]
+    rows = [pick_buttons]
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "Edit Prompt",
+                callback_data=f"words:image_edit_prompt:{flow_id}:{item_id}",
+            ),
+            InlineKeyboardButton(
+                "Attach Photo",
+                callback_data=f"words:image_attach_photo:{flow_id}:{item_id}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "Skip",
+                callback_data=f"words:image_skip:{flow_id}:{item_id}",
+            )
+        ]
+    )
     return InlineKeyboardMarkup(rows)
 
 

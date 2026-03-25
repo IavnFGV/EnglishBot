@@ -15,6 +15,17 @@ from englishbot.application.add_words_use_cases import (
     StartAddWordsFlowUseCase,
 )
 from englishbot.application.clock import FixedClock
+from englishbot.application.image_review_flow import ImageReviewFlowHarness
+from englishbot.application.image_review_use_cases import (
+    AttachUploadedImageUseCase,
+    GenerateImageReviewCandidatesUseCase,
+    GetActiveImageReviewUseCase,
+    PublishImageReviewUseCase,
+    SelectImageCandidateUseCase,
+    SkipImageReviewItemUseCase,
+    StartImageReviewUseCase,
+    UpdateImageReviewPromptUseCase,
+)
 from englishbot.application.review_use_cases import CheckMorningReviewUseCase, ReviewCheckResult
 from englishbot.application.services import (
     AnswerChecker,
@@ -33,6 +44,7 @@ from englishbot.application.services import (
 )
 from englishbot.application.training_scenarios import TrainingScenarioController, UserScreen
 from englishbot.domain.add_words_models import AddWordsApprovalResult, AddWordsFlowState
+from englishbot.domain.image_review_models import ImageCandidate, ImageReviewFlowState
 from englishbot.domain.models import Lesson, Topic, TrainingMode, VocabularyItem
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import LessonExtractionClient
@@ -43,6 +55,7 @@ from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.content_loader import JsonContentPackLoader
 from englishbot.infrastructure.repositories import (
     InMemoryAddWordsFlowRepository,
+    InMemoryImageReviewFlowRepository,
     InMemoryLessonRepository,
     InMemorySessionRepository,
     InMemoryTopicRepository,
@@ -61,6 +74,51 @@ class SequenceLessonExtractionClient:
         if self._drafts:
             self._last = self._drafts.popleft()
         return self._last
+
+
+class FakeImagePromptEnricher:
+    def enrich(
+        self,
+        *,
+        topic_title: str,  # noqa: ARG002
+        vocabulary_items: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        enriched: list[dict[str, object]] = []
+        for item in vocabulary_items:
+            updated = dict(item)
+            english_word = str(item.get("english_word", "")).strip()
+            if english_word:
+                updated["image_prompt"] = f"Prompt for {english_word}"
+            enriched.append(updated)
+        return enriched
+
+
+class FakeImageCandidateGenerator:
+    def generate_candidates(
+        self,
+        *,
+        topic_id: str,
+        item_id: str,
+        english_word: str,
+        prompt: str,
+        assets_dir: Path,
+        model_names: tuple[str, ...],
+    ) -> list[ImageCandidate]:
+        candidates: list[ImageCandidate] = []
+        for model_name in model_names:
+            filename = f"{item_id}--{model_name}.png"
+            output_path = assets_dir / topic_id / "review" / filename
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(f"{english_word}|{model_name}|{prompt}".encode())
+            candidates.append(
+                ImageCandidate(
+                    model_name=model_name,
+                    image_ref=str(output_path).replace("\\", "/"),
+                    output_path=output_path,
+                    prompt=prompt,
+                )
+            )
+        return candidates
 
 
 def build_import_draft(
@@ -156,6 +214,8 @@ class AppHarness:
         self.screen: UserScreen | None = None
         self.flow: AddWordsFlowState | None = None
         self.approval: AddWordsApprovalResult | None = None
+        self.image_review_flow: ImageReviewFlowState | None = None
+        self.image_review_output_path: Path | None = None
         self.review: ReviewCheckResult | None = None
         self.last_import_preview: str | None = None
         self._build_learning_stack(
@@ -263,6 +323,118 @@ class AppHarness:
         self.flow = None
         return self
 
+    def when_editor_starts_image_review(
+        self,
+        *,
+        user_id: int = 100,
+        model_names: tuple[str, ...] = ("dreamshaper", "realistic-vision", "sd15"),
+    ) -> AppHarness:
+        if self.approval is None:
+            raise AssertionError("No approved import is available.")
+        self.image_review_flow = self.start_image_review.execute(
+            user_id=user_id,
+            draft=self.approval.import_result.draft,
+            model_names=model_names,
+        )
+        self.image_review_flow = self.generate_image_review_candidates.execute(
+            user_id=user_id,
+            flow_id=self.image_review_flow.flow_id,
+        )
+        return self
+
+    def when_editor_selects_image_candidate(
+        self,
+        *,
+        item_id: str,
+        candidate_index: int,
+        user_id: int = 100,
+    ) -> AppHarness:
+        flow = self._require_image_review_flow()
+        self.image_review_flow = self.select_image_candidate.execute(
+            user_id=user_id,
+            flow_id=flow.flow_id,
+            item_id=item_id,
+            candidate_index=candidate_index,
+        )
+        if self.image_review_flow is not None and not self.image_review_flow.completed:
+            self.image_review_flow = self.generate_image_review_candidates.execute(
+                user_id=user_id,
+                flow_id=self.image_review_flow.flow_id,
+            )
+        return self
+
+    def when_editor_skips_image_item(
+        self,
+        *,
+        item_id: str,
+        user_id: int = 100,
+    ) -> AppHarness:
+        flow = self._require_image_review_flow()
+        self.image_review_flow = self.skip_image_item.execute(
+            user_id=user_id,
+            flow_id=flow.flow_id,
+            item_id=item_id,
+        )
+        if self.image_review_flow is not None and not self.image_review_flow.completed:
+            self.image_review_flow = self.generate_image_review_candidates.execute(
+                user_id=user_id,
+                flow_id=self.image_review_flow.flow_id,
+            )
+        return self
+
+    def when_editor_updates_image_prompt(
+        self,
+        *,
+        item_id: str,
+        prompt: str,
+        user_id: int = 100,
+    ) -> AppHarness:
+        flow = self._require_image_review_flow()
+        self.image_review_flow = self.update_image_review_prompt.execute(
+            user_id=user_id,
+            flow_id=flow.flow_id,
+            item_id=item_id,
+            prompt=prompt,
+        )
+        self.image_review_flow = self.generate_image_review_candidates.execute(
+            user_id=user_id,
+            flow_id=self.image_review_flow.flow_id,
+        )
+        return self
+
+    def when_editor_publishes_image_review(
+        self,
+        *,
+        output_path: Path,
+        user_id: int = 100,
+    ) -> AppHarness:
+        flow = self._require_image_review_flow()
+        self.image_review_output_path = self.publish_image_review.execute(
+            user_id=user_id,
+            flow_id=flow.flow_id,
+            output_path=output_path,
+        )
+        self.image_review_flow = None
+        return self
+
+    def when_editor_attaches_uploaded_image(
+        self,
+        *,
+        item_id: str,
+        image_ref: str,
+        output_path: Path,
+        user_id: int = 100,
+    ) -> AppHarness:
+        flow = self._require_image_review_flow()
+        self.image_review_flow = self.attach_uploaded_image.execute(
+            user_id=user_id,
+            flow_id=flow.flow_id,
+            item_id=item_id,
+            image_ref=image_ref,
+            output_path=output_path,
+        )
+        return self
+
     def when_learning_content_is_reloaded(
         self,
         *,
@@ -340,6 +512,7 @@ class AppHarness:
             validator=LessonExtractionValidator(),
             canonicalizer=DraftToContentPackCanonicalizer(),
             writer=JsonContentPackWriter(),
+            image_prompt_enricher=FakeImagePromptEnricher(),  # type: ignore[arg-type]
         )
         repository = InMemoryAddWordsFlowRepository()
         harness = AddWordsFlowHarness(
@@ -366,8 +539,49 @@ class AppHarness:
         )
         self.cancel_add_words = CancelAddWordsFlowUseCase(repository)
         self.get_active_add_words = GetActiveAddWordsFlowUseCase(repository)
+        image_review_repository = InMemoryImageReviewFlowRepository()
+        image_review_harness = ImageReviewFlowHarness(
+            canonicalizer=DraftToContentPackCanonicalizer(),
+            writer=JsonContentPackWriter(),
+            candidate_generator=FakeImageCandidateGenerator(),
+            assets_dir=self.content_dir / "assets",
+        )
+        self.start_image_review = StartImageReviewUseCase(
+            harness=image_review_harness,
+            repository=image_review_repository,
+        )
+        self.get_active_image_review = GetActiveImageReviewUseCase(image_review_repository)
+        self.generate_image_review_candidates = GenerateImageReviewCandidatesUseCase(
+            harness=image_review_harness,
+            repository=image_review_repository,
+        )
+        self.select_image_candidate = SelectImageCandidateUseCase(
+            harness=image_review_harness,
+            repository=image_review_repository,
+        )
+        self.skip_image_item = SkipImageReviewItemUseCase(
+            harness=image_review_harness,
+            repository=image_review_repository,
+        )
+        self.update_image_review_prompt = UpdateImageReviewPromptUseCase(
+            harness=image_review_harness,
+            repository=image_review_repository,
+        )
+        self.attach_uploaded_image = AttachUploadedImageUseCase(
+            harness=image_review_harness,
+            repository=image_review_repository,
+        )
+        self.publish_image_review = PublishImageReviewUseCase(
+            harness=image_review_harness,
+            repository=image_review_repository,
+        )
 
     def _require_flow(self) -> AddWordsFlowState:
         if self.flow is None:
             raise AssertionError("No active add-words flow.")
         return self.flow
+
+    def _require_image_review_flow(self) -> ImageReviewFlowState:
+        if self.image_review_flow is None:
+            raise AssertionError("No active image review flow.")
+        return self.image_review_flow

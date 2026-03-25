@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from englishbot.domain.add_words_models import AddWordsFlowState
+from englishbot.domain.image_review_models import ImageReviewFlowState
 from englishbot.domain.models import Lesson, Topic, TrainingSession, UserProgress, VocabularyItem
 
 
@@ -66,6 +67,20 @@ class AddWordsFlowRepository(Protocol):
         ...
 
     def get_by_id(self, flow_id: str) -> AddWordsFlowState | None:
+        ...
+
+    def discard_active_by_user(self, user_id: int) -> None:
+        ...
+
+
+class ImageReviewFlowRepository(Protocol):
+    def save(self, flow: ImageReviewFlowState) -> None:
+        ...
+
+    def get_active_by_user(self, user_id: int) -> ImageReviewFlowState | None:
+        ...
+
+    def get_by_id(self, flow_id: str) -> ImageReviewFlowState | None:
         ...
 
     def discard_active_by_user(self, user_id: int) -> None:

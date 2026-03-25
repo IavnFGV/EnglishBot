@@ -15,6 +15,13 @@ logger = logging.getLogger(__name__)
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
+def _compact_text(value: str, *, limit: int = 240) -> str:
+    normalized = " ".join(value.split())
+    if len(normalized) <= limit:
+        return normalized
+    return f"{normalized[: limit - 3]}..."
+
+
 @dataclass(slots=True, frozen=True)
 class ImagePromptItem:
     item_id: str
@@ -138,6 +145,8 @@ class OllamaImagePromptEnricher:
         }
         if self._options:
             payload["options"] = dict(self._options)
+        system_prompt = str(payload["messages"][0]["content"])
+        user_content = str(payload["messages"][1]["content"])
         logger.debug(
             "OllamaImagePromptEnricher request model=%s timeout=%s options=%s prompt_path=%s "
             "english_word=%s",
@@ -147,6 +156,11 @@ class OllamaImagePromptEnricher:
             self._prompt_path,
             item.get("english_word"),
         )
+        logger.debug(
+            "OllamaImagePromptEnricher request payload system_prompt=%r user_content=%r",
+            system_prompt,
+            user_content,
+        )
         response = requests.post(
             f"{self._base_url}/api/chat",
             json=payload,
@@ -154,7 +168,12 @@ class OllamaImagePromptEnricher:
         )
         response.raise_for_status()
         content = response.json()["message"]["content"]
-        logger.debug("OllamaImagePromptEnricher raw content=%s", content)
+        logger.debug(
+            "OllamaImagePromptEnricher response english_word=%s raw_content=%r compact=%s",
+            item.get("english_word"),
+            content,
+            _compact_text(content, limit=400),
+        )
         items = self._parse_items(content=content, source_item=item)
         logger.info("OllamaImagePromptEnricher parsed prompts=%s", len(items))
         return items
@@ -363,6 +382,7 @@ class OllamaImagePromptEnricher:
     ) -> ImagePromptItem | None:
         image_prompt = self._first_non_empty(
             parsed.get("image_prompt"),
+            parsed.get("result_prompt"),
             parsed.get("prompt"),
             parsed.get("description"),
         )

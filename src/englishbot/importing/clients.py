@@ -280,6 +280,11 @@ class OllamaLessonExtractionClient:
             self._infer_topic_prompt_path,
             len(items),
         )
+        logger.debug(
+            "OllamaLessonExtractionClient infer topic payload system_prompt=%r user_content=%r",
+            self._infer_topic_system_prompt(),
+            prompt_input,
+        )
         payload = {
             "model": self._model,
             "stream": False,
@@ -299,9 +304,10 @@ class OllamaLessonExtractionClient:
         content = response.json()["message"]["content"].strip()
         topic_title = self._parse_topic_inference_content(content)
         logger.debug(
-            "OllamaLessonExtractionClient inferred topic_title=%s raw_content=%s",
+            "OllamaLessonExtractionClient inferred topic_title=%s raw_content=%r compact=%s",
             topic_title,
-            _short_text(content, limit=120),
+            content,
+            _short_text(content, limit=240),
         )
         return topic_title or "Imported Topic"
 
@@ -348,6 +354,15 @@ class OllamaLessonExtractionClient:
             self._extract_line_prompt_path,
             _short_text(source_line),
         )
+        logger.debug(
+            (
+                "OllamaLessonExtractionClient line payload "
+                "line_index=%s system_prompt=%r user_content=%r"
+            ),
+            line_index,
+            self._line_system_prompt(),
+            source_line,
+        )
         payload = {
             "model": self._model,
             "stream": False,
@@ -367,9 +382,10 @@ class OllamaLessonExtractionClient:
         response.raise_for_status()
         content = response.json()["message"]["content"]
         logger.debug(
-            "OllamaLessonExtractionClient line response line_index=%s raw_content=%s",
+            "OllamaLessonExtractionClient line response line_index=%s raw_content=%r compact=%s",
             line_index,
-            _short_text(content, limit=240),
+            content,
+            _short_text(content, limit=400),
         )
         raw_items = self._parse_line_content(content)
         items: list[ExtractedVocabularyItemDraft] = []

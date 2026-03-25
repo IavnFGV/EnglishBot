@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -317,6 +318,162 @@ def test_comfyui_client_generates_image_via_http_protocol(
     assert output_path.read_bytes() == image_bytes
 
 
+def test_comfyui_client_logs_full_prompt_and_model_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    image_bytes = b"png-data"
+
+    class FakeResponse:
+        def __init__(self, payload=None, content: bytes | None = None) -> None:
+            self._payload = payload or {}
+            self.content = content or b""
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse({"prompt_id": "prompt-123"})
+
+        @staticmethod
+        def get(url: str, params=None, timeout: int = 120) -> FakeResponse:
+            if url.endswith("/history/prompt-123"):
+                return FakeResponse(
+                    {
+                        "prompt-123": {
+                            "outputs": {
+                                "9": {
+                                    "images": [
+                                        {
+                                            "filename": "dragon.png",
+                                            "subfolder": "",
+                                            "type": "output",
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                )
+            if url.endswith("/view"):
+                return FakeResponse(content=image_bytes)
+            raise AssertionError(f"Unexpected URL: {url}")
+
+    import sys
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    caplog.set_level(logging.DEBUG, logger="englishbot.image_generation.clients")
+    client = ComfyUIImageGenerationClient(
+        base_url="http://127.0.0.1:8188",
+        timeout=5,
+        checkpoint_name="dreamshaper_8.safetensors",
+        seed=77,
+    )
+    prompt = (
+        "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
+        "composition, soft colors, clean light background, thick friendly outlines, simple "
+        "shapes. Show a green dragon with small wings."
+    )
+
+    client.generate(
+        prompt=prompt,
+        english_word="Dragon",
+        output_path=tmp_path / "dragon.png",
+    )
+
+    assert prompt in caplog.text
+    assert "checkpoint=dreamshaper_8.safetensors" in caplog.text
+    assert "negative_prompt=" in caplog.text
+    assert "blurry, distorted, text, watermark, horror, gore" in caplog.text
+
+
+def test_comfyui_client_logs_full_request_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    image_bytes = b"png-data"
+
+    class FakeResponse:
+        def __init__(self, payload=None, content: bytes | None = None) -> None:
+            self._payload = payload or {}
+            self.content = content or b""
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse({"prompt_id": "prompt-123"})
+
+        @staticmethod
+        def get(url: str, params=None, timeout: int = 120) -> FakeResponse:
+            if url.endswith("/history/prompt-123"):
+                return FakeResponse(
+                    {
+                        "prompt-123": {
+                            "outputs": {
+                                "9": {
+                                    "images": [
+                                        {
+                                            "filename": "dragon.png",
+                                            "subfolder": "",
+                                            "type": "output",
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                )
+            if url.endswith("/view"):
+                return FakeResponse(content=image_bytes)
+            raise AssertionError(f"Unexpected URL: {url}")
+
+    import sys
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    caplog.set_level(logging.DEBUG, logger="englishbot.image_generation.clients")
+    client = ComfyUIImageGenerationClient(
+        base_url="http://127.0.0.1:8188",
+        timeout=5,
+        checkpoint_name="dreamshaper_8.safetensors",
+        seed=77,
+        width=256,
+        height=256,
+    )
+
+    client.generate(
+        prompt="Vocabulary flashcard. Show scissors, closed.",
+        english_word="Scissors",
+        output_path=tmp_path / "scissors.png",
+    )
+
+    assert (
+        "ComfyUIImageGenerationClient request payload url=http://127.0.0.1:8188/prompt"
+        in caplog.text
+    )
+    assert '"client_id":' in caplog.text
+    assert '"prompt_id":' in caplog.text
+    assert '"ckpt_name": "dreamshaper_8.safetensors"' in caplog.text
+    assert '"width": 256' in caplog.text
+    assert '"height": 256' in caplog.text
+    assert '"sampler_name": "euler"' in caplog.text
+    assert '"scheduler": "normal"' in caplog.text
+    assert '"steps": 20' in caplog.text
+    assert '"cfg": 7' in caplog.text
+
+
 def test_comfyui_client_uses_explicit_vae_loader_when_configured(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -373,6 +530,74 @@ def test_comfyui_client_uses_explicit_vae_loader_when_configured(
         base_url="http://127.0.0.1:8188",
         timeout=5,
         vae_name="ReVAnimatedVAE.safetensors",
+    )
+    output_path = tmp_path / "dragon.png"
+
+    client.generate(
+        prompt="A child-friendly dragon.",
+        english_word="Dragon",
+        output_path=output_path,
+    )
+
+    assert output_path.read_bytes() == image_bytes
+
+
+def test_comfyui_client_uses_configured_preview_size(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    image_bytes = b"png-data"
+
+    class FakeResponse:
+        def __init__(self, payload=None, content: bytes | None = None) -> None:
+            self._payload = payload or {}
+            self.content = content or b""
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            assert json["prompt"]["5"]["inputs"]["width"] == 256
+            assert json["prompt"]["5"]["inputs"]["height"] == 256
+            return FakeResponse({"prompt_id": "prompt-123"})
+
+        @staticmethod
+        def get(url: str, params=None, timeout: int = 120) -> FakeResponse:
+            if url.endswith("/history/prompt-123"):
+                return FakeResponse(
+                    {
+                        "prompt-123": {
+                            "outputs": {
+                                "9": {
+                                    "images": [
+                                        {
+                                            "filename": "dragon.png",
+                                            "subfolder": "",
+                                            "type": "output",
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                )
+            if url.endswith("/view"):
+                return FakeResponse(content=image_bytes)
+            raise AssertionError(f"Unexpected URL: {url}")
+
+    import sys
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = ComfyUIImageGenerationClient(
+        base_url="http://127.0.0.1:8188",
+        timeout=5,
+        width=256,
+        height=256,
     )
     output_path = tmp_path / "dragon.png"
 

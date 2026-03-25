@@ -8,8 +8,11 @@ from englishbot.application.add_words_use_cases import (
     ApplyAddWordsEditUseCase,
     ApproveAddWordsDraftUseCase,
     CancelAddWordsFlowUseCase,
+    GenerateAddWordsImagePromptsUseCase,
     GetActiveAddWordsFlowUseCase,
+    MarkAddWordsImageReviewStartedUseCase,
     RegenerateAddWordsDraftUseCase,
+    SaveApprovedAddWordsDraftUseCase,
     StartAddWordsFlowUseCase,
 )
 from englishbot.domain.add_words_models import AddWordsApprovalResult, AddWordsFlowState
@@ -100,6 +103,23 @@ class SequenceLessonExtractionClient:
         return self._last
 
 
+class FakeImagePromptEnricher:
+    def enrich(
+        self,
+        *,
+        topic_title: str,  # noqa: ARG002
+        vocabulary_items: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        enriched: list[dict[str, object]] = []
+        for item in vocabulary_items:
+            updated = dict(item)
+            english_word = str(item.get("english_word", "")).strip()
+            if english_word:
+                updated["image_prompt"] = f"Prompt for {english_word}"
+            enriched.append(updated)
+        return enriched
+
+
 def build_fairy_tales_draft() -> LessonExtractionDraft:
     return build_draft(items=FAIRY_TALES_ITEMS)
 
@@ -118,6 +138,7 @@ def build_driver(
         validator=LessonExtractionValidator(),
         canonicalizer=DraftToContentPackCanonicalizer(),
         writer=JsonContentPackWriter(),
+        image_prompt_enricher=FakeImagePromptEnricher(),  # type: ignore[arg-type]
     )
     repository = InMemoryAddWordsFlowRepository()
     harness = AddWordsFlowHarness(
@@ -132,6 +153,18 @@ def build_driver(
         apply_edit=ApplyAddWordsEditUseCase(harness=harness, flow_repository=repository),
         regenerate=RegenerateAddWordsDraftUseCase(harness=harness, flow_repository=repository),
         approve=ApproveAddWordsDraftUseCase(harness=harness, flow_repository=repository),
+        save_approved_draft=SaveApprovedAddWordsDraftUseCase(
+            harness=harness,
+            flow_repository=repository,
+        ),
+        generate_image_prompts=GenerateAddWordsImagePromptsUseCase(
+            harness=harness,
+            flow_repository=repository,
+        ),
+        mark_image_review_started=MarkAddWordsImageReviewStartedUseCase(
+            harness=harness,
+            flow_repository=repository,
+        ),
         cancel=CancelAddWordsFlowUseCase(repository),
     )
 
@@ -145,6 +178,9 @@ class AddWordsScenarioDriver:
         apply_edit: ApplyAddWordsEditUseCase,
         regenerate: RegenerateAddWordsDraftUseCase,
         approve: ApproveAddWordsDraftUseCase,
+        save_approved_draft: SaveApprovedAddWordsDraftUseCase,
+        generate_image_prompts: GenerateAddWordsImagePromptsUseCase,
+        mark_image_review_started: MarkAddWordsImageReviewStartedUseCase,
         cancel: CancelAddWordsFlowUseCase,
     ) -> None:
         self._start = start
@@ -152,6 +188,9 @@ class AddWordsScenarioDriver:
         self._apply_edit = apply_edit
         self._regenerate = regenerate
         self._approve = approve
+        self._save_approved_draft = save_approved_draft
+        self._generate_image_prompts = generate_image_prompts
+        self._mark_image_review_started = mark_image_review_started
         self._cancel = cancel
         self.flow: AddWordsFlowState | None = None
         self.approval: AddWordsApprovalResult | None = None
@@ -212,6 +251,49 @@ class AddWordsScenarioDriver:
             output_path=output_path,
         )
         self.flow = None
+        return self
+
+    def when_editor_saves_approved_draft(
+        self,
+        *,
+        user_id: int = 1,
+        flow_id: str | None = None,
+        output_path: Path | None = None,
+    ) -> AddWordsScenarioDriver:
+        resolved_flow_id = flow_id or self._require_flow().flow_id
+        self.flow = self._save_approved_draft.execute(
+            user_id=user_id,
+            flow_id=resolved_flow_id,
+            output_path=output_path,
+        )
+        return self
+
+    def when_editor_generates_image_prompts(
+        self,
+        *,
+        user_id: int = 1,
+        flow_id: str | None = None,
+    ) -> AddWordsScenarioDriver:
+        resolved_flow_id = flow_id or self._require_flow().flow_id
+        self.flow = self._generate_image_prompts.execute(
+            user_id=user_id,
+            flow_id=resolved_flow_id,
+        )
+        return self
+
+    def when_editor_starts_image_review_task(
+        self,
+        *,
+        user_id: int = 1,
+        flow_id: str | None = None,
+        image_review_flow_id: str = "image-review-1",
+    ) -> AddWordsScenarioDriver:
+        resolved_flow_id = flow_id or self._require_flow().flow_id
+        self.flow = self._mark_image_review_started.execute(
+            user_id=user_id,
+            flow_id=resolved_flow_id,
+            image_review_flow_id=image_review_flow_id,
+        )
         return self
 
     def get_active_flow(self, *, user_id: int = 1) -> AddWordsFlowState | None:

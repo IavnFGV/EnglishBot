@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import uuid
@@ -8,6 +9,12 @@ from pathlib import Path
 from typing import Protocol
 
 from englishbot.logging_utils import logged_service_call
+
+logger = logging.getLogger(__name__)
+
+
+def _pretty_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
 
 
 class ImageGenerationClient(Protocol):
@@ -100,6 +107,8 @@ class ComfyUIImageGenerationClient:
         checkpoint_name: str | None = None,
         vae_name: str | None = None,
         seed: int | None = None,
+        width: int = 512,
+        height: int = 512,
     ) -> None:
         self._base_url = (base_url or os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8188")).rstrip(
             "/"
@@ -112,12 +121,15 @@ class ComfyUIImageGenerationClient:
         )
         self._vae_name = vae_name or os.getenv("COMFYUI_VAE_NAME", "")
         self._seed = seed if seed is not None else int(os.getenv("COMFYUI_SEED", "5"))
+        self._width = width
+        self._height = height
 
     @logged_service_call(
         "ComfyUIImageGenerationClient.generate",
         transforms={
             "english_word": lambda value: {"english_word": value},
             "output_path": lambda value: {"output_path": value},
+            "prompt": lambda value: {"prompt": value},
         },
     )
     def generate(
@@ -135,13 +147,37 @@ class ComfyUIImageGenerationClient:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         client_id = str(uuid.uuid4())
         prompt_id = str(uuid.uuid4())
+        negative_prompt = _negative_prompt_for_word(english_word)
+        logger.debug(
+            "ComfyUIImageGenerationClient request checkpoint=%s vae=%s seed=%s english_word=%s "
+            "size=%sx%s prompt=%r negative_prompt=%r output_path=%s",
+            self._checkpoint_name,
+            self._vae_name or "none",
+            self._seed,
+            english_word,
+            self._width,
+            self._height,
+            prompt,
+            negative_prompt,
+            output_path,
+        )
         workflow = self._build_workflow(
             prompt=prompt,
             english_word=english_word,
         )
+        request_payload = {
+            "prompt": workflow,
+            "client_id": client_id,
+            "prompt_id": prompt_id,
+        }
+        logger.debug(
+            "ComfyUIImageGenerationClient request payload url=%s payload=\n%s",
+            f"{self._base_url}/prompt",
+            _pretty_json(request_payload),
+        )
         queue_response = requests.post(
             f"{self._base_url}/prompt",
-            json={"prompt": workflow, "client_id": client_id, "prompt_id": prompt_id},
+            json=request_payload,
             timeout=self._timeout,
         )
         queue_response.raise_for_status()
@@ -238,8 +274,8 @@ class ComfyUIImageGenerationClient:
                 "class_type": "EmptyLatentImage",
                 "inputs": {
                     "batch_size": 1,
-                    "height": 512,
-                    "width": 512,
+                    "height": self._height,
+                    "width": self._width,
                 },
             },
             "6": {

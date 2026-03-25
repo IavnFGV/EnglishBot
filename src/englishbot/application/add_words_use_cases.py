@@ -174,3 +174,115 @@ class CancelAddWordsFlowUseCase:
     )
     def execute(self, *, user_id: int) -> None:
         self._flow_repository.discard_active_by_user(user_id)
+
+
+class SaveApprovedAddWordsDraftUseCase:
+    def __init__(
+        self,
+        *,
+        harness: AddWordsFlowHarness,
+        flow_repository: AddWordsFlowRepository,
+    ) -> None:
+        self._harness = harness
+        self._flow_repository = flow_repository
+
+    @logged_service_call(
+        "SaveApprovedAddWordsDraftUseCase.execute",
+        include=("user_id", "flow_id"),
+        transforms={"output_path": lambda value: {"output_path": value}},
+        result=lambda value: {
+            "flow_id": value.flow_id,
+            "stage": value.stage,
+            "draft_output_path": value.draft_output_path,
+        },
+    )
+    def execute(
+        self,
+        *,
+        user_id: int,
+        flow_id: str,
+        output_path: Path | None = None,
+    ) -> AddWordsFlowState:
+        flow = self._require_active_flow(user_id=user_id, flow_id=flow_id)
+        updated = self._harness.save_approved_draft(flow=flow, output_path=output_path)
+        self._flow_repository.save(updated)
+        return updated
+
+    def _require_active_flow(self, *, user_id: int, flow_id: str) -> AddWordsFlowState:
+        flow = self._flow_repository.get_active_by_user(user_id)
+        if flow is None or flow.flow_id != flow_id:
+            raise ValueError("This draft is no longer active.")
+        return flow
+
+
+class GenerateAddWordsImagePromptsUseCase:
+    def __init__(
+        self,
+        *,
+        harness: AddWordsFlowHarness,
+        flow_repository: AddWordsFlowRepository,
+    ) -> None:
+        self._harness = harness
+        self._flow_repository = flow_repository
+
+    @logged_service_call(
+        "GenerateAddWordsImagePromptsUseCase.execute",
+        include=("user_id", "flow_id"),
+        result=lambda value: {
+            "flow_id": value.flow_id,
+            "stage": value.stage,
+            "item_count": _flow_item_count(value),
+            "error_count": len(value.draft_result.validation.errors),
+        },
+    )
+    def execute(self, *, user_id: int, flow_id: str) -> AddWordsFlowState:
+        flow = self._require_active_flow(user_id=user_id, flow_id=flow_id)
+        updated = self._harness.generate_image_prompts(flow=flow)
+        self._flow_repository.save(updated)
+        return updated
+
+    def _require_active_flow(self, *, user_id: int, flow_id: str) -> AddWordsFlowState:
+        flow = self._flow_repository.get_active_by_user(user_id)
+        if flow is None or flow.flow_id != flow_id:
+            raise ValueError("This draft is no longer active.")
+        return flow
+
+
+class MarkAddWordsImageReviewStartedUseCase:
+    def __init__(
+        self,
+        *,
+        harness: AddWordsFlowHarness,
+        flow_repository: AddWordsFlowRepository,
+    ) -> None:
+        self._harness = harness
+        self._flow_repository = flow_repository
+
+    @logged_service_call(
+        "MarkAddWordsImageReviewStartedUseCase.execute",
+        include=("user_id", "flow_id", "image_review_flow_id"),
+        result=lambda value: {
+            "flow_id": value.flow_id,
+            "stage": value.stage,
+        },
+    )
+    def execute(
+        self,
+        *,
+        user_id: int,
+        flow_id: str,
+        image_review_flow_id: str,
+    ) -> AddWordsFlowState:
+        flow = self._require_active_flow(user_id=user_id, flow_id=flow_id)
+        updated = self._harness.mark_image_review_started(
+            flow=flow,
+            image_review_flow_id=image_review_flow_id,
+        )
+        self._flow_repository.save(updated)
+        return updated
+
+    def _require_active_flow(self, *, user_id: int, flow_id: str) -> AddWordsFlowState:
+        flow = self._flow_repository.get_active_by_user(user_id)
+        if flow is None or flow.flow_id != flow_id:
+            raise ValueError("This draft is no longer active.")
+        return flow

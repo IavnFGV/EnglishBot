@@ -166,6 +166,29 @@ class LessonImportPipeline:
             output_path=output_path,
         )
 
+    @logged_service_call(
+        "LessonImportPipeline.enrich_draft_image_prompts",
+        transforms={"output_path": lambda value: {"output_path": value}},
+        result=lambda result: {
+            "is_valid": result.validation.is_valid,
+            "error_count": len(result.validation.errors),
+            "draft_item_count": len(result.draft.vocabulary_items),
+        },
+    )
+    def enrich_draft_image_prompts(
+        self,
+        *,
+        draft: LessonExtractionDraft,
+        output_path: Path | None = None,
+    ) -> ImportLessonResult:
+        if self._image_prompt_enricher is None:
+            raise ValueError("Image prompt enrichment requested but no enricher is configured.")
+        enriched_draft = self._enrich_draft_image_prompts(draft)
+        validation = self._validator.validate(enriched_draft)
+        if output_path is not None:
+            self._draft_writer.write(draft=enriched_draft, output_path=output_path)
+        return ImportLessonResult(draft=enriched_draft, validation=validation)
+
     def _enrich_draft_image_prompts(self, draft: LessonExtractionDraft) -> LessonExtractionDraft:
         enriched_items_data = self._image_prompt_enricher.enrich(
             topic_title=draft.topic_title,

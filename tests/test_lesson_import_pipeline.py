@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -1207,3 +1208,103 @@ def test_ollama_image_prompt_enricher_accepts_object_under_image_prompts_key(
         == "cute children's flashcard illustration of a green dragon, "
         "simple cartoon style, centered, white background, colorful, no text"
     )
+
+
+def test_ollama_image_prompt_enricher_accepts_result_prompt_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "result_prompt": (
+                                "simple cartoon illustration of a closed book, centered, "
+                                "white background, bright colors, no text"
+                            )
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    enricher = OllamaImagePromptEnricher(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+    )
+    enriched = enricher.enrich(
+        topic_title="School Supplies",
+        vocabulary_items=[
+            {
+                "id": "school-supplies-book",
+                "english_word": "Book",
+                "translation": "книга",
+            }
+        ],
+    )
+    assert (
+        enriched[0]["image_prompt"]
+        == "simple cartoon illustration of a closed book, centered, "
+        "white background, bright colors, no text"
+    )
+
+
+def test_ollama_image_prompt_enricher_logs_full_request_and_response_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "result_prompt": (
+                                "simple cartoon illustration of a human king with a golden crown, "
+                                "centered, white background, bright colors, no text"
+                            )
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    caplog.set_level(logging.DEBUG, logger="englishbot.importing.enrichment")
+    enricher = OllamaImagePromptEnricher(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+    )
+
+    enriched = enricher.enrich(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            {
+                "id": "fairy-tales-king",
+                "english_word": "King",
+                "translation": "король",
+            }
+        ],
+    )
+
+    assert enriched[0]["image_prompt"].startswith("simple cartoon illustration of a human king")
+    assert "request payload system_prompt=" in caplog.text
+    assert '"english_word": "King"' in caplog.text
+    assert "response english_word=King" in caplog.text
+    assert "result_prompt" in caplog.text

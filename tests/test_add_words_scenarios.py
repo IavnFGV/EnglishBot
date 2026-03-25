@@ -15,6 +15,7 @@ def test_editor_starts_flow_and_sees_extracted_draft() -> None:
 
     assert scenario.flow is not None
     assert scenario.flow.draft_result.validation.is_valid is True
+    assert scenario.flow.stage == "draft_review"
     assert [item.english_word for item in scenario.flow.draft_result.draft.vocabulary_items] == [
         "Princess",
         "Prince",
@@ -175,3 +176,24 @@ def test_editor_approves_valid_draft_and_content_pack_is_written(tmp_path: Path)
     assert scenario.approval.output_path == output_path
     assert output_path.exists()
     assert scenario.get_active_flow() is None
+
+
+def test_editor_can_save_approved_draft_then_generate_prompts_then_start_image_review(
+    tmp_path: Path,
+) -> None:
+    scenario = (
+        build_driver(custom_content_dir=tmp_path)
+        .when_editor_starts_flow()
+        .when_editor_saves_approved_draft(output_path=tmp_path / "fairy-tales.draft.json")
+        .when_editor_generates_image_prompts()
+        .when_editor_starts_image_review_task(image_review_flow_id="review-123")
+    )
+
+    assert scenario.flow is not None
+    assert scenario.flow.stage == "image_review"
+    assert scenario.flow.draft_output_path == tmp_path / "fairy-tales.draft.json"
+    assert scenario.flow.draft_output_path.exists()
+    assert scenario.flow.image_review_flow_id == "review-123"
+    assert [
+        item.image_prompt for item in scenario.flow.draft_result.draft.vocabulary_items
+    ] == ["Prompt for Princess", "Prompt for Prince"]

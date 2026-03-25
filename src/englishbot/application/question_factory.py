@@ -36,7 +36,11 @@ class QuestionFactory:
         item: VocabularyItem,
         all_topic_items: list[VocabularyItem],
     ) -> TrainingQuestion:
-        image_line = item.image_ref or "No image yet. Use the translation clue."
+        image_line = (
+            "Image is shown above."
+            if item.image_ref
+            else "No image yet. Use the translation clue."
+        )
         if session.mode is TrainingMode.EASY:
             options = self._build_choice_options(item, all_topic_items)
             prompt = (
