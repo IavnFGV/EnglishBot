@@ -125,8 +125,14 @@ def build_application(settings: Settings) -> Application:
             pattern=r"^words:cancel:",
         )
     )
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_words_text_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_answer_handler))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, add_words_text_handler),
+        group=0,
+    )
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, text_answer_handler),
+        group=1,
+    )
     app.add_error_handler(error_handler)
     app.post_init = _post_init
     return app
