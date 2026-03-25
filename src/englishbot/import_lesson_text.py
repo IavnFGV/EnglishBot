@@ -12,6 +12,7 @@ import typer
 from englishbot.__main__ import configure_logging
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import OllamaLessonExtractionClient, StubLessonExtractionClient
+from englishbot.importing.draft_io import JsonDraftReader, JsonDraftWriter
 from englishbot.importing.enrichment import OllamaImagePromptEnricher
 from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.validator import LessonExtractionValidator
@@ -20,12 +21,52 @@ from englishbot.importing.writer import JsonContentPackWriter
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    help="Import free-form lesson text into a JSON content pack.",
+    help="Extract editable lesson drafts from text and finalize reviewed drafts.",
 )
 
 
-@app.command()
-def main(
+def _build_pipeline(
+    *,
+    extractor: str,
+    ollama_model: str,
+    ollama_base_url: str,
+) -> LessonImportPipeline:
+    extraction_client = StubLessonExtractionClient()
+    if extractor == "ollama":
+        extraction_client = OllamaLessonExtractionClient(
+            model=ollama_model,
+            base_url=ollama_base_url,
+        )
+    return LessonImportPipeline(
+        extraction_client=extraction_client,
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        draft_writer=JsonDraftWriter(),
+        draft_reader=JsonDraftReader(),
+        image_prompt_enricher=(
+            OllamaImagePromptEnricher(
+                model=ollama_model,
+                base_url=ollama_base_url,
+            )
+            if extractor == "ollama"
+            else None
+        ),
+    )
+
+
+def _print_validation_errors(errors: list[object]) -> None:
+    typer.echo(
+        json.dumps(
+            [asdict(error) for error in errors],
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@app.command("extract-draft")
+def extract_draft(
     input_path: Annotated[
         Path,
         typer.Option(
@@ -37,7 +78,7 @@ def main(
     ],
     output_path: Annotated[
         Path,
-        typer.Option("--output", help="Path to the output JSON content pack.", dir_okay=False),
+        typer.Option("--output", help="Path to the editable draft JSON file.", dir_okay=False),
     ],
     extractor: Annotated[
         str,
@@ -55,7 +96,7 @@ def main(
         bool,
         typer.Option(
             "--include-image-prompts",
-            help="Generate image prompts in a separate per-item enrichment step.",
+            help="Generate image prompts for each extracted vocabulary pair.",
         ),
     ] = False,
     log_level: Annotated[
@@ -70,46 +111,75 @@ def main(
         )
 
     configure_logging(log_level.upper())
-
     raw_text = input_path.read_text(encoding="utf-8")
-    extraction_client = StubLessonExtractionClient()
-    if extractor == "ollama":
-        extraction_client = OllamaLessonExtractionClient(
-            model=ollama_model,
-            base_url=ollama_base_url,
-        )
-    pipeline = LessonImportPipeline(
-        extraction_client=extraction_client,
-        validator=LessonExtractionValidator(),
-        canonicalizer=DraftToContentPackCanonicalizer(),
-        writer=JsonContentPackWriter(),
-        image_prompt_enricher=(
-            OllamaImagePromptEnricher(
-                model=ollama_model,
-                base_url=ollama_base_url,
-            )
-            if extractor == "ollama"
-            else None
-        ),
+    pipeline = _build_pipeline(
+        extractor=extractor,
+        ollama_model=ollama_model,
+        ollama_base_url=ollama_base_url,
     )
-    result = pipeline.run(
+    result = pipeline.extract_draft(
         raw_text=raw_text,
         output_path=output_path,
         enrich_image_prompts=include_image_prompts,
     )
     if not result.validation.is_valid:
-        typer.echo(
-            json.dumps(
-                [asdict(error) for error in result.validation.errors],
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        _print_validation_errors(result.validation.errors)
+        raise typer.Exit(code=1)
+    logging.getLogger(__name__).info(
+        "Draft extraction completed item_count=%s output_path=%s",
+        len(result.draft.vocabulary_items),
+        output_path,
+    )
+
+
+@app.command("finalize-draft")
+def finalize_draft(
+    input_path: Annotated[
+        Path,
+        typer.Option(
+            "--input",
+            help="Path to the reviewed draft JSON file.",
+            exists=True,
+            dir_okay=False,
+        ),
+    ],
+    output_path: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            help="Path to the final canonical content pack JSON.",
+            dir_okay=False,
+        ),
+    ],
+    log_level: Annotated[
+        str,
+        typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
+    ] = "INFO",
+) -> None:
+    configure_logging(log_level.upper())
+    pipeline = LessonImportPipeline(
+        extraction_client=StubLessonExtractionClient(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        draft_writer=JsonDraftWriter(),
+        draft_reader=JsonDraftReader(),
+    )
+    result = pipeline.finalize_draft_from_file(
+        input_path=input_path,
+        output_path=output_path,
+    )
+    if not result.validation.is_valid:
+        _print_validation_errors(result.validation.errors)
         raise typer.Exit(code=1)
     warning_count = (
         len(result.canonicalization.warnings) if result.canonicalization is not None else 0
     )
-    logging.getLogger(__name__).info("Import completed with warnings=%s", warning_count)
+    logging.getLogger(__name__).info(
+        "Draft finalization completed warnings=%s output_path=%s",
+        warning_count,
+        output_path,
+    )
 
 
 if __name__ == "__main__":

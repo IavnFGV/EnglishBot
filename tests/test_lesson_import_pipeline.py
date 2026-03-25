@@ -8,6 +8,7 @@ import pytest
 
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import FakeLessonExtractionClient, OllamaLessonExtractionClient
+from englishbot.importing.draft_io import JsonDraftReader
 from englishbot.importing.enrichment import OllamaImagePromptEnricher
 from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtractionDraft
 from englishbot.importing.pipeline import LessonImportPipeline
@@ -174,6 +175,111 @@ def test_malformed_extraction_results_do_not_crash_pipeline() -> None:
     assert result.validation.is_valid is False
     assert result.validation.errors[0].code == "malformed_result"
     assert result.canonicalization is None
+
+
+def test_extract_draft_writes_editable_json(tmp_path: Path) -> None:
+    draft = LessonExtractionDraft(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            ExtractedVocabularyItemDraft(
+                english_word="Dragon",
+                translation="дракон",
+                source_fragment="Dragon — дракон",
+                image_prompt="A friendly dragon.",
+            )
+        ],
+    )
+    output_path = tmp_path / "fairy-draft.json"
+    result = build_pipeline(draft).extract_draft(
+        raw_text="Dragon — дракон",
+        output_path=output_path,
+    )
+
+    assert result.validation.is_valid is True
+    data = json.loads(output_path.read_text(encoding="utf-8"))
+    assert data["topic_title"] == "Fairy Tales"
+    assert data["vocabulary_items"][0]["english_word"] == "Dragon"
+    assert data["vocabulary_items"][0]["image_prompt"] == "A friendly dragon."
+
+
+def test_finalize_reviewed_draft_allows_manual_add_and_remove(tmp_path: Path) -> None:
+    reviewed_draft_path = tmp_path / "reviewed.json"
+    reviewed_draft_path.write_text(
+        json.dumps(
+            {
+                "topic_title": "Fairy Tales",
+                "lesson_title": None,
+                "vocabulary_items": [
+                    {
+                        "english_word": "Castle",
+                        "translation": "замок",
+                        "source_fragment": "Castle — замок",
+                        "image_prompt": "A big stone castle.",
+                    },
+                    {
+                        "english_word": "Elf",
+                        "translation": "эльф",
+                        "source_fragment": "Elf — эльф",
+                        "notes": "Added by human reviewer",
+                    },
+                ],
+                "warnings": [],
+                "unparsed_lines": [],
+                "confidence_notes": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "final.json"
+    pipeline = LessonImportPipeline(
+        extraction_client=FakeLessonExtractionClient(
+            LessonExtractionDraft(topic_title="", vocabulary_items=[])
+        ),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.finalize_draft_from_file(
+        input_path=reviewed_draft_path,
+        output_path=output_path,
+    )
+
+    assert result.validation.is_valid is True
+    data = json.loads(output_path.read_text(encoding="utf-8"))
+    assert [item["english_word"] for item in data["vocabulary_items"]] == ["Castle", "Elf"]
+    assert data["vocabulary_items"][1]["notes"] == "Added by human reviewer"
+
+
+def test_finalize_reviewed_draft_returns_field_errors_for_broken_manual_edit() -> None:
+    reader = JsonDraftReader()
+    reviewed_draft = reader.read_data(
+        {
+            "topic_title": "Fairy Tales",
+            "vocabulary_items": [
+                {
+                    "english_word": "Dragon",
+                    "translation": "",
+                    "source_fragment": "Dragon — дракон",
+                }
+            ],
+        }
+    )
+    pipeline = LessonImportPipeline(
+        extraction_client=FakeLessonExtractionClient(
+            LessonExtractionDraft(topic_title="", vocabulary_items=[])
+        ),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.finalize_draft(draft=reviewed_draft)
+
+    assert result.validation.is_valid is False
+    assert any(error.code == "empty_translation" for error in result.validation.errors)
 
 
 def test_ollama_extraction_client_builds_draft_from_http_response(

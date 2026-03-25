@@ -105,38 +105,57 @@ Human review is still recommended before publishing extracted packs to learner-f
 
 ## Local Import CLI
 
-There is a local CLI entrypoint for the import pipeline:
+There is a local two-step CLI entrypoint for the import pipeline:
 
 ```bash
-python -m englishbot.import_lesson_text --input lesson.txt --output content/custom/fairy-tales.json
+python -m englishbot.import_lesson_text extract-draft --input lesson.txt --output content/custom/fairy-tales.draft.json
+python -m englishbot.import_lesson_text finalize-draft --input content/custom/fairy-tales.draft.json --output content/custom/fairy-tales.json
 ```
 
-By default the CLI now uses a real Ollama-backed extractor over HTTP. You can still switch to the offline stub extractor when needed:
+Step 1 extracts an editable draft from raw text. Step 2 takes the reviewed draft JSON and converts it into the final canonical content pack used by the bot.
+
+By default draft extraction uses a real Ollama-backed extractor over HTTP. You can still switch to the offline stub extractor when needed:
 
 ```bash
-python -m englishbot.import_lesson_text --extractor stub --input lesson.txt --output content/custom/fairy-tales.json
+python -m englishbot.import_lesson_text extract-draft \
+  --extractor stub \
+  --input lesson.txt \
+  --output content/custom/fairy-tales.draft.json
 ```
 
 Useful Ollama options:
 
 ```bash
-python -m englishbot.import_lesson_text \
+python -m englishbot.import_lesson_text extract-draft \
   --extractor ollama \
   --ollama-model llama3.2:3b \
   --ollama-base-url http://127.0.0.1:11434 \
   --include-image-prompts \
   --input lesson.txt \
-  --output content/custom/fairy-tales.json
+  --output content/custom/fairy-tales.draft.json
 ```
 
 Tests still stay offline because they use fake/mock extraction clients instead of a live Ollama server.
 
-By default the Ollama extraction path is conservative:
+The intended workflow is:
+
+- send raw teacher/parent/student text to `extract-draft`
+- let the system propose vocabulary pairs and optional image prompts
+- review the draft JSON manually
+- add, remove, or edit vocabulary items by hand if needed
+- run `finalize-draft` to validate and save the final canonical pack
+
+By default the Ollama draft extraction path is conservative:
 
 - it does not keep model-generated `image_prompt` values unless `--include-image-prompts` is passed
 - it tries to repair obvious translation mistakes from `source_fragment`, for example when the model transliterates Russian text into Latin characters
 
-When `--include-image-prompts` is enabled, prompts are generated in a second stage after the lesson structure has already been validated and canonicalized. The current implementation sends one vocabulary pair per request, which keeps the flow simple: first parse the text into pairs, then generate one image prompt for each pair.
+When `--include-image-prompts` is enabled, prompts are generated one vocabulary pair at a time after the initial extraction step. This keeps the mental model simple: first parse the text into pairs, then generate one image prompt for each pair.
+
+Manual review is part of the design, not an edge case. If a reviewer removes items, adds new ones, or edits fields directly in the draft JSON, `finalize-draft` will either:
+
+- accept the reviewed draft and produce a final content pack
+- or return structured validation errors for required fields such as missing `translation` or `source_fragment`
 
 ## Quick start in VS Code Dev Container
 
