@@ -23,6 +23,7 @@ from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.repositories import InMemoryAddWordsFlowRepository
+from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 
 FAIRY_TALES_LESSON_TEXT = (
     "Fairy Tales\n\n"
@@ -128,6 +129,7 @@ def build_driver(
     *,
     drafts: list[LessonExtractionDraft | object] | None = None,
     custom_content_dir: Path | None = None,
+    db_path: Path | None = None,
 ) -> AddWordsScenarioDriver:
     extraction_client: LessonExtractionClient
     if drafts is None:
@@ -141,11 +143,16 @@ def build_driver(
         image_prompt_enricher=FakeImagePromptEnricher(),  # type: ignore[arg-type]
     )
     repository = InMemoryAddWordsFlowRepository()
+    resolved_content_dir = custom_content_dir or Path("content/custom")
+    content_store = SQLiteContentStore(
+        db_path=db_path or resolved_content_dir / "englishbot.db"
+    )
     harness = AddWordsFlowHarness(
         pipeline=pipeline,
         validator=LessonExtractionValidator(),
         writer=JsonContentPackWriter(),
-        custom_content_dir=custom_content_dir or Path("content/custom"),
+        custom_content_dir=resolved_content_dir,
+        content_store=content_store,
     )
     return AddWordsScenarioDriver(
         start=StartAddWordsFlowUseCase(harness=harness, flow_repository=repository),

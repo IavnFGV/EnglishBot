@@ -15,9 +15,11 @@ from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import OllamaLessonExtractionClient, StubLessonExtractionClient
 from englishbot.importing.draft_io import JsonDraftReader, JsonDraftWriter
 from englishbot.importing.enrichment import OllamaImagePromptEnricher
+from englishbot.importing.models import CanonicalContentPack
 from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
+from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 
 app = typer.Typer(
     add_completion=False,
@@ -86,6 +88,10 @@ def _print_validation_errors(errors: list[object]) -> None:
             indent=2,
         )
     )
+
+
+def _resolve_db_path(db_path: Path | None) -> Path:
+    return db_path or Path(os.getenv("CONTENT_DB_PATH", "data/englishbot.db"))
 
 
 @app.command("extract-draft")
@@ -253,6 +259,127 @@ def finalize_draft(
         warning_count,
         output_path,
     )
+
+
+@app.command("reset-db")
+def reset_db(
+    db_path: Annotated[
+        Path | None,
+        typer.Option("--db-path", dir_okay=False, help="Path to the SQLite runtime database."),
+    ] = None,
+    log_level: Annotated[
+        str,
+        typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
+    ] = "INFO",
+) -> None:
+    configure_logging(log_level.upper())
+    resolved_db_path = _resolve_db_path(db_path)
+    store = SQLiteContentStore(db_path=resolved_db_path)
+    store.initialize()
+    store.import_json_directories([], replace=True)
+    logging.getLogger(__name__).info("SQLite runtime database reset db_path=%s", resolved_db_path)
+    typer.echo(str(resolved_db_path))
+
+
+@app.command("import-json-to-db")
+def import_json_to_db(
+    input_dir: Annotated[
+        list[Path],
+        typer.Option(
+            "--input-dir",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            help="Directory with JSON content packs. Repeat the option for multiple directories.",
+        ),
+    ],
+    db_path: Annotated[
+        Path | None,
+        typer.Option("--db-path", dir_okay=False, help="Path to the SQLite runtime database."),
+    ] = None,
+    replace: Annotated[
+        bool,
+        typer.Option("--replace", help="Clear existing runtime data before import."),
+    ] = True,
+    log_level: Annotated[
+        str,
+        typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
+    ] = "INFO",
+) -> None:
+    if not input_dir:
+        raise typer.BadParameter("Specify at least one --input-dir.", param_hint="--input-dir")
+    configure_logging(log_level.upper())
+    resolved_db_path = _resolve_db_path(db_path)
+    store = SQLiteContentStore(db_path=resolved_db_path)
+    store.import_json_directories(input_dir, replace=replace)
+    topics = store.list_topics()
+    logging.getLogger(__name__).info(
+        "Imported JSON content packs into SQLite db_path=%s topic_count=%s",
+        resolved_db_path,
+        len(topics),
+    )
+    typer.echo(f"db={resolved_db_path}")
+    typer.echo(f"topics={len(topics)}")
+
+
+@app.command("show-topics")
+def show_topics(
+    db_path: Annotated[
+        Path | None,
+        typer.Option("--db-path", dir_okay=False, help="Path to the SQLite runtime database."),
+    ] = None,
+    log_level: Annotated[
+        str,
+        typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
+    ] = "INFO",
+) -> None:
+    configure_logging(log_level.upper())
+    resolved_db_path = _resolve_db_path(db_path)
+    store = SQLiteContentStore(db_path=resolved_db_path)
+    topics = store.list_topics()
+    typer.echo(
+        json.dumps(
+            [{"id": topic.id, "title": topic.title} for topic in topics],
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@app.command("export-topic-from-db")
+def export_topic_from_db(
+    topic_id: Annotated[
+        str,
+        typer.Option("--topic-id", help="Topic id to export from the SQLite runtime database."),
+    ],
+    output_path: Annotated[
+        Path,
+        typer.Option("--output", dir_okay=False, help="Path to the exported content pack JSON."),
+    ],
+    db_path: Annotated[
+        Path | None,
+        typer.Option("--db-path", dir_okay=False, help="Path to the SQLite runtime database."),
+    ] = None,
+    log_level: Annotated[
+        str,
+        typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
+    ] = "INFO",
+) -> None:
+    configure_logging(log_level.upper())
+    resolved_db_path = _resolve_db_path(db_path)
+    store = SQLiteContentStore(db_path=resolved_db_path)
+    content_pack = store.get_content_pack(topic_id)
+    JsonContentPackWriter().write(
+        content_pack=CanonicalContentPack(content_pack),
+        output_path=output_path,
+    )
+    logging.getLogger(__name__).info(
+        "Exported topic from SQLite db_path=%s topic_id=%s output_path=%s",
+        resolved_db_path,
+        topic_id,
+        output_path,
+    )
+    typer.echo(str(output_path))
 
 
 if __name__ == "__main__":

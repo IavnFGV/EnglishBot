@@ -52,7 +52,6 @@ from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtr
 from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
-from englishbot.infrastructure.content_loader import JsonContentPackLoader
 from englishbot.infrastructure.repositories import (
     InMemoryAddWordsFlowRepository,
     InMemoryImageReviewFlowRepository,
@@ -62,6 +61,7 @@ from englishbot.infrastructure.repositories import (
     InMemoryUserProgressRepository,
     InMemoryVocabularyRepository,
 )
+from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.presentation.add_words_text import format_draft_preview
 
 
@@ -210,6 +210,8 @@ class AppHarness:
         import_drafts: list[LessonExtractionDraft | object] | None = None,
     ) -> None:
         self.content_dir = content_dir
+        self.db_path = content_dir / "englishbot.db"
+        self.content_store = SQLiteContentStore(db_path=self.db_path)
         self.clock = FixedClock(datetime(2026, 3, 25, 8, 0, tzinfo=UTC))
         self.screen: UserScreen | None = None
         self.flow: AddWordsFlowState | None = None
@@ -327,7 +329,7 @@ class AppHarness:
         self,
         *,
         user_id: int = 100,
-        model_names: tuple[str, ...] = ("dreamshaper", "realistic-vision", "sd15"),
+        model_names: tuple[str, ...] = ("dreamshaper", "realistic-vision"),
     ) -> AppHarness:
         if self.approval is None:
             raise AssertionError("No approved import is available.")
@@ -440,11 +442,13 @@ class AppHarness:
         *,
         include_default_content: bool = False,
     ) -> AppHarness:
-        loader = JsonContentPackLoader()
-        loaded = loader.load_directory(self.content_dir)
-        topics = loaded.topics
-        lessons = loaded.lessons
-        items = loaded.vocabulary_items
+        self.content_store.import_json_directories([self.content_dir], replace=True)
+        topics = self.content_store.list_topics()
+        items = self.content_store.list_all_vocabulary()
+        loaded_lessons: list[Lesson] = []
+        for topic in topics:
+            loaded_lessons.extend(self.content_store.list_lessons_by_topic(topic.id))
+        lessons = loaded_lessons
         if include_default_content:
             topics = [*_default_topics(), *topics]
             lessons = [*_default_lessons(), *lessons]
@@ -520,6 +524,7 @@ class AppHarness:
             validator=LessonExtractionValidator(),
             writer=JsonContentPackWriter(),
             custom_content_dir=self.content_dir,
+            content_store=self.content_store,
         )
         self.start_add_words = StartAddWordsFlowUseCase(
             harness=harness,
@@ -545,6 +550,7 @@ class AppHarness:
             writer=JsonContentPackWriter(),
             candidate_generator=FakeImageCandidateGenerator(),
             assets_dir=self.content_dir / "assets",
+            content_store=self.content_store,
         )
         self.start_image_review = StartImageReviewUseCase(
             harness=image_review_harness,

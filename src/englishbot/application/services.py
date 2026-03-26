@@ -1,7 +1,4 @@
-from englishbot.application.add_words_flow import (
-    AddWordsFlowHarness,
-    build_publish_output_path,
-)
+from englishbot.application.add_words_flow import AddWordsFlowHarness
 from englishbot.application.add_words_use_cases import (
     ApplyAddWordsEditUseCase,
     ApproveAddWordsDraftUseCase,
@@ -49,7 +46,6 @@ __all__ = [
     "AnswerOutcome",
     "ApproveAddWordsDraftUseCase",
     "ApplicationError",
-    "build_publish_output_path",
     "CheckMorningReviewUseCase",
     "Clock",
     "CancelAddWordsFlowUseCase",

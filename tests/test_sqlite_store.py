@@ -4,7 +4,17 @@ import json
 from pathlib import Path
 
 from englishbot.application.add_words_flow import AddWordsFlowHarness
-from englishbot.application.add_words_use_cases import ApproveAddWordsDraftUseCase, StartAddWordsFlowUseCase
+from englishbot.application.add_words_use_cases import (
+    ApproveAddWordsDraftUseCase,
+    SaveApprovedAddWordsDraftUseCase,
+    StartAddWordsFlowUseCase,
+)
+from englishbot.application.image_review_flow import ImageReviewFlowHarness
+from englishbot.application.image_review_use_cases import (
+    GenerateImageReviewCandidatesUseCase,
+    StartImageReviewUseCase,
+)
+from englishbot.domain.image_review_models import ImageCandidate
 from englishbot.bootstrap import build_training_service
 from englishbot.domain.models import TrainingMode
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
@@ -13,7 +23,11 @@ from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.repositories import InMemoryAddWordsFlowRepository
-from englishbot.infrastructure.sqlite_store import SQLiteContentStore
+from englishbot.infrastructure.sqlite_store import (
+    SQLiteAddWordsFlowRepository,
+    SQLiteContentStore,
+    SQLiteImageReviewFlowRepository,
+)
 
 
 class _StubExtractionClient:
@@ -29,6 +43,44 @@ class _StubExtractionClient:
                 )
             ],
         )
+
+
+class _StubImagePromptEnricher:
+    def enrich(
+        self,
+        *,
+        topic_title: str,  # noqa: ARG002
+        vocabulary_items: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "id": item["id"],
+                "english_word": item["english_word"],
+                "image_prompt": f"Prompt for {item['english_word']}",
+            }
+            for item in vocabulary_items
+        ]
+
+
+class _StubImageCandidateGenerator:
+    def generate_candidates(  # noqa: PLR0913
+        self,
+        *,
+        topic_id: str,
+        item_id: str,
+        english_word: str,
+        prompt: str,
+        assets_dir: Path,
+        model_names: tuple[str, ...],
+    ) -> list:
+        return [
+            ImageCandidate(
+                model_name=model_names[0],
+                image_ref=f"assets/{topic_id}/{item_id}.png",
+                output_path=assets_dir / topic_id / f"{item_id}.png",
+                prompt=prompt,
+            )
+        ]
 
 
 def test_sqlite_content_store_imports_json_and_reconstructs_content_pack(tmp_path: Path) -> None:
@@ -133,3 +185,77 @@ def test_add_words_approve_publishes_into_sqlite_without_export_file_by_default(
     assert approved.output_path is None
     saved = store.get_content_pack("fairy-tales")
     assert saved["vocabulary_items"][0]["english_word"] == "Dragon"
+
+
+def test_save_approved_draft_can_use_database_checkpoint_without_writing_file(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    pipeline = LessonImportPipeline(
+        extraction_client=_StubExtractionClient(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        image_prompt_enricher=_StubImagePromptEnricher(),  # type: ignore[arg-type]
+    )
+    harness = AddWordsFlowHarness(
+        pipeline=pipeline,
+        content_store=store,
+    )
+    repository = SQLiteAddWordsFlowRepository(store)
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+    save_approved_draft = SaveApprovedAddWordsDraftUseCase(
+        harness=harness,
+        flow_repository=repository,
+    )
+
+    flow = start.execute(user_id=1, raw_text="Dragon — дракон")
+    saved_flow = save_approved_draft.execute(user_id=1, flow_id=flow.flow_id)
+
+    assert saved_flow.stage == "draft_saved"
+    assert saved_flow.draft_output_path is None
+    restored_store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    restored_repository = SQLiteAddWordsFlowRepository(restored_store)
+    restored_flow = restored_repository.get_active_by_user(1)
+    assert restored_flow is not None
+    assert restored_flow.stage == "draft_saved"
+    assert restored_flow.draft_output_path is None
+    assert restored_flow.draft_result.draft.vocabulary_items[0].english_word == "Dragon"
+
+
+def test_image_review_flow_is_restored_from_sqlite_after_restart(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    repository = SQLiteImageReviewFlowRepository(store)
+    harness = ImageReviewFlowHarness(
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        candidate_generator=_StubImageCandidateGenerator(),
+        assets_dir=tmp_path / "assets",
+        content_store=store,
+        default_model_names=("dreamshaper",),
+    )
+    start = StartImageReviewUseCase(harness=harness, repository=repository)
+    generate = GenerateImageReviewCandidatesUseCase(harness=harness, repository=repository)
+    draft = LessonExtractionDraft(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            ExtractedVocabularyItemDraft(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                source_fragment="Dragon — дракон",
+                image_prompt="Prompt for Dragon",
+            )
+        ],
+    )
+
+    flow = start.execute(user_id=7, draft=draft, model_names=("dreamshaper",))
+    updated = generate.execute(user_id=7, flow_id=flow.flow_id)
+
+    restored_store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    restored_repository = SQLiteImageReviewFlowRepository(restored_store)
+    restored_flow = restored_repository.get_active_by_user(7)
+
+    assert restored_flow is not None
+    assert restored_flow.flow_id == updated.flow_id
+    assert restored_flow.current_item is not None
+    assert len(restored_flow.current_item.candidates) == 1
+    assert restored_flow.current_item.candidates[0].image_ref == "assets/fairy-tales/dragon.png"

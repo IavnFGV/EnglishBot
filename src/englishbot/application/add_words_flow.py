@@ -4,9 +4,8 @@ import uuid
 from pathlib import Path
 
 from englishbot.domain.add_words_models import AddWordsApprovalResult, AddWordsFlowState
-from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.draft_io import JsonDraftWriter
-from englishbot.importing.models import ImportLessonResult
+from englishbot.importing.models import CanonicalContentPack, ImportLessonResult
 from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
@@ -154,11 +153,9 @@ class AddWordsFlowHarness:
         validation = self._validator.validate(draft)
         if not validation.is_valid:
             raise ValueError("Draft validation failed.")
-        resolved_output_path = output_path or build_draft_output_path(
-            draft,
-            custom_content_dir=self._custom_content_dir,
-        )
-        self._draft_writer.write(draft=draft, output_path=resolved_output_path)
+        resolved_output_path = output_path
+        if resolved_output_path is not None:
+            self._draft_writer.write(draft=draft, output_path=resolved_output_path)
         return AddWordsFlowState(
             flow_id=flow.flow_id,
             editor_user_id=flow.editor_user_id,
@@ -184,8 +181,6 @@ class AddWordsFlowHarness:
         },
     )
     def generate_image_prompts(self, *, flow: AddWordsFlowState) -> AddWordsFlowState:
-        if flow.draft_output_path is None:
-            raise ValueError("Approved draft must be saved before generating image prompts.")
         draft = flow.draft_result.draft
         enriched = self._pipeline.enrich_draft_image_prompts(
             draft=draft,
@@ -255,13 +250,13 @@ class AddWordsFlowHarness:
             self._content_store.upsert_content_pack(finalized.canonicalization.content_pack.data)
             resolved_output_path = output_path
         else:
-            resolved_output_path = output_path or build_publish_output_path(
-                finalized.canonicalization.content_pack.data,
+            resolved_output_path = output_path or build_export_output_path(
+                topic_id=published_topic_id,
                 custom_content_dir=self._custom_content_dir,
             )
-        if output_path is not None or self._content_store is None:
+        if resolved_output_path is not None:
             self._writer.write(
-                content_pack=finalized.canonicalization.content_pack,
+                content_pack=CanonicalContentPack(finalized.canonicalization.content_pack.data),
                 output_path=resolved_output_path,
             )
         return AddWordsApprovalResult(
@@ -271,34 +266,10 @@ class AddWordsFlowHarness:
         )
 
 
-def build_publish_output_path(
-    content_pack: dict[str, object],
+def build_export_output_path(
+    topic_id: str,
     *,
     custom_content_dir: Path = _CUSTOM_CONTENT_DIR,
 ) -> Path:
-    topic = content_pack.get("topic", {})
-    if not isinstance(topic, dict):
-        topic = {}
-    topic_id = str(topic.get("id", "imported-topic")).strip() or "imported-topic"
-    base_path = custom_content_dir / f"{topic_id}.json"
-    if not base_path.exists():
-        return base_path
-    suffix = 2
-    while True:
-        candidate = custom_content_dir / f"{topic_id}-{suffix}.json"
-        if not candidate.exists():
-            return candidate
-        suffix += 1
-
-
-def build_draft_output_path(
-    draft,
-    *,
-    custom_content_dir: Path = _CUSTOM_CONTENT_DIR,
-) -> Path:
-    canonicalization = DraftToContentPackCanonicalizer().convert(draft)
-    topic = canonicalization.content_pack.data.get("topic", {})
-    if not isinstance(topic, dict):
-        topic = {}
-    topic_id = str(topic.get("id", "imported-topic")).strip() or "imported-topic"
-    return custom_content_dir / f"{topic_id}.draft.json"
+    resolved_topic_id = topic_id.strip() or "imported-topic"
+    return custom_content_dir / f"{resolved_topic_id}.json"

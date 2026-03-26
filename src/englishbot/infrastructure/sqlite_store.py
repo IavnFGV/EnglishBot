@@ -3,11 +3,20 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime
+from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 
+from englishbot.domain.add_words_models import AddWordsFlowState
+from englishbot.domain.image_review_models import (
+    ImageCandidate,
+    ImageReviewFlowState,
+    ImageReviewItem,
+)
 from englishbot.domain.models import Lesson, SessionAnswer, SessionItem, Topic, TrainingMode, TrainingSession, UserProgress, VocabularyItem
 from englishbot.infrastructure.content_loader import JsonContentPackLoader
+from englishbot.importing.draft_io import JsonDraftReader, draft_to_data
+from englishbot.importing.models import ImportLessonResult, ValidationError, ValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +99,31 @@ class SQLiteContentStore:
                     is_correct INTEGER NOT NULL,
                     PRIMARY KEY (session_id, sort_order)
                 );
+
+                CREATE TABLE IF NOT EXISTS add_words_flows (
+                    flow_id TEXT PRIMARY KEY,
+                    editor_user_id INTEGER NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    stage TEXT NOT NULL,
+                    raw_text TEXT NOT NULL,
+                    draft_json TEXT NOT NULL,
+                    validation_errors_json TEXT NOT NULL,
+                    draft_output_path TEXT,
+                    final_output_path TEXT,
+                    image_review_flow_id TEXT,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS image_review_flows (
+                    flow_id TEXT PRIMARY KEY,
+                    editor_user_id INTEGER NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    content_pack_json TEXT NOT NULL,
+                    items_json TEXT NOT NULL,
+                    current_index INTEGER NOT NULL DEFAULT 0,
+                    output_path TEXT,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -125,6 +159,8 @@ class SQLiteContentStore:
                 connection.execute("DELETE FROM vocabulary_items")
                 connection.execute("DELETE FROM lessons")
                 connection.execute("DELETE FROM topics")
+                connection.execute("DELETE FROM add_words_flows")
+                connection.execute("DELETE FROM image_review_flows")
             for topic in topic_map.values():
                 connection.execute(
                     """
@@ -540,6 +576,181 @@ class SQLiteContentStore:
             for row in rows:
                 connection.execute("DELETE FROM training_sessions WHERE id = ?", (row["id"],))
 
+    def save_add_words_flow(self, flow: AddWordsFlowState) -> None:
+        self.initialize()
+        payload = {
+            "flow_id": flow.flow_id,
+            "editor_user_id": flow.editor_user_id,
+            "stage": flow.stage,
+            "raw_text": flow.raw_text,
+            "draft_json": json.dumps(draft_to_data(flow.draft_result.draft), ensure_ascii=False),
+            "validation_errors_json": json.dumps(
+                [asdict(error) for error in flow.draft_result.validation.errors],
+                ensure_ascii=False,
+            ),
+            "draft_output_path": str(flow.draft_output_path) if flow.draft_output_path else None,
+            "final_output_path": str(flow.final_output_path) if flow.final_output_path else None,
+            "image_review_flow_id": flow.image_review_flow_id,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                "UPDATE add_words_flows SET is_active = 0 WHERE editor_user_id = ? AND flow_id != ?",
+                (flow.editor_user_id, flow.flow_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO add_words_flows (
+                    flow_id, editor_user_id, is_active, stage, raw_text, draft_json,
+                    validation_errors_json, draft_output_path, final_output_path,
+                    image_review_flow_id, updated_at
+                ) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(flow_id) DO UPDATE SET
+                    editor_user_id=excluded.editor_user_id,
+                    is_active=1,
+                    stage=excluded.stage,
+                    raw_text=excluded.raw_text,
+                    draft_json=excluded.draft_json,
+                    validation_errors_json=excluded.validation_errors_json,
+                    draft_output_path=excluded.draft_output_path,
+                    final_output_path=excluded.final_output_path,
+                    image_review_flow_id=excluded.image_review_flow_id,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    payload["flow_id"],
+                    payload["editor_user_id"],
+                    payload["stage"],
+                    payload["raw_text"],
+                    payload["draft_json"],
+                    payload["validation_errors_json"],
+                    payload["draft_output_path"],
+                    payload["final_output_path"],
+                    payload["image_review_flow_id"],
+                    payload["updated_at"],
+                ),
+            )
+
+    def get_active_add_words_flow_by_user(self, user_id: int) -> AddWordsFlowState | None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM add_words_flows
+                WHERE editor_user_id = ? AND is_active = 1
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+        return self._row_to_add_words_flow(row) if row is not None else None
+
+    def get_add_words_flow_by_id(self, flow_id: str) -> AddWordsFlowState | None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                "SELECT * FROM add_words_flows WHERE flow_id = ?",
+                (flow_id,),
+            ).fetchone()
+        return self._row_to_add_words_flow(row) if row is not None else None
+
+    def discard_active_add_words_flow_by_user(self, user_id: int) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                "DELETE FROM add_words_flows WHERE editor_user_id = ? AND is_active = 1",
+                (user_id,),
+            )
+
+    def save_image_review_flow(self, flow: ImageReviewFlowState) -> None:
+        self.initialize()
+        items_json = json.dumps(
+            [
+                {
+                    "item_id": item.item_id,
+                    "english_word": item.english_word,
+                    "translation": item.translation,
+                    "prompt": item.prompt,
+                    "selected_candidate_index": item.selected_candidate_index,
+                    "skipped": item.skipped,
+                    "candidates": [
+                        {
+                            "model_name": candidate.model_name,
+                            "image_ref": candidate.image_ref,
+                            "output_path": str(candidate.output_path),
+                            "prompt": candidate.prompt,
+                        }
+                        for candidate in item.candidates
+                    ],
+                }
+                for item in flow.items
+            ],
+            ensure_ascii=False,
+        )
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                "UPDATE image_review_flows SET is_active = 0 WHERE editor_user_id = ? AND flow_id != ?",
+                (flow.editor_user_id, flow.flow_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO image_review_flows (
+                    flow_id, editor_user_id, is_active, content_pack_json, items_json,
+                    current_index, output_path, updated_at
+                ) VALUES (?, ?, 1, ?, ?, ?, ?, ?)
+                ON CONFLICT(flow_id) DO UPDATE SET
+                    editor_user_id=excluded.editor_user_id,
+                    is_active=1,
+                    content_pack_json=excluded.content_pack_json,
+                    items_json=excluded.items_json,
+                    current_index=excluded.current_index,
+                    output_path=excluded.output_path,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    flow.flow_id,
+                    flow.editor_user_id,
+                    json.dumps(flow.content_pack, ensure_ascii=False),
+                    items_json,
+                    flow.current_index,
+                    str(flow.output_path) if flow.output_path else None,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+
+    def get_active_image_review_flow_by_user(self, user_id: int) -> ImageReviewFlowState | None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM image_review_flows
+                WHERE editor_user_id = ? AND is_active = 1
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+        return self._row_to_image_review_flow(row) if row is not None else None
+
+    def get_image_review_flow_by_id(self, flow_id: str) -> ImageReviewFlowState | None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                "SELECT * FROM image_review_flows WHERE flow_id = ?",
+                (flow_id,),
+            ).fetchone()
+        return self._row_to_image_review_flow(row) if row is not None else None
+
+    def discard_active_image_review_flow_by_user(self, user_id: int) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                "DELETE FROM image_review_flows WHERE editor_user_id = ? AND is_active = 1",
+                (user_id,),
+            )
+
     def _row_to_vocabulary_item(self, row: sqlite3.Row) -> VocabularyItem:
         return VocabularyItem(
             id=row["id"],
@@ -561,6 +772,59 @@ class SQLiteContentStore:
             incorrect_answers=row["incorrect_answers"],
             last_result=None if row["last_result"] is None else bool(row["last_result"]),
             last_seen_at=datetime.fromisoformat(last_seen_at) if last_seen_at else None,
+        )
+
+    def _row_to_add_words_flow(self, row: sqlite3.Row) -> AddWordsFlowState:
+        draft = JsonDraftReader().read_data(json.loads(row["draft_json"]))
+        raw_errors = json.loads(row["validation_errors_json"])
+        errors = [ValidationError(**error) for error in raw_errors]
+        return AddWordsFlowState(
+            flow_id=row["flow_id"],
+            editor_user_id=row["editor_user_id"],
+            raw_text=row["raw_text"],
+            draft_result=ImportLessonResult(
+                draft=draft,
+                validation=ValidationResult(errors=errors),
+            ),
+            stage=row["stage"],
+            draft_output_path=Path(row["draft_output_path"]) if row["draft_output_path"] else None,
+            final_output_path=Path(row["final_output_path"]) if row["final_output_path"] else None,
+            image_review_flow_id=row["image_review_flow_id"],
+        )
+
+    def _row_to_image_review_flow(self, row: sqlite3.Row) -> ImageReviewFlowState:
+        raw_items = json.loads(row["items_json"])
+        items: list[ImageReviewItem] = []
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+            items.append(
+                ImageReviewItem(
+                    item_id=str(raw_item.get("item_id", "")),
+                    english_word=str(raw_item.get("english_word", "")),
+                    translation=str(raw_item.get("translation", "")),
+                    prompt=str(raw_item.get("prompt", "")),
+                    selected_candidate_index=raw_item.get("selected_candidate_index"),
+                    skipped=bool(raw_item.get("skipped", False)),
+                    candidates=[
+                        ImageCandidate(
+                            model_name=str(candidate.get("model_name", "")),
+                            image_ref=str(candidate.get("image_ref", "")),
+                            output_path=Path(str(candidate.get("output_path", ""))),
+                            prompt=str(candidate.get("prompt", "")),
+                        )
+                        for candidate in raw_item.get("candidates", [])
+                        if isinstance(candidate, dict)
+                    ],
+                )
+            )
+        return ImageReviewFlowState(
+            flow_id=row["flow_id"],
+            editor_user_id=row["editor_user_id"],
+            content_pack=json.loads(row["content_pack_json"]),
+            items=items,
+            current_index=row["current_index"],
+            output_path=Path(row["output_path"]) if row["output_path"] else None,
         )
 
 
@@ -629,3 +893,37 @@ class SQLiteSessionRepository:
 
     def discard_active_by_user(self, user_id: int) -> None:
         self._store.discard_active_session_by_user(user_id)
+
+
+class SQLiteAddWordsFlowRepository:
+    def __init__(self, store: SQLiteContentStore) -> None:
+        self._store = store
+
+    def save(self, flow: AddWordsFlowState) -> None:
+        self._store.save_add_words_flow(flow)
+
+    def get_active_by_user(self, user_id: int) -> AddWordsFlowState | None:
+        return self._store.get_active_add_words_flow_by_user(user_id)
+
+    def get_by_id(self, flow_id: str) -> AddWordsFlowState | None:
+        return self._store.get_add_words_flow_by_id(flow_id)
+
+    def discard_active_by_user(self, user_id: int) -> None:
+        self._store.discard_active_add_words_flow_by_user(user_id)
+
+
+class SQLiteImageReviewFlowRepository:
+    def __init__(self, store: SQLiteContentStore) -> None:
+        self._store = store
+
+    def save(self, flow: ImageReviewFlowState) -> None:
+        self._store.save_image_review_flow(flow)
+
+    def get_active_by_user(self, user_id: int) -> ImageReviewFlowState | None:
+        return self._store.get_active_image_review_flow_by_user(user_id)
+
+    def get_by_id(self, flow_id: str) -> ImageReviewFlowState | None:
+        return self._store.get_image_review_flow_by_id(flow_id)
+
+    def discard_active_by_user(self, user_id: int) -> None:
+        self._store.discard_active_image_review_flow_by_user(user_id)

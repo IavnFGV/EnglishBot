@@ -9,6 +9,7 @@ import typer
 from englishbot.__main__ import configure_logging
 from englishbot.image_generation.clients import (
     ComfyUIImageGenerationClient,
+    DEFAULT_COMFYUI_CHECKPOINT_NAME,
     LocalPlaceholderImageGenerationClient,
 )
 
@@ -47,7 +48,7 @@ def main(
     comfyui_checkpoint: Annotated[
         str,
         typer.Option("--comfyui-checkpoint", help="Checkpoint name available inside ComfyUI."),
-    ] = "v1-5-pruned-emaonly.safetensors",
+    ] = DEFAULT_COMFYUI_CHECKPOINT_NAME,
     comfyui_vae: Annotated[
         str | None,
         typer.Option("--comfyui-vae", help="Optional VAE filename available inside ComfyUI."),

@@ -1,10 +1,14 @@
 import asyncio
 import logging
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 from englishbot.bot import build_application
 from englishbot.config import Settings
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def configure_logging(level: str) -> None:
@@ -20,7 +24,7 @@ def configure_logging(level: str) -> None:
 
 
 def main() -> None:
-    load_dotenv()
+    load_dotenv(_REPO_ROOT / ".env")
     settings = Settings.from_env()
     configure_logging(settings.log_level)
     logger = logging.getLogger(__name__)

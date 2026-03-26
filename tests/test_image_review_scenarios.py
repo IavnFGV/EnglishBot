@@ -30,7 +30,6 @@ def test_editor_can_review_two_image_candidates_per_word_and_publish_selected_im
     assert [candidate.model_name for candidate in first_item.candidates] == [
         "dreamshaper",
         "realistic-vision",
-        "sd15",
     ]
 
     app.when_editor_selects_image_candidate(item_id=first_item.item_id, candidate_index=1)
@@ -131,7 +130,6 @@ def test_editor_can_edit_prompt_and_regenerate_current_image_candidates(
     assert updated_item.prompt != original_prompt
     assert updated_item.prompt.startswith("simple cartoon illustration of a red dragon")
     assert [candidate.prompt for candidate in updated_item.candidates] == [
-        updated_item.prompt,
         updated_item.prompt,
         updated_item.prompt,
     ]

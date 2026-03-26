@@ -125,3 +125,50 @@ def test_generate_image_cli_uses_placeholder_backend(monkeypatch, tmp_path: Path
             "output_path": output_path,
         }
     ]
+
+
+def test_generate_image_cli_defaults_to_dreamshaper_checkpoint(monkeypatch, tmp_path: Path) -> None:
+    init_calls: list[dict[str, object]] = []
+
+    class FakeClient:
+        def __init__(
+            self,
+            *,
+            base_url: str | None = None,
+            checkpoint_name: str | None = None,
+            vae_name: str | None = None,
+            width: int = 512,
+            height: int = 512,
+        ) -> None:
+            init_calls.append(
+                {
+                    "base_url": base_url,
+                    "checkpoint_name": checkpoint_name,
+                    "vae_name": vae_name,
+                    "width": width,
+                    "height": height,
+                }
+            )
+
+        def generate(self, *, prompt: str, english_word: str, output_path: Path) -> None:
+            output_path.write_bytes(b"png")
+
+    monkeypatch.setattr(generate_image, "ComfyUIImageGenerationClient", FakeClient)
+    monkeypatch.setattr(generate_image, "configure_logging", lambda level: None)
+    runner = CliRunner()
+    output_path = tmp_path / "dragon.png"
+
+    result = runner.invoke(
+        generate_image.app,
+        [
+            "--prompt",
+            "dragon, friendly illustration",
+            "--english-word",
+            "Dragon",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert init_calls[0]["checkpoint_name"] == "dreamshaper_8.safetensors"

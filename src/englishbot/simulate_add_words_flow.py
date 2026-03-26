@@ -18,7 +18,7 @@ from englishbot.bootstrap import build_lesson_import_pipeline
 from englishbot.config import resolve_ollama_model
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
-from englishbot.infrastructure.repositories import InMemoryAddWordsFlowRepository
+from englishbot.infrastructure.sqlite_store import SQLiteAddWordsFlowRepository, SQLiteContentStore
 from englishbot.presentation.add_words_text import (
     format_draft_edit_text,
     format_draft_preview,
@@ -61,6 +61,14 @@ def run_scenario(
             help="Optional final content pack output path for approve step.",
         ),
     ] = None,
+    db_path: Annotated[
+        Path,
+        typer.Option(
+            "--db-path",
+            dir_okay=False,
+            help="Path to the SQLite runtime database used for flow checkpoints and published content.",
+        ),
+    ] = Path(os.getenv("CONTENT_DB_PATH", "data/englishbot.db")),
     user_id: Annotated[
         int,
         typer.Option("--user-id", help="Synthetic editor user id for scenario runs."),
@@ -107,6 +115,8 @@ def run_scenario(
     ] = "INFO",
 ) -> None:
     configure_logging(log_level.upper())
+    content_store = SQLiteContentStore(db_path=db_path)
+    content_store.initialize()
     pipeline = build_lesson_import_pipeline(
         ollama_model=ollama_model,
         ollama_base_url=ollama_base_url,
@@ -116,11 +126,12 @@ def run_scenario(
         ollama_extract_line_prompt_path=ollama_extract_line_prompt_path,
         ollama_image_prompt_path=ollama_image_prompt_path,
     )
-    repository = InMemoryAddWordsFlowRepository()
+    repository = SQLiteAddWordsFlowRepository(content_store)
     harness = AddWordsFlowHarness(
         pipeline=pipeline,
         validator=LessonExtractionValidator(),
         writer=JsonContentPackWriter(),
+        content_store=content_store,
     )
     start_flow = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
     apply_edit = ApplyAddWordsEditUseCase(harness=harness, flow_repository=repository)

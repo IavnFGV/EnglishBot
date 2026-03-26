@@ -12,6 +12,9 @@ from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_COMFYUI_CHECKPOINT_NAME = "dreamshaper_8.safetensors"
+DEFAULT_COMFYUI_VAE_NAME = ""
+
 
 def _pretty_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
@@ -117,9 +120,9 @@ class ComfyUIImageGenerationClient:
         self._poll_interval_seconds = poll_interval_seconds
         self._checkpoint_name = checkpoint_name or os.getenv(
             "COMFYUI_CHECKPOINT_NAME",
-            "v1-5-pruned-emaonly.safetensors",
+            DEFAULT_COMFYUI_CHECKPOINT_NAME,
         )
-        self._vae_name = vae_name or os.getenv("COMFYUI_VAE_NAME", "")
+        self._vae_name = vae_name or os.getenv("COMFYUI_VAE_NAME", DEFAULT_COMFYUI_VAE_NAME)
         self._seed = seed if seed is not None else int(os.getenv("COMFYUI_SEED", "5"))
         self._width = width
         self._height = height

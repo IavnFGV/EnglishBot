@@ -76,11 +76,11 @@ from englishbot.image_generation.review import ComfyUIImageCandidateGenerator
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.draft_io import draft_to_data
 from englishbot.importing.writer import JsonContentPackWriter
-from englishbot.infrastructure.repositories import (
-    InMemoryAddWordsFlowRepository,
-    InMemoryImageReviewFlowRepository,
-)
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
+from englishbot.infrastructure.sqlite_store import (
+    SQLiteAddWordsFlowRepository,
+    SQLiteImageReviewFlowRepository,
+)
 from englishbot.presentation.add_words_text import (
     format_draft_edit_text,
     format_draft_preview,
@@ -94,6 +94,12 @@ _ADD_WORDS_AWAITING_EDIT_TEXT = "awaiting_edit_text"
 _IMAGE_REVIEW_AWAITING_PROMPT_TEXT = "awaiting_image_review_prompt_text"
 _IMAGE_REVIEW_AWAITING_PHOTO = "awaiting_image_review_photo"
 _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
+
+
+def _draft_checkpoint_text(flow) -> str:
+    if flow.draft_output_path is not None:
+        return f"Draft checkpoint: {flow.draft_output_path}"
+    return "Draft checkpoint saved in database."
 
 
 def build_application(settings: Settings) -> Application:
@@ -111,12 +117,12 @@ def build_application(settings: Settings) -> Application:
         ollama_extract_line_prompt_path=settings.ollama_extract_line_prompt_path,
         ollama_image_prompt_path=settings.ollama_image_prompt_path,
     )
-    add_words_flow_repository = InMemoryAddWordsFlowRepository()
+    add_words_flow_repository = SQLiteAddWordsFlowRepository(content_store)
     add_words_harness = AddWordsFlowHarness(
         pipeline=lesson_import_pipeline,
         content_store=content_store,
     )
-    image_review_repository = InMemoryImageReviewFlowRepository()
+    image_review_repository = SQLiteImageReviewFlowRepository(content_store)
     image_review_harness = ImageReviewFlowHarness(
         canonicalizer=DraftToContentPackCanonicalizer(),
         writer=JsonContentPackWriter(),
@@ -1198,7 +1204,7 @@ async def add_words_approve_draft_handler(
     )
     await query.edit_message_text(
         "Approved draft saved.\n"
-        f"Draft path: {saved_flow.draft_output_path}\n"
+        f"{_draft_checkpoint_text(saved_flow)}\n"
         "Generating image prompts... 0/1"
     )
     prompt_flow = await asyncio.to_thread(
@@ -1208,7 +1214,7 @@ async def add_words_approve_draft_handler(
     )
     await query.edit_message_text(
         "Image prompts generated.\n"
-        f"Draft path: {prompt_flow.draft_output_path}\n"
+        f"{_draft_checkpoint_text(prompt_flow)}\n"
         f"Image prompts: {_draft_prompt_count(prompt_flow.draft_result) or 0}\n"
         "Starting image review..."
     )
@@ -1256,7 +1262,7 @@ async def add_words_approve_auto_images_handler(
     )
     await query.edit_message_text(
         "Approved draft saved.\n"
-        f"Draft path: {saved_flow.draft_output_path}\n"
+        f"{_draft_checkpoint_text(saved_flow)}\n"
         "Generating image prompts... 0/1"
     )
     prompt_flow = await asyncio.to_thread(
@@ -1266,7 +1272,7 @@ async def add_words_approve_auto_images_handler(
     )
     await query.edit_message_text(
         "Image prompts generated.\n"
-        f"Draft path: {prompt_flow.draft_output_path}\n"
+        f"{_draft_checkpoint_text(prompt_flow)}\n"
         f"Image prompts: {_draft_prompt_count(prompt_flow.draft_result) or 0}\n"
         "Publishing content pack... 0/1"
     )
