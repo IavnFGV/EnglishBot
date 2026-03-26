@@ -73,6 +73,7 @@ class StartPublishedWordImageEditUseCase:
             content_pack=content_pack,
             model_names=model_names,
             selected_item_id=item_id,
+            review_origin="published_word_edit",
         )
         self._repository.save(flow)
         return flow
@@ -186,6 +187,18 @@ class GetActiveImageReviewUseCase:
     )
     def execute(self, *, user_id: int) -> ImageReviewFlowState | None:
         return self._repository.get_active_by_user(user_id)
+
+
+class CancelImageReviewFlowUseCase:
+    def __init__(self, repository: ImageReviewFlowRepository) -> None:
+        self._repository = repository
+
+    @logged_service_call(
+        "CancelImageReviewFlowUseCase.execute",
+        include=("user_id",),
+    )
+    def execute(self, *, user_id: int) -> None:
+        self._repository.discard_active_by_user(user_id)
 
 
 class SelectImageCandidateUseCase:

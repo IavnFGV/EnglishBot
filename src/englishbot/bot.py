@@ -46,6 +46,7 @@ from englishbot.application.content_pack_image_use_cases import (
 from englishbot.application.image_review_flow import ImageReviewFlowHarness
 from englishbot.application.image_review_use_cases import (
     AttachUploadedImageUseCase,
+    CancelImageReviewFlowUseCase,
     GenerateImageReviewCandidatesUseCase,
     GetActiveImageReviewUseCase,
     LoadNextImageReviewCandidatesUseCase,
@@ -101,6 +102,7 @@ _IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT = "awaiting_image_review_search_query_t
 _IMAGE_REVIEW_AWAITING_PHOTO = "awaiting_image_review_photo"
 _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
 _IMAGE_REVIEW_STEP_TAG = "image_review_step"
+_IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 
 
 def _draft_checkpoint_text(flow) -> str:
@@ -202,6 +204,9 @@ def build_application(settings: Settings) -> Application:
         )
     )
     app.bot_data["image_review_get_active_use_case"] = GetActiveImageReviewUseCase(
+        image_review_repository
+    )
+    app.bot_data["image_review_cancel_use_case"] = CancelImageReviewFlowUseCase(
         image_review_repository
     )
     app.bot_data["image_review_generate_use_case"] = GenerateImageReviewCandidatesUseCase(
@@ -480,6 +485,10 @@ def _get_active_image_review(context: ContextTypes.DEFAULT_TYPE) -> GetActiveIma
     return context.application.bot_data["image_review_get_active_use_case"]
 
 
+def _cancel_image_review(context: ContextTypes.DEFAULT_TYPE) -> CancelImageReviewFlowUseCase:
+    return context.application.bot_data["image_review_cancel_use_case"]
+
+
 def _generate_image_review_candidates(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GenerateImageReviewCandidatesUseCase:
@@ -620,6 +629,14 @@ def _publish_destination_text(
             return f"Database: {_content_store(context).db_path}\nTopic: {topic_id}"
         return f"Database: {_content_store(context).db_path}"
     return f"Saved to: {output_path}"
+
+
+def _image_review_origin(flow) -> str:
+    metadata = flow.content_pack.get("metadata", {})
+    if not isinstance(metadata, dict):
+        return "draft_review"
+    origin = metadata.get("image_review_origin")
+    return str(origin).strip() if origin else "draft_review"
 
 
 def _is_group_chat(update: Update) -> bool:
@@ -1524,8 +1541,9 @@ async def published_image_item_handler(
         topic_id=topic_id,
         item_id=item_id,
     )
-    await _send_current_published_image_preview(query.message, review_flow)
+    await _send_current_published_image_preview(query.message, context, review_flow)
     await _send_image_review_step(query.message, context, review_flow)
+    await _delete_message_if_possible(context, message=query.message)
 
 
 async def image_review_generate_handler(
@@ -1635,6 +1653,30 @@ async def image_review_pick_handler(
         candidate_index=int(candidate_index),
     )
     if updated_flow.completed:
+        if _image_review_origin(updated_flow) == "published_word_edit":
+            registry = _telegram_flow_messages(context)
+            tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
+            await _delete_tracked_messages(
+                context,
+                tracked_messages=_tracked_messages_except_source_message(
+                    tracked_messages=tracked_messages,
+                    message=query.message,
+                ),
+            )
+            _cancel_image_review(context).execute(user_id=user.id)
+            topic = updated_flow.content_pack.get("topic", {})
+            topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
+            raw_items = updated_flow.content_pack.get("vocabulary_items", [])
+            await query.edit_message_text(
+                "No changes made. Choose another word to edit.",
+                reply_markup=_published_image_items_keyboard(
+                    topic_id=topic_id,
+                    raw_items=raw_items if isinstance(raw_items, list) else [],
+                ),
+            )
+            if registry is not None:
+                registry.clear(flow_id=flow_id)
+            return
         output_path = _resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
@@ -1688,6 +1730,30 @@ async def image_review_skip_handler(
         item_id=flow.current_item.item_id,
     )
     if updated_flow.completed:
+        if _image_review_origin(updated_flow) == "published_word_edit":
+            registry = _telegram_flow_messages(context)
+            tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
+            await _delete_tracked_messages(
+                context,
+                tracked_messages=_tracked_messages_except_source_message(
+                    tracked_messages=tracked_messages,
+                    message=query.message,
+                ),
+            )
+            _cancel_image_review(context).execute(user_id=user.id)
+            topic = updated_flow.content_pack.get("topic", {})
+            topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
+            raw_items = updated_flow.content_pack.get("vocabulary_items", [])
+            await query.edit_message_text(
+                "No changes made. Choose another word to edit.",
+                reply_markup=_published_image_items_keyboard(
+                    topic_id=topic_id,
+                    raw_items=raw_items if isinstance(raw_items, list) else [],
+                ),
+            )
+            if registry is not None:
+                registry.clear(flow_id=flow_id)
+            return
         output_path = _resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
@@ -2211,6 +2277,26 @@ async def _delete_tracked_messages(
         )
 
 
+async def _delete_message_if_possible(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    message,
+) -> None:
+    bot = getattr(context, "bot", None)
+    chat_id = _message_chat_id(message)
+    message_id = getattr(message, "message_id", None)
+    if bot is None or not isinstance(chat_id, int) or not isinstance(message_id, int):
+        return
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except BadRequest:
+        logger.debug(
+            "Telegram message already missing chat_id=%s message_id=%s",
+            chat_id,
+            message_id,
+        )
+
+
 def _tracked_messages_except_source_message(*, tracked_messages, message) -> list:
     source_chat_id = _message_chat_id(message)
     source_message_id = getattr(message, "message_id", None)
@@ -2286,10 +2372,24 @@ async def _prepare_and_send_image_review_step(
     await _send_image_review_step(message, context, prepared_flow)
 
 
-async def _send_current_published_image_preview(message, flow) -> None:
+async def _send_current_published_image_preview(
+    message,
+    context: ContextTypes.DEFAULT_TYPE,
+    flow,
+) -> None:
     current_item = flow.current_item
     if current_item is None:
         return
+    registry = _telegram_flow_messages(context)
+    if registry is not None:
+        await _delete_tracked_messages(
+            context,
+            tracked_messages=registry.list(
+                flow_id=flow.flow_id,
+                tag=_IMAGE_REVIEW_CONTEXT_TAG,
+            ),
+        )
+    fallback_chat_id = _message_chat_id(message)
     raw_items = flow.content_pack.get("vocabulary_items", [])
     if not isinstance(raw_items, list):
         return
@@ -2305,19 +2405,33 @@ async def _send_current_published_image_preview(message, flow) -> None:
         break
     image_path = resolve_existing_image_path(image_ref)
     if image_path is None:
-        await message.reply_text(
+        empty_message = await message.reply_text(
             "No current image is saved for this word yet.\n"
             "You can search Pixabay, generate a local image, edit the prompt, or attach your own photo."
         )
+        _track_flow_message(
+            context,
+            flow_id=flow.flow_id,
+            tag=_IMAGE_REVIEW_CONTEXT_TAG,
+            message=empty_message,
+            fallback_chat_id=fallback_chat_id,
+        )
         return
     with image_path.open("rb") as photo_file:
-        await message.reply_photo(
+        preview_message = await message.reply_photo(
             photo=photo_file,
             caption=(
                 "Current image.\n"
                 "You can keep it, search Pixabay, generate a local image, edit the prompt, or attach your own photo."
             ),
         )
+    _track_flow_message(
+        context,
+        flow_id=flow.flow_id,
+        tag=_IMAGE_REVIEW_CONTEXT_TAG,
+        message=preview_message,
+        fallback_chat_id=fallback_chat_id,
+    )
 
 
 async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, flow) -> None:

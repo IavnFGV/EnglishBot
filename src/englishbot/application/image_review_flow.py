@@ -112,6 +112,7 @@ class ImageReviewFlowHarness:
         model_names: tuple[str, ...] | None = None,
         selected_item_id: str | None = None,
         output_path: Path | None = None,
+        review_origin: str = "draft_review",
     ) -> ImageReviewFlowState:
         normalized_content_pack = json.loads(json.dumps(content_pack))
         topic = normalized_content_pack.get("topic", {})
@@ -159,6 +160,7 @@ class ImageReviewFlowHarness:
             normalized_content_pack["metadata"]["image_review_model_names"] = list(
                 configured_models
             )
+            normalized_content_pack["metadata"]["image_review_origin"] = review_origin
         return ImageReviewFlowState(
             flow_id=uuid.uuid4().hex[:12],
             editor_user_id=editor_user_id,

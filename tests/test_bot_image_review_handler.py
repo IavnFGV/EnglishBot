@@ -14,6 +14,7 @@ from englishbot.bot import (
     image_review_next_handler,
     image_review_pick_handler,
     image_review_photo_handler,
+    image_review_skip_handler,
     image_review_search_handler,
     published_image_item_handler,
     published_images_menu_handler,
@@ -240,12 +241,29 @@ class _FakeLoadNextImageReviewCandidatesUseCase:
         return self._flow
 
 
+class _FakeSkipImageReviewItemUseCase:
+    def __init__(self, flow: ImageReviewFlowState) -> None:
+        self._flow = flow
+
+    def execute(self, *, user_id: int, flow_id: str, item_id: str):  # noqa: ARG002
+        assert flow_id == self._flow.flow_id
+        return self._flow
+
+
 class _FakeGetActiveImageReviewUseCase:
     def __init__(self, flow: ImageReviewFlowState) -> None:
         self._flow = flow
 
     def execute(self, *, user_id: int):  # noqa: ARG002
         return self._flow
+
+
+class _FakeCancelImageReviewUseCase:
+    def __init__(self) -> None:
+        self.cancelled_user_id: int | None = None
+
+    def execute(self, *, user_id: int) -> None:
+        self.cancelled_user_id = user_id
 
 
 class _FakeUpdateImageReviewPromptUseCase:
@@ -643,7 +661,10 @@ async def test_published_image_menu_and_item_handlers_show_current_image_and_wai
     menu_message = _FakeCallbackMessage(tmp_path)
     menu_query = _FakeQuery("words:edit_images_menu:fairy-tales", menu_message)
     menu_update = SimpleNamespace(callback_query=menu_query, effective_user=SimpleNamespace(id=42))
+    fake_bot = _FakeBot()
+    registry = _FakeTelegramFlowMessageRepository()
     context = SimpleNamespace(
+        bot=fake_bot,
         application=SimpleNamespace(
             bot_data={
                 "content_store": _FakeContentStore(review_flow.content_pack),
@@ -653,6 +674,7 @@ async def test_published_image_menu_and_item_handlers_show_current_image_and_wai
                 "image_review_generate_use_case": _FakeGenerateImageReviewCandidatesUseCase(
                     review_flow
                 ),
+                "telegram_flow_message_repository": registry,
             }
         ),
     )
@@ -701,6 +723,7 @@ async def test_published_image_menu_and_item_handlers_show_current_image_and_wai
             for text in item_message.reply_text_calls
         )
         assert any("Reviewing images 1/1" in text for text in item_message.reply_text_calls)
+        assert (1, 999) in fake_bot.deleted_messages
     finally:
         monkeypatch.undo()
 
@@ -1122,6 +1145,7 @@ async def test_image_review_pick_completion_keeps_callback_message_for_final_edi
     registry = _FakeTelegramFlowMessageRepository()
     registry.track(flow_id="review123", chat_id=1, message_id=999, tag="image_review_step")
     registry.track(flow_id="review123", chat_id=1, message_id=1001, tag="image_review_step")
+    registry.track(flow_id="review123", chat_id=1, message_id=888, tag="image_review_context")
     fake_bot = _FakeBot()
     query_message = _FakeCallbackMessage(tmp_path)
     query = _FakeQuery("words:image_pick:review123:0", query_message)
@@ -1143,6 +1167,76 @@ async def test_image_review_pick_completion_keeps_callback_message_for_final_edi
 
     await image_review_pick_handler(update, context)  # type: ignore[arg-type]
 
-    assert fake_bot.deleted_messages == [(1, 1001)]
+    assert fake_bot.deleted_messages == [(1, 1001), (1, 888)]
     assert "Image review completed and content pack published." in query.edits[-1]
+    assert registry.list(flow_id="review123") == []
+
+
+@pytest.mark.anyio
+async def test_published_image_skip_returns_to_word_list(
+    tmp_path: Path,
+) -> None:
+    flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "metadata": {"image_review_origin": "published_word_edit"},
+            "vocabulary_items": [
+                {
+                    "id": "castle",
+                    "english_word": "Castle",
+                    "translation": "замок",
+                    "image_ref": "assets/fairy-tales/castle.png",
+                },
+                {
+                    "id": "prince",
+                    "english_word": "Prince",
+                    "translation": "принц",
+                },
+            ],
+        },
+        items=[
+            ImageReviewItem(
+                item_id="castle",
+                english_word="Castle",
+                translation="замок",
+                prompt="Prompt for Castle",
+                candidates=[],
+            )
+        ],
+    )
+    cancel_use_case = _FakeCancelImageReviewUseCase()
+    registry = _FakeTelegramFlowMessageRepository()
+    registry.track(flow_id="review123", chat_id=1, message_id=999, tag="image_review_step")
+    registry.track(flow_id="review123", chat_id=1, message_id=888, tag="image_review_context")
+    fake_bot = _FakeBot()
+    query_message = _FakeCallbackMessage(tmp_path)
+    query = _FakeQuery("words:image_skip:review123", query_message)
+    update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(
+        bot=fake_bot,
+        application=SimpleNamespace(
+            bot_data={
+                "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(flow),
+                "image_review_skip_use_case": _FakeSkipImageReviewItemUseCase(
+                    ImageReviewFlowState(
+                        flow_id="review123",
+                        editor_user_id=42,
+                        content_pack=flow.content_pack,
+                        items=flow.items,
+                        current_index=1,
+                    )
+                ),
+                "image_review_cancel_use_case": cancel_use_case,
+                "telegram_flow_message_repository": registry,
+            }
+        ),
+    )
+
+    await image_review_skip_handler(update, context)  # type: ignore[arg-type]
+
+    assert cancel_use_case.cancelled_user_id == 42
+    assert fake_bot.deleted_messages == [(1, 888)]
+    assert query.edits[-1] == "No changes made. Choose another word to edit."
     assert registry.list(flow_id="review123") == []
