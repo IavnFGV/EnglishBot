@@ -11,6 +11,8 @@ from englishbot.domain.image_review_models import (
     ImageReviewFlowState,
     ImageReviewItem,
 )
+from englishbot.image_generation.paths import build_item_asset_path, build_item_image_ref
+from englishbot.image_generation.pixabay import PixabayImageResult, RemoteImageDownloader, pixabay_preview_path
 from englishbot.image_generation.prompts import compose_image_prompt, fallback_image_prompt
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.models import CanonicalContentPack, LessonExtractionDraft
@@ -33,6 +35,18 @@ class ImageCandidateGenerator(Protocol):
         ...
 
 
+class ImageSearchClient(Protocol):
+    def search(
+        self,
+        *,
+        english_word: str,
+        query: str | None = None,
+        page: int = 1,
+        per_page: int = 5,
+    ) -> tuple[str, list[PixabayImageResult]]:
+        ...
+
+
 class ImageReviewFlowHarness:
     def __init__(
         self,
@@ -40,6 +54,8 @@ class ImageReviewFlowHarness:
         canonicalizer: DraftToContentPackCanonicalizer,
         writer: JsonContentPackWriter,
         candidate_generator: ImageCandidateGenerator,
+        image_search_client: ImageSearchClient | None = None,
+        remote_image_downloader: RemoteImageDownloader | None = None,
         assets_dir: Path,
         content_store: SQLiteContentStore | None = None,
         default_model_names: tuple[str, ...] = (
@@ -51,6 +67,8 @@ class ImageReviewFlowHarness:
         self._canonicalizer = canonicalizer
         self._writer = writer
         self._candidate_generator = candidate_generator
+        self._image_search_client = image_search_client
+        self._remote_image_downloader = remote_image_downloader or RemoteImageDownloader()
         self._assets_dir = assets_dir
         self._content_store = content_store
         self._default_model_names = default_model_names
@@ -111,6 +129,10 @@ class ImageReviewFlowHarness:
             translation = str(raw_item.get("translation", "")).strip()
             if not item_id or not english_word:
                 continue
+            if selected_item_id is None:
+                raw_image_ref = raw_item.get("image_ref")
+                if isinstance(raw_image_ref, str) and raw_image_ref.strip():
+                    continue
             if selected_item_id is not None and item_id != selected_item_id:
                 continue
             found_selected_item = True
@@ -127,6 +149,7 @@ class ImageReviewFlowHarness:
                     translation=translation,
                     prompt=prompt,
                     candidates=[],
+                    search_page=1,
                 )
             )
         if not found_selected_item:
@@ -167,8 +190,6 @@ class ImageReviewFlowHarness:
         current_item = updated.current_item
         if current_item is None:
             return updated
-        if current_item.candidates:
-            return updated
         topic = updated.content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
         if not topic_id:
@@ -189,7 +210,77 @@ class ImageReviewFlowHarness:
             assets_dir=self._assets_dir,
             model_names=configured_models,
         )
+        current_item.search_page = 1
+        current_item.candidate_source_type = "generated"
+        current_item.selected_candidate_index = None
+        current_item.skipped = False
         return updated
+
+    @logged_service_call(
+        "ImageReviewFlowHarness.search_current_item_candidates",
+        transforms={"flow": lambda value: {"flow_id": value.flow_id}},
+        result=lambda value: {
+            "candidate_count": len(value.current_item.candidates) if value.current_item else 0
+        },
+    )
+    def search_current_item_candidates(
+        self,
+        *,
+        flow: ImageReviewFlowState,
+        query: str | None = None,
+        page: int | None = None,
+        per_page: int = 5,
+    ) -> ImageReviewFlowState:
+        if self._image_search_client is None:
+            raise ValueError("Pixabay image search is not configured.")
+        updated = copy.deepcopy(flow)
+        current_item = updated.current_item
+        if current_item is None:
+            return updated
+        topic = updated.content_pack.get("topic", {})
+        topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
+        if not topic_id:
+            raise ValueError("topic.id is required to search image candidates.")
+        target_page = page or 1
+        normalized_query, results = self._image_search_client.search(
+            english_word=current_item.english_word,
+            query=query or current_item.search_query,
+            page=target_page,
+            per_page=per_page,
+        )
+        current_item.search_query = normalized_query
+        current_item.search_page = target_page
+        current_item.candidate_source_type = "pixabay"
+        current_item.selected_candidate_index = None
+        current_item.skipped = False
+        current_item.candidates = [
+            self._build_pixabay_candidate(
+                topic_id=topic_id,
+                item_id=current_item.item_id,
+                prompt=current_item.prompt,
+                result=result,
+            )
+            for result in results
+        ]
+        return updated
+
+    def load_next_search_candidates(
+        self,
+        *,
+        flow: ImageReviewFlowState,
+        per_page: int = 5,
+    ) -> ImageReviewFlowState:
+        current_item = flow.current_item
+        if current_item is None:
+            return flow
+        if not current_item.search_query:
+            raise ValueError("Search is not active for this review item.")
+        return self.search_current_item_candidates(
+            flow=flow,
+            query=current_item.search_query,
+            page=current_item.search_page + 1,
+            per_page=per_page,
+        )
 
     @logged_service_call(
         "ImageReviewFlowHarness.update_current_item_prompt",
@@ -249,10 +340,37 @@ class ImageReviewFlowHarness:
         current_item.selected_candidate_index = candidate_index
         current_item.skipped = False
         candidate = current_item.candidates[candidate_index]
+        current_item.approved_source_type = candidate.source_type
+        current_item.needs_review = False
+        if candidate.source_type == "pixabay":
+            topic = updated.content_pack.get("topic", {})
+            topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
+            if not topic_id:
+                raise ValueError("topic.id is required to approve a Pixabay image.")
+            stable_asset_path = build_item_asset_path(
+                assets_dir=self._assets_dir,
+                topic_id=topic_id,
+                item_id=item_id,
+            )
+            download_url = candidate.full_image_url or candidate.preview_url
+            if not download_url:
+                raise ValueError("Pixabay candidate does not have a downloadable image URL.")
+            self._remote_image_downloader.download(
+                url=download_url,
+                output_path=stable_asset_path,
+            )
+            image_ref = build_item_image_ref(
+                assets_dir=self._assets_dir,
+                topic_id=topic_id,
+                item_id=item_id,
+            )
+        else:
+            image_ref = candidate.image_ref
         self._apply_selected_image_ref(
             updated.content_pack,
             item_id=item_id,
-            image_ref=candidate.image_ref,
+            image_ref=image_ref,
+            image_source=candidate.source_type,
         )
         updated.current_index += 1
         return updated
@@ -269,6 +387,7 @@ class ImageReviewFlowHarness:
         if current_item is None or current_item.item_id != item_id:
             raise ValueError("This review item is no longer active.")
         current_item.skipped = True
+        current_item.needs_review = True
         current_item.selected_candidate_index = None
         updated.current_index += 1
         return updated
@@ -297,14 +416,19 @@ class ImageReviewFlowHarness:
                 image_ref=image_ref,
                 output_path=output_path,
                 prompt=current_item.prompt,
+                source_type="uploaded",
+                source_id="user-upload",
             )
         )
         current_item.selected_candidate_index = len(current_item.candidates) - 1
+        current_item.approved_source_type = "uploaded"
+        current_item.needs_review = False
         current_item.skipped = False
         self._apply_selected_image_ref(
             updated.content_pack,
             item_id=item_id,
             image_ref=image_ref,
+            image_source="uploaded",
         )
         updated.current_index += 1
         return updated
@@ -331,6 +455,7 @@ class ImageReviewFlowHarness:
         *,
         item_id: str,
         image_ref: str,
+        image_source: str | None = None,
     ) -> None:
         raw_items = content_pack.get("vocabulary_items", [])
         if not isinstance(raw_items, list):
@@ -341,4 +466,38 @@ class ImageReviewFlowHarness:
             if str(raw_item.get("id", "")).strip() != item_id:
                 continue
             raw_item["image_ref"] = image_ref
+            raw_item["image_source"] = image_source
             return
+
+    def _build_pixabay_candidate(
+        self,
+        *,
+        topic_id: str,
+        item_id: str,
+        prompt: str,
+        result: PixabayImageResult,
+    ) -> ImageCandidate:
+        preview_path = pixabay_preview_path(
+            assets_dir=self._assets_dir,
+            topic_id=topic_id,
+            item_id=item_id,
+            source_id=result.source_id,
+            preview_url=result.preview_url,
+        )
+        self._remote_image_downloader.download(
+            url=result.preview_url,
+            output_path=preview_path,
+        )
+        return ImageCandidate(
+            model_name="pixabay",
+            image_ref=preview_path.as_posix(),
+            output_path=preview_path,
+            prompt=prompt,
+            source_type="pixabay",
+            source_id=result.source_id,
+            preview_url=result.preview_url,
+            full_image_url=result.full_image_url,
+            source_page_url=result.source_page_url,
+            width=result.width,
+            height=result.height,
+        )

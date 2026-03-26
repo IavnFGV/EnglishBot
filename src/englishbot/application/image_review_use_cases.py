@@ -109,6 +109,69 @@ class GenerateImageReviewCandidatesUseCase:
         return flow
 
 
+class SearchImageReviewCandidatesUseCase:
+    def __init__(
+        self,
+        *,
+        harness: ImageReviewFlowHarness,
+        repository: ImageReviewFlowRepository,
+    ) -> None:
+        self._harness = harness
+        self._repository = repository
+
+    @logged_service_call(
+        "SearchImageReviewCandidatesUseCase.execute",
+        include=("user_id", "flow_id"),
+        transforms={"query": lambda value: {"query": value}},
+        result=lambda value: {
+            "current_index": value.current_index,
+            "candidate_count": len(value.current_item.candidates) if value.current_item else 0,
+        },
+    )
+    def execute(self, *, user_id: int, flow_id: str, query: str | None = None) -> ImageReviewFlowState:
+        flow = self._require_active_flow(user_id=user_id, flow_id=flow_id)
+        updated = self._harness.search_current_item_candidates(flow=flow, query=query)
+        self._repository.save(updated)
+        return updated
+
+    def _require_active_flow(self, *, user_id: int, flow_id: str) -> ImageReviewFlowState:
+        flow = self._repository.get_active_by_user(user_id)
+        if flow is None or flow.flow_id != flow_id:
+            raise ValueError("This image review flow is no longer active.")
+        return flow
+
+
+class LoadNextImageReviewCandidatesUseCase:
+    def __init__(
+        self,
+        *,
+        harness: ImageReviewFlowHarness,
+        repository: ImageReviewFlowRepository,
+    ) -> None:
+        self._harness = harness
+        self._repository = repository
+
+    @logged_service_call(
+        "LoadNextImageReviewCandidatesUseCase.execute",
+        include=("user_id", "flow_id"),
+        result=lambda value: {
+            "current_index": value.current_index,
+            "candidate_count": len(value.current_item.candidates) if value.current_item else 0,
+        },
+    )
+    def execute(self, *, user_id: int, flow_id: str) -> ImageReviewFlowState:
+        flow = self._require_active_flow(user_id=user_id, flow_id=flow_id)
+        updated = self._harness.load_next_search_candidates(flow=flow)
+        self._repository.save(updated)
+        return updated
+
+    def _require_active_flow(self, *, user_id: int, flow_id: str) -> ImageReviewFlowState:
+        flow = self._repository.get_active_by_user(user_id)
+        if flow is None or flow.flow_id != flow_id:
+            raise ValueError("This image review flow is no longer active.")
+        return flow
+
+
 class GetActiveImageReviewUseCase:
     def __init__(self, repository: ImageReviewFlowRepository) -> None:
         self._repository = repository

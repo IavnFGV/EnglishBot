@@ -15,6 +15,33 @@ def test_content_pack_loading_from_demo_directory() -> None:
     assert any(item.lesson_id is None for item in loaded.vocabulary_items)
 
 
+def test_content_pack_loader_reads_image_source(tmp_path: Path) -> None:
+    path = tmp_path / "pixabay.json"
+    path.write_text(
+        """
+        {
+          "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+          "lessons": [],
+          "vocabulary_items": [
+            {
+              "id": "dragon",
+              "english_word": "Dragon",
+              "translation": "дракон",
+              "image_ref": "assets/fairy-tales/dragon.png",
+              "image_source": "pixabay"
+            }
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+    loader = JsonContentPackLoader()
+
+    pack = loader.load_file(path)
+
+    assert pack.vocabulary_items[0].image_source == "pixabay"
+
+
 def test_malformed_json_content_validation(tmp_path: Path) -> None:
     path = tmp_path / "broken.json"
     path.write_text('{"topic": {"id": "weather", "title": "Weather"},', encoding="utf-8")

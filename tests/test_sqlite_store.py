@@ -14,7 +14,7 @@ from englishbot.application.image_review_use_cases import (
     GenerateImageReviewCandidatesUseCase,
     StartImageReviewUseCase,
 )
-from englishbot.domain.image_review_models import ImageCandidate
+from englishbot.domain.image_review_models import ImageCandidate, ImageReviewFlowState, ImageReviewItem
 from englishbot.bootstrap import build_training_service
 from englishbot.domain.models import TrainingMode
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
@@ -27,6 +27,7 @@ from englishbot.infrastructure.sqlite_store import (
     SQLiteAddWordsFlowRepository,
     SQLiteContentStore,
     SQLiteImageReviewFlowRepository,
+    SQLiteTelegramFlowMessageRepository,
 )
 
 
@@ -258,4 +259,111 @@ def test_image_review_flow_is_restored_from_sqlite_after_restart(tmp_path: Path)
     assert restored_flow.flow_id == updated.flow_id
     assert restored_flow.current_item is not None
     assert len(restored_flow.current_item.candidates) == 1
-    assert restored_flow.current_item.candidates[0].image_ref == "assets/fairy-tales/dragon.png"
+
+
+def test_image_review_flow_persists_pixabay_search_state(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    repository = SQLiteImageReviewFlowRepository(store)
+    flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=7,
+        content_pack={"topic": {"id": "fairy-tales", "title": "Fairy Tales"}},
+        items=[
+            ImageReviewItem(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                prompt="Prompt for Dragon",
+                search_query="Dragon",
+                search_page=2,
+                candidate_source_type="pixabay",
+                approved_source_type=None,
+                needs_review=True,
+                skipped=False,
+                candidates=[
+                    ImageCandidate(
+                        model_name="pixabay",
+                        image_ref="assets/fairy-tales/review/dragon--pixabay-1.jpg",
+                        output_path=tmp_path / "assets" / "fairy-tales" / "review" / "dragon--pixabay-1.jpg",
+                        prompt="Prompt for Dragon",
+                        source_type="pixabay",
+                        source_id="1",
+                        preview_url="https://cdn.example/1.jpg",
+                        full_image_url="https://cdn.example/full-1.jpg",
+                        source_page_url="https://pixabay.example/1",
+                        width=640,
+                        height=480,
+                    )
+                ],
+            )
+        ],
+    )
+
+    repository.save(flow)
+    restored_flow = repository.get_active_by_user(7)
+
+    assert restored_flow is not None
+    assert restored_flow.current_item is not None
+    assert restored_flow.current_item.search_query == "Dragon"
+    assert restored_flow.current_item.search_page == 2
+    assert restored_flow.current_item.candidate_source_type == "pixabay"
+    assert restored_flow.current_item.candidates[0].source_id == "1"
+    assert restored_flow.current_item.candidates[0].preview_url == "https://cdn.example/1.jpg"
+    assert (
+        restored_flow.current_item.candidates[0].image_ref
+        == "assets/fairy-tales/review/dragon--pixabay-1.jpg"
+    )
+
+
+def test_image_review_flow_restores_null_search_query_as_none(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    repository = SQLiteImageReviewFlowRepository(store)
+    flow = ImageReviewFlowState(
+        flow_id="review-null",
+        editor_user_id=7,
+        content_pack={"topic": {"id": "fairy-tales", "title": "Fairy Tales"}},
+        items=[
+            ImageReviewItem(
+                item_id="scissors",
+                english_word="Scissors",
+                translation="ножницы",
+                prompt="Prompt for Scissors",
+                search_query=None,
+                search_page=1,
+                candidate_source_type=None,
+                approved_source_type=None,
+                needs_review=True,
+                skipped=False,
+                candidates=[],
+            )
+        ],
+    )
+
+    repository.save(flow)
+    restored_flow = repository.get_active_by_user(7)
+
+    assert restored_flow is not None
+    assert restored_flow.current_item is not None
+    assert restored_flow.current_item.search_query is None
+    assert restored_flow.current_item.candidate_source_type is None
+    assert restored_flow.current_item.approved_source_type is None
+
+
+def test_sqlite_telegram_flow_message_repository_tracks_and_clears_by_tag(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    repository = SQLiteTelegramFlowMessageRepository(store)
+
+    repository.track(flow_id="flow123", chat_id=1, message_id=10, tag="image_review_step")
+    repository.track(flow_id="flow123", chat_id=1, message_id=11, tag="image_review_step")
+    repository.track(flow_id="flow123", chat_id=1, message_id=12, tag="other")
+
+    tracked_step = repository.list(flow_id="flow123", tag="image_review_step")
+    assert [(item.chat_id, item.message_id) for item in tracked_step] == [(1, 10), (1, 11)]
+
+    repository.remove(flow_id="flow123", chat_id=1, message_id=10)
+    tracked_after_remove = repository.list(flow_id="flow123", tag="image_review_step")
+    assert [(item.chat_id, item.message_id) for item in tracked_after_remove] == [(1, 11)]
+
+    repository.clear(flow_id="flow123", tag="image_review_step")
+    assert repository.list(flow_id="flow123", tag="image_review_step") == []
+    assert [(item.chat_id, item.message_id) for item in repository.list(flow_id="flow123")] == [(1, 12)]

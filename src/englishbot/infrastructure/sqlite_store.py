@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +19,27 @@ from englishbot.importing.draft_io import JsonDraftReader, draft_to_data
 from englishbot.importing.models import ImportLessonResult, ValidationError, ValidationResult
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True, frozen=True)
+class TrackedTelegramMessage:
+    flow_id: str
+    chat_id: int
+    message_id: int
+    tag: str
+
+
+def _optional_json_str(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized or normalized.lower() in {"none", "null"}:
+        return None
+    return normalized
+
+
+def _required_json_str(value: object) -> str:
+    return "" if value is None else str(value)
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -59,6 +80,7 @@ class SQLiteContentStore:
                     topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
                     lesson_id TEXT REFERENCES lessons(id) ON DELETE SET NULL,
                     image_ref TEXT,
+                    image_source TEXT,
                     is_active INTEGER NOT NULL DEFAULT 1,
                     sort_order INTEGER NOT NULL DEFAULT 0
                 );
@@ -124,8 +146,21 @@ class SQLiteContentStore:
                     output_path TEXT,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS telegram_flow_messages (
+                    flow_id TEXT NOT NULL,
+                    chat_id INTEGER NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    tag TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (flow_id, chat_id, message_id)
+                );
                 """
             )
+            try:
+                connection.execute("ALTER TABLE vocabulary_items ADD COLUMN image_source TEXT")
+            except sqlite3.OperationalError:
+                pass
 
     def has_runtime_content(self) -> bool:
         self.initialize()
@@ -181,14 +216,15 @@ class SQLiteContentStore:
                 connection.execute(
                     """
                     INSERT INTO vocabulary_items (
-                        id, english_word, translation, topic_id, lesson_id, image_ref, is_active, sort_order
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        id, english_word, translation, topic_id, lesson_id, image_ref, image_source, is_active, sort_order
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         english_word=excluded.english_word,
                         translation=excluded.translation,
                         topic_id=excluded.topic_id,
                         lesson_id=excluded.lesson_id,
                         image_ref=excluded.image_ref,
+                        image_source=excluded.image_source,
                         is_active=excluded.is_active,
                         sort_order=excluded.sort_order
                     """,
@@ -199,6 +235,7 @@ class SQLiteContentStore:
                         item.topic_id,
                         item.lesson_id,
                         item.image_ref,
+                        item.image_source,
                         1 if item.is_active else 0,
                         sort_order,
                     ),
@@ -246,7 +283,7 @@ class SQLiteContentStore:
     def list_vocabulary_by_topic(self, topic_id: str, lesson_id: str | None = None) -> list[VocabularyItem]:
         self.initialize()
         query = (
-            "SELECT id, english_word, translation, topic_id, lesson_id, image_ref, is_active "
+            "SELECT id, english_word, translation, topic_id, lesson_id, image_ref, image_source, is_active "
             "FROM vocabulary_items WHERE topic_id = ? AND is_active = 1"
         )
         params: list[object] = [topic_id]
@@ -263,7 +300,7 @@ class SQLiteContentStore:
         with _connect(self._db_path) as connection:
             rows = connection.execute(
                 """
-                SELECT id, english_word, translation, topic_id, lesson_id, image_ref, is_active
+                SELECT id, english_word, translation, topic_id, lesson_id, image_ref, image_source, is_active
                 FROM vocabulary_items
                 ORDER BY english_word, id
                 """
@@ -275,7 +312,7 @@ class SQLiteContentStore:
         with _connect(self._db_path) as connection:
             row = connection.execute(
                 """
-                SELECT id, english_word, translation, topic_id, lesson_id, image_ref, is_active
+                SELECT id, english_word, translation, topic_id, lesson_id, image_ref, image_source, is_active
                 FROM vocabulary_items
                 WHERE id = ?
                 """,
@@ -331,6 +368,7 @@ class SQLiteContentStore:
                     "translation": item.translation,
                     **({"lesson_id": item.lesson_id} if item.lesson_id is not None else {}),
                     **({"image_ref": item.image_ref} if item.image_ref is not None else {}),
+                    **({"image_source": item.image_source} if item.image_source is not None else {}),
                 }
                 for item in items
             ],
@@ -384,13 +422,26 @@ class SQLiteContentStore:
                 image_ref = item_raw.get("image_ref")
                 if image_ref is not None:
                     image_ref = str(image_ref).strip() or None
+                image_source = item_raw.get("image_source")
+                if image_source is not None:
+                    image_source = str(image_source).strip() or None
                 connection.execute(
                     """
                     INSERT INTO vocabulary_items (
-                        id, english_word, translation, topic_id, lesson_id, image_ref, is_active, sort_order
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        id, english_word, translation, topic_id, lesson_id, image_ref, image_source, is_active, sort_order
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (item_id, english_word, translation, topic_id, lesson_id, image_ref, 1, sort_order),
+                    (
+                        item_id,
+                        english_word,
+                        translation,
+                        topic_id,
+                        lesson_id,
+                        image_ref,
+                        image_source,
+                        1,
+                        sort_order,
+                    ),
                 )
         return topic_id
 
@@ -672,7 +723,12 @@ class SQLiteContentStore:
                     "english_word": item.english_word,
                     "translation": item.translation,
                     "prompt": item.prompt,
+                    "search_query": item.search_query,
+                    "search_page": item.search_page,
+                    "candidate_source_type": item.candidate_source_type,
                     "selected_candidate_index": item.selected_candidate_index,
+                    "approved_source_type": item.approved_source_type,
+                    "needs_review": item.needs_review,
                     "skipped": item.skipped,
                     "candidates": [
                         {
@@ -680,6 +736,13 @@ class SQLiteContentStore:
                             "image_ref": candidate.image_ref,
                             "output_path": str(candidate.output_path),
                             "prompt": candidate.prompt,
+                            "source_type": candidate.source_type,
+                            "source_id": candidate.source_id,
+                            "preview_url": candidate.preview_url,
+                            "full_image_url": candidate.full_image_url,
+                            "source_page_url": candidate.source_page_url,
+                            "width": candidate.width,
+                            "height": candidate.height,
                         }
                         for candidate in item.candidates
                     ],
@@ -751,6 +814,98 @@ class SQLiteContentStore:
                 (user_id,),
             )
 
+    def track_telegram_flow_message(
+        self,
+        *,
+        flow_id: str,
+        chat_id: int,
+        message_id: int,
+        tag: str,
+    ) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO telegram_flow_messages (flow_id, chat_id, message_id, tag, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(flow_id, chat_id, message_id) DO UPDATE SET
+                    tag=excluded.tag,
+                    created_at=excluded.created_at
+                """,
+                (
+                    flow_id,
+                    chat_id,
+                    message_id,
+                    tag,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+
+    def list_telegram_flow_messages(
+        self,
+        *,
+        flow_id: str,
+        tag: str | None = None,
+    ) -> list[TrackedTelegramMessage]:
+        self.initialize()
+        query = """
+            SELECT flow_id, chat_id, message_id, tag
+            FROM telegram_flow_messages
+            WHERE flow_id = ?
+        """
+        params: list[object] = [flow_id]
+        if tag is not None:
+            query += " AND tag = ?"
+            params.append(tag)
+        query += " ORDER BY created_at, message_id"
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(query, tuple(params)).fetchall()
+        return [
+            TrackedTelegramMessage(
+                flow_id=row["flow_id"],
+                chat_id=row["chat_id"],
+                message_id=row["message_id"],
+                tag=row["tag"],
+            )
+            for row in rows
+        ]
+
+    def remove_telegram_flow_message(
+        self,
+        *,
+        flow_id: str,
+        chat_id: int,
+        message_id: int,
+    ) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                """
+                DELETE FROM telegram_flow_messages
+                WHERE flow_id = ? AND chat_id = ? AND message_id = ?
+                """,
+                (flow_id, chat_id, message_id),
+            )
+
+    def clear_telegram_flow_messages(
+        self,
+        *,
+        flow_id: str,
+        tag: str | None = None,
+    ) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            if tag is None:
+                connection.execute(
+                    "DELETE FROM telegram_flow_messages WHERE flow_id = ?",
+                    (flow_id,),
+                )
+            else:
+                connection.execute(
+                    "DELETE FROM telegram_flow_messages WHERE flow_id = ? AND tag = ?",
+                    (flow_id, tag),
+                )
+
     def _row_to_vocabulary_item(self, row: sqlite3.Row) -> VocabularyItem:
         return VocabularyItem(
             id=row["id"],
@@ -759,6 +914,7 @@ class SQLiteContentStore:
             topic_id=row["topic_id"],
             lesson_id=row["lesson_id"],
             image_ref=row["image_ref"],
+            image_source=row["image_source"],
             is_active=bool(row["is_active"]),
         )
 
@@ -800,18 +956,44 @@ class SQLiteContentStore:
                 continue
             items.append(
                 ImageReviewItem(
-                    item_id=str(raw_item.get("item_id", "")),
-                    english_word=str(raw_item.get("english_word", "")),
-                    translation=str(raw_item.get("translation", "")),
-                    prompt=str(raw_item.get("prompt", "")),
+                    item_id=_required_json_str(raw_item.get("item_id", "")),
+                    english_word=_required_json_str(raw_item.get("english_word", "")),
+                    translation=_required_json_str(raw_item.get("translation", "")),
+                    prompt=_required_json_str(raw_item.get("prompt", "")),
+                    search_query=_optional_json_str(raw_item.get("search_query")),
+                    search_page=int(raw_item.get("search_page", 1) or 1),
+                    candidate_source_type=_optional_json_str(
+                        raw_item.get("candidate_source_type")
+                    ),
                     selected_candidate_index=raw_item.get("selected_candidate_index"),
+                    approved_source_type=_optional_json_str(
+                        raw_item.get("approved_source_type")
+                    ),
+                    needs_review=bool(raw_item.get("needs_review", True)),
                     skipped=bool(raw_item.get("skipped", False)),
                     candidates=[
                         ImageCandidate(
-                            model_name=str(candidate.get("model_name", "")),
-                            image_ref=str(candidate.get("image_ref", "")),
-                            output_path=Path(str(candidate.get("output_path", ""))),
-                            prompt=str(candidate.get("prompt", "")),
+                            model_name=_required_json_str(candidate.get("model_name", "")),
+                            image_ref=_required_json_str(candidate.get("image_ref", "")),
+                            output_path=Path(_required_json_str(candidate.get("output_path", ""))),
+                            prompt=_required_json_str(candidate.get("prompt", "")),
+                            source_type=_required_json_str(
+                                candidate.get("source_type", "generated")
+                            ),
+                            source_id=_optional_json_str(candidate.get("source_id")),
+                            preview_url=_optional_json_str(candidate.get("preview_url")),
+                            full_image_url=_optional_json_str(candidate.get("full_image_url")),
+                            source_page_url=_optional_json_str(candidate.get("source_page_url")),
+                            width=(
+                                candidate.get("width")
+                                if isinstance(candidate.get("width"), int)
+                                else None
+                            ),
+                            height=(
+                                candidate.get("height")
+                                if isinstance(candidate.get("height"), int)
+                                else None
+                            ),
                         )
                         for candidate in raw_item.get("candidates", [])
                         if isinstance(candidate, dict)
@@ -927,3 +1109,29 @@ class SQLiteImageReviewFlowRepository:
 
     def discard_active_by_user(self, user_id: int) -> None:
         self._store.discard_active_image_review_flow_by_user(user_id)
+
+
+class SQLiteTelegramFlowMessageRepository:
+    def __init__(self, store: SQLiteContentStore) -> None:
+        self._store = store
+
+    def track(self, *, flow_id: str, chat_id: int, message_id: int, tag: str) -> None:
+        self._store.track_telegram_flow_message(
+            flow_id=flow_id,
+            chat_id=chat_id,
+            message_id=message_id,
+            tag=tag,
+        )
+
+    def list(self, *, flow_id: str, tag: str | None = None) -> list[TrackedTelegramMessage]:
+        return self._store.list_telegram_flow_messages(flow_id=flow_id, tag=tag)
+
+    def remove(self, *, flow_id: str, chat_id: int, message_id: int) -> None:
+        self._store.remove_telegram_flow_message(
+            flow_id=flow_id,
+            chat_id=chat_id,
+            message_id=message_id,
+        )
+
+    def clear(self, *, flow_id: str, tag: str | None = None) -> None:
+        self._store.clear_telegram_flow_messages(flow_id=flow_id, tag=tag)

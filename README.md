@@ -146,9 +146,39 @@ For published content, the editor can also:
 
 - edit a word after publication
 - edit the image for a specific word after publication
-- generate new variants for one word only
+- search Pixabay for one word directly in Telegram
+- page through Pixabay results 5 at a time
+- generate local variants for one word only as a fallback
 - edit the image prompt for one word only
 - upload a custom replacement image
+
+## Pixabay Image Review
+
+Manual image review now supports two candidate sources:
+
+- Pixabay search for real image candidates
+- local AI generation as a fallback
+
+Flow for one vocabulary item:
+
+1. open image review for the word
+2. choose `Search Images` to fetch the first 5 Pixabay candidates
+3. choose `Use A` to `Use E`, or `Next 5` to continue the same search
+4. choose `Generate Image` if you want local AI candidates instead
+5. choose `Attach Photo` to upload your own image
+6. when a candidate is approved, the bot stores a local copy and updates the vocabulary item
+
+Notes:
+
+- approved Pixabay images are downloaded to the local `assets/<topic>/<item>.png` path
+- review previews are stored under `assets/<topic>/review/`
+- learner mode never hotlinks remote Pixabay URLs
+- Pixabay state such as query, page, and current candidates is persisted in the same runtime store as the rest of the review flow
+
+Required environment variables:
+
+- `PIXABAY_API_KEY`
+- optional `PIXABAY_BASE_URL` with default `https://pixabay.com/api/`
 
 ## Lesson Text Import Pipeline
 

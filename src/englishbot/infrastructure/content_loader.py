@@ -147,6 +147,7 @@ class JsonContentPackLoader:
             topic_id=topic_id,
             lesson_id=lesson_id,
             image_ref=self._optional_str(raw, "image_ref", source_name, "vocabulary item"),
+            image_source=self._optional_str(raw, "image_source", source_name, "vocabulary item"),
             is_active=bool(raw.get("is_active", True)),
         )
 

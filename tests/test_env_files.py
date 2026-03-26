@@ -5,6 +5,8 @@ def test_env_example_includes_content_db_path() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
     assert "CONTENT_DB_PATH=" in env_example
+    assert "PIXABAY_API_KEY=" in env_example
+    assert "PIXABAY_BASE_URL=" in env_example
 
 
 def test_env_example_includes_ollama_prompt_paths() -> None:

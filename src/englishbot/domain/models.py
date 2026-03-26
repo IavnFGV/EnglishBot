@@ -32,6 +32,7 @@ class VocabularyItem:
     topic_id: str
     lesson_id: str | None = None
     image_ref: str | None = None
+    image_source: str | None = None
     is_active: bool = True
 
 

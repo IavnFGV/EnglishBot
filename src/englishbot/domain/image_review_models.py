@@ -10,6 +10,13 @@ class ImageCandidate:
     image_ref: str
     output_path: Path
     prompt: str
+    source_type: str = "generated"
+    source_id: str | None = None
+    preview_url: str | None = None
+    full_image_url: str | None = None
+    source_page_url: str | None = None
+    width: int | None = None
+    height: int | None = None
 
 
 @dataclass(slots=True)
@@ -19,7 +26,12 @@ class ImageReviewItem:
     translation: str
     prompt: str
     candidates: list[ImageCandidate]
+    search_query: str | None = None
+    search_page: int = 1
+    candidate_source_type: str | None = None
     selected_candidate_index: int | None = None
+    approved_source_type: str | None = None
+    needs_review: bool = True
     skipped: bool = False
 
 
