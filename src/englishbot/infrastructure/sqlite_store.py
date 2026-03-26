@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import unicodedata
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,7 +14,17 @@ from englishbot.domain.image_review_models import (
     ImageReviewFlowState,
     ImageReviewItem,
 )
-from englishbot.domain.models import Lesson, SessionAnswer, SessionItem, Topic, TrainingMode, TrainingSession, UserProgress, VocabularyItem
+from englishbot.domain.models import (
+    Lesson,
+    Lexeme,
+    SessionAnswer,
+    SessionItem,
+    Topic,
+    TrainingMode,
+    TrainingSession,
+    UserProgress,
+    VocabularyItem,
+)
 from englishbot.infrastructure.content_loader import JsonContentPackLoader
 from englishbot.importing.draft_io import JsonDraftReader, draft_to_data
 from englishbot.importing.models import ImportLessonResult, ValidationError, ValidationResult
@@ -42,6 +53,14 @@ def _required_json_str(value: object) -> str:
     return "" if value is None else str(value)
 
 
+def _normalize_headword(value: str) -> str:
+    normalized = (
+        unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    )
+    collapsed = " ".join(normalized.lower().split()).strip()
+    return collapsed
+
+
 def _connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path)
@@ -60,6 +79,37 @@ class SQLiteContentStore:
 
     def initialize(self) -> None:
         with _connect(self._db_path) as connection:
+            existing_tables = {
+                row["name"]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+            }
+            if "learning_items" not in existing_tables and "vocabulary_items" in existing_tables:
+                logger.warning(
+                    "Resetting legacy SQLite runtime schema at %s to initialize learning_items storage.",
+                    self._db_path,
+                )
+                connection.executescript(
+                    """
+                    DROP TABLE IF EXISTS training_session_answers;
+                    DROP TABLE IF EXISTS training_session_items;
+                    DROP TABLE IF EXISTS training_sessions;
+                    DROP TABLE IF EXISTS user_progress;
+                    DROP TABLE IF EXISTS vocabulary_items;
+                    DROP TABLE IF EXISTS lessons;
+                    DROP TABLE IF EXISTS topics;
+                    DROP TABLE IF EXISTS add_words_flows;
+                    DROP TABLE IF EXISTS image_review_flows;
+                    DROP TABLE IF EXISTS telegram_flow_messages;
+                    """
+                )
+            elif "learning_items" in existing_tables and "vocabulary_items" in existing_tables:
+                logger.info(
+                    "Dropping legacy SQLite table vocabulary_items from %s after learning_items migration.",
+                    self._db_path,
+                )
+                connection.execute("DROP TABLE IF EXISTS vocabulary_items")
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS topics (
@@ -73,21 +123,47 @@ class SQLiteContentStore:
                     topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE
                 );
 
-                CREATE TABLE IF NOT EXISTS vocabulary_items (
+                CREATE TABLE IF NOT EXISTS lexemes (
                     id TEXT PRIMARY KEY,
-                    english_word TEXT NOT NULL,
-                    translation TEXT NOT NULL,
-                    topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
-                    lesson_id TEXT REFERENCES lessons(id) ON DELETE SET NULL,
+                    headword TEXT NOT NULL,
+                    normalized_headword TEXT NOT NULL UNIQUE,
+                    part_of_speech TEXT,
+                    notes TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS learning_items (
+                    id TEXT PRIMARY KEY,
+                    lexeme_id TEXT NOT NULL REFERENCES lexemes(id) ON DELETE CASCADE,
+                    display_word TEXT NOT NULL,
+                    display_translation TEXT NOT NULL,
+                    meaning_hint TEXT,
                     image_ref TEXT,
                     image_source TEXT,
+                    image_prompt TEXT,
+                    source_fragment TEXT,
                     is_active INTEGER NOT NULL DEFAULT 1,
-                    sort_order INTEGER NOT NULL DEFAULT 0
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS topic_learning_items (
+                    id TEXT PRIMARY KEY,
+                    topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+                    learning_item_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(topic_id, learning_item_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS lesson_learning_items (
+                    id TEXT PRIMARY KEY,
+                    lesson_id TEXT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+                    learning_item_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(lesson_id, learning_item_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS user_progress (
                     user_id INTEGER NOT NULL,
-                    item_id TEXT NOT NULL REFERENCES vocabulary_items(id) ON DELETE CASCADE,
+                    item_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
                     times_seen INTEGER NOT NULL DEFAULT 0,
                     correct_answers INTEGER NOT NULL DEFAULT 0,
                     incorrect_answers INTEGER NOT NULL DEFAULT 0,
@@ -109,14 +185,14 @@ class SQLiteContentStore:
                 CREATE TABLE IF NOT EXISTS training_session_items (
                     session_id TEXT NOT NULL REFERENCES training_sessions(id) ON DELETE CASCADE,
                     sort_order INTEGER NOT NULL,
-                    vocabulary_item_id TEXT NOT NULL REFERENCES vocabulary_items(id) ON DELETE CASCADE,
+                    vocabulary_item_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
                     PRIMARY KEY (session_id, sort_order)
                 );
 
                 CREATE TABLE IF NOT EXISTS training_session_answers (
                     session_id TEXT NOT NULL REFERENCES training_sessions(id) ON DELETE CASCADE,
                     sort_order INTEGER NOT NULL,
-                    item_id TEXT NOT NULL REFERENCES vocabulary_items(id) ON DELETE CASCADE,
+                    item_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
                     submitted_answer TEXT NOT NULL,
                     is_correct INTEGER NOT NULL,
                     PRIMARY KEY (session_id, sort_order)
@@ -157,10 +233,6 @@ class SQLiteContentStore:
                 );
                 """
             )
-            try:
-                connection.execute("ALTER TABLE vocabulary_items ADD COLUMN image_source TEXT")
-            except sqlite3.OperationalError:
-                pass
 
     def has_runtime_content(self) -> bool:
         self.initialize()
@@ -191,7 +263,10 @@ class SQLiteContentStore:
                 connection.execute("DELETE FROM training_session_items")
                 connection.execute("DELETE FROM training_sessions")
                 connection.execute("DELETE FROM user_progress")
-                connection.execute("DELETE FROM vocabulary_items")
+                connection.execute("DELETE FROM lesson_learning_items")
+                connection.execute("DELETE FROM topic_learning_items")
+                connection.execute("DELETE FROM learning_items")
+                connection.execute("DELETE FROM lexemes")
                 connection.execute("DELETE FROM lessons")
                 connection.execute("DELETE FROM topics")
                 connection.execute("DELETE FROM add_words_flows")
@@ -213,33 +288,35 @@ class SQLiteContentStore:
                     (lesson.id, lesson.title, lesson.topic_id),
                 )
             for sort_order, item in enumerate(item_map.values()):
-                connection.execute(
-                    """
-                    INSERT INTO vocabulary_items (
-                        id, english_word, translation, topic_id, lesson_id, image_ref, image_source, is_active, sort_order
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        english_word=excluded.english_word,
-                        translation=excluded.translation,
-                        topic_id=excluded.topic_id,
-                        lesson_id=excluded.lesson_id,
-                        image_ref=excluded.image_ref,
-                        image_source=excluded.image_source,
-                        is_active=excluded.is_active,
-                        sort_order=excluded.sort_order
-                    """,
-                    (
-                        item.id,
-                        item.english_word,
-                        item.translation,
-                        item.topic_id,
-                        item.lesson_id,
-                        item.image_ref,
-                        item.image_source,
-                        1 if item.is_active else 0,
-                        sort_order,
-                    ),
+                lexeme_id = self._upsert_lexeme(
+                    connection,
+                    headword=item.english_word,
                 )
+                self._upsert_learning_item(
+                    connection,
+                    item=item,
+                    lexeme_id=lexeme_id,
+                )
+                if item.topic_id:
+                    connection.execute(
+                        """
+                        INSERT INTO topic_learning_items (id, topic_id, learning_item_id, sort_order)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(topic_id, learning_item_id) DO UPDATE SET
+                            sort_order=excluded.sort_order
+                        """,
+                        (f"{item.topic_id}:{item.id}", item.topic_id, item.id, sort_order),
+                    )
+                if item.lesson_id:
+                    connection.execute(
+                        """
+                        INSERT INTO lesson_learning_items (id, lesson_id, learning_item_id, sort_order)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(lesson_id, learning_item_id) DO UPDATE SET
+                            sort_order=excluded.sort_order
+                        """,
+                        (f"{item.lesson_id}:{item.id}", item.lesson_id, item.id, sort_order),
+                    )
 
     def list_topics(self) -> list[Topic]:
         self.initialize()
@@ -257,6 +334,48 @@ class SQLiteContentStore:
                 (topic_id,),
             ).fetchone()
         return Topic(id=row["id"], title=row["title"]) if row is not None else None
+
+    def list_lexemes(self) -> list[Lexeme]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT id, headword, normalized_headword, part_of_speech, notes
+                FROM lexemes
+                ORDER BY headword, id
+                """
+            ).fetchall()
+        return [
+            Lexeme(
+                id=row["id"],
+                headword=row["headword"],
+                normalized_headword=row["normalized_headword"],
+                part_of_speech=row["part_of_speech"],
+                notes=row["notes"],
+            )
+            for row in rows
+        ]
+
+    def get_lexeme_by_normalized_headword(self, normalized_headword: str) -> Lexeme | None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT id, headword, normalized_headword, part_of_speech, notes
+                FROM lexemes
+                WHERE normalized_headword = ?
+                """,
+                (normalized_headword,),
+            ).fetchone()
+        if row is None:
+            return None
+        return Lexeme(
+            id=row["id"],
+            headword=row["headword"],
+            normalized_headword=row["normalized_headword"],
+            part_of_speech=row["part_of_speech"],
+            notes=row["notes"],
+        )
 
     def list_lessons_by_topic(self, topic_id: str) -> list[Lesson]:
         self.initialize()
@@ -282,15 +401,41 @@ class SQLiteContentStore:
 
     def list_vocabulary_by_topic(self, topic_id: str, lesson_id: str | None = None) -> list[VocabularyItem]:
         self.initialize()
-        query = (
-            "SELECT id, english_word, translation, topic_id, lesson_id, image_ref, image_source, is_active "
-            "FROM vocabulary_items WHERE topic_id = ? AND is_active = 1"
-        )
-        params: list[object] = [topic_id]
+        query = """
+            SELECT
+                li.id,
+                li.lexeme_id,
+                li.display_word AS english_word,
+                li.display_translation AS translation,
+                ? AS topic_id,
+                CASE
+                    WHEN ? IS NOT NULL THEN lli.lesson_id
+                    ELSE (
+                        SELECT lli2.lesson_id
+                        FROM lesson_learning_items AS lli2
+                        JOIN lessons AS l2 ON l2.id = lli2.lesson_id
+                        WHERE lli2.learning_item_id = li.id AND l2.topic_id = ?
+                        ORDER BY lli2.sort_order, lli2.lesson_id
+                        LIMIT 1
+                    )
+                END AS lesson_id,
+                li.meaning_hint,
+                li.image_ref,
+                li.image_source,
+                li.image_prompt,
+                li.source_fragment,
+                li.is_active
+            FROM topic_learning_items AS tli
+            JOIN learning_items AS li ON li.id = tli.learning_item_id
+            LEFT JOIN lesson_learning_items AS lli
+                ON lli.learning_item_id = li.id AND lli.lesson_id = ?
+            WHERE tli.topic_id = ? AND li.is_active = 1
+        """
+        params: list[object] = [topic_id, lesson_id, topic_id, lesson_id, topic_id]
         if lesson_id is not None:
-            query += " AND lesson_id = ?"
+            query += " AND EXISTS (SELECT 1 FROM lesson_learning_items WHERE lesson_id = ? AND learning_item_id = li.id)"
             params.append(lesson_id)
-        query += " ORDER BY english_word, id"
+        query += " ORDER BY tli.sort_order, li.display_word, li.id"
         with _connect(self._db_path) as connection:
             rows = connection.execute(query, tuple(params)).fetchall()
         return [self._row_to_vocabulary_item(row) for row in rows]
@@ -300,9 +445,33 @@ class SQLiteContentStore:
         with _connect(self._db_path) as connection:
             rows = connection.execute(
                 """
-                SELECT id, english_word, translation, topic_id, lesson_id, image_ref, image_source, is_active
-                FROM vocabulary_items
-                ORDER BY english_word, id
+                SELECT
+                    li.id,
+                    li.lexeme_id,
+                    li.display_word AS english_word,
+                    li.display_translation AS translation,
+                    (
+                        SELECT tli.topic_id
+                        FROM topic_learning_items AS tli
+                        WHERE tli.learning_item_id = li.id
+                        ORDER BY tli.sort_order, tli.topic_id
+                        LIMIT 1
+                    ) AS topic_id,
+                    (
+                        SELECT lli.lesson_id
+                        FROM lesson_learning_items AS lli
+                        WHERE lli.learning_item_id = li.id
+                        ORDER BY lli.sort_order, lli.lesson_id
+                        LIMIT 1
+                    ) AS lesson_id,
+                    li.meaning_hint,
+                    li.image_ref,
+                    li.image_source,
+                    li.image_prompt,
+                    li.source_fragment,
+                    li.is_active
+                FROM learning_items AS li
+                ORDER BY li.display_word, li.id
                 """
             ).fetchall()
         return [self._row_to_vocabulary_item(row) for row in rows]
@@ -312,9 +481,33 @@ class SQLiteContentStore:
         with _connect(self._db_path) as connection:
             row = connection.execute(
                 """
-                SELECT id, english_word, translation, topic_id, lesson_id, image_ref, image_source, is_active
-                FROM vocabulary_items
-                WHERE id = ?
+                SELECT
+                    li.id,
+                    li.lexeme_id,
+                    li.display_word AS english_word,
+                    li.display_translation AS translation,
+                    (
+                        SELECT tli.topic_id
+                        FROM topic_learning_items AS tli
+                        WHERE tli.learning_item_id = li.id
+                        ORDER BY tli.sort_order, tli.topic_id
+                        LIMIT 1
+                    ) AS topic_id,
+                    (
+                        SELECT lli.lesson_id
+                        FROM lesson_learning_items AS lli
+                        WHERE lli.learning_item_id = li.id
+                        ORDER BY lli.sort_order, lli.lesson_id
+                        LIMIT 1
+                    ) AS lesson_id,
+                    li.meaning_hint,
+                    li.image_ref,
+                    li.image_source,
+                    li.image_prompt,
+                    li.source_fragment,
+                    li.is_active
+                FROM learning_items AS li
+                WHERE li.id = ?
                 """,
                 (item_id,),
             ).fetchone()
@@ -325,25 +518,59 @@ class SQLiteContentStore:
         with _connect(self._db_path) as connection:
             rows = connection.execute(
                 """
-                SELECT id, english_word, translation
-                FROM vocabulary_items
-                WHERE topic_id = ?
-                ORDER BY sort_order, english_word, id
+                SELECT li.id, li.display_word AS english_word, li.display_translation AS translation
+                FROM topic_learning_items AS tli
+                JOIN learning_items AS li ON li.id = tli.learning_item_id
+                WHERE tli.topic_id = ?
+                ORDER BY tli.sort_order, li.display_word, li.id
                 """,
                 (topic_id,),
             ).fetchall()
         return [(row["id"], row["english_word"], row["translation"]) for row in rows]
 
+    def list_topic_ids_for_item(self, item_id: str) -> list[str]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT topic_id
+                FROM topic_learning_items
+                WHERE learning_item_id = ?
+                ORDER BY sort_order, topic_id
+                """,
+                (item_id,),
+            ).fetchall()
+        return [row["topic_id"] for row in rows]
+
+    def list_lesson_ids_for_item(self, item_id: str) -> list[str]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT lesson_id
+                FROM lesson_learning_items
+                WHERE learning_item_id = ?
+                ORDER BY sort_order, lesson_id
+                """,
+                (item_id,),
+            ).fetchall()
+        return [row["lesson_id"] for row in rows]
+
     def update_word(self, *, topic_id: str, item_id: str, english_word: str, translation: str) -> None:
         self.initialize()
         with _connect(self._db_path) as connection:
+            lexeme_id = self._upsert_lexeme(connection, headword=english_word)
             cursor = connection.execute(
                 """
-                UPDATE vocabulary_items
-                SET english_word = ?, translation = ?
-                WHERE id = ? AND topic_id = ?
+                UPDATE learning_items
+                SET display_word = ?, display_translation = ?, lexeme_id = ?
+                WHERE id = ? AND EXISTS (
+                    SELECT 1
+                    FROM topic_learning_items
+                    WHERE topic_id = ? AND learning_item_id = learning_items.id
+                )
                 """,
-                (english_word, translation, item_id, topic_id),
+                (english_word, translation, lexeme_id, item_id, topic_id),
             )
         if cursor.rowcount == 0:
             raise ValueError("Vocabulary item was not found.")
@@ -367,8 +594,15 @@ class SQLiteContentStore:
                     "english_word": item.english_word,
                     "translation": item.translation,
                     **({"lesson_id": item.lesson_id} if item.lesson_id is not None else {}),
+                    **({"meaning_hint": item.meaning_hint} if item.meaning_hint is not None else {}),
                     **({"image_ref": item.image_ref} if item.image_ref is not None else {}),
                     **({"image_source": item.image_source} if item.image_source is not None else {}),
+                    **({"image_prompt": item.image_prompt} if item.image_prompt is not None else {}),
+                    **(
+                        {"source_fragment": item.source_fragment}
+                        if item.source_fragment is not None
+                        else {}
+                    ),
                 }
                 for item in items
             ],
@@ -395,7 +629,17 @@ class SQLiteContentStore:
                 """,
                 (topic_id, title),
             )
-            connection.execute("DELETE FROM vocabulary_items WHERE topic_id = ?", (topic_id,))
+            existing_lesson_rows = connection.execute(
+                "SELECT id FROM lessons WHERE topic_id = ?",
+                (topic_id,),
+            ).fetchall()
+            existing_lesson_ids = [row["id"] for row in existing_lesson_rows]
+            for lesson_id in existing_lesson_ids:
+                connection.execute(
+                    "DELETE FROM lesson_learning_items WHERE lesson_id = ?",
+                    (lesson_id,),
+                )
+            connection.execute("DELETE FROM topic_learning_items WHERE topic_id = ?", (topic_id,))
             connection.execute("DELETE FROM lessons WHERE topic_id = ?", (topic_id,))
             for lesson_raw in lessons_raw:
                 if not isinstance(lesson_raw, dict):
@@ -419,30 +663,41 @@ class SQLiteContentStore:
                 lesson_id = item_raw.get("lesson_id")
                 if lesson_id is not None:
                     lesson_id = str(lesson_id).strip() or None
-                image_ref = item_raw.get("image_ref")
-                if image_ref is not None:
-                    image_ref = str(image_ref).strip() or None
-                image_source = item_raw.get("image_source")
-                if image_source is not None:
-                    image_source = str(image_source).strip() or None
+                item = VocabularyItem(
+                    id=item_id,
+                    english_word=english_word,
+                    translation=translation,
+                    lexeme_id=None,
+                    topic_id=topic_id,
+                    lesson_id=lesson_id,
+                    meaning_hint=_optional_json_str(item_raw.get("meaning_hint")),
+                    image_ref=_optional_json_str(item_raw.get("image_ref")),
+                    image_source=_optional_json_str(item_raw.get("image_source")),
+                    image_prompt=_optional_json_str(item_raw.get("image_prompt")),
+                    source_fragment=_optional_json_str(item_raw.get("source_fragment")),
+                    is_active=bool(item_raw.get("is_active", True)),
+                )
+                lexeme_id = self._upsert_lexeme(connection, headword=english_word)
+                self._upsert_learning_item(connection, item=item, lexeme_id=lexeme_id)
                 connection.execute(
                     """
-                    INSERT INTO vocabulary_items (
-                        id, english_word, translation, topic_id, lesson_id, image_ref, image_source, is_active, sort_order
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO topic_learning_items (id, topic_id, learning_item_id, sort_order)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(topic_id, learning_item_id) DO UPDATE SET
+                        sort_order=excluded.sort_order
                     """,
-                    (
-                        item_id,
-                        english_word,
-                        translation,
-                        topic_id,
-                        lesson_id,
-                        image_ref,
-                        image_source,
-                        1,
-                        sort_order,
-                    ),
+                    (f"{topic_id}:{item_id}", topic_id, item_id, sort_order),
                 )
+                if lesson_id is not None:
+                    connection.execute(
+                        """
+                        INSERT INTO lesson_learning_items (id, lesson_id, learning_item_id, sort_order)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(lesson_id, learning_item_id) DO UPDATE SET
+                            sort_order=excluded.sort_order
+                        """,
+                        (f"{lesson_id}:{item_id}", lesson_id, item_id, sort_order),
+                    )
         return topic_id
 
     def get_progress(self, user_id: int, item_id: str) -> UserProgress | None:
@@ -906,15 +1161,96 @@ class SQLiteContentStore:
                     (flow_id, tag),
                 )
 
+    def _upsert_lexeme(self, connection: sqlite3.Connection, *, headword: str) -> str:
+        normalized_headword = _normalize_headword(headword)
+        if not normalized_headword:
+            raise ValueError("Learning item headword is required.")
+        existing = connection.execute(
+            """
+            SELECT id
+            FROM lexemes
+            WHERE normalized_headword = ?
+            """,
+            (normalized_headword,),
+        ).fetchone()
+        if existing is not None:
+            connection.execute(
+                """
+                UPDATE lexemes
+                SET headword = ?
+                WHERE id = ?
+                """,
+                (headword, existing["id"]),
+            )
+            return existing["id"]
+        lexeme_id = normalized_headword.replace(" ", "-")
+        suffix = 2
+        while connection.execute(
+            "SELECT 1 FROM lexemes WHERE id = ?",
+            (lexeme_id,),
+        ).fetchone() is not None:
+            lexeme_id = f"{normalized_headword.replace(' ', '-')}-{suffix}"
+            suffix += 1
+        connection.execute(
+            """
+            INSERT INTO lexemes (id, headword, normalized_headword, part_of_speech, notes)
+            VALUES (?, ?, ?, NULL, NULL)
+            """,
+            (lexeme_id, headword, normalized_headword),
+        )
+        return lexeme_id
+
+    def _upsert_learning_item(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        item: VocabularyItem,
+        lexeme_id: str,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO learning_items (
+                id, lexeme_id, display_word, display_translation, meaning_hint,
+                image_ref, image_source, image_prompt, source_fragment, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                lexeme_id=excluded.lexeme_id,
+                display_word=excluded.display_word,
+                display_translation=excluded.display_translation,
+                meaning_hint=excluded.meaning_hint,
+                image_ref=excluded.image_ref,
+                image_source=excluded.image_source,
+                image_prompt=excluded.image_prompt,
+                source_fragment=excluded.source_fragment,
+                is_active=excluded.is_active
+            """,
+            (
+                item.id,
+                lexeme_id,
+                item.english_word,
+                item.translation,
+                item.meaning_hint,
+                item.image_ref,
+                item.image_source,
+                item.image_prompt,
+                item.source_fragment,
+                1 if item.is_active else 0,
+            ),
+        )
+
     def _row_to_vocabulary_item(self, row: sqlite3.Row) -> VocabularyItem:
         return VocabularyItem(
             id=row["id"],
+            lexeme_id=row["lexeme_id"],
             english_word=row["english_word"],
             translation=row["translation"],
             topic_id=row["topic_id"],
             lesson_id=row["lesson_id"],
+            meaning_hint=row["meaning_hint"],
             image_ref=row["image_ref"],
             image_source=row["image_source"],
+            image_prompt=row["image_prompt"],
+            source_fragment=row["source_fragment"],
             is_active=bool(row["is_active"]),
         )
 

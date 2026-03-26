@@ -16,7 +16,8 @@ The current codebase should be treated as a working POC with real editor and lea
 
 - `Topic`: top-level vocabulary grouping
 - `Lesson`: optional school-material grouping inside a topic
-- `VocabularyItem`: a word card with English text, translation, topic, optional lesson, and image reference
+- `Lexeme`: one global word entry identified by normalized headword
+- `VocabularyItem`: the actual teachable learning item with translation, hint, image, prompt, and source fragment
 - `UserProgress`: per-user counters for answers and exposure
 - `TrainingSession`: active session state, deterministic selected items, current cursor, completion status, and answer history
 - `TrainingQuestion`, `CheckResult`, `SessionSummary`: value objects used by the application layer
@@ -79,22 +80,26 @@ Repository protocols isolate the application layer from persistence:
 - `UserProgressRepository`
 - `SessionRepository`
 
-The current implementation still uses in-memory learner state and file-backed JSON content packs. That is acceptable for the POC, but it is not the target long-term persistence model.
+The runtime learner/editor state now uses SQLite with a normalized content split:
+
+- `lexemes`
+- `learning_items`
+- `topic_learning_items`
+- `lesson_learning_items`
+
+The JSON content packs are still used as import/export artifacts, but not as the runtime source of truth.
 
 Current simplifications:
 
 - in-memory repositories are used instead of durable persistence
 - medium mode uses typed input with a shuffled-letter hint instead of a custom letter-assembly UI
-- content is still stored in JSON files rather than a normalized database
-- the same logical word may still appear in multiple packs instead of being canonically deduplicated
+- full sense-level dictionary modeling is intentionally postponed
+- ambiguity is still handled at the `learning_item` level through translation and optional hint text
 
-Likely long-term storage direction:
+Behavioral rule:
 
-- canonical vocabulary table
-- topic and lesson tables
-- many-to-many links between vocabulary and topic/lesson groupings
-- durable learner/session storage
-- explicit review/publication/image state
+- learner sessions, answer history, progress, and image review use `learning_item.id`
+- topics and lessons reference learning items through relation tables rather than owning the meaning directly
 
 ## Content packs
 

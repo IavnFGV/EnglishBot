@@ -25,20 +25,20 @@ def resolve_ollama_model(default: str = "qwen2.5:7b") -> str:
 class Settings:
     telegram_token: str
     log_level: str
-    log_file_path: Path | None
-    log_max_bytes: int
-    log_backup_count: int
-    editor_user_ids: tuple[int, ...]
-    content_db_path: Path
-    pixabay_api_key: str
-    pixabay_base_url: str
-    ollama_base_url: str
-    ollama_model: str
-    ollama_temperature: float | None
-    ollama_top_p: float | None
-    ollama_num_predict: int | None
-    ollama_extract_line_prompt_path: Path
-    ollama_image_prompt_path: Path
+    log_file_path: Path | None = None
+    log_max_bytes: int = 10 * 1024 * 1024
+    log_backup_count: int = 5
+    editor_user_ids: tuple[int, ...] = ()
+    content_db_path: Path = Path("data/englishbot.db")
+    pixabay_api_key: str = ""
+    pixabay_base_url: str = "https://pixabay.com/api/"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen2.5:7b"
+    ollama_temperature: float | None = None
+    ollama_top_p: float | None = None
+    ollama_num_predict: int | None = None
+    ollama_extract_line_prompt_path: Path = Path("prompts/ollama_extract_line_prompt.txt")
+    ollama_image_prompt_path: Path = Path("prompts/ollama_image_prompt_prompt.txt")
 
     @classmethod
     def from_env(cls) -> "Settings":

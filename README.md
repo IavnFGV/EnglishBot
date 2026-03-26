@@ -21,8 +21,8 @@ What works now:
 What is still intentionally simple:
 
 - learner progress and sessions are still in memory
-- published content is still stored as JSON packs under `content/demo/` and `content/custom/`
-- the content model still duplicates the same word across packs instead of using a normalized vocabulary database
+- published content is still imported/exported as JSON packs under `content/demo/` and `content/custom/`
+- sense-level dictionary modeling is still intentionally postponed
 
 This is acceptable for the current POC. It keeps the workflow understandable while we validate the real product behavior.
 
@@ -40,18 +40,24 @@ The next product milestone is therefore not "more import features", but learner 
 - send review invitations into the shared chat
 - let Teia answer directly in chat and continue the session naturally
 
-## Near-Term Storage Direction
+## Storage Model
 
-The current JSON-pack storage is enough for the POC, but it is probably not the right long-term shape.
+Runtime storage now uses SQLite with a split between:
 
-The likely next durable model is:
+- `lexemes`: one global word entry such as `board`
+- `learning_items`: the actual teachable unit with translation, hint, image, prompt, and source fragment
+- `topic_learning_items`: topic membership for learning items
+- `lesson_learning_items`: lesson membership for learning items
 
-- one canonical vocabulary table for unique words
-- separate topic/lesson grouping tables
-- many-to-many links between vocabulary items and topics/lessons
-- explicit metadata for image state, review state, and publication state
+Important rule:
 
-That direction should reduce duplication and make it easier to reuse the same word in multiple themes or lessons. This has not been implemented yet because the current priority is validating the Telegram-based parent/editor-to-learner workflow.
+- learner sessions, progress, answer history, and image review all use `learning_item.id`
+
+This keeps the learner flow stable while allowing:
+
+- one global word to be reused across multiple teachable items
+- the same teachable item to appear in multiple topics or lessons
+- different translations or hints for the same headword without introducing full sense modeling yet
 
 ## Core Scope
 
@@ -123,7 +129,8 @@ Notes:
 
 - `lesson_id` is optional, which allows topic-only packs.
 - Packs are validated on load, including lesson references.
-- This format is suitable for manual teacher-prepared content before a future admin bot exists.
+- On import, each pack item becomes a `learning_item`, and the store also creates or reuses a global `lexeme` by normalized headword.
+- This format stays intentionally simple even though the runtime database is more normalized.
 
 ## Editor Flow
 

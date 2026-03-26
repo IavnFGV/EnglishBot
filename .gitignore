@@ -15,3 +15,5 @@ content/
 assets*/
 *.db*
 backup
+logs/
+*.log*

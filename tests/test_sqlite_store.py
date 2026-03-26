@@ -120,6 +120,100 @@ def test_sqlite_content_store_imports_json_and_reconstructs_content_pack(tmp_pat
     assert content_pack["vocabulary_items"][0]["image_ref"] == "assets/fairy-tales/dragon.png"
 
 
+def test_sqlite_content_store_reuses_lexeme_across_multiple_learning_items(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "classroom", "title": "Classroom"},
+            "lessons": [{"id": "classroom-1", "title": "Lesson 1"}],
+            "vocabulary_items": [
+                {
+                    "id": "board-surface",
+                    "english_word": "Board",
+                    "translation": "доска",
+                    "meaning_hint": "classroom surface",
+                    "lesson_id": "classroom-1",
+                },
+                {
+                    "id": "board-members",
+                    "english_word": "Board",
+                    "translation": "совет",
+                    "meaning_hint": "group of directors",
+                    "lesson_id": "classroom-1",
+                },
+            ],
+        }
+    )
+
+    lexemes = store.list_lexemes()
+    items = store.list_all_vocabulary()
+
+    assert len(lexemes) == 1
+    assert lexemes[0].normalized_headword == "board"
+    assert {item.id for item in items} == {"board-surface", "board-members"}
+    assert {item.lexeme_id for item in items} == {lexemes[0].id}
+    assert {item.translation for item in items} == {"доска", "совет"}
+    assert {item.meaning_hint for item in items} == {"classroom surface", "group of directors"}
+
+
+def test_same_learning_item_can_belong_to_multiple_topics_and_lessons(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+
+    shared_item = {
+        "id": "board-surface",
+        "english_word": "Board",
+        "translation": "доска",
+        "meaning_hint": "classroom surface",
+        "image_ref": "assets/shared/board.png",
+    }
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "classroom", "title": "Classroom"},
+            "lessons": [{"id": "classroom-1", "title": "Lesson 1"}],
+            "vocabulary_items": [{**shared_item, "lesson_id": "classroom-1"}],
+        }
+    )
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "geometry", "title": "Geometry"},
+            "lessons": [{"id": "geometry-1", "title": "Lesson 1"}],
+            "vocabulary_items": [{**shared_item, "lesson_id": "geometry-1"}],
+        }
+    )
+
+    assert [item.id for item in store.list_vocabulary_by_topic("classroom")] == ["board-surface"]
+    assert [item.id for item in store.list_vocabulary_by_topic("geometry")] == ["board-surface"]
+    assert store.list_topic_ids_for_item("board-surface") == ["classroom", "geometry"]
+    assert store.list_lesson_ids_for_item("board-surface") == ["classroom-1", "geometry-1"]
+
+
+def test_initialize_drops_legacy_vocabulary_items_table_after_learning_items_exists(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "data" / "englishbot.db"
+    store = SQLiteContentStore(db_path=db_path)
+    store.initialize()
+
+    import sqlite3
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("CREATE TABLE vocabulary_items (id TEXT PRIMARY KEY)")
+
+    store.initialize()
+
+    with sqlite3.connect(db_path) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+
+    assert "learning_items" in tables
+    assert "vocabulary_items" not in tables
+
+
 def test_build_training_service_uses_sqlite_runtime_storage(tmp_path: Path) -> None:
     content_dir = tmp_path / "content" / "custom"
     content_dir.mkdir(parents=True)

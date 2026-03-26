@@ -25,14 +25,27 @@ class Lesson:
 
 
 @dataclass(slots=True, frozen=True)
+class Lexeme:
+    id: str
+    headword: str
+    normalized_headword: str
+    part_of_speech: str | None = None
+    notes: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class VocabularyItem:
     id: str
     english_word: str
     translation: str
-    topic_id: str
+    lexeme_id: str | None = None
+    topic_id: str | None = None
     lesson_id: str | None = None
+    meaning_hint: str | None = None
     image_ref: str | None = None
     image_source: str | None = None
+    image_prompt: str | None = None
+    source_fragment: str | None = None
     is_active: bool = True
 
 

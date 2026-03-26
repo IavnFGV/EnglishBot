@@ -146,8 +146,13 @@ class JsonContentPackLoader:
             translation=self._require_str(raw, "translation", source_name, "vocabulary item"),
             topic_id=topic_id,
             lesson_id=lesson_id,
+            meaning_hint=self._optional_str(raw, "meaning_hint", source_name, "vocabulary item"),
             image_ref=self._optional_str(raw, "image_ref", source_name, "vocabulary item"),
             image_source=self._optional_str(raw, "image_source", source_name, "vocabulary item"),
+            image_prompt=self._optional_str(raw, "image_prompt", source_name, "vocabulary item"),
+            source_fragment=self._optional_str(
+                raw, "source_fragment", source_name, "vocabulary item"
+            ),
             is_active=bool(raw.get("is_active", True)),
         )
 
