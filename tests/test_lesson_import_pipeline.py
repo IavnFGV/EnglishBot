@@ -853,6 +853,107 @@ def test_ollama_extraction_client_infers_topic_when_first_line_is_not_explicit_h
     ]
 
 
+def test_ollama_extraction_client_treats_empty_object_line_response_as_unparsed_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lines = [
+        "Mathematics математика/maths",
+        "Science естественные науки",
+        "English английский язык",
+        "History история",
+    ]
+
+    class FakeResponse:
+        def __init__(self, content: str) -> None:
+            self._content = content
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"message": {"content": self._content}}
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            user_content = json["messages"][-1]["content"]
+            if user_content == lines[0]:
+                return FakeResponse(
+                    json_module.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Mathematics",
+                                    "translation": "математика",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": lines[0],
+                                },
+                                {
+                                    "english_word": "maths",
+                                    "translation": "математика",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": lines[0],
+                                },
+                            ]
+                        }
+                    )
+                )
+            if user_content == lines[1]:
+                return FakeResponse(
+                    json_module.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Science",
+                                    "translation": "естественные науки",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": lines[1],
+                                }
+                            ]
+                        }
+                    )
+                )
+            if user_content == lines[2]:
+                return FakeResponse("{}")
+            if user_content == lines[3]:
+                return FakeResponse(
+                    json_module.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "History",
+                                    "translation": "история",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": lines[3],
+                                }
+                            ]
+                        }
+                    )
+                )
+            assert "Extracted words:" in user_content
+            return FakeResponse("School Subjects")
+
+    json_module = json
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+
+    draft = client.extract("\n".join(lines))
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert draft.topic_title == "School Subjects"
+    assert [item.english_word for item in draft.vocabulary_items] == [
+        "Mathematics",
+        "maths",
+        "Science",
+        "History",
+    ]
+    assert draft.unparsed_lines == ["English английский язык"]
+
+
 def test_pipeline_can_enrich_image_prompts_per_item(tmp_path: Path) -> None:
     draft = LessonExtractionDraft(
         topic_title="Fairy Tales",

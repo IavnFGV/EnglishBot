@@ -4,12 +4,10 @@ import re
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _LEADING_SHOW_RE = re.compile(r"^\s*show\s+", re.IGNORECASE)
-_DEFAULT_STYLE_PROMPT = (
-    "Vocabulary flashcard, clear cartoon illustration, single main subject, "
-    "centered composition, soft colors, clean light background, thick friendly outlines, "
-    "simple shapes"
-)
+_DEFAULT_STYLE_SUFFIX = "cartoon style, simple, centered, white background"
 _LEGACY_STYLE_PROMPTS = (
+    "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
+    "composition, soft colors, clean light background, thick friendly outlines, simple shapes",
     "Children's vocabulary flashcard, cute cartoon illustration, single main subject, "
     "centered composition, soft colors, clean light background, thick friendly outlines, "
     "simple shapes, educational card for a young child",
@@ -45,9 +43,9 @@ def compose_image_prompt(
     )
     normalized_style = _WHITESPACE_RE.sub(
         " ",
-        (style_prompt or _DEFAULT_STYLE_PROMPT).strip(),
+        (style_prompt or _DEFAULT_STYLE_SUFFIX).strip(),
     ).strip(" .,")
-    return f"{normalized_style}. Show {normalized_subject}."
+    return f"{normalized_subject}, {normalized_style}"
 
 
 def _normalize_subject_prompt(subject_prompt: str) -> str:
@@ -60,7 +58,7 @@ def _normalize_subject_prompt(subject_prompt: str) -> str:
         matched_style = next(
             (
                 style
-                for style in (_DEFAULT_STYLE_PROMPT, *_LEGACY_STYLE_PROMPTS)
+                for style in _LEGACY_STYLE_PROMPTS
                 if lowered.startswith(style.lower())
             ),
             None,

@@ -49,7 +49,7 @@ def test_generate_image_cli_uses_comfyui_client(monkeypatch, tmp_path: Path) -> 
         generate_image.app,
         [
             "--prompt",
-            "Vocabulary flashcard. Show a dragon.",
+            "dragon, cartoon style, simple, centered, white background",
             "--english-word",
             "Dragon",
             "--output",
@@ -75,7 +75,7 @@ def test_generate_image_cli_uses_comfyui_client(monkeypatch, tmp_path: Path) -> 
         "height": 256,
     }
     assert calls[1] == {
-        "prompt": "Vocabulary flashcard. Show a dragon.",
+        "prompt": "dragon, cartoon style, simple, centered, white background",
         "english_word": "Dragon",
         "output_path": output_path,
     }

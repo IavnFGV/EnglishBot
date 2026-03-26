@@ -4,7 +4,10 @@ import pytest
 from telegram.error import BadRequest
 
 from englishbot.bot import (
+    _image_review_keyboard,
+    _published_image_items_keyboard,
     words_add_words_callback_handler,
+    words_edit_images_callback_handler,
     words_menu_callback_handler,
     words_topics_callback_handler,
 )
@@ -96,3 +99,69 @@ async def test_words_add_words_callback_handler_enters_editor_flow() -> None:
     assert query.answered is True
     assert context.user_data["words_flow_mode"] == "awaiting_raw_text"
     assert query.edits[-1][0].startswith("Send the raw lesson text in one message.")
+
+
+@pytest.mark.anyio
+async def test_words_edit_images_callback_handler_opens_topic_list() -> None:
+    query = _RecordingQuery()
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "editor_user_ids": {123},
+                "list_editable_topics_use_case": SimpleNamespace(
+                    execute=lambda: [
+                        SimpleNamespace(id="school-subjects", title="School Subjects"),
+                        SimpleNamespace(id="fairy-tales", title="Fairy Tales"),
+                    ]
+                ),
+            }
+        ),
+    )
+
+    await words_edit_images_callback_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.answered is True
+    assert query.edits[-1][0] == "Choose a topic to edit word images."
+    assert query.edits[-1][1] is not None
+
+
+def test_published_image_items_keyboard_uses_short_index_based_callback_data() -> None:
+    keyboard = _published_image_items_keyboard(
+        topic_id="school-subjects",
+        raw_items=[
+            {
+                "id": "school-subjects-physical-education",
+                "english_word": "Physical Education",
+                "translation": "физкультура",
+            }
+        ],
+    )
+
+    button = keyboard.inline_keyboard[0][0]
+    assert button.callback_data == "words:edit_published_image:school-subjects:0"
+    assert len(button.callback_data) < 64
+
+
+def test_image_review_keyboard_uses_short_callback_data_for_long_item_id() -> None:
+    keyboard = _image_review_keyboard(
+        flow_id="review123",
+        item_id="school-subjects-physical-education-with-very-long-item-id",
+        candidate_count=3,
+    )
+
+    assert keyboard.inline_keyboard[0][0].callback_data == "words:image_pick:review123:0"
+    assert keyboard.inline_keyboard[0][1].callback_data == "words:image_pick:review123:1"
+    assert keyboard.inline_keyboard[0][2].callback_data == "words:image_pick:review123:2"
+    assert keyboard.inline_keyboard[1][0].callback_data == "words:image_edit_prompt:review123"
+    assert keyboard.inline_keyboard[1][1].callback_data == "words:image_attach_photo:review123"
+    assert keyboard.inline_keyboard[2][0].callback_data == "words:image_skip:review123"
+    assert all(
+        len(button.callback_data) < 64
+        for row in keyboard.inline_keyboard
+        for button in row
+        if button.callback_data is not None
+    )

@@ -9,6 +9,7 @@ from englishbot.bot import (
     add_words_text_handler,
     image_review_attach_photo_handler,
     image_review_edit_prompt_handler,
+    image_review_generate_handler,
     image_review_photo_handler,
     published_image_item_handler,
     published_images_menu_handler,
@@ -461,7 +462,7 @@ async def test_approve_auto_images_handler_generates_images_and_offers_word_edit
 
 
 @pytest.mark.anyio
-async def test_published_image_menu_and_item_handlers_start_single_word_review(
+async def test_published_image_menu_and_item_handlers_show_current_image_and_wait_for_generate(
     tmp_path: Path,
 ) -> None:
     content_dir = tmp_path / "content" / "custom"
@@ -537,7 +538,7 @@ async def test_published_image_menu_and_item_handlers_start_single_word_review(
 
         item_message = _FakeCallbackMessage(tmp_path)
         item_query = _FakeQuery(
-            "words:edit_published_image:fairy-tales:dragon",
+            "words:edit_published_image:fairy-tales:0",
             item_message,
         )
         item_update = SimpleNamespace(
@@ -550,6 +551,28 @@ async def test_published_image_menu_and_item_handlers_start_single_word_review(
             caption.startswith("Current image.")
             for caption in item_message.reply_photo_captions
         )
+        assert any(
+            "Choose what to do next." in text
+            for text in item_message.reply_text_calls
+        )
+        assert not any(
+            "Generating image candidates 1/1..." in text
+            for text in item_message.reply_text_calls
+        )
+
+        generate_query = _FakeQuery(
+            "words:image_generate:review123",
+            item_message,
+        )
+        generate_update = SimpleNamespace(
+            callback_query=generate_query,
+            effective_user=SimpleNamespace(id=42),
+        )
+        context.application.bot_data["image_review_get_active_use_case"] = (
+            _FakeGetActiveImageReviewUseCase(review_flow)
+        )
+        await image_review_generate_handler(generate_update, context)  # type: ignore[arg-type]
+
         assert any(
             "Generating image candidates 1/1..." in text
             for text in item_message.reply_text_calls
@@ -609,7 +632,7 @@ async def test_image_review_edit_prompt_flow_accepts_new_prompt_and_regenerates_
         ],
     )
     prompt_message = _FakeCallbackMessage(tmp_path)
-    prompt_query = _FakeQuery("words:image_edit_prompt:review123:dragon", prompt_message)
+    prompt_query = _FakeQuery("words:image_edit_prompt:review123", prompt_message)
     prompt_update = SimpleNamespace(
         callback_query=prompt_query,
         effective_user=SimpleNamespace(id=42),
@@ -679,7 +702,7 @@ async def test_image_review_attach_photo_flow_saves_user_image_and_publishes(
     )
     attach_use_case = _FakeAttachUploadedImageUseCase(flow)
     callback_message = _FakeCallbackMessage(tmp_path)
-    callback_query = _FakeQuery("words:image_attach_photo:review123:dragon", callback_message)
+    callback_query = _FakeQuery("words:image_attach_photo:review123", callback_message)
     callback_update = SimpleNamespace(
         callback_query=callback_query,
         effective_user=SimpleNamespace(id=42),

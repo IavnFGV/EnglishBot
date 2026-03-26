@@ -1,8 +1,59 @@
 # EnglishBot
 
-EnglishBot is a Telegram bot MVP for lightweight English vocabulary practice for children.
+EnglishBot is a Telegram bot POC for lightweight English vocabulary practice for children, with an editor workflow for importing words and curating pictures before learner practice starts.
 
-## MVP scope
+## Current Status
+
+The current project is already beyond the original narrow training MVP.
+
+What works now:
+
+- learner training by topic, lesson, and difficulty
+- short session summary after training
+- raw-text word import for editors
+- draft preview, draft text editing, and draft approval
+- automatic or manual image generation flow for vocabulary items
+- per-word image review with prompt editing and custom photo upload
+- post-publish editing of words
+- post-publish editing of images for a specific word
+- application-level scenario tests that cover the core product flows without using the real Telegram API
+
+What is still intentionally simple:
+
+- learner progress and sessions are still in memory
+- published content is still stored as JSON packs under `content/demo/` and `content/custom/`
+- the content model still duplicates the same word across packs instead of using a normalized vocabulary database
+
+This is acceptable for the current POC. It keeps the workflow understandable while we validate the real product behavior.
+
+## Product Direction
+
+The product direction is now clearer:
+
+- an admin or parent uploads words and curates the content
+- the bot then interacts with Teia in a shared Telegram chat
+- the learner experience should feel proactive rather than command-driven
+
+The next product milestone is therefore not "more import features", but learner interaction:
+
+- schedule or trigger training prompts for Teia
+- send review invitations into the shared chat
+- let Teia answer directly in chat and continue the session naturally
+
+## Near-Term Storage Direction
+
+The current JSON-pack storage is enough for the POC, but it is probably not the right long-term shape.
+
+The likely next durable model is:
+
+- one canonical vocabulary table for unique words
+- separate topic/lesson grouping tables
+- many-to-many links between vocabulary items and topics/lessons
+- explicit metadata for image state, review state, and publication state
+
+That direction should reduce duplication and make it easier to reuse the same word in multiple themes or lessons. This has not been implemented yet because the current priority is validating the Telegram-based parent/editor-to-learner workflow.
+
+## Core Scope
 
 - Topic- and lesson-aware vocabulary practice
 - Three training modes:
@@ -12,7 +63,7 @@ EnglishBot is a Telegram bot MVP for lightweight English vocabulary practice for
 - Per-user progress tracking in memory
 - Short session summary after training
 - Demo content for `weather`, `school`, and `seasons`
-- Structured JSON content packs loaded from `content/demo/`
+- Structured JSON content packs loaded from `content/demo/` and `content/custom/`
 
 ## Architecture summary
 
@@ -38,7 +89,7 @@ The application layer is split into clear responsibilities:
 
 More details are in `ARCHITECTURE.md`.
 
-## Learner flow
+## Learner Flow
 
 1. Choose a topic
 2. Choose `All Topic Words` or a specific lesson when lessons exist
@@ -74,6 +125,31 @@ Notes:
 - Packs are validated on load, including lesson references.
 - This format is suitable for manual teacher-prepared content before a future admin bot exists.
 
+## Editor Flow
+
+The editor workflow now exists inside the bot and can also be tested at the application level without Telegram.
+
+Current editor flow:
+
+1. open `/words`
+2. choose `Add Words`
+3. send raw lesson text
+4. review the extracted draft
+5. edit the draft text if needed
+6. choose one of:
+   - `Approve + Auto Images`
+   - `Manual Image Review`
+   - `Publish Without Images`
+7. optionally edit published words and published images later
+
+For published content, the editor can also:
+
+- edit a word after publication
+- edit the image for a specific word after publication
+- generate new variants for one word only
+- edit the image prompt for one word only
+- upload a custom replacement image
+
 ## Lesson Text Import Pipeline
 
 The project now includes a separate import pipeline for messy teacher-provided lesson text.
@@ -101,7 +177,7 @@ Draft extraction data includes:
 
 Canonical output remains the same content-pack JSON family already used by the bot, with stable slugs and `image_ref: null` by default.
 
-Human review is still recommended before publishing extracted packs to learner-facing content.
+Human review is still part of the design before publishing extracted packs to learner-facing content.
 
 ## Local Import CLI
 
@@ -253,6 +329,36 @@ Current backends:
 - `comfyui`: local HTTP backend for a running ComfyUI server
 
 The image generation layer is intentionally isolated behind a small client interface so additional backends can be added later without changing learner-bot handlers or content-pack structure.
+
+## Testing Approach
+
+The project uses readable application-level scenario tests instead of relying on Telegram API tests.
+
+Current testing strategy:
+
+- use `pytest`
+- test learner flows through app-level harnesses
+- test editor/import flows through app-level harnesses
+- keep Telegram as a thin adapter and only test the adapter behavior where wiring matters
+- use optional live integration tests for Ollama and ComfyUI only when needed
+
+This makes it easier to reproduce beta incidents from concrete inputs without depending on Telegram itself.
+
+## Next Product Step
+
+The next step is to make the learner interaction proactive for Teia:
+
+- parent/admin prepares the content
+- bot sends Teia messages into the shared chat from time to time
+- Teia answers directly there
+- the bot keeps the conversation going as a natural training session
+
+That means the next major implementation slice should focus on:
+
+- shared-chat interaction rules
+- learner-trigger and review-trigger scheduling
+- safe chat routing when both editor and learner are present
+- durable persistence for learner progress and content state
 
 ### Optional ComfyUI Devcontainer Pattern
 

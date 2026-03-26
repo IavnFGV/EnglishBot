@@ -1,6 +1,8 @@
 # Architecture
 
-EnglishBot is a simple modular monolith with a domain/application/infrastructure split.
+EnglishBot is a modular monolith with a domain/application/infrastructure split.
+
+The current codebase should be treated as a working POC with real editor and learner flows, not just a toy training MVP.
 
 ## Layers
 
@@ -28,6 +30,12 @@ EnglishBot is a simple modular monolith with a domain/application/infrastructure
 - Generate questions for easy, medium, and hard modes
 - Check an answer and persist user progress
 - Finish a session and return a summary
+- Start add-words flow from raw teacher/parent text
+- Edit extracted draft text
+- Approve, publish, and enrich a draft with image prompts
+- Run image review for newly imported or already published words
+- Edit a published word after release
+- Edit a published word image after release
 
 ## Application responsibilities
 
@@ -57,6 +65,7 @@ EnglishBot is a simple modular monolith with a domain/application/infrastructure
 - Render multiple-choice options only for easy mode
 - Accept free-text answers for medium and hard modes
 - Display feedback and session summary
+- Support editor workflows for add-words, image review, published-word editing, and published-image editing
 
 The adapter does not contain business rules. It only maps Telegram updates to application service calls.
 
@@ -70,14 +79,22 @@ Repository protocols isolate the application layer from persistence:
 - `UserProgressRepository`
 - `SessionRepository`
 
-The current implementation uses in-memory storage for a clean MVP slice. A future database can replace only the infrastructure layer without changing domain or Telegram code.
+The current implementation still uses in-memory learner state and file-backed JSON content packs. That is acceptable for the POC, but it is not the target long-term persistence model.
 
 Current simplifications:
 
 - in-memory repositories are used instead of durable persistence
 - medium mode uses typed input with a shuffled-letter hint instead of a custom letter-assembly UI
-- image support is represented by `image_ref` placeholders rather than real Telegram media files
-- content packs are loaded from local JSON files rather than a database or admin-managed import flow
+- content is still stored in JSON files rather than a normalized database
+- the same logical word may still appear in multiple packs instead of being canonically deduplicated
+
+Likely long-term storage direction:
+
+- canonical vocabulary table
+- topic and lesson tables
+- many-to-many links between vocabulary and topic/lesson groupings
+- durable learner/session storage
+- explicit review/publication/image state
 
 ## Content packs
 
@@ -126,10 +143,48 @@ The draft schema supports:
 
 This keeps future OCR compatibility straightforward: OCR can feed raw text or an extraction draft into the same downstream validation, canonicalization, and writing path.
 
-The current CLI uses a stub extraction client for offline safety. A real OpenAI or other LLM-backed client is still a future integration point, but the downstream pipeline is production-shaped already.
+The current implementation already supports real Ollama-backed extraction and prompt generation, while tests still stay deterministic through fake clients and app-level harnesses.
 
-## Future admin bot and import pipeline
+## Editor and Content Curation Flow
 
-The future admin bot can reuse the same domain model and application services while adding a different Telegram entrypoint and admin-specific use cases for content editing, approval, and scheduling.
+The current editor flow is already a first-class part of the application:
 
-A content import pipeline can plug into the infrastructure/application boundary by parsing teacher materials into `Topic`, `Lesson`, and `VocabularyItem` records, then saving them through repository implementations. That keeps parsing concerns separate from the learner bot flow.
+- import raw text
+- parse line by line into vocabulary pairs
+- review the draft
+- edit the draft text
+- publish directly or continue to image generation
+- auto-generate or manually review images
+- later edit a published word or a published word image
+
+This flow is intentionally application-driven and tested independently from Telegram where possible.
+
+## Testing Strategy
+
+The project favors application-level integration-style tests over Telegram API tests.
+
+Important consequences:
+
+- core product behavior is tested through harnesses and use cases
+- Telegram handlers are tested only as a thin transport adapter
+- long-running or external integrations such as Ollama and ComfyUI can be covered by optional live integration tests without making the main test suite brittle
+
+This approach is critical for reproducing beta issues quickly from concrete inputs.
+
+## Next Product Direction
+
+The next architectural slice is not another content-management variant. It is proactive learner interaction.
+
+Target scenario:
+
+- an admin or parent uploads and curates words
+- the bot then interacts with Teia in a shared Telegram chat
+- the bot periodically invites Teia to review or continue learning
+- Teia responds directly in chat
+
+This implies the next design pressure points will be:
+
+- group-chat aware routing
+- scheduled review invitations
+- durable learner state
+- stronger separation between editor actions and learner-facing chat behavior

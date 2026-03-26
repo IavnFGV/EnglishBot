@@ -17,28 +17,21 @@ from englishbot.image_generation.prompts import compose_image_prompt, fallback_i
 
 
 def test_fallback_image_prompt_generation() -> None:
-    assert (
-        fallback_image_prompt("Dragon")
-        == "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
-        "composition, soft colors, clean light background, thick friendly outlines, simple "
-        "shapes. Show dragon."
+    assert fallback_image_prompt("Dragon") == (
+        "dragon, cartoon style, simple, centered, white background"
     )
 
 
 def test_compose_image_prompt_wraps_subject_in_shared_style() -> None:
     assert compose_image_prompt("a red dragon with small wings.") == (
-        "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
-        "composition, soft colors, clean light background, thick friendly outlines, simple "
-        "shapes. Show a red dragon with small wings."
+        "a red dragon with small wings, cartoon style, simple, centered, white background"
     )
 
 
 def test_compose_image_prompt_strengthens_human_royal_roles() -> None:
     assert compose_image_prompt("a prince with a crown", english_word="Prince") == (
-        "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
-        "composition, soft colors, clean light background, thick friendly outlines, simple "
-        "shapes. "
-        "Show a human prince wearing a golden crown and royal clothes."
+        "a human prince wearing a golden crown and royal clothes, cartoon style, simple, "
+        "centered, white background"
     )
 
 
@@ -46,26 +39,23 @@ def test_compose_image_prompt_deduplicates_already_wrapped_prompt() -> None:
     raw = (
         "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
         "composition, soft colors, clean light background, thick friendly outlines, simple "
-        "shapes. Show illustration of a green dragon, "
-        "simple cartoon style, centered, white background, colorful, no text."
+        "shapes. Show a green dragon."
     )
 
-    assert compose_image_prompt(raw, english_word="Dragon") == raw
+    assert compose_image_prompt(raw, english_word="Dragon") == (
+        "a green dragon, cartoon style, simple, centered, white background"
+    )
 
 
 def test_compose_image_prompt_deduplicates_legacy_wrapped_prompt() -> None:
     raw = (
         "Children's vocabulary flashcard, cute cartoon illustration, single main subject, "
         "centered composition, soft colors, clean light background, thick friendly outlines, "
-        "simple shapes, educational card for a young child. Show illustration of a green dragon, "
-        "simple cartoon style, centered, white background, colorful, no text."
+        "simple shapes, educational card for a young child. Show a green dragon."
     )
 
     assert compose_image_prompt(raw, english_word="Dragon") == (
-        "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
-        "composition, soft colors, clean light background, thick friendly outlines, simple "
-        "shapes. Show illustration of a green dragon, simple cartoon style, centered, white "
-        "background, colorful, no text."
+        "a green dragon, cartoon style, simple, centered, white background"
     )
 
 

@@ -487,6 +487,8 @@ class OllamaLessonExtractionClient:
                 key in parsed for key in ("english_word", "translation", "source_fragment")
             ):
                 raw_items = [parsed]
+            if raw_items is None:
+                return []
         elif isinstance(parsed, list):
             raw_items = parsed
         else:
