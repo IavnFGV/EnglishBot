@@ -44,7 +44,7 @@ class PixabayImageSearchClient:
         english_word: str,
         query: str | None = None,
         page: int = 1,
-        per_page: int = 5,
+        per_page: int = 6,
     ) -> tuple[str, list[PixabayImageResult]]:
         if not self._api_key:
             raise ValueError("PIXABAY_API_KEY is not configured.")

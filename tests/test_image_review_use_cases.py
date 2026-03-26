@@ -57,7 +57,7 @@ class FakePixabaySearchClient:
         english_word: str,
         query: str | None = None,
         page: int = 1,
-        per_page: int = 5,
+        per_page: int = 6,
     ) -> tuple[str, list[PixabayImageResult]]:
         self.calls.append((english_word, query, page, per_page))
         normalized_query = query or english_word
@@ -263,7 +263,7 @@ def test_pixabay_search_and_next_page_replace_candidates_and_preserve_query(
     assert searched_flow.current_item.candidate_source_type == "pixabay"
     assert searched_flow.current_item.search_page == 1
     assert searched_flow.current_item.search_query == "Dragon"
-    assert len(searched_flow.current_item.candidates) == 5
+    assert len(searched_flow.current_item.candidates) == 6
     assert searched_flow.current_item.candidates[0].source_type == "pixabay"
     assert searched_flow.current_item.candidates[0].source_id == "1000"
 
@@ -271,12 +271,12 @@ def test_pixabay_search_and_next_page_replace_candidates_and_preserve_query(
     assert next_flow.current_item is not None
     assert next_flow.current_item.search_page == 2
     assert next_flow.current_item.search_query == "Dragon"
-    assert len(next_flow.current_item.candidates) == 5
-    assert next_flow.current_item.candidates[0].source_id == "1005"
+    assert len(next_flow.current_item.candidates) == 6
+    assert next_flow.current_item.candidates[0].source_id == "1006"
     assert downloader.downloads[0][0] == "https://cdn.example/1-0.jpg"
     assert search_client.calls == [
-        ("Dragon", None, 1, 5),
-        ("Dragon", "Dragon", 2, 5),
+        ("Dragon", None, 1, 6),
+        ("Dragon", "Dragon", 2, 6),
     ]
 
 

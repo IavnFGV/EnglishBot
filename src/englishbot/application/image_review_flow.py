@@ -42,7 +42,7 @@ class ImageSearchClient(Protocol):
         english_word: str,
         query: str | None = None,
         page: int = 1,
-        per_page: int = 5,
+        per_page: int = 6,
     ) -> tuple[str, list[PixabayImageResult]]:
         ...
 
@@ -231,7 +231,7 @@ class ImageReviewFlowHarness:
         flow: ImageReviewFlowState,
         query: str | None = None,
         page: int | None = None,
-        per_page: int = 5,
+        per_page: int = 6,
     ) -> ImageReviewFlowState:
         if self._image_search_client is None:
             raise ValueError("Pixabay image search is not configured.")
@@ -270,7 +270,7 @@ class ImageReviewFlowHarness:
         self,
         *,
         flow: ImageReviewFlowState,
-        per_page: int = 5,
+        per_page: int = 6,
     ) -> ImageReviewFlowState:
         current_item = flow.current_item
         if current_item is None:

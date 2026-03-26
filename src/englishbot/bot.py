@@ -76,7 +76,7 @@ from englishbot.image_generation.clients import ComfyUIImageGenerationClient
 from englishbot.image_generation.pixabay import PixabayImageSearchClient, RemoteImageDownloader
 from englishbot.image_generation.paths import resolve_existing_image_path
 from englishbot.image_generation.pipeline import ContentPackImageEnricher
-from englishbot.image_generation.previews import ensure_square_preview
+from englishbot.image_generation.previews import ensure_numbered_candidate_strip
 from englishbot.image_generation.review import ComfyUIImageCandidateGenerator
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.draft_io import draft_to_data
@@ -2476,13 +2476,14 @@ async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, f
         message=summary_message,
         fallback_chat_id=fallback_chat_id,
     )
-    for index, candidate in enumerate(current_item.candidates):
-        preview_path = ensure_square_preview(source_path=candidate.output_path, size=256)
-        with preview_path.open("rb") as photo_file:
-            sent_photo = await message.reply_photo(
-                photo=photo_file,
-                caption=_candidate_caption(index, candidate),
-            )
+    if current_item.candidates:
+        strip_path = _build_image_review_candidate_strip(
+            flow=flow,
+            item_id=current_item.item_id,
+            candidate_paths=[candidate.output_path for candidate in current_item.candidates],
+        )
+        with strip_path.open("rb") as photo_file:
+            sent_photo = await message.reply_photo(photo=photo_file)
         _track_flow_message(
             context,
             flow_id=flow.flow_id,
@@ -2515,6 +2516,16 @@ def _candidate_caption(index: int, candidate) -> str:
     if width and height:
         parts.append(f"{width}x{height}")
     return " | ".join(parts)
+
+
+def _build_image_review_candidate_strip(*, flow, item_id: str, candidate_paths: list[Path]) -> Path:
+    review_dir = candidate_paths[0].parent
+    output_path = review_dir / f"{flow.flow_id}-{item_id}--review-strip-256.jpg"
+    return ensure_numbered_candidate_strip(
+        source_paths=candidate_paths,
+        output_path=output_path,
+        tile_size=256,
+    )
 
 
 def _draft_review_keyboard(flow_id: str, is_valid: bool) -> InlineKeyboardMarkup:
@@ -2571,12 +2582,12 @@ def _image_review_keyboard(
     candidate_count = len(current_item.candidates)
     pick_buttons = [
         InlineKeyboardButton(
-            f"Use {_candidate_label(index)}",
+            f"Use {index + 1}",
             callback_data=f"words:image_pick:{flow_id}:{index}",
         )
         for index in range(candidate_count)
     ]
-    rows = [pick_buttons] if pick_buttons else []
+    rows = [pick_buttons[index : index + 3] for index in range(0, len(pick_buttons), 3)]
     rows.append(
         [
             InlineKeyboardButton(
@@ -2593,7 +2604,7 @@ def _image_review_keyboard(
         rows.append(
             [
                 InlineKeyboardButton(
-                    "Next 5",
+                    "Next 6",
                     callback_data=f"words:image_next:{flow_id}",
                 )
             ]

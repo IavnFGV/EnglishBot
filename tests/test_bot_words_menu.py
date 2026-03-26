@@ -147,21 +147,37 @@ def test_published_image_items_keyboard_uses_short_index_based_callback_data() -
 
 
 def test_image_review_keyboard_uses_short_callback_data_for_long_item_id() -> None:
+    current_item = SimpleNamespace(candidates=[object(), object(), object()], search_query="Dragon")
     keyboard = _image_review_keyboard(
         flow_id="review123",
-        item_id="school-subjects-physical-education-with-very-long-item-id",
-        candidate_count=3,
+        current_item=current_item,
     )
 
     assert keyboard.inline_keyboard[0][0].callback_data == "words:image_pick:review123:0"
     assert keyboard.inline_keyboard[0][1].callback_data == "words:image_pick:review123:1"
     assert keyboard.inline_keyboard[0][2].callback_data == "words:image_pick:review123:2"
-    assert keyboard.inline_keyboard[1][0].callback_data == "words:image_edit_prompt:review123"
-    assert keyboard.inline_keyboard[1][1].callback_data == "words:image_attach_photo:review123"
-    assert keyboard.inline_keyboard[2][0].callback_data == "words:image_skip:review123"
+    assert keyboard.inline_keyboard[2][0].callback_data == "words:image_next:review123"
+    assert keyboard.inline_keyboard[3][0].callback_data == "words:image_edit_search_query:review123"
+    assert keyboard.inline_keyboard[4][1].callback_data == "words:image_attach_photo:review123"
+    assert keyboard.inline_keyboard[5][0].callback_data == "words:image_skip:review123"
     assert all(
         len(button.callback_data) < 64
         for row in keyboard.inline_keyboard
         for button in row
         if button.callback_data is not None
     )
+
+
+def test_image_review_keyboard_lays_out_six_pick_buttons_in_two_rows() -> None:
+    current_item = SimpleNamespace(
+        candidates=[object(), object(), object(), object(), object(), object()],
+        search_query="Dragon",
+    )
+
+    keyboard = _image_review_keyboard(
+        flow_id="review123",
+        current_item=current_item,
+    )
+
+    assert [button.text for button in keyboard.inline_keyboard[0]] == ["Use 1", "Use 2", "Use 3"]
+    assert [button.text for button in keyboard.inline_keyboard[1]] == ["Use 4", "Use 5", "Use 6"]

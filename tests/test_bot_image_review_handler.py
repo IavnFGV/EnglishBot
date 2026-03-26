@@ -48,6 +48,7 @@ class _FakeCallbackMessage:
         self.reply_text_calls: list[str] = []
         self.reply_text_markups: list[object] = []
         self.reply_photo_captions: list[str] = []
+        self.reply_photo_names: list[str] = []
         self.replies: list[SimpleNamespace] = []
 
     async def reply_text(self, text: str, reply_markup=None):  # noqa: ARG002
@@ -59,6 +60,8 @@ class _FakeCallbackMessage:
 
     async def reply_photo(self, photo, caption=None, reply_markup=None):  # noqa: ARG002
         self.reply_photo_captions.append(caption or "")
+        photo_name = getattr(photo, "name", "")
+        self.reply_photo_names.append(str(photo_name))
         photo.read()
         return SimpleNamespace(
             message_id=100 + len(self.reply_photo_captions),
@@ -820,7 +823,8 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
     assert search_query.edits[1] == "Pixabay candidates ready 1/1"
     assert any("Pixabay candidates page 1" in text for text in message.reply_text_calls)
     assert any("Pixabay search query: Dragon" in text for text in message.reply_text_calls)
-    assert "A. Pixabay | ID 1 | 640x480" in message.reply_photo_captions
+    assert message.reply_photo_captions == [""]
+    assert message.reply_photo_names[0].endswith("review123-dragon--review-strip-256.jpg")
 
     context.application.bot_data["image_review_get_active_use_case"] = _FakeGetActiveImageReviewUseCase(
         next_flow
@@ -830,7 +834,8 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
     assert next_query.edits[1] == "Pixabay candidates ready 1/1"
     assert any("Pixabay candidates page 2" in text for text in message.reply_text_calls)
     assert any("Pixabay search query: Dragon" in text for text in message.reply_text_calls)
-    assert "A. Pixabay | ID 2 | 800x600" in message.reply_photo_captions
+    assert message.reply_photo_captions == ["", ""]
+    assert message.reply_photo_names[1].endswith("review123-dragon--review-strip-256.jpg")
     assert context.bot.deleted_messages == [(1, 1), (1, 101)]
 
 

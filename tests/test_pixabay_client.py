@@ -50,7 +50,7 @@ def test_pixabay_client_prefers_illustration_and_falls_back_to_all(monkeypatch) 
     monkeypatch.setitem(__import__("sys").modules, "requests", SimpleNamespace(get=fake_get))
     client = PixabayImageSearchClient(api_key="test-key")
 
-    query, results = client.search(english_word="Dragon", page=2, per_page=5)
+    query, results = client.search(english_word="Dragon", page=2, per_page=6)
 
     assert query == "Dragon"
     assert len(results) == 1
@@ -61,7 +61,7 @@ def test_pixabay_client_prefers_illustration_and_falls_back_to_all(monkeypatch) 
             "key": "test-key",
             "q": "Dragon",
             "page": 2,
-            "per_page": 5,
+            "per_page": 6,
             "image_type": "illustration",
             "safesearch": "true",
             "order": "popular",
@@ -70,7 +70,7 @@ def test_pixabay_client_prefers_illustration_and_falls_back_to_all(monkeypatch) 
             "key": "test-key",
             "q": "Dragon",
             "page": 2,
-            "per_page": 5,
+            "per_page": 6,
             "image_type": "all",
             "safesearch": "true",
             "order": "popular",
@@ -101,7 +101,7 @@ def test_pixabay_client_logs_query_and_response_without_api_key(monkeypatch, cap
     caplog.set_level(logging.DEBUG, logger="englishbot.image_generation.pixabay")
     client = PixabayImageSearchClient(api_key="super-secret-key")
 
-    client.search(english_word="Dragon", page=1, per_page=5)
+    client.search(english_word="Dragon", page=1, per_page=6)
 
     assert "Pixabay request" in caplog.text
     assert "Pixabay response" in caplog.text
