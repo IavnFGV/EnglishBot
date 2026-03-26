@@ -78,15 +78,20 @@ def test_start_published_word_image_edit_use_case_focuses_selected_item(
         + "\n",
         encoding="utf-8",
     )
+    from englishbot.infrastructure.sqlite_store import SQLiteContentStore
+
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.import_json_directories([content_dir], replace=True)
     use_case = StartPublishedWordImageEditUseCase(
         harness=ImageReviewFlowHarness(
             canonicalizer=DraftToContentPackCanonicalizer(),
             writer=JsonContentPackWriter(),
             candidate_generator=FakeImageCandidateGenerator(),
             assets_dir=tmp_path / "assets",
+            content_store=store,
         ),
         repository=InMemoryImageReviewFlowRepository(),
-        content_dir=content_dir,
+        db_path=tmp_path / "data" / "englishbot.db",
     )
 
     flow = use_case.execute(user_id=7, topic_id="fairy-tales", item_id="fairy")
@@ -95,7 +100,7 @@ def test_start_published_word_image_edit_use_case_focuses_selected_item(
     assert flow.current_item is not None
     assert flow.current_item.item_id == "fairy"
     assert flow.current_item.english_word == "Fairy"
-    assert flow.output_path == content_path
+    assert flow.output_path is None
     assert flow.content_pack["vocabulary_items"][0]["id"] == "dragon"
     assert flow.content_pack["vocabulary_items"][1]["id"] == "fairy"
 
@@ -128,16 +133,21 @@ def test_published_word_image_edit_publishes_back_to_original_file_without_dupli
         encoding="utf-8",
     )
     repository = InMemoryImageReviewFlowRepository()
+    from englishbot.infrastructure.sqlite_store import SQLiteContentStore
+
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.import_json_directories([content_dir], replace=True)
     harness = ImageReviewFlowHarness(
         canonicalizer=DraftToContentPackCanonicalizer(),
         writer=JsonContentPackWriter(),
         candidate_generator=FakeImageCandidateGenerator(),
         assets_dir=tmp_path / "assets",
+        content_store=store,
     )
     start_use_case = StartPublishedWordImageEditUseCase(
         harness=harness,
         repository=repository,
-        content_dir=content_dir,
+        db_path=tmp_path / "data" / "englishbot.db",
     )
     generate_use_case = GenerateImageReviewCandidatesUseCase(
         harness=harness,
@@ -166,9 +176,8 @@ def test_published_word_image_edit_publishes_back_to_original_file_without_dupli
         output_path=flow.output_path,
     )
 
-    assert published_path == content_path
-    assert not (content_dir / "fairy-tales-2.json").exists()
-    saved = json.loads(content_path.read_text(encoding="utf-8"))
+    assert published_path is None
+    saved = store.get_content_pack("fairy-tales")
     assert saved["vocabulary_items"][0]["image_ref"].endswith(
         "/fairy-tales/review/dragon--dreamshaper.png"
     )

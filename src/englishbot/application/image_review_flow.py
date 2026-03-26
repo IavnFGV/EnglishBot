@@ -15,6 +15,7 @@ from englishbot.image_generation.prompts import compose_image_prompt, fallback_i
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.models import CanonicalContentPack, LessonExtractionDraft
 from englishbot.importing.writer import JsonContentPackWriter
+from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.logging_utils import logged_service_call
 
 
@@ -40,6 +41,7 @@ class ImageReviewFlowHarness:
         writer: JsonContentPackWriter,
         candidate_generator: ImageCandidateGenerator,
         assets_dir: Path,
+        content_store: SQLiteContentStore | None = None,
         default_model_names: tuple[str, ...] = (
             "dreamshaper",
             "realistic-vision",
@@ -50,6 +52,7 @@ class ImageReviewFlowHarness:
         self._writer = writer
         self._candidate_generator = candidate_generator
         self._assets_dir = assets_dir
+        self._content_store = content_store
         self._default_model_names = default_model_names
 
     @logged_service_call(
@@ -313,11 +316,14 @@ class ImageReviewFlowHarness:
             "output_path": lambda value: {"output_path": value},
         },
     )
-    def publish(self, *, flow: ImageReviewFlowState, output_path: Path) -> None:
-        self._writer.write(
-            content_pack=CanonicalContentPack(data=flow.content_pack),
-            output_path=output_path,
-        )
+    def publish(self, *, flow: ImageReviewFlowState, output_path: Path | None = None) -> None:
+        if self._content_store is not None:
+            self._content_store.upsert_content_pack(flow.content_pack)
+        if output_path is not None:
+            self._writer.write(
+                content_pack=CanonicalContentPack(data=flow.content_pack),
+                output_path=output_path,
+            )
 
     def _apply_selected_image_ref(
         self,

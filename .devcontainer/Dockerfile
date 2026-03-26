@@ -13,7 +13,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 WORKDIR /tmp/englishbot-build
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ffmpeg git zstd \
+    && apt-get install -y --no-install-recommends curl ffmpeg git sqlite3 zstd \
     && curl -fsSL https://ollama.com/install.sh | sh \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

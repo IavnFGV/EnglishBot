@@ -28,7 +28,6 @@ from telegram.ext import (
 
 from englishbot.application.add_words_flow import (
     AddWordsFlowHarness,
-    build_publish_output_path,
 )
 from englishbot.application.add_words_use_cases import (
     ApplyAddWordsEditUseCase,
@@ -81,6 +80,7 @@ from englishbot.infrastructure.repositories import (
     InMemoryAddWordsFlowRepository,
     InMemoryImageReviewFlowRepository,
 )
+from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.presentation.add_words_text import (
     format_draft_edit_text,
     format_draft_preview,
@@ -98,7 +98,10 @@ _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
 
 def build_application(settings: Settings) -> Application:
     app = Application.builder().token(settings.telegram_token).build()
-    app.bot_data["training_service"] = build_training_service()
+    content_store = SQLiteContentStore(db_path=settings.content_db_path)
+    content_store.initialize()
+    app.bot_data["content_store"] = content_store
+    app.bot_data["training_service"] = build_training_service(db_path=settings.content_db_path)
     lesson_import_pipeline = build_lesson_import_pipeline(
         ollama_model=settings.ollama_model,
         ollama_base_url=settings.ollama_base_url,
@@ -111,6 +114,7 @@ def build_application(settings: Settings) -> Application:
     add_words_flow_repository = InMemoryAddWordsFlowRepository()
     add_words_harness = AddWordsFlowHarness(
         pipeline=lesson_import_pipeline,
+        content_store=content_store,
     )
     image_review_repository = InMemoryImageReviewFlowRepository()
     image_review_harness = ImageReviewFlowHarness(
@@ -118,6 +122,7 @@ def build_application(settings: Settings) -> Application:
         writer=JsonContentPackWriter(),
         candidate_generator=ComfyUIImageCandidateGenerator(),
         assets_dir=Path("assets"),
+        content_store=content_store,
     )
     content_pack_image_enricher = ContentPackImageEnricher(
         ComfyUIImageGenerationClient()
@@ -170,7 +175,7 @@ def build_application(settings: Settings) -> Application:
         StartPublishedWordImageEditUseCase(
             harness=image_review_harness,
             repository=image_review_repository,
-            content_dir=Path("content/custom"),
+            db_path=settings.content_db_path,
         )
     )
     app.bot_data["image_review_get_active_use_case"] = GetActiveImageReviewUseCase(
@@ -202,17 +207,18 @@ def build_application(settings: Settings) -> Application:
     )
     app.bot_data["image_review_assets_dir"] = Path("assets")
     app.bot_data["content_pack_generate_images_use_case"] = GenerateContentPackImagesUseCase(
-        enricher=content_pack_image_enricher
+        enricher=content_pack_image_enricher,
+        db_path=settings.content_db_path,
     )
     app.bot_data["word_import_preview_message_ids"] = {}
     app.bot_data["list_editable_topics_use_case"] = ListEditableTopicsUseCase(
-        content_dir=Path("content/custom")
+        db_path=settings.content_db_path
     )
     app.bot_data["list_editable_words_use_case"] = ListEditableWordsUseCase(
-        content_dir=Path("content/custom")
+        db_path=settings.content_db_path
     )
     app.bot_data["update_editable_word_use_case"] = UpdateEditableWordUseCase(
-        content_dir=Path("content/custom")
+        db_path=settings.content_db_path
     )
 
     app.add_handler(TypeHandler(Update, raw_update_logger_handler), group=-1)
@@ -350,6 +356,16 @@ def build_application(settings: Settings) -> Application:
 
 def _service(context: ContextTypes.DEFAULT_TYPE) -> TrainingFacade:
     return context.application.bot_data["training_service"]
+
+
+def _content_store(context: ContextTypes.DEFAULT_TYPE) -> SQLiteContentStore:
+    return context.application.bot_data["content_store"]
+
+
+def _reload_training_service(context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.application.bot_data["training_service"] = build_training_service(
+        db_path=_content_store(context).db_path
+    )
 
 
 def _lesson_import_pipeline(context: ContextTypes.DEFAULT_TYPE):
@@ -523,13 +539,21 @@ def _draft_status_text(result) -> str:
     return "\n".join(lines)
 
 
-def _resolve_image_review_publish_output_path(flow) -> Path:
-    if getattr(flow, "output_path", None) is not None:
-        return flow.output_path
-    return build_publish_output_path(
-        flow.content_pack,
-        custom_content_dir=Path("content/custom"),
-    )
+def _resolve_image_review_publish_output_path(flow) -> Path | None:
+    return getattr(flow, "output_path", None)
+
+
+def _publish_destination_text(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    output_path: Path | None,
+    topic_id: str | None = None,
+) -> str:
+    if output_path is None or output_path == _content_store(context).db_path:
+        if topic_id:
+            return f"Database: {_content_store(context).db_path}\nTopic: {topic_id}"
+        return f"Database: {_content_store(context).db_path}"
+    return f"Saved to: {output_path}"
 
 
 def _is_group_chat(update: Update) -> bool:
@@ -861,7 +885,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
         except ValueError as error:
             await message.reply_text(str(error))
             return
-        context.application.bot_data["training_service"] = build_training_service()
+        _reload_training_service(context)
         context.user_data.pop("words_flow_mode", None)
         context.user_data.pop("published_edit_topic_id", None)
         context.user_data.pop("published_edit_item_id", None)
@@ -1130,11 +1154,12 @@ async def add_words_publish_without_images_handler(
     if not finalized.validation.is_valid or finalized.canonicalization is None:
         await query.edit_message_text("Draft finalization failed.")
         return
-    context.application.bot_data["training_service"] = build_training_service()
+    topic_id = approved.published_topic_id
+    _reload_training_service(context)
     _preview_message_ids(context).pop(user.id, None)
     await query.edit_message_text(
         "Draft approved and published.\n"
-        f"Saved to: {approved.output_path}\n"
+        f"{_publish_destination_text(context, output_path=approved.output_path, topic_id=topic_id)}\n"
         f"Added words: {len(finalized.draft.vocabulary_items)}\n"
         "New words are now available in the bot."
     )
@@ -1254,7 +1279,7 @@ async def add_words_approve_auto_images_handler(
     rendered_total_items = total_items if total_items > 0 else 1
     await query.edit_message_text(
         "Content pack published.\n"
-        f"Saved to: {approved.output_path}\n"
+        f"{_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id)}\n"
         f"Added words: {len(approved.import_result.draft.vocabulary_items)}\n"
         f"Generating images... 0/{rendered_total_items}"
     )
@@ -1273,16 +1298,17 @@ async def add_words_approve_auto_images_handler(
             processed_count, total_count = progress
             await query.edit_message_text(
                 "Content pack published.\n"
-                f"Saved to: {approved.output_path}\n"
+                f"{_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id)}\n"
                 f"Added words: {len(approved.import_result.draft.vocabulary_items)}\n"
                 f"Generating images... {processed_count}/{total_count}"
             )
 
     progress_task = asyncio.create_task(_report_generation_progress())
     try:
+        topic_id = approved.published_topic_id
         enriched_pack = await asyncio.to_thread(
             _generate_content_pack_images(context).execute,
-            input_path=approved.output_path,
+            topic_id=topic_id,
             assets_dir=Path("assets"),
             progress_callback=lambda processed_count, total_count: loop.call_soon_threadsafe(
                 progress_queue.put_nowait,
@@ -1292,16 +1318,16 @@ async def add_words_approve_auto_images_handler(
     finally:
         await progress_queue.put(None)
         await progress_task
-    context.application.bot_data["training_service"] = build_training_service()
+    _reload_training_service(context)
     _preview_message_ids(context).pop(user.id, None)
     topic = enriched_pack.get("topic", {})
-    topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
+    topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else topic_id
     generated_image_count = sum(
         1 for item in enriched_pack.get("vocabulary_items", []) if item.get("image_ref")
     )
     await query.edit_message_text(
         "Draft approved and images generated.\n"
-        f"Saved to: {approved.output_path}\n"
+        f"{_publish_destination_text(context, output_path=approved.output_path, topic_id=topic_id)}\n"
         f"Generated images: {generated_image_count}\n"
         "You can edit the image for a specific word if needed.",
         reply_markup=(
@@ -1322,11 +1348,11 @@ async def published_images_menu_handler(
         return
     await query.answer()
     _, _, topic_id = query.data.split(":")
-    content_path = Path("content/custom") / f"{topic_id}.json"
-    if not content_path.exists():
+    try:
+        content_pack = _content_store(context).get_content_pack(topic_id)
+    except ValueError:
         await query.edit_message_text("Published content pack not found.")
         return
-    content_pack = json.loads(content_path.read_text(encoding="utf-8"))
     raw_items = content_pack.get("vocabulary_items", [])
     if not isinstance(raw_items, list) or not raw_items:
         await query.edit_message_text("No vocabulary items found in this content pack.")
@@ -1350,11 +1376,11 @@ async def published_image_item_handler(
         return
     await query.answer()
     _, _, topic_id, item_index = query.data.split(":")
-    content_path = Path("content/custom") / f"{topic_id}.json"
-    if not content_path.exists():
+    try:
+        content_pack = _content_store(context).get_content_pack(topic_id)
+    except ValueError:
         await query.edit_message_text("Published content pack not found.")
         return
-    content_pack = json.loads(content_path.read_text(encoding="utf-8"))
     raw_items = content_pack.get("vocabulary_items", [])
     if not isinstance(raw_items, list):
         await query.edit_message_text("No vocabulary items found in this content pack.")
@@ -1427,17 +1453,19 @@ async def image_review_pick_handler(
     )
     if updated_flow.completed:
         output_path = _resolve_image_review_publish_output_path(updated_flow)
+        topic = updated_flow.content_pack.get("topic", {})
+        topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
         await asyncio.to_thread(
             _publish_image_review(context).execute,
             user_id=user.id,
             flow_id=flow_id,
             output_path=output_path,
         )
-        context.application.bot_data["training_service"] = build_training_service()
+        _reload_training_service(context)
         _clear_active_word_flow(user.id, context)
         await query.edit_message_text(
             "Image review completed and content pack published.\n"
-            f"Saved to: {output_path}\n"
+            f"{_publish_destination_text(context, output_path=output_path, topic_id=topic_id)}\n"
             "New words are now available in the bot."
         )
         return
@@ -1467,17 +1495,19 @@ async def image_review_skip_handler(
     )
     if updated_flow.completed:
         output_path = _resolve_image_review_publish_output_path(updated_flow)
+        topic = updated_flow.content_pack.get("topic", {})
+        topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
         await asyncio.to_thread(
             _publish_image_review(context).execute,
             user_id=user.id,
             flow_id=flow_id,
             output_path=output_path,
         )
-        context.application.bot_data["training_service"] = build_training_service()
+        _reload_training_service(context)
         _clear_active_word_flow(user.id, context)
         await query.edit_message_text(
             "Image review completed and content pack published.\n"
-            f"Saved to: {output_path}\n"
+            f"{_publish_destination_text(context, output_path=output_path, topic_id=topic_id)}\n"
             "New words are now available in the bot."
         )
         return
@@ -1591,17 +1621,19 @@ async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAU
     await status_message.edit_text("Uploaded photo attached.")
     if updated_flow.completed:
         output_path = _resolve_image_review_publish_output_path(updated_flow)
+        topic = updated_flow.content_pack.get("topic", {})
+        topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
         await asyncio.to_thread(
             _publish_image_review(context).execute,
             user_id=user.id,
             flow_id=flow_id,
             output_path=output_path,
         )
-        context.application.bot_data["training_service"] = build_training_service()
+        _reload_training_service(context)
         _clear_active_word_flow(user.id, context)
         await message.reply_text(
             "Image review completed and content pack published.\n"
-            f"Saved to: {output_path}\n"
+            f"{_publish_destination_text(context, output_path=output_path, topic_id=topic_id)}\n"
             "New words are now available in the bot."
         )
         return

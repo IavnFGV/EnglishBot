@@ -26,7 +26,6 @@ from englishbot.importing.enrichment import OllamaImagePromptEnricher
 from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
-from englishbot.infrastructure.content_loader import JsonContentPackLoader
 from englishbot.infrastructure.repositories import (
     InMemoryLessonRepository,
     InMemorySessionRepository,
@@ -34,47 +33,62 @@ from englishbot.infrastructure.repositories import (
     InMemoryUserProgressRepository,
     InMemoryVocabularyRepository,
 )
+from englishbot.infrastructure.sqlite_store import (
+    SQLiteContentStore,
+    SQLiteLessonRepository,
+    SQLiteSessionRepository,
+    SQLiteTopicRepository,
+    SQLiteUserProgressRepository,
+    SQLiteVocabularyRepository,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _load_content_directories(content_directories: list[Path]) -> tuple[list, list, list]:
-    loader = JsonContentPackLoader()
-    all_topics = []
-    all_lessons = []
-    all_vocabulary_items = []
-    for directory in content_directories:
-        if not directory.exists():
-            logger.info("Skipping missing content directory %s", directory)
-            continue
-        loaded_content = loader.load_directory(directory)
-        logger.info(
-            "Loaded content packs from %s: topics=%s lessons=%s vocabulary_items=%s",
-            directory,
-            len(loaded_content.topics),
-            len(loaded_content.lessons),
-            len(loaded_content.vocabulary_items),
-        )
-        all_topics.extend(loaded_content.topics)
-        all_lessons.extend(loaded_content.lessons)
-        all_vocabulary_items.extend(loaded_content.vocabulary_items)
-    return all_topics, all_lessons, all_vocabulary_items
 
 
 def build_training_service(
     seed: int = 42,
     *,
     content_directories: list[Path] | None = None,
+    db_path: Path | None = None,
 ) -> TrainingFacade:
     logger.info("Building training service with seed=%s", seed)
     rng = random.Random(seed)
     resolved_directories = content_directories or [Path("content/demo"), Path("content/custom")]
-    topics, lessons, vocabulary_items = _load_content_directories(resolved_directories)
-    topic_repository = InMemoryTopicRepository(topics)
-    lesson_repository = InMemoryLessonRepository(lessons)
-    vocabulary_repository = InMemoryVocabularyRepository(vocabulary_items)
-    progress_repository = InMemoryUserProgressRepository()
-    session_repository = InMemorySessionRepository()
+    if db_path is None:
+        topic_repository = InMemoryTopicRepository([])
+        lesson_repository = InMemoryLessonRepository([])
+        vocabulary_repository = InMemoryVocabularyRepository([])
+        progress_repository = InMemoryUserProgressRepository()
+        session_repository = InMemorySessionRepository()
+        store = None
+    else:
+        store = SQLiteContentStore(db_path=db_path)
+        store.initialize()
+        if not store.has_runtime_content():
+            store.import_json_directories(resolved_directories, replace=True)
+        topic_repository = SQLiteTopicRepository(store)
+        lesson_repository = SQLiteLessonRepository(store)
+        vocabulary_repository = SQLiteVocabularyRepository(store)
+        progress_repository = SQLiteUserProgressRepository(store)
+        session_repository = SQLiteSessionRepository(store)
+    if db_path is None:
+        from englishbot.infrastructure.content_loader import JsonContentPackLoader
+
+        loader = JsonContentPackLoader()
+        all_topics = []
+        all_lessons = []
+        all_vocabulary_items = []
+        for directory in resolved_directories:
+            if not directory.exists():
+                logger.info("Skipping missing content directory %s", directory)
+                continue
+            loaded_content = loader.load_directory(directory)
+            all_topics.extend(loaded_content.topics)
+            all_lessons.extend(loaded_content.lessons)
+            all_vocabulary_items.extend(loaded_content.vocabulary_items)
+        topic_repository = InMemoryTopicRepository(all_topics)
+        lesson_repository = InMemoryLessonRepository(all_lessons)
+        vocabulary_repository = InMemoryVocabularyRepository(all_vocabulary_items)
     question_factory = QuestionFactory(rng)
 
     list_topics = ListTopicsUseCase(topic_repository)

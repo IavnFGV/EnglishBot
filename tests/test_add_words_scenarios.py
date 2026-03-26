@@ -173,6 +173,7 @@ def test_editor_approves_valid_draft_and_content_pack_is_written(tmp_path: Path)
     scenario.when_editor_approves_draft(output_path=output_path)
 
     assert scenario.approval is not None
+    assert scenario.approval.published_topic_id == "fairy-tales"
     assert scenario.approval.output_path == output_path
     assert output_path.exists()
     assert scenario.get_active_flow() is None

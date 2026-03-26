@@ -14,6 +14,7 @@ from englishbot.bot import (
     words_edit_topic_callback_handler,
     words_edit_words_callback_handler,
 )
+from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 
 
 class _RecordingQuery:
@@ -64,18 +65,22 @@ async def test_editor_can_edit_published_word_from_words_menu(
     rebuilt_services: list[str] = []
     monkeypatch.setattr(
         "englishbot.bot.build_training_service",
-        lambda: rebuilt_services.append("rebuilt") or "training-service",
+        lambda db_path=None: rebuilt_services.append(str(db_path)) or "training-service",
     )
     monkeypatch.chdir(tmp_path)
+    db_path = tmp_path / "data" / "englishbot.db"
+    store = SQLiteContentStore(db_path=db_path)
+    store.import_json_directories([content_dir], replace=True)
 
     context = SimpleNamespace(
         user_data={},
         application=SimpleNamespace(
             bot_data={
                 "editor_user_ids": {42},
-                "list_editable_topics_use_case": ListEditableTopicsUseCase(content_dir=content_dir),
-                "list_editable_words_use_case": ListEditableWordsUseCase(content_dir=content_dir),
-                "update_editable_word_use_case": UpdateEditableWordUseCase(content_dir=content_dir),
+                "content_store": store,
+                "list_editable_topics_use_case": ListEditableTopicsUseCase(db_path=db_path),
+                "list_editable_words_use_case": ListEditableWordsUseCase(db_path=db_path),
+                "update_editable_word_use_case": UpdateEditableWordUseCase(db_path=db_path),
                 "training_service": "before",
             }
         ),
@@ -120,7 +125,7 @@ async def test_editor_can_edit_published_word_from_words_menu(
     await add_words_text_handler(text_update, context)  # type: ignore[arg-type]
 
     assert context.user_data.get("words_flow_mode") is None
-    assert rebuilt_services == ["rebuilt"]
+    assert rebuilt_services == [str(db_path)]
     assert context.application.bot_data["training_service"] == "training-service"
     assert message.replies[0][0] == (
         "Word updated.\n"
@@ -128,6 +133,6 @@ async def test_editor_can_edit_published_word_from_words_menu(
         "Changes are now available in training."
     )
     assert message.replies[1][0] == "Quick actions:"
-    saved = (content_dir / "school-subjects.json").read_text(encoding="utf-8")
-    assert '"english_word": "Maths"' in saved
-    assert '"translation": "математика / матан"' in saved
+    saved = store.get_content_pack("school-subjects")
+    assert saved["vocabulary_items"][0]["english_word"] == "Maths"
+    assert saved["vocabulary_items"][0]["translation"] == "математика / матан"

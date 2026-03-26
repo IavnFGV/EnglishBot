@@ -141,6 +141,7 @@ class ApproveAddWordsDraftUseCase:
         include=("user_id", "flow_id"),
         transforms={"output_path": lambda value: {"output_path": value}},
         result=lambda value: {
+            "topic_id": value.published_topic_id,
             "output_path": value.output_path,
             "item_count": len(value.import_result.draft.vocabulary_items),
         },

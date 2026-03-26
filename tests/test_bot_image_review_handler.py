@@ -222,9 +222,22 @@ class _FakePublishImageReviewUseCase:
     def __init__(self) -> None:
         self.output_path: Path | None = None
 
-    def execute(self, *, user_id: int, flow_id: str, output_path: Path):  # noqa: ARG002
+    def execute(self, *, user_id: int, flow_id: str, output_path: Path | None = None):  # noqa: ARG002
         self.output_path = output_path
         return output_path
+
+
+class _FakeContentStore:
+    def __init__(self, content_pack=None) -> None:
+        self.db_path = Path("data/test.db")
+        self._content_pack = content_pack or {
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "vocabulary_items": [],
+        }
+
+    def get_content_pack(self, topic_id: str) -> dict[str, object]:
+        assert topic_id == "fairy-tales"
+        return self._content_pack
 
 
 class _FakeSelectImageCandidateUseCase:
@@ -302,6 +315,7 @@ class _FakeApproveAddWordsDraftUseCase:
                 draft=draft,
                 validation=ValidationResult(errors=[]),
             ),
+            published_topic_id="fairy-tales",
             output_path=Path("content/custom/fairy-tales.json"),
         )
 
@@ -310,12 +324,12 @@ class _FakeGenerateContentPackImagesUseCase:
     def execute(
         self,
         *,
-        input_path: Path,
+        topic_id: str,
         assets_dir: Path,
         force: bool = False,
         progress_callback=None,
     ):  # noqa: ARG002
-        assert input_path == Path("content/custom/fairy-tales.json")
+        assert topic_id == "fairy-tales"
         assert assets_dir == Path("assets")
         if progress_callback is not None:
             progress_callback(1, 2)
@@ -464,7 +478,7 @@ async def test_approve_auto_images_handler_generates_images_and_offers_word_edit
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("englishbot.bot.build_training_service", lambda: "training-service")
+    monkeypatch.setattr("englishbot.bot.build_training_service", lambda db_path=None: "training-service")
     draft = LessonExtractionDraft(
         topic_title="Fairy Tales",
         vocabulary_items=[
@@ -487,6 +501,7 @@ async def test_approve_auto_images_handler_generates_images_and_offers_word_edit
     context = SimpleNamespace(
         application=SimpleNamespace(
             bot_data={
+                "content_store": _FakeContentStore(),
                 "add_words_get_active_use_case": _FakeGetActiveFlowUseCase(add_words_flow),
                 "add_words_cancel_use_case": _FakeCancelAddWordsUseCase(),
                 "add_words_save_approved_draft_use_case": _FakeSaveApprovedDraftUseCase(
@@ -572,6 +587,7 @@ async def test_published_image_menu_and_item_handlers_show_current_image_and_wai
     context = SimpleNamespace(
         application=SimpleNamespace(
             bot_data={
+                "content_store": _FakeContentStore(review_flow.content_pack),
                 "image_review_start_published_word_use_case": (
                     _FakeStartPublishedWordImageEditUseCase(review_flow)
                 ),
@@ -733,7 +749,7 @@ async def test_image_review_attach_photo_flow_saves_user_image_and_publishes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("englishbot.bot.build_training_service", lambda: "training-service")
+    monkeypatch.setattr("englishbot.bot.build_training_service", lambda db_path=None: "training-service")
     flow = ImageReviewFlowState(
         flow_id="review123",
         editor_user_id=42,
@@ -770,6 +786,7 @@ async def test_image_review_attach_photo_flow_saves_user_image_and_publishes(
         application=SimpleNamespace(
             bot_data={
                 "editor_user_ids": {42},
+                "content_store": _FakeContentStore(flow.content_pack),
                 "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(flow),
                 "image_review_attach_uploaded_image_use_case": attach_use_case,
                 "image_review_publish_use_case": _FakePublishImageReviewUseCase(),
@@ -804,7 +821,7 @@ async def test_published_image_pick_flow_overwrites_existing_topic_file_instead_
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("englishbot.bot.build_training_service", lambda: "training-service")
+    monkeypatch.setattr("englishbot.bot.build_training_service", lambda db_path=None: "training-service")
     flow = ImageReviewFlowState(
         flow_id="review123",
         editor_user_id=42,
@@ -828,7 +845,6 @@ async def test_published_image_pick_flow_overwrites_existing_topic_file_instead_
                 ],
             )
         ],
-        output_path=Path("content/custom/fairy-tales.json"),
     )
     publish_use_case = _FakePublishImageReviewUseCase()
     query_message = _FakeCallbackMessage(tmp_path)
@@ -837,6 +853,7 @@ async def test_published_image_pick_flow_overwrites_existing_topic_file_instead_
     context = SimpleNamespace(
         application=SimpleNamespace(
             bot_data={
+                "content_store": _FakeContentStore(flow.content_pack),
                 "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(flow),
                 "image_review_select_use_case": _FakeSelectImageCandidateUseCase(flow),
                 "image_review_publish_use_case": publish_use_case,
@@ -848,5 +865,4 @@ async def test_published_image_pick_flow_overwrites_existing_topic_file_instead_
 
     await image_review_pick_handler(update, context)  # type: ignore[arg-type]
 
-    assert publish_use_case.output_path == Path("content/custom/fairy-tales.json")
-    assert all("fairy-tales-2.json" not in text for text in query.edits)
+    assert publish_use_case.output_path is None

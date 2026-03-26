@@ -26,6 +26,7 @@ class Settings:
     telegram_token: str
     log_level: str
     editor_user_ids: tuple[int, ...]
+    content_db_path: Path
     ollama_base_url: str
     ollama_model: str
     ollama_temperature: float | None
@@ -51,6 +52,7 @@ class Settings:
             telegram_token=token,
             log_level=os.getenv("LOG_LEVEL", "DEBUG").upper(),
             editor_user_ids=editor_user_ids,
+            content_db_path=Path(os.getenv("CONTENT_DB_PATH", "data/englishbot.db")),
             ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
             ollama_model=resolve_ollama_model(),
             ollama_temperature=_optional_float_from_env("OLLAMA_TEMPERATURE"),

@@ -29,4 +29,5 @@ class AddWordsFlowState:
 @dataclass(slots=True, frozen=True)
 class AddWordsApprovalResult:
     import_result: ImportLessonResult
-    output_path: Path
+    published_topic_id: str
+    output_path: Path | None = None

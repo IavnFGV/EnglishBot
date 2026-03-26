@@ -10,6 +10,7 @@ from englishbot.importing.models import ImportLessonResult
 from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
+from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.logging_utils import logged_service_call
 from englishbot.presentation.add_words_text import parse_edited_draft_text
 
@@ -36,12 +37,14 @@ class AddWordsFlowHarness:
         validator: LessonExtractionValidator | None = None,
         writer: JsonContentPackWriter | None = None,
         custom_content_dir: Path = _CUSTOM_CONTENT_DIR,
+        content_store: SQLiteContentStore | None = None,
     ) -> None:
         self._pipeline = pipeline
         self._validator = validator or LessonExtractionValidator()
         self._writer = writer or JsonContentPackWriter()
         self._draft_writer = JsonDraftWriter()
         self._custom_content_dir = custom_content_dir
+        self._content_store = content_store
 
     @logged_service_call(
         "AddWordsFlowHarness.extract",
@@ -244,16 +247,26 @@ class AddWordsFlowHarness:
         finalized = self._pipeline.finalize_draft(draft=flow.draft_result.draft)
         if not finalized.validation.is_valid or finalized.canonicalization is None:
             raise ValueError("Draft finalization failed.")
-        resolved_output_path = output_path or build_publish_output_path(
-            finalized.canonicalization.content_pack.data,
-            custom_content_dir=self._custom_content_dir,
-        )
-        self._writer.write(
-            content_pack=finalized.canonicalization.content_pack,
-            output_path=resolved_output_path,
-        )
+        topic = finalized.canonicalization.content_pack.data.get("topic", {})
+        published_topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
+        if not published_topic_id:
+            raise ValueError("Published topic id is required.")
+        if self._content_store is not None:
+            self._content_store.upsert_content_pack(finalized.canonicalization.content_pack.data)
+            resolved_output_path = output_path
+        else:
+            resolved_output_path = output_path or build_publish_output_path(
+                finalized.canonicalization.content_pack.data,
+                custom_content_dir=self._custom_content_dir,
+            )
+        if output_path is not None or self._content_store is None:
+            self._writer.write(
+                content_pack=finalized.canonicalization.content_pack,
+                output_path=resolved_output_path,
+            )
         return AddWordsApprovalResult(
             import_result=finalized,
+            published_topic_id=published_topic_id,
             output_path=resolved_output_path,
         )
 

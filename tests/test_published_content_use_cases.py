@@ -8,6 +8,7 @@ from englishbot.application.published_content_use_cases import (
     ListEditableWordsUseCase,
     UpdateEditableWordUseCase,
 )
+from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 
 
 def test_published_content_use_cases_list_topics_words_and_update_word(tmp_path: Path) -> None:
@@ -38,19 +39,22 @@ def test_published_content_use_cases_list_topics_words_and_update_word(tmp_path:
         + "\n",
         encoding="utf-8",
     )
+    db_path = tmp_path / "data" / "englishbot.db"
+    store = SQLiteContentStore(db_path=db_path)
+    store.import_json_directories([content_dir], replace=True)
 
-    topics = ListEditableTopicsUseCase(content_dir=content_dir).execute()
+    topics = ListEditableTopicsUseCase(db_path=db_path).execute()
     assert topics == [
         type(topics[0])(id="school-subjects", title="School Subjects")
     ]
 
-    words = ListEditableWordsUseCase(content_dir=content_dir).execute(topic_id="school-subjects")
+    words = ListEditableWordsUseCase(db_path=db_path).execute(topic_id="school-subjects")
     assert [(item.id, item.english_word, item.translation) for item in words] == [
         ("school-subjects-maths", "Mathematics", "математика"),
         ("school-subjects-science", "Science", "естественные науки"),
     ]
 
-    updated = UpdateEditableWordUseCase(content_dir=content_dir).execute(
+    updated = UpdateEditableWordUseCase(db_path=db_path).execute(
         topic_id="school-subjects",
         item_id="school-subjects-maths",
         english_word="Maths",
@@ -61,6 +65,6 @@ def test_published_content_use_cases_list_topics_words_and_update_word(tmp_path:
     assert updated.english_word == "Maths"
     assert updated.translation == "математика / матан"
 
-    saved = json.loads((content_dir / "school-subjects.json").read_text(encoding="utf-8"))
+    saved = store.get_content_pack("school-subjects")
     assert saved["vocabulary_items"][0]["english_word"] == "Maths"
     assert saved["vocabulary_items"][0]["translation"] == "математика / матан"

@@ -17,6 +17,7 @@ def test_text_answer_handler_is_registered_after_add_words_handler() -> None:
             telegram_token="test-token",
             log_level="INFO",
             editor_user_ids=(),
+            content_db_path=Path("test.db"),
             ollama_base_url="http://127.0.0.1:11434",
             ollama_model="qwen2.5:7b",
             ollama_temperature=None,

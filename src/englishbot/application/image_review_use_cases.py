@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import json
 from pathlib import Path
 
 from englishbot.application.image_review_flow import ImageReviewFlowHarness
@@ -8,6 +6,7 @@ from englishbot.domain.image_review_models import ImageReviewFlowState
 from englishbot.domain.repositories import ImageReviewFlowRepository
 from englishbot.importing.models import LessonExtractionDraft
 from englishbot.logging_utils import logged_service_call
+from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 
 
 class StartImageReviewUseCase:
@@ -48,11 +47,12 @@ class StartPublishedWordImageEditUseCase:
         *,
         harness: ImageReviewFlowHarness,
         repository: ImageReviewFlowRepository,
-        content_dir: Path,
+        db_path: Path,
     ) -> None:
         self._harness = harness
         self._repository = repository
-        self._content_dir = content_dir
+        self._store = SQLiteContentStore(db_path=db_path)
+        self._store.initialize()
 
     @logged_service_call(
         "StartPublishedWordImageEditUseCase.execute",
@@ -67,14 +67,12 @@ class StartPublishedWordImageEditUseCase:
         item_id: str,
         model_names: tuple[str, ...] | None = None,
     ) -> ImageReviewFlowState:
-        content_path = self._content_dir / f"{topic_id}.json"
-        content_pack = json.loads(content_path.read_text(encoding="utf-8"))
+        content_pack = self._store.get_content_pack(topic_id)
         flow = self._harness.start_from_content_pack(
             editor_user_id=user_id,
             content_pack=content_pack,
             model_names=model_names,
             selected_item_id=item_id,
-            output_path=content_path,
         )
         self._repository.save(flow)
         return flow
@@ -215,7 +213,7 @@ class PublishImageReviewUseCase:
         include=("user_id", "flow_id"),
         transforms={"output_path": lambda value: {"output_path": value}},
     )
-    def execute(self, *, user_id: int, flow_id: str, output_path: Path) -> Path:
+    def execute(self, *, user_id: int, flow_id: str, output_path: Path | None = None) -> Path | None:
         flow = self._require_active_flow(user_id=user_id, flow_id=flow_id)
         self._harness.publish(flow=flow, output_path=output_path)
         self._repository.discard_active_by_user(user_id)

@@ -46,7 +46,8 @@
         "ms-python.vscode-pylance",
         "charliermarsh.ruff",
         "openai.chatgpt",
-        "mechatroner.rainbow-csv"
+        "mechatroner.rainbow-csv",
+        "zknpr.sqlite-explorer"
       ]
     }
   }

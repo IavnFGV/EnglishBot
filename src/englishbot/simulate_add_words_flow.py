@@ -144,7 +144,9 @@ def run_scenario(
         logging.getLogger(__name__).info("Scenario step=approve output=%s", output_path)
         approved = approve.execute(user_id=user_id, flow_id=flow.flow_id, output_path=output_path)
         typer.echo("\n--- Approved ---\n")
-        typer.echo(str(approved.output_path))
+        typer.echo(f"Topic: {approved.published_topic_id}")
+        if approved.output_path is not None:
+            typer.echo(str(approved.output_path))
 
 
 if __name__ == "__main__":

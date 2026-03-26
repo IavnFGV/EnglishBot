@@ -166,6 +166,7 @@ def test_add_words_use_cases_can_approve_and_write_content_pack(tmp_path: Path) 
     output_path = tmp_path / "fairy-tales.json"
     approved = approve.execute(user_id=8, flow_id=flow.flow_id, output_path=output_path)
 
+    assert approved.published_topic_id == "fairy-tales"
     assert approved.output_path == output_path
     assert output_path.exists()
     assert repository.get_active_by_user(8) is None
