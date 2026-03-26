@@ -1,7 +1,0 @@
-2026-03-26 22:01:47,070 INFO [__main__] Runtime settings log_level=DEBUG log_file_path=logs/englishbot.log log_max_bytes=10485760 log_backup_count=5 ollama_model=qwen2.5:7b ollama_base_url=http://127.0.0.1:11434 temperature=None top_p=None num_predict=None extract_prompt=prompts/ollama_extract_line_prompt.txt image_prompt=prompts/ollama_image_prompt_prompt.txt
-2026-03-26 22:01:47,126 INFO [englishbot.bootstrap] Building training service with seed=42
-2026-03-26 22:01:47,127 INFO [englishbot.bootstrap] Training service wiring completed
-2026-03-26 22:01:47,127 INFO [englishbot.bootstrap] Building lesson import pipeline model=qwen2.5:7b base_url=http://127.0.0.1:11434 temperature=None top_p=None num_predict=None extract_prompt=prompts/ollama_extract_line_prompt.txt image_prompt=prompts/ollama_image_prompt_prompt.txt
-2026-03-26 22:01:47,129 DEBUG [asyncio] Using selector: EpollSelector
-2026-03-26 22:01:47,129 INFO [__main__] Starting EnglishBot polling with log level DEBUG
-2026-03-26 22:02:12,709 INFO [__main__] Stopping EnglishBot event loop
