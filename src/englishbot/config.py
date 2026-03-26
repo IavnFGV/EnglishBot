@@ -25,6 +25,9 @@ def resolve_ollama_model(default: str = "qwen2.5:7b") -> str:
 class Settings:
     telegram_token: str
     log_level: str
+    log_file_path: Path | None
+    log_max_bytes: int
+    log_backup_count: int
     editor_user_ids: tuple[int, ...]
     content_db_path: Path
     pixabay_api_key: str
@@ -53,6 +56,13 @@ class Settings:
         return cls(
             telegram_token=token,
             log_level=os.getenv("LOG_LEVEL", "DEBUG").upper(),
+            log_file_path=(
+                Path(raw_log_file_path)
+                if (raw_log_file_path := os.getenv("LOG_FILE_PATH", "").strip())
+                else None
+            ),
+            log_max_bytes=int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)).strip()),
+            log_backup_count=int(os.getenv("LOG_BACKUP_COUNT", "5").strip()),
             editor_user_ids=editor_user_ids,
             content_db_path=Path(os.getenv("CONTENT_DB_PATH", "data/englishbot.db")),
             pixabay_api_key=os.getenv("PIXABAY_API_KEY", "").strip(),

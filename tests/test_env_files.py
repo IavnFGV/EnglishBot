@@ -5,6 +5,10 @@ def test_env_example_includes_content_db_path() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
     assert "CONTENT_DB_PATH=" in env_example
+    assert "LOG_LEVEL=" in env_example
+    assert "LOG_FILE_PATH=" in env_example
+    assert "LOG_MAX_BYTES=" in env_example
+    assert "LOG_BACKUP_COUNT=" in env_example
     assert "PIXABAY_API_KEY=" in env_example
     assert "PIXABAY_BASE_URL=" in env_example
 
@@ -20,3 +24,5 @@ def test_main_loads_dotenv_from_repo_root() -> None:
     main_module = Path("src/englishbot/__main__.py").read_text(encoding="utf-8")
 
     assert 'load_dotenv(_REPO_ROOT / ".env")' in main_module
+    assert "log_max_bytes=settings.log_max_bytes" in main_module
+    assert "log_backup_count=settings.log_backup_count" in main_module

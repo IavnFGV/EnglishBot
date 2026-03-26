@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -11,10 +12,29 @@ from englishbot.config import Settings
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def configure_logging(level: str) -> None:
+def configure_logging(
+    level: str,
+    *,
+    log_file_path: Path | None = None,
+    log_max_bytes: int = 10 * 1024 * 1024,
+    log_backup_count: int = 5,
+) -> None:
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if log_file_path is not None:
+        log_file_path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(
+            RotatingFileHandler(
+                log_file_path,
+                maxBytes=log_max_bytes,
+                backupCount=log_backup_count,
+                encoding="utf-8",
+            )
+        )
     logging.basicConfig(
         level=getattr(logging, level, logging.INFO),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        handlers=handlers,
+        force=True,
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -26,12 +46,20 @@ def configure_logging(level: str) -> None:
 def main() -> None:
     load_dotenv(_REPO_ROOT / ".env")
     settings = Settings.from_env()
-    configure_logging(settings.log_level)
+    configure_logging(
+        settings.log_level,
+        log_file_path=settings.log_file_path,
+        log_max_bytes=settings.log_max_bytes,
+        log_backup_count=settings.log_backup_count,
+    )
     logger = logging.getLogger(__name__)
     logger.info(
-        "Runtime settings log_level=%s ollama_model=%s ollama_base_url=%s "
+        "Runtime settings log_level=%s log_file_path=%s log_max_bytes=%s log_backup_count=%s ollama_model=%s ollama_base_url=%s "
         "temperature=%s top_p=%s num_predict=%s extract_prompt=%s image_prompt=%s",
         settings.log_level,
+        settings.log_file_path,
+        settings.log_max_bytes,
+        settings.log_backup_count,
         settings.ollama_model,
         settings.ollama_base_url,
         settings.ollama_temperature,
