@@ -172,6 +172,8 @@ For editor/import flows specifically:
 - show draft extraction status while parsing is running
 - show item counts in previews and summaries
 - for image review or generation, keep one persistent summary message and update its counters as the flow advances
+- when temporary Telegram editor/review messages need cleanup, reuse the shared tracked-message registry in the bot (`flow_id + tag`) instead of adding one-off delete logic
+- prefer adding a new tag to the existing cleanup mechanism over introducing separate ad hoc state for each Telegram subflow
 
 
 # Testing is mandatory.

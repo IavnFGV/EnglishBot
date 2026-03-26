@@ -103,6 +103,7 @@ _IMAGE_REVIEW_AWAITING_PHOTO = "awaiting_image_review_photo"
 _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
 _IMAGE_REVIEW_STEP_TAG = "image_review_step"
 _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
+_PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
 
 
 def _draft_checkpoint_text(flow) -> str:
@@ -291,6 +292,12 @@ def build_application(settings: Settings) -> Application:
         CallbackQueryHandler(
             words_edit_topic_callback_handler,
             pattern=r"^words:edit_topic:",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            words_edit_cancel_callback_handler,
+            pattern=r"^words:edit_item_cancel:",
         )
     )
     app.add_handler(
@@ -853,17 +860,73 @@ async def words_edit_item_callback_handler(
     except (ValueError, IndexError):
         await query.edit_message_text("Selected word is no longer available.")
         return
+    registry = _telegram_flow_messages(context)
+    flow_id = _published_word_edit_flow_id(user_id=user.id)
+    if registry is not None:
+        await _delete_tracked_messages(
+            context,
+            tracked_messages=registry.list(flow_id=flow_id, tag=_PUBLISHED_WORD_EDIT_TAG),
+        )
     context.user_data["words_flow_mode"] = _PUBLISHED_WORD_AWAITING_EDIT_TEXT
     context.user_data["published_edit_topic_id"] = topic_id
     context.user_data["published_edit_item_id"] = selected_word.id
     await query.edit_message_text(
         "Send the updated word as one line.\n"
-        "Format: English: Translation"
+        "Format: English: Translation",
+        reply_markup=_published_word_edit_keyboard(topic_id=topic_id),
     )
-    await query.message.reply_text(
+    _track_flow_message(
+        context,
+        flow_id=flow_id,
+        tag=_PUBLISHED_WORD_EDIT_TAG,
+        message=query.message,
+    )
+    helper_message = await query.message.reply_text(
         f"Current value:\n{selected_word.english_word}: {selected_word.translation}",
         reply_markup=ForceReply(selective=True),
     )
+    _track_flow_message(
+        context,
+        flow_id=flow_id,
+        tag=_PUBLISHED_WORD_EDIT_TAG,
+        message=helper_message,
+        fallback_chat_id=_message_chat_id(query.message),
+    )
+
+
+async def words_edit_cancel_callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, topic_id = query.data.split(":")
+    registry = _telegram_flow_messages(context)
+    flow_id = _published_word_edit_flow_id(user_id=user.id)
+    if registry is not None:
+        await _delete_tracked_messages(
+            context,
+            tracked_messages=_tracked_messages_except_source_message(
+                tracked_messages=registry.list(
+                    flow_id=flow_id,
+                    tag=_PUBLISHED_WORD_EDIT_TAG,
+                ),
+                message=query.message,
+            ),
+        )
+    context.user_data.pop("words_flow_mode", None)
+    context.user_data.pop("published_edit_topic_id", None)
+    context.user_data.pop("published_edit_item_id", None)
+    words = _list_editable_words(context).execute(topic_id=topic_id)
+    await query.edit_message_text(
+        "Edit cancelled. Choose a word to edit.",
+        reply_markup=_editable_words_keyboard(topic_id=topic_id, words=words),
+    )
+    if registry is not None:
+        registry.clear(flow_id=flow_id, tag=_PUBLISHED_WORD_EDIT_TAG)
 
 
 async def add_words_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -973,15 +1036,28 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.pop("words_flow_mode", None)
         context.user_data.pop("published_edit_topic_id", None)
         context.user_data.pop("published_edit_item_id", None)
+        registry = _telegram_flow_messages(context)
+        flow_id = _published_word_edit_flow_id(user_id=user.id)
+        if registry is not None:
+            await _delete_tracked_messages(
+                context,
+                tracked_messages=registry.list(
+                    flow_id=flow_id,
+                    tag=_PUBLISHED_WORD_EDIT_TAG,
+                ),
+            )
+        words = _list_editable_words(context).execute(topic_id=topic_id)
         await message.reply_text(
             "Word updated.\n"
             f"{updated_word.english_word} — {updated_word.translation}\n"
             "Changes are now available in training."
         )
         await message.reply_text(
-            "Quick actions:",
-            reply_markup=_chat_menu_keyboard(is_editor=_is_editor(user.id, context)),
+            "Choose another word to edit.",
+            reply_markup=_editable_words_keyboard(topic_id=topic_id, words=words),
         )
+        if registry is not None:
+            registry.clear(flow_id=flow_id, tag=_PUBLISHED_WORD_EDIT_TAG)
         return
     if words_flow_mode == _IMAGE_REVIEW_AWAITING_PROMPT_TEXT:
         review_flow_id = context.user_data.get("image_review_flow_id")
@@ -2334,6 +2410,10 @@ def _track_flow_message(
     registry.track(flow_id=flow_id, chat_id=chat_id, message_id=message_id, tag=tag)
 
 
+def _published_word_edit_flow_id(*, user_id: int) -> str:
+    return f"published-word-edit:{user_id}"
+
+
 async def _prepare_and_send_image_review_step(
     message,
     context: ContextTypes.DEFAULT_TYPE,
@@ -2732,6 +2812,19 @@ def _editable_words_keyboard(*, topic_id: str, words) -> InlineKeyboardMarkup:
     if not rows:
         rows = [[InlineKeyboardButton("No words", callback_data="words:menu")]]
     return InlineKeyboardMarkup(rows)
+
+
+def _published_word_edit_keyboard(*, topic_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Cancel",
+                    callback_data=f"words:edit_item_cancel:{topic_id}",
+                )
+            ]
+        ]
+    )
 
 
 def _chat_menu_keyboard(*, is_editor: bool) -> ReplyKeyboardMarkup:
