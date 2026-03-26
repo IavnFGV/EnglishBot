@@ -4,7 +4,7 @@ import re
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _LEADING_SHOW_RE = re.compile(r"^\s*show\s+", re.IGNORECASE)
-_DEFAULT_STYLE_SUFFIX = "cartoon style, simple, centered, white background"
+_DEFAULT_STYLE_SUFFIX = "childrens book illutration, centered, white background"
 _LEGACY_STYLE_PROMPTS = (
     "Vocabulary flashcard, clear cartoon illustration, single main subject, centered "
     "composition, soft colors, clean light background, thick friendly outlines, simple shapes",
@@ -13,10 +13,10 @@ _LEGACY_STYLE_PROMPTS = (
     "simple shapes, educational card for a young child",
 )
 _HUMAN_ROLE_HINTS = {
-    "king": "a human king wearing a golden crown and royal clothes",
-    "queen": "a human queen wearing a jeweled crown and royal dress",
-    "prince": "a human prince wearing a golden crown and royal clothes",
-    "princess": "a human princess wearing a jeweled tiara and royal dress",
+    "king": "a human king - older man wearing a golden crown and royal clothes",
+    "queen": "a human queen - older woman wearing a jeweled crown and royal dress",
+    "prince": "a human prince - boy  wearing a golden crown and royal clothes",
+    "princess": "a human princess - girl wearing a jeweled tiara and royal dress",
     "wizard": "a human wizard with a pointed hat and robe",
 }
 

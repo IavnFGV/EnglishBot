@@ -341,7 +341,8 @@ def _safe_prefix(value: str) -> str:
 
 
 def _negative_prompt_for_word(english_word: str) -> str:
-    base = "blurry, distorted, text, watermark, horror, gore, scary, low quality, dark"
+    # base = "blurry, distorted, text, watermark, horror, gore, scary, low quality, dark"
+    base = "text, watermark"
     normalized = english_word.strip().lower()
     if normalized in {"king", "queen", "prince", "princess", "wizard"}:
         return (

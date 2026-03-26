@@ -203,6 +203,46 @@ def test_skip_behavior_when_image_already_exists(
     assert client.called is False
 
 
+def test_image_enrichment_reports_progress_for_each_item(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    class RecordingClient:
+        def generate(self, *, prompt: str, english_word: str, output_path: Path) -> None:  # noqa: ARG002
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"png")
+
+    content_pack = {
+        "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+        "lessons": [],
+        "vocabulary_items": [
+            {
+                "id": "fairy-tales-dragon",
+                "english_word": "Dragon",
+                "translation": "дракон",
+            },
+            {
+                "id": "fairy-tales-fairy",
+                "english_word": "Fairy",
+                "translation": "фея",
+            },
+        ],
+    }
+    client = RecordingClient()
+    enricher = ContentPackImageEnricher(client)  # type: ignore[arg-type]
+    reported_progress: list[tuple[int, int]] = []
+
+    enricher.enrich_content_pack(
+        content_pack=content_pack,
+        assets_dir=Path("assets"),
+        progress_callback=lambda processed, total: reported_progress.append((processed, total)),
+    )
+
+    assert reported_progress == [(1, 2), (2, 2)]
+
+
 @pytest.mark.anyio
 async def test_bot_rendering_falls_back_when_image_file_is_missing() -> None:
     class FakeMessage:

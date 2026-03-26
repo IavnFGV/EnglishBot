@@ -90,6 +90,7 @@ class ImageReviewFlowHarness:
         content_pack: dict[str, object],
         model_names: tuple[str, ...] | None = None,
         selected_item_id: str | None = None,
+        output_path: Path | None = None,
     ) -> ImageReviewFlowState:
         normalized_content_pack = json.loads(json.dumps(content_pack))
         topic = normalized_content_pack.get("topic", {})
@@ -137,6 +138,7 @@ class ImageReviewFlowHarness:
             editor_user_id=editor_user_id,
             content_pack=normalized_content_pack,
             items=review_items,
+            output_path=output_path,
         )
 
     @logged_service_call(

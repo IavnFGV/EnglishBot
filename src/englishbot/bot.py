@@ -18,9 +18,11 @@ from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    ChatMemberHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -213,11 +215,13 @@ def build_application(settings: Settings) -> Application:
         content_dir=Path("content/custom")
     )
 
+    app.add_handler(TypeHandler(Update, raw_update_logger_handler), group=-1)
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("words", words_menu_handler))
     app.add_handler(CommandHandler("add_words", add_words_start_handler))
     app.add_handler(CommandHandler("cancel", add_words_cancel_handler))
+    app.add_handler(ChatMemberHandler(chat_member_logger_handler, ChatMemberHandler.ANY_CHAT_MEMBER))
     app.add_handler(CallbackQueryHandler(continue_session_handler, pattern=r"^session:continue$"))
     app.add_handler(CallbackQueryHandler(restart_session_handler, pattern=r"^session:restart$"))
     app.add_handler(CallbackQueryHandler(topic_selected_handler, pattern=r"^topic:"))
@@ -331,6 +335,13 @@ def build_application(settings: Settings) -> Application:
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, text_answer_handler),
         group=1,
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS,
+            group_text_observer_handler,
+        ),
+        group=2,
     )
     app.add_error_handler(error_handler)
     app.post_init = _post_init
@@ -510,6 +521,20 @@ def _draft_status_text(result) -> str:
     if prompt_count is not None and prompt_count > 0:
         lines.insert(2, f"Image prompts: {prompt_count}")
     return "\n".join(lines)
+
+
+def _resolve_image_review_publish_output_path(flow) -> Path:
+    if getattr(flow, "output_path", None) is not None:
+        return flow.output_path
+    return build_publish_output_path(
+        flow.content_pack,
+        custom_content_dir=Path("content/custom"),
+    )
+
+
+def _is_group_chat(update: Update) -> bool:
+    chat = update.effective_chat
+    return bool(chat and chat.type in {"group", "supergroup"})
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1225,17 +1250,48 @@ async def add_words_approve_auto_images_handler(
         user_id=user.id,
         flow_id=flow.flow_id,
     )
+    total_items = len(approved.import_result.draft.vocabulary_items)
+    rendered_total_items = total_items if total_items > 0 else 1
     await query.edit_message_text(
         "Content pack published.\n"
         f"Saved to: {approved.output_path}\n"
         f"Added words: {len(approved.import_result.draft.vocabulary_items)}\n"
-        "Generating images... 0/1"
+        f"Generating images... 0/{rendered_total_items}"
     )
-    enriched_pack = await asyncio.to_thread(
-        _generate_content_pack_images(context).execute,
-        input_path=approved.output_path,
-        assets_dir=Path("assets"),
-    )
+    progress_queue: asyncio.Queue[tuple[int, int] | None] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    async def _report_generation_progress() -> None:
+        last_progress: tuple[int, int] | None = None
+        while True:
+            progress = await progress_queue.get()
+            if progress is None:
+                return
+            if progress == last_progress:
+                continue
+            last_progress = progress
+            processed_count, total_count = progress
+            await query.edit_message_text(
+                "Content pack published.\n"
+                f"Saved to: {approved.output_path}\n"
+                f"Added words: {len(approved.import_result.draft.vocabulary_items)}\n"
+                f"Generating images... {processed_count}/{total_count}"
+            )
+
+    progress_task = asyncio.create_task(_report_generation_progress())
+    try:
+        enriched_pack = await asyncio.to_thread(
+            _generate_content_pack_images(context).execute,
+            input_path=approved.output_path,
+            assets_dir=Path("assets"),
+            progress_callback=lambda processed_count, total_count: loop.call_soon_threadsafe(
+                progress_queue.put_nowait,
+                (processed_count, total_count),
+            ),
+        )
+    finally:
+        await progress_queue.put(None)
+        await progress_task
     context.application.bot_data["training_service"] = build_training_service()
     _preview_message_ids(context).pop(user.id, None)
     topic = enriched_pack.get("topic", {})
@@ -1370,10 +1426,7 @@ async def image_review_pick_handler(
         candidate_index=int(candidate_index),
     )
     if updated_flow.completed:
-        output_path = build_publish_output_path(
-            updated_flow.content_pack,
-            custom_content_dir=Path("content/custom"),
-        )
+        output_path = _resolve_image_review_publish_output_path(updated_flow)
         await asyncio.to_thread(
             _publish_image_review(context).execute,
             user_id=user.id,
@@ -1413,10 +1466,7 @@ async def image_review_skip_handler(
         item_id=flow.current_item.item_id,
     )
     if updated_flow.completed:
-        output_path = build_publish_output_path(
-            updated_flow.content_pack,
-            custom_content_dir=Path("content/custom"),
-        )
+        output_path = _resolve_image_review_publish_output_path(updated_flow)
         await asyncio.to_thread(
             _publish_image_review(context).execute,
             user_id=user.id,
@@ -1540,10 +1590,7 @@ async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAU
     )
     await status_message.edit_text("Uploaded photo attached.")
     if updated_flow.completed:
-        output_path = build_publish_output_path(
-            updated_flow.content_pack,
-            custom_content_dir=Path("content/custom"),
-        )
+        output_path = _resolve_image_review_publish_output_path(updated_flow)
         await asyncio.to_thread(
             _publish_image_review(context).execute,
             user_id=user.id,
@@ -1675,6 +1722,84 @@ async def text_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if message is None or message.text is None:
         return
     await _process_answer(update, context, message.text)
+
+
+async def group_text_observer_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    if not _is_group_chat(update):
+        return
+    if context.user_data.get("awaiting_text_answer"):
+        return
+    if context.user_data.get("words_flow_mode") is not None:
+        return
+    message = update.effective_message
+    user = update.effective_user
+    chat = update.effective_chat
+    if message is None or message.text is None or user is None or chat is None:
+        return
+    logger.info(
+        "Received group message chat_id=%s chat_type=%s user_id=%s text=%r",
+        chat.id,
+        chat.type,
+        user.id,
+        message.text,
+    )
+
+
+async def raw_update_logger_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:  # noqa: ARG001
+    logger.info("Received Telegram update %s", _describe_update(update))
+
+
+async def chat_member_logger_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,  # noqa: ARG001
+) -> None:
+    chat_member_update = update.my_chat_member or update.chat_member
+    if chat_member_update is None:
+        return
+    logger.info(
+        "Received chat member update chat_id=%s chat_type=%s user_id=%s old_status=%s new_status=%s",
+        chat_member_update.chat.id,
+        chat_member_update.chat.type,
+        chat_member_update.from_user.id,
+        chat_member_update.old_chat_member.status,
+        chat_member_update.new_chat_member.status,
+    )
+
+
+def _describe_update(update: Update) -> str:
+    message = update.effective_message
+    if message is not None and message.text is not None:
+        chat = update.effective_chat
+        user = update.effective_user
+        chat_id = chat.id if chat is not None else "?"
+        chat_type = chat.type if chat is not None else "?"
+        user_id = user.id if user is not None else "?"
+        return (
+            f"message chat_id={chat_id} chat_type={chat_type} "
+            f"user_id={user_id} text={message.text!r}"
+        )
+    if update.callback_query is not None:
+        query = update.callback_query
+        user_id = query.from_user.id if query.from_user is not None else "?"
+        return f"callback_query user_id={user_id} data={query.data!r}"
+    if update.my_chat_member is not None:
+        member = update.my_chat_member
+        return (
+            f"my_chat_member chat_id={member.chat.id} chat_type={member.chat.type} "
+            f"user_id={member.from_user.id} old_status={member.old_chat_member.status} "
+            f"new_status={member.new_chat_member.status}"
+        )
+    if update.chat_member is not None:
+        member = update.chat_member
+        return (
+            f"chat_member chat_id={member.chat.id} chat_type={member.chat.type} "
+            f"user_id={member.from_user.id} old_status={member.old_chat_member.status} "
+            f"new_status={member.new_chat_member.status}"
+        )
+    return "unknown"
 
 
 async def _process_answer(

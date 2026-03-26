@@ -30,6 +30,7 @@ class ImageReviewFlowState:
     content_pack: dict[str, object]
     items: list[ImageReviewItem]
     current_index: int = 0
+    output_path: Path | None = None
 
     @property
     def completed(self) -> bool:

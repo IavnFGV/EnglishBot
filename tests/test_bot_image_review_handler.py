@@ -10,6 +10,7 @@ from englishbot.bot import (
     image_review_attach_photo_handler,
     image_review_edit_prompt_handler,
     image_review_generate_handler,
+    image_review_pick_handler,
     image_review_photo_handler,
     published_image_item_handler,
     published_images_menu_handler,
@@ -213,12 +214,50 @@ class _FakeAttachUploadedImageUseCase:
             },
             items=self._flow.items,
             current_index=1,
+            output_path=self._flow.output_path,
         )
 
 
 class _FakePublishImageReviewUseCase:
+    def __init__(self) -> None:
+        self.output_path: Path | None = None
+
     def execute(self, *, user_id: int, flow_id: str, output_path: Path):  # noqa: ARG002
+        self.output_path = output_path
         return output_path
+
+
+class _FakeSelectImageCandidateUseCase:
+    def __init__(self, flow: ImageReviewFlowState) -> None:
+        self._flow = flow
+
+    def execute(
+        self,
+        *,
+        user_id: int,  # noqa: ARG002
+        flow_id: str,
+        item_id: str,
+        candidate_index: int,
+    ) -> ImageReviewFlowState:
+        assert flow_id == self._flow.flow_id
+        assert item_id == self._flow.current_item.item_id
+        assert candidate_index == 0
+        return ImageReviewFlowState(
+            flow_id=self._flow.flow_id,
+            editor_user_id=self._flow.editor_user_id,
+            content_pack={
+                "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+                "vocabulary_items": [
+                    {
+                        "id": "dragon",
+                        "image_ref": "assets/fairy-tales/review/dragon--dreamshaper.png",
+                    }
+                ],
+            },
+            items=self._flow.items,
+            current_index=1,
+            output_path=self._flow.output_path,
+        )
 
 
 class _FakePhotoFile:
@@ -268,9 +307,19 @@ class _FakeApproveAddWordsDraftUseCase:
 
 
 class _FakeGenerateContentPackImagesUseCase:
-    def execute(self, *, input_path: Path, assets_dir: Path, force: bool = False):  # noqa: ARG002
+    def execute(
+        self,
+        *,
+        input_path: Path,
+        assets_dir: Path,
+        force: bool = False,
+        progress_callback=None,
+    ):  # noqa: ARG002
         assert input_path == Path("content/custom/fairy-tales.json")
         assert assets_dir == Path("assets")
+        if progress_callback is not None:
+            progress_callback(1, 2)
+            progress_callback(2, 2)
         return {
             "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
             "vocabulary_items": [
@@ -457,8 +506,10 @@ async def test_approve_auto_images_handler_generates_images_and_offers_word_edit
 
     assert query.edits[0] == "Saving approved draft... 0/1"
     assert "Publishing content pack... 0/1" in query.edits[2]
-    assert "Generating images... 0/1" in query.edits[3]
-    assert "Draft approved and images generated." in query.edits[4]
+    assert "Generating images... 0/2" in query.edits[3]
+    assert "Generating images... 1/2" in query.edits[4]
+    assert "Generating images... 2/2" in query.edits[5]
+    assert "Draft approved and images generated." in query.edits[6]
 
 
 @pytest.mark.anyio
@@ -746,3 +797,56 @@ async def test_image_review_attach_photo_flow_saves_user_image_and_publishes(
         "Image review completed and content pack published." in text
         for text in photo_message.reply_text_calls
     )
+
+
+@pytest.mark.anyio
+async def test_published_image_pick_flow_overwrites_existing_topic_file_instead_of_creating_duplicate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("englishbot.bot.build_training_service", lambda: "training-service")
+    flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "vocabulary_items": [{"id": "dragon", "image_ref": None}],
+        },
+        items=[
+            ImageReviewItem(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                prompt="Prompt for Dragon",
+                candidates=[
+                    ImageCandidate(
+                        model_name="dreamshaper",
+                        image_ref="assets/fairy-tales/review/dragon--dreamshaper.png",
+                        output_path=tmp_path / "dragon-a.png",
+                        prompt="Prompt for Dragon",
+                    )
+                ],
+            )
+        ],
+        output_path=Path("content/custom/fairy-tales.json"),
+    )
+    publish_use_case = _FakePublishImageReviewUseCase()
+    query_message = _FakeCallbackMessage(tmp_path)
+    query = _FakeQuery("words:image_pick:review123:0", query_message)
+    update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(flow),
+                "image_review_select_use_case": _FakeSelectImageCandidateUseCase(flow),
+                "image_review_publish_use_case": publish_use_case,
+                "add_words_cancel_use_case": _FakeCancelAddWordsUseCase(),
+                "word_import_preview_message_ids": {},
+            }
+        ),
+    )
+
+    await image_review_pick_handler(update, context)  # type: ignore[arg-type]
+
+    assert publish_use_case.output_path == Path("content/custom/fairy-tales.json")
+    assert all("fairy-tales-2.json" not in text for text in query.edits)

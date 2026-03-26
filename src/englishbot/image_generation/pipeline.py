@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from englishbot.image_generation.clients import ImageGenerationClient
@@ -37,12 +38,14 @@ class ContentPackImageEnricher:
         input_path: Path,
         assets_dir: Path,
         force: bool = False,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> dict[str, object]:
         content_pack = json.loads(input_path.read_text(encoding="utf-8"))
         enriched = self.enrich_content_pack(
             content_pack=content_pack,
             assets_dir=assets_dir,
             force=force,
+            progress_callback=progress_callback,
         )
         input_path.write_text(
             json.dumps(enriched, ensure_ascii=False, indent=2) + "\n",
@@ -74,6 +77,7 @@ class ContentPackImageEnricher:
         content_pack: dict[str, object],
         assets_dir: Path,
         force: bool = False,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> dict[str, object]:
         topic = content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
@@ -85,18 +89,23 @@ class ContentPackImageEnricher:
             raise ValueError("Content pack vocabulary_items must be a list.")
 
         updated_items: list[dict[str, object]] = []
-        for raw_item in raw_items:
+        total_items = len(raw_items)
+        for processed_count, raw_item in enumerate(raw_items, start=1):
             item = dict(raw_item) if isinstance(raw_item, dict) else {}
             item_id = str(item.get("id", "")).strip()
             english_word = str(item.get("english_word", "")).strip()
             if not item_id or not english_word:
                 updated_items.append(item)
+                if progress_callback is not None:
+                    progress_callback(processed_count, total_items)
                 continue
 
             image_ref = item.get("image_ref")
             existing_path = resolve_existing_image_path(str(image_ref)) if image_ref else None
             if existing_path is not None and not force:
                 updated_items.append(item)
+                if progress_callback is not None:
+                    progress_callback(processed_count, total_items)
                 continue
 
             raw_prompt = str(item.get("image_prompt", "")).strip()
@@ -122,6 +131,8 @@ class ContentPackImageEnricher:
                 item_id=item_id,
             )
             updated_items.append(item)
+            if progress_callback is not None:
+                progress_callback(processed_count, total_items)
 
         updated_pack = dict(content_pack)
         updated_pack["vocabulary_items"] = updated_items

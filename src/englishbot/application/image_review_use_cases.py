@@ -74,6 +74,7 @@ class StartPublishedWordImageEditUseCase:
             content_pack=content_pack,
             model_names=model_names,
             selected_item_id=item_id,
+            output_path=content_path,
         )
         self._repository.save(flow)
         return flow
