@@ -914,10 +914,15 @@ def _topic_selection_view(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> TelegramTextView:
+    topic_item_counts = _topic_item_counts(
+        context,
+        [topic.id for topic in topics],
+    )
     return build_topic_selection_view(
         text=text,
         reply_markup=_topic_keyboard(
             topics,
+            topic_item_counts=topic_item_counts,
             language=_telegram_ui_language(context, user),
         ),
     )
@@ -996,14 +1001,20 @@ def _editable_topics_view(
     user,
     for_images: bool = False,
 ) -> TelegramTextView:
+    topic_item_counts = _topic_item_counts(
+        context,
+        [topic.id for topic in topics],
+    )
     markup = (
         _published_image_topics_keyboard(
             topics,
+            topic_item_counts=topic_item_counts,
             language=_telegram_ui_language(context, user),
         )
         if for_images
         else _editable_topics_keyboard(
             topics,
+            topic_item_counts=topic_item_counts,
             language=_telegram_ui_language(context, user),
         )
     )
@@ -3644,12 +3655,16 @@ def _published_images_menu_keyboard(
 def _published_image_topics_keyboard(
     topics,
     *,
+    topic_item_counts: dict[str, int] | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
-                topic.title,
+                _topic_button_label(
+                    title=topic.title,
+                    item_count=(topic_item_counts or {}).get(topic.id),
+                ),
                 callback_data=f"words:edit_images_menu:{topic.id}",
             )
         ]
@@ -3692,10 +3707,19 @@ def _published_image_items_keyboard(
 def _editable_topics_keyboard(
     topics,
     *,
+    topic_item_counts: dict[str, int] | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(topic.title, callback_data=f"words:edit_topic:{topic.id}")]
+        [
+            InlineKeyboardButton(
+                _topic_button_label(
+                    title=topic.title,
+                    item_count=(topic_item_counts or {}).get(topic.id),
+                ),
+                callback_data=f"words:edit_topic:{topic.id}",
+            )
+        ]
         for topic in topics
     ]
     if not rows:
@@ -3761,11 +3785,45 @@ def _chat_menu_keyboard(*, is_editor: bool) -> ReplyKeyboardMarkup:
 def _topic_keyboard(
     topics: list[Topic],
     *,
+    topic_item_counts: dict[str, int] | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(topic.title, callback_data=f"topic:{topic.id}")] for topic in topics]
+        [
+            [
+                InlineKeyboardButton(
+                    _topic_button_label(
+                        title=topic.title,
+                        item_count=(topic_item_counts or {}).get(topic.id),
+                    ),
+                    callback_data=f"topic:{topic.id}",
+                )
+            ]
+            for topic in topics
+        ]
     )
+
+
+def _topic_item_counts(
+    context: ContextTypes.DEFAULT_TYPE,
+    topic_ids: list[str],
+) -> dict[str, int]:
+    store = context.application.bot_data.get("content_store")
+    if store is None:
+        return {}
+    counts: dict[str, int] = {}
+    for topic_id in topic_ids:
+        try:
+            counts[topic_id] = len(store.list_vocabulary_by_topic(topic_id))
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to count topic items for topic_id=%s", topic_id, exc_info=True)
+    return counts
+
+
+def _topic_button_label(*, title: str, item_count: int | None) -> str:
+    if item_count is None:
+        return title
+    return f"{title} ({item_count})"
 
 
 def _active_session_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:

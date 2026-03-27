@@ -8,8 +8,11 @@ from englishbot.bot import (
     _draft_review_keyboard,
     _image_review_markup,
     _image_review_keyboard,
+    _published_image_topics_keyboard,
+    _topic_keyboard,
     _published_image_items_keyboard,
     _words_menu_keyboard,
+    _editable_topics_keyboard,
     words_add_words_callback_handler,
     words_edit_images_callback_handler,
     words_menu_callback_handler,
@@ -78,12 +81,20 @@ async def test_words_topics_callback_handler_opens_topic_list() -> None:
             SimpleNamespace(id="school", title="School"),
         ]
     )
+    context.application.bot_data["content_store"] = SimpleNamespace(
+        list_vocabulary_by_topic=lambda topic_id: {
+            "weather": [object(), object(), object()],
+            "school": [object(), object()],
+        }[topic_id]
+    )
 
     await words_topics_callback_handler(update, context)  # type: ignore[arg-type]
 
     assert query.answered is True
     assert query.edits[-1][0] == "Choose a topic to start training."
     assert query.edits[-1][1] is not None
+    assert query.edits[-1][1].inline_keyboard[0][0].text == "Weather (3)"
+    assert query.edits[-1][1].inline_keyboard[1][0].text == "School (2)"
 
 
 @pytest.mark.anyio
@@ -122,6 +133,12 @@ async def test_words_edit_images_callback_handler_opens_topic_list() -> None:
                         SimpleNamespace(id="fairy-tales", title="Fairy Tales"),
                     ]
                 ),
+                "content_store": SimpleNamespace(
+                    list_vocabulary_by_topic=lambda topic_id: {
+                        "school-subjects": [object(), object()],
+                        "fairy-tales": [object(), object(), object(), object()],
+                    }[topic_id]
+                ),
             }
         ),
     )
@@ -131,6 +148,32 @@ async def test_words_edit_images_callback_handler_opens_topic_list() -> None:
     assert query.answered is True
     assert query.edits[-1][0] == "Choose a topic to edit word images."
     assert query.edits[-1][1] is not None
+    assert query.edits[-1][1].inline_keyboard[0][0].text == "School Subjects (2)"
+    assert query.edits[-1][1].inline_keyboard[1][0].text == "Fairy Tales (4)"
+
+
+def test_topic_keyboards_show_item_counts_when_provided() -> None:
+    topics = [
+        SimpleNamespace(id="weather", title="Weather"),
+        SimpleNamespace(id="school", title="School"),
+    ]
+
+    training_keyboard = _topic_keyboard(
+        topics,
+        topic_item_counts={"weather": 5, "school": 2},
+    )
+    editable_keyboard = _editable_topics_keyboard(
+        topics,
+        topic_item_counts={"weather": 5, "school": 2},
+    )
+    image_keyboard = _published_image_topics_keyboard(
+        topics,
+        topic_item_counts={"weather": 5, "school": 2},
+    )
+
+    assert training_keyboard.inline_keyboard[0][0].text == "Weather (5)"
+    assert editable_keyboard.inline_keyboard[1][0].text == "School (2)"
+    assert image_keyboard.inline_keyboard[0][0].text == "Weather (5)"
 
 
 def test_published_image_items_keyboard_uses_short_index_based_callback_data() -> None:
