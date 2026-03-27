@@ -10,4 +10,4 @@ def test_devcontainer_installs_sqlite3_binary() -> None:
 def test_devcontainer_recommends_vscode_sqlite_extension() -> None:
     devcontainer = Path(".devcontainer/devcontainer.json").read_text(encoding="utf-8")
 
-    assert "alexcvzz.vscode-sqlite" in devcontainer
+    assert "zknpr.sqlite-explorer" in devcontainer

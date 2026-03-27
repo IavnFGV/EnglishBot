@@ -30,7 +30,9 @@ def test_env_example_includes_ollama_prompt_paths() -> None:
 def test_main_loads_dotenv_from_repo_root() -> None:
     main_module = Path("src/englishbot/__main__.py").read_text(encoding="utf-8")
 
-    assert 'load_dotenv(_REPO_ROOT / ".env")' in main_module
+    assert 'env_file_path = _REPO_ROOT / ".env"' in main_module
+    assert "load_dotenv(env_file_path, override=True)" in main_module
+    assert "create_runtime_config_service(env_file_path=env_file_path)" in main_module
     assert "log_max_bytes=settings.log_max_bytes" in main_module
     assert "log_backup_count=settings.log_backup_count" in main_module
     assert "settings.ollama_extraction_mode" in main_module
