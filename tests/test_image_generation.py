@@ -247,14 +247,14 @@ def test_image_enrichment_reports_progress_for_each_item(
 async def test_bot_rendering_falls_back_when_image_file_is_missing() -> None:
     class FakeMessage:
         def __init__(self) -> None:
-            self.text_calls: list[tuple[str, object]] = []
-            self.photo_calls: list[tuple[object, str | None, object]] = []
+            self.text_calls: list[tuple[str, object, str | None]] = []
+            self.photo_calls: list[tuple[object, str | None, object, str | None]] = []
 
-        async def reply_text(self, text: str, reply_markup=None) -> None:
-            self.text_calls.append((text, reply_markup))
+        async def reply_text(self, text: str, reply_markup=None, parse_mode=None) -> None:
+            self.text_calls.append((text, reply_markup, parse_mode))
 
-        async def reply_photo(self, photo, caption=None, reply_markup=None) -> None:
-            self.photo_calls.append((photo, caption, reply_markup))
+        async def reply_photo(self, photo, caption=None, reply_markup=None, parse_mode=None) -> None:
+            self.photo_calls.append((photo, caption, reply_markup, parse_mode))
 
     class FakeUpdate:
         def __init__(self, message: FakeMessage) -> None:
@@ -276,6 +276,40 @@ async def test_bot_rendering_falls_back_when_image_file_is_missing() -> None:
 
     assert len(message.text_calls) == 1
     assert len(message.photo_calls) == 0
+    assert message.text_calls[0][0] == "<b>Dragon question</b>"
+    assert message.text_calls[0][2] == "HTML"
+
+
+@pytest.mark.anyio
+async def test_bot_rendering_uses_compact_text_prompt_for_text_mode() -> None:
+    class FakeMessage:
+        def __init__(self) -> None:
+            self.text_calls: list[tuple[str, object, str | None]] = []
+
+        async def reply_text(self, text: str, reply_markup=None, parse_mode=None) -> None:
+            self.text_calls.append((text, reply_markup, parse_mode))
+
+    class FakeUpdate:
+        def __init__(self, message: FakeMessage) -> None:
+            self.effective_message = message
+
+    message = FakeMessage()
+    update = FakeUpdate(message)
+    question = TrainingQuestion(
+        session_id="session-1",
+        item_id="dragon",
+        mode=TrainingMode.MEDIUM,
+        prompt="Translation: дракон\nVisual clue: Image is shown above.\nShuffled letters hint: agrnod\nType the English word.",
+        image_ref=None,
+        correct_answer="Dragon",
+        letter_hint="agrnod",
+    )
+
+    await _send_question(update, None, question)  # type: ignore[arg-type]
+
+    assert message.text_calls == [
+        ("<b>дракон</b>\n\n<b>agrnod</b>", None, "HTML")
+    ]
 
 
 def test_comfyui_client_generates_image_via_http_protocol(

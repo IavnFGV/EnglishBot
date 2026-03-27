@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 from pathlib import Path
@@ -2365,7 +2366,12 @@ async def text_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not context.user_data.get("awaiting_text_answer"):
         return
     message = update.effective_message
-    if message is None or message.text is None:
+    user = update.effective_user
+    if message is None or message.text is None or user is None:
+        return
+    if _service(context).get_active_session(user_id=user.id) is None:
+        context.user_data["awaiting_text_answer"] = False
+        await message.reply_text(_tg("no_active_session_begin", context=context, user=user))
         return
     await _process_answer(update, context, message.text)
 
@@ -2511,16 +2517,34 @@ async def _send_question(
                 for option in question.options
             ]
         )
+    rendered_question = _render_compact_training_question(question)
     image_path = resolve_existing_image_path(question.image_ref)
     if image_path is not None:
         with image_path.open("rb") as photo_file:
             await message.reply_photo(
                 photo=photo_file,
-                caption=question.prompt,
+                caption=rendered_question,
                 reply_markup=reply_markup,
+                parse_mode="HTML",
             )
         return
-    await message.reply_text(question.prompt, reply_markup=reply_markup)
+    await message.reply_text(rendered_question, reply_markup=reply_markup, parse_mode="HTML")
+
+
+def _extract_translation_from_prompt(prompt: str) -> str:
+    for line in prompt.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Translation:"):
+            return stripped.removeprefix("Translation:").strip()
+    return prompt.strip()
+
+
+def _render_compact_training_question(question: TrainingQuestion) -> str:
+    translation = html.escape(_extract_translation_from_prompt(question.prompt))
+    parts = [f"<b>{translation}</b>"]
+    if question.mode is not TrainingMode.EASY and question.letter_hint:
+        parts.append(f"<b>{html.escape(question.letter_hint)}</b>")
+    return "\n\n".join(part for part in parts if part.strip())
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
