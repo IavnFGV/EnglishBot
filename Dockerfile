@@ -11,12 +11,25 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./
+
+RUN python -m pip install --upgrade pip \
+    && python - <<'PY' > /tmp/requirements.txt
+import tomllib
+from pathlib import Path
+
+data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+requirements = list(data["project"].get("dependencies", []))
+requirements.extend(data["project"].get("optional-dependencies", {}).get("llm", []))
+print("\n".join(requirements))
+PY
+
+RUN python -m pip install -r /tmp/requirements.txt
+
 COPY src ./src
 COPY prompts ./prompts
 COPY content/demo ./content/demo
 
-RUN python -m pip install --upgrade pip \
-    && python -m pip install -e '.[llm]'
+RUN python -m pip install --no-deps .
 
 ARG ENGLISHBOT_GIT_SHA=unknown
 ARG ENGLISHBOT_GIT_BRANCH=unknown

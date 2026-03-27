@@ -42,7 +42,9 @@ def test_production_dockerfile_installs_bot_runtime_and_demo_content() -> None:
     assert "ENGLISHBOT_BUILD_NUMBER=${ENGLISHBOT_BUILD_NUMBER}" in dockerfile
     assert "ENGLISHBOT_GIT_SHA=${ENGLISHBOT_GIT_SHA}" in dockerfile
     assert "ENGLISHBOT_GIT_BRANCH=${ENGLISHBOT_GIT_BRANCH}" in dockerfile
-    assert "python -m pip install -e '.[llm]'" in dockerfile
+    assert 'python - <<\'PY\' > /tmp/requirements.txt' in dockerfile
+    assert "python -m pip install -r /tmp/requirements.txt" in dockerfile
+    assert "python -m pip install --no-deps ." in dockerfile
     assert "COPY content/demo ./content/demo" in dockerfile
     assert 'CMD ["python", "-m", "englishbot"]' in dockerfile
 
