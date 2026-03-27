@@ -27,6 +27,7 @@ from englishbot.importing.enrichment import OllamaImagePromptEnricher
 from englishbot.importing.fallback_parser import TemplateLessonFallbackParser
 from englishbot.importing.pipeline import LessonImportPipeline
 from englishbot.importing.smart_parsing import OllamaSmartLessonParsingGateway
+from englishbot.importing.smart_parsing import DisabledSmartLessonParsingGateway
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.repositories import (
@@ -131,6 +132,7 @@ def build_training_service(
 def build_lesson_import_pipeline(
     *,
     config_service: RuntimeConfigService | None = None,
+    ollama_enabled: bool = True,
     ollama_model: str,
     ollama_model_file_path: Path | None = None,
     ollama_base_url: str,
@@ -162,37 +164,50 @@ def build_lesson_import_pipeline(
         ollama_extract_text_prompt_path,
         ollama_image_prompt_path,
     )
-    extraction_client = OllamaLessonExtractionClient(
-        config_service=config_service,
-        model=ollama_model,
-        model_file_path=ollama_model_file_path,
-        base_url=ollama_base_url,
-        timeout=ollama_timeout_sec,
-        trace_file_path=ollama_trace_file_path,
-        extraction_mode=ollama_extraction_mode,
-        temperature=ollama_temperature,
-        top_p=ollama_top_p,
-        num_predict=ollama_num_predict,
-        extract_line_prompt_path=ollama_extract_line_prompt_path,
-        extract_text_prompt_path=ollama_extract_text_prompt_path,
+    smart_parser = DisabledSmartLessonParsingGateway() if not ollama_enabled else None
+    extraction_client = (
+        None
+        if not ollama_enabled
+        else OllamaLessonExtractionClient(
+            config_service=config_service,
+            model=ollama_model,
+            model_file_path=ollama_model_file_path,
+            base_url=ollama_base_url,
+            timeout=ollama_timeout_sec,
+            trace_file_path=ollama_trace_file_path,
+            extraction_mode=ollama_extraction_mode,
+            temperature=ollama_temperature,
+            top_p=ollama_top_p,
+            num_predict=ollama_num_predict,
+            extract_line_prompt_path=ollama_extract_line_prompt_path,
+            extract_text_prompt_path=ollama_extract_text_prompt_path,
+        )
     )
     return LessonImportPipeline(
-        smart_parser=OllamaSmartLessonParsingGateway(extraction_client),
+        smart_parser=(
+            smart_parser
+            if smart_parser is not None
+            else OllamaSmartLessonParsingGateway(extraction_client)
+        ),
         fallback_parser=TemplateLessonFallbackParser(),
         validator=LessonExtractionValidator(),
         canonicalizer=DraftToContentPackCanonicalizer(),
         writer=JsonContentPackWriter(),
         draft_writer=JsonDraftWriter(),
         draft_reader=JsonDraftReader(),
-        image_prompt_enricher=OllamaImagePromptEnricher(
-            config_service=config_service,
-            model=ollama_model,
-            model_file_path=ollama_model_file_path,
-            base_url=ollama_base_url,
-            timeout=image_prompt_timeout_sec,
-            temperature=ollama_temperature,
-            top_p=ollama_top_p,
-            num_predict=ollama_num_predict,
-            prompt_path=ollama_image_prompt_path,
+        image_prompt_enricher=(
+            None
+            if not ollama_enabled
+            else OllamaImagePromptEnricher(
+                config_service=config_service,
+                model=ollama_model,
+                model_file_path=ollama_model_file_path,
+                base_url=ollama_base_url,
+                timeout=image_prompt_timeout_sec,
+                temperature=ollama_temperature,
+                top_p=ollama_top_p,
+                num_predict=ollama_num_predict,
+                prompt_path=ollama_image_prompt_path,
+            )
         ),
     )

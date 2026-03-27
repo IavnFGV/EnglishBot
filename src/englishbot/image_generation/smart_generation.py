@@ -74,6 +74,31 @@ class ComfyUIImageGenerationGateway:
         return ExternalImageGenerationSuccess(output_path=output_path)
 
 
+class DisabledImageGenerationGateway:
+    def __init__(self, detail: str = "Local AI image generation is disabled by configuration.") -> None:
+        self._detail = detail
+
+    @logged_service_call("DisabledImageGenerationGateway.check_availability")
+    def check_availability(self) -> ExternalImageCapabilityAvailability:
+        return ExternalImageCapabilityAvailability(is_available=False, detail=self._detail)
+
+    @logged_service_call(
+        "DisabledImageGenerationGateway.generate",
+        transforms={
+            "english_word": lambda value: {"english_word": value},
+            "output_path": lambda value: {"output_path": value},
+        },
+    )
+    def generate(
+        self,
+        *,
+        prompt: str,  # noqa: ARG002
+        english_word: str,  # noqa: ARG002
+        output_path: Path,  # noqa: ARG002
+    ) -> ExternalImageGenerationUnavailable:
+        return ExternalImageGenerationUnavailable(detail=self._detail)
+
+
 def _map_runtime_error(
     error: RuntimeError,
 ) -> (

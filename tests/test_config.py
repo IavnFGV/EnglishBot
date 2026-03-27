@@ -81,6 +81,22 @@ def test_settings_from_config_service_reads_centralized_values(tmp_path: Path) -
     assert settings.telegram_ui_language == "ru"
 
 
+def test_settings_from_config_service_reads_disabled_ai_flags(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "TELEGRAM_BOT_TOKEN=test-token\n"
+        "OLLAMA_ENABLED=false\n"
+        "COMFYUI_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    service = create_runtime_config_service(env_file_path=env_file, environ={})
+
+    settings = Settings.from_config_service(service)
+
+    assert settings.ollama_enabled is False
+    assert settings.comfyui_enabled is False
+
+
 def test_clients_can_read_defaults_from_injected_config_service(tmp_path: Path) -> None:
     service = make_test_config_service(
         {

@@ -45,3 +45,11 @@ def test_docker_compose_mounts_persistent_runtime_directories() -> None:
     assert "/srv/englishbot/shared/assets:/app/assets" in compose
     assert "/srv/englishbot/shared/logs:/app/logs" in compose
     assert "/srv/englishbot/shared/content/custom:/app/content/custom" in compose
+
+
+def test_server_bot_only_env_template_disables_local_ai_services() -> None:
+    env_template = Path(".env.server.bot-only.example").read_text(encoding="utf-8")
+
+    assert "OLLAMA_ENABLED=false" in env_template
+    assert "COMFYUI_ENABLED=false" in env_template
+    assert "PIXABAY_API_KEY=" in env_template

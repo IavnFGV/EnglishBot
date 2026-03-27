@@ -13,6 +13,8 @@ from englishbot.bot import (
     text_answer_handler,
 )
 from englishbot.config import Settings
+from englishbot.image_generation.smart_generation import DisabledImageGenerationGateway
+from englishbot.importing.smart_parsing import DisabledSmartLessonParsingGateway
 from tests.support.config import make_test_config_service
 
 
@@ -97,3 +99,39 @@ def test_build_application_uses_injected_config_service() -> None:
     assert app.bot_data["config_service"] is config_service
     assert app.bot_data["smart_parsing_gateway"]._extraction_client.base_url == "http://ollama.example:11434"
     assert app.bot_data["image_generation_gateway"]._client.base_url == "http://comfy.example:8188"
+
+
+def test_build_application_uses_disabled_gateways_when_ai_is_turned_off() -> None:
+    settings = Settings(
+        telegram_token="test-token",
+        log_level="INFO",
+        editor_user_ids=(),
+        content_db_path=Path("test-disabled-ai.db"),
+        pixabay_api_key="",
+        pixabay_base_url="https://pixabay.com/api/",
+        ollama_enabled=False,
+        ollama_base_url="http://ollama.example:11434",
+        ollama_model="llama3.2:3b",
+        ollama_temperature=None,
+        ollama_top_p=None,
+        ollama_num_predict=None,
+        ollama_extract_line_prompt_path=Path("prompts/ollama_extract_line_prompt.txt"),
+        ollama_image_prompt_path=Path("prompts/ollama_image_prompt_prompt.txt"),
+        comfyui_enabled=False,
+    )
+    config_service = make_test_config_service(
+        {
+            "telegram_token": settings.telegram_token,
+            "log_level": settings.log_level,
+            "content_db_path": settings.content_db_path,
+            "ollama_enabled": False,
+            "comfyui_enabled": False,
+        }
+    )
+
+    app = build_application(settings, config_service=config_service)
+
+    assert isinstance(app.bot_data["smart_parsing_gateway"], DisabledSmartLessonParsingGateway)
+    assert isinstance(app.bot_data["image_generation_gateway"], DisabledImageGenerationGateway)
+    assert app.bot_data["smart_parsing_gateway"].check_availability().is_available is False
+    assert app.bot_data["image_generation_gateway"].check_availability().is_available is False

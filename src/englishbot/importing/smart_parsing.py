@@ -110,6 +110,26 @@ class OllamaSmartLessonParsingGateway:
         return _map_non_draft_result(extracted)
 
 
+class DisabledSmartLessonParsingGateway:
+    def __init__(self, detail: str = "Smart parsing is disabled by configuration.") -> None:
+        self._detail = detail
+
+    @logged_service_call("DisabledSmartLessonParsingGateway.check_availability")
+    def check_availability(self) -> AICapabilityAvailability:
+        return AICapabilityAvailability(is_available=False, detail=self._detail)
+
+    @logged_service_call(
+        "DisabledSmartLessonParsingGateway.parse",
+        transforms={"raw_text": lambda value: {"text_length": len(value)}},
+    )
+    def parse(
+        self,
+        *,
+        raw_text: str,  # noqa: ARG002
+    ) -> SmartParseUnavailable:
+        return SmartParseUnavailable(detail=self._detail)
+
+
 def _map_non_draft_result(
     extracted: object,
 ) -> SmartParseUnavailable | SmartParseTimeout | SmartParseInvalidResponse | SmartParseRemoteError:
