@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from time import perf_counter
 from typing import Protocol
 from datetime import datetime, timezone
 
-from englishbot.config import resolve_ollama_model
+from englishbot.config import RuntimeConfigService
 from englishbot.importing.extraction_support import (
     build_draft_items,
     build_line_items,
@@ -123,6 +122,7 @@ class OllamaLessonExtractionClient:
     def __init__(
         self,
         *,
+        config_service: RuntimeConfigService | None = None,
         model: str | None = None,
         model_file_path: Path | None = None,
         base_url: str | None = None,
@@ -136,20 +136,27 @@ class OllamaLessonExtractionClient:
         extract_line_prompt_path: Path | None = None,
         extract_text_prompt_path: Path | None = None,
     ) -> None:
-        self._model = model or resolve_ollama_model()
-        self._model_file_path = model_file_path or (
-            Path(raw_model_file_path)
-            if (raw_model_file_path := os.getenv("OLLAMA_MODEL_FILE_PATH", "").strip())
-            else None
+        self._config_service = config_service
+        self._model = _required_str_setting(
+            name="ollama_model",
+            explicit_value=model,
+            config_service=config_service,
         )
-        self._base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip(
-            "/"
+        self._model_file_path = _optional_path_setting(
+            name="ollama_model_file_path",
+            explicit_value=model_file_path,
+            config_service=config_service,
         )
+        self._base_url = _required_str_setting(
+            name="ollama_base_url",
+            explicit_value=base_url,
+            config_service=config_service,
+        ).rstrip("/")
         self._timeout = timeout
-        self._trace_file_path = trace_file_path or (
-            Path(raw_trace_file_path)
-            if (raw_trace_file_path := os.getenv("OLLAMA_TRACE_FILE_PATH", "").strip())
-            else None
+        self._trace_file_path = _optional_path_setting(
+            name="ollama_trace_file_path",
+            explicit_value=trace_file_path,
+            config_service=config_service,
         )
         self._include_image_prompts = include_image_prompts
         self._options = self._build_options(
@@ -158,16 +165,36 @@ class OllamaLessonExtractionClient:
             num_predict=num_predict,
         )
         self._extraction_mode = (
-            extraction_mode or os.getenv("OLLAMA_EXTRACTION_MODE", "line_by_line")
+            extraction_mode
+            if extraction_mode is not None
+            else (
+                config_service.get_str("ollama_extraction_mode")
+                if config_service is not None
+                else "line_by_line"
+            )
         ).strip().lower()
-        self._extract_line_prompt_path = extract_line_prompt_path or Path(
-            os.getenv("OLLAMA_EXTRACT_LINE_PROMPT_PATH", "prompts/ollama_extract_line_prompt.txt")
+        self._extract_line_prompt_path = (
+            extract_line_prompt_path
+            or _optional_path_setting(
+                name="ollama_extract_line_prompt_path",
+                explicit_value=None,
+                config_service=config_service,
+            )
         )
-        self._extract_text_prompt_path = extract_text_prompt_path or Path(
-            os.getenv("OLLAMA_EXTRACT_TEXT_PROMPT_PATH", "prompts/ollama_extract_text_prompt.txt")
+        self._extract_text_prompt_path = (
+            extract_text_prompt_path
+            or _optional_path_setting(
+                name="ollama_extract_text_prompt_path",
+                explicit_value=None,
+                config_service=config_service,
+            )
         )
-        self._infer_topic_prompt_path = Path(
-            os.getenv("OLLAMA_INFER_TOPIC_PROMPT_PATH", "prompts/ollama_infer_topic_prompt.txt")
+        self._infer_topic_prompt_path = (
+            _optional_path_setting(
+                name="ollama_infer_topic_prompt_path",
+                explicit_value=None,
+                config_service=config_service,
+            )
         )
 
     @property
@@ -692,12 +719,21 @@ class OllamaLessonExtractionClient:
         return options
 
     def _optional_float_env(self, name: str) -> float | None:
-        value = os.getenv(name, "").strip()
-        return float(value) if value else None
+        if self._config_service is None:
+            return None
+        if name == "OLLAMA_TEMPERATURE":
+            return self._config_service.get_float("ollama_temperature")
+        if name == "OLLAMA_TOP_P":
+            return self._config_service.get_float("ollama_top_p")
+        return None
 
     def _optional_int_env(self, name: str) -> int | None:
-        value = os.getenv(name, "").strip()
-        return int(value) if value else None
+        if self._config_service is None:
+            return None
+        if name == "OLLAMA_NUM_PREDICT":
+            value = self._config_service.get("ollama_num_predict")
+            return None if value is None else int(value)
+        return None
 
     def _string_or_empty(self, value: object) -> str:
         return value.strip() if isinstance(value, str) else ""
@@ -714,3 +750,29 @@ class OllamaLessonExtractionClient:
         if not isinstance(value, list):
             return []
         return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _required_str_setting(
+    *,
+    name: str,
+    explicit_value: str | None,
+    config_service: RuntimeConfigService | None,
+) -> str:
+    if explicit_value is not None:
+        return explicit_value
+    if config_service is not None:
+        return config_service.get_str(name)
+    raise ValueError(f"{name} must be provided explicitly or via config_service.")
+
+
+def _optional_path_setting(
+    *,
+    name: str,
+    explicit_value: Path | None,
+    config_service: RuntimeConfigService | None,
+) -> Path | None:
+    if explicit_value is not None:
+        return explicit_value
+    if config_service is not None:
+        return config_service.get_path(name)
+    return None

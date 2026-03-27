@@ -19,6 +19,7 @@ from englishbot.application.services import (
     UnseenFirstWordSelector,
     ValidateTopicLessonUseCase,
 )
+from englishbot.config import RuntimeConfigService
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import OllamaLessonExtractionClient
 from englishbot.importing.draft_io import JsonDraftReader, JsonDraftWriter
@@ -129,6 +130,7 @@ def build_training_service(
 
 def build_lesson_import_pipeline(
     *,
+    config_service: RuntimeConfigService | None = None,
     ollama_model: str,
     ollama_model_file_path: Path | None = None,
     ollama_base_url: str,
@@ -161,6 +163,7 @@ def build_lesson_import_pipeline(
         ollama_image_prompt_path,
     )
     extraction_client = OllamaLessonExtractionClient(
+        config_service=config_service,
         model=ollama_model,
         model_file_path=ollama_model_file_path,
         base_url=ollama_base_url,
@@ -182,6 +185,7 @@ def build_lesson_import_pipeline(
         draft_writer=JsonDraftWriter(),
         draft_reader=JsonDraftReader(),
         image_prompt_enricher=OllamaImagePromptEnricher(
+            config_service=config_service,
             model=ollama_model,
             model_file_path=ollama_model_file_path,
             base_url=ollama_base_url,

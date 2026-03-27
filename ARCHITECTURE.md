@@ -11,6 +11,19 @@ The current codebase should be treated as a working POC with real editor and lea
 - `englishbot.infrastructure`: in-memory repositories and JSON-loaded demo content packs
 - `englishbot.bot`: Telegram adapter with thin handlers
 - `englishbot.bootstrap`: composition root for wiring dependencies
+- `englishbot.config`: centralized runtime configuration service for env-backed settings and file-backed overrides
+
+## Runtime configuration
+
+Environment-backed runtime settings should be resolved through one `RuntimeConfigService` instance created in the composition root.
+
+Behavioral rule:
+
+- `__main__.py` creates the shared config service after loading `.env`
+- `Settings` are derived from that service instead of reading process env directly in multiple places
+- runtime adapters and external clients should receive the shared config service through dependency injection
+- ordinary tests should inject a prepared config service instead of mutating `os.environ`
+- env/file precedence should be tested primarily in config-service tests
 
 ## Main entities
 

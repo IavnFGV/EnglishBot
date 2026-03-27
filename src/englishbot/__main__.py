@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from englishbot.bot import build_application
-from englishbot.config import Settings
+from englishbot.config import Settings, create_runtime_config_service
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -44,8 +44,10 @@ def configure_logging(
 
 
 def main() -> None:
-    load_dotenv(_REPO_ROOT / ".env")
-    settings = Settings.from_env()
+    env_file_path = _REPO_ROOT / ".env"
+    load_dotenv(env_file_path)
+    config_service = create_runtime_config_service(env_file_path=env_file_path)
+    settings = Settings.from_config_service(config_service)
     configure_logging(
         settings.log_level,
         log_file_path=settings.log_file_path,
@@ -73,7 +75,7 @@ def main() -> None:
         settings.ollama_extract_text_prompt_path,
         settings.ollama_image_prompt_path,
     )
-    app = build_application(settings)
+    app = build_application(settings, config_service=config_service)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:

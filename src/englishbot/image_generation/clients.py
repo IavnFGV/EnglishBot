@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 import uuid
 from pathlib import Path
 from typing import Protocol
 
+from englishbot.config import RuntimeConfigService
 from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
@@ -104,6 +104,7 @@ class ComfyUIImageGenerationClient:
     def __init__(
         self,
         *,
+        config_service: RuntimeConfigService | None = None,
         base_url: str | None = None,
         timeout: int = 300,
         poll_interval_seconds: float = 1.0,
@@ -113,17 +114,37 @@ class ComfyUIImageGenerationClient:
         width: int = 512,
         height: int = 512,
     ) -> None:
-        self._base_url = (base_url or os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8188")).rstrip(
-            "/"
-        )
+        self._config_service = config_service
+        self._base_url = _required_str_setting(
+            name="comfyui_base_url",
+            explicit_value=base_url,
+            config_service=config_service,
+        ).rstrip("/")
         self._timeout = timeout
         self._poll_interval_seconds = poll_interval_seconds
-        self._checkpoint_name = checkpoint_name or os.getenv(
-            "COMFYUI_CHECKPOINT_NAME",
-            DEFAULT_COMFYUI_CHECKPOINT_NAME,
+        self._checkpoint_name = (
+            checkpoint_name
+            if checkpoint_name is not None
+            else (
+                config_service.get_str("comfyui_checkpoint_name")
+                if config_service is not None
+                else DEFAULT_COMFYUI_CHECKPOINT_NAME
+            )
         )
-        self._vae_name = vae_name or os.getenv("COMFYUI_VAE_NAME", DEFAULT_COMFYUI_VAE_NAME)
-        self._seed = seed if seed is not None else int(os.getenv("COMFYUI_SEED", "5"))
+        self._vae_name = (
+            vae_name
+            if vae_name is not None
+            else (
+                config_service.get_str("comfyui_vae_name")
+                if config_service is not None
+                else DEFAULT_COMFYUI_VAE_NAME
+            )
+        )
+        self._seed = (
+            seed
+            if seed is not None
+            else (config_service.get_int("comfyui_seed") if config_service is not None else 5)
+        )
         self._width = width
         self._height = height
 
@@ -348,8 +369,7 @@ def _safe_prefix(value: str) -> str:
 
 
 def _negative_prompt_for_word(english_word: str) -> str:
-    # base = "blurry, distorted, text, watermark, horror, gore, scary, low quality, dark"
-    base = "text, watermark"
+    base = "blurry, distorted, text, watermark, horror, gore"
     normalized = english_word.strip().lower()
     if normalized in {"king", "queen", "prince", "princess", "wizard"}:
         return (
@@ -376,3 +396,16 @@ def _extract_comfyui_failure_message(messages: object) -> str | None:
         if isinstance(error, str) and error.strip():
             return error.strip()
     return None
+
+
+def _required_str_setting(
+    *,
+    name: str,
+    explicit_value: str | None,
+    config_service: RuntimeConfigService | None,
+) -> str:
+    if explicit_value is not None:
+        return explicit_value
+    if config_service is not None:
+        return config_service.get_str(name)
+    raise ValueError(f"{name} must be provided explicitly or via config_service.")

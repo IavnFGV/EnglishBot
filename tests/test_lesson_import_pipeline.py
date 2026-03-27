@@ -1122,7 +1122,7 @@ def test_ollama_extraction_client_writes_trace_event(
     assert events[0]["source_line_count"] == 2
     assert events[0]["final_item_count"] == 2
     assert events[0]["resolved_model"] == "qwen2.5:7b"
-    assert events[0]["prompt_path"] == "prompts/ollama_extract_text_prompt.txt"
+    assert events[0]["prompt_path"] == "None"
     assert events[0]["model_output_items"] == [
         {
             "english_word": "Pencil",

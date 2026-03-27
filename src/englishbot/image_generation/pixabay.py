@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
+
+from englishbot.config import RuntimeConfigService
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +24,27 @@ class PixabayImageSearchClient:
     def __init__(
         self,
         *,
+        config_service: RuntimeConfigService | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
         helper_terms: tuple[str, ...] = (),
         timeout: int = 30,
     ) -> None:
-        self._api_key = (api_key or os.getenv("PIXABAY_API_KEY", "")).strip()
-        self._base_url = (base_url or os.getenv("PIXABAY_BASE_URL", "https://pixabay.com/api/")).rstrip("/")
+        self._config_service = config_service
+        self._api_key = _required_str_setting(
+            name="pixabay_api_key",
+            explicit_value=api_key,
+            config_service=config_service,
+        ).strip()
+        self._base_url = (
+            _required_str_setting(
+                name="pixabay_base_url",
+                explicit_value=base_url,
+                config_service=config_service,
+            )
+            if base_url is not None or config_service is not None
+            else "https://pixabay.com/api/"
+        ).rstrip("/")
         self._helper_terms = helper_terms
         self._timeout = timeout
 
@@ -216,3 +231,16 @@ def pixabay_preview_path(
 ) -> Path:
     suffix = Path(urlparse(preview_url).path).suffix or ".jpg"
     return assets_dir / topic_id / "review" / f"{item_id}--pixabay-{source_id}{suffix}"
+
+
+def _required_str_setting(
+    *,
+    name: str,
+    explicit_value: str | None,
+    config_service: RuntimeConfigService | None,
+) -> str:
+    if explicit_value is not None:
+        return explicit_value
+    if config_service is not None:
+        return config_service.get_str(name)
+    raise ValueError(f"{name} must be provided explicitly or via config_service.")

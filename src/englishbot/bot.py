@@ -72,7 +72,7 @@ from englishbot.application.services import (
     TrainingFacade,
 )
 from englishbot.bootstrap import build_lesson_import_pipeline, build_training_service
-from englishbot.config import Settings
+from englishbot.config import RuntimeConfigService, Settings
 from englishbot.domain.models import Topic, TrainingMode, TrainingQuestion
 from englishbot.image_generation.clients import ComfyUIImageGenerationClient
 from englishbot.image_generation.clients import LocalPlaceholderImageGenerationClient
@@ -187,13 +187,19 @@ def _tg(
     return telegram_ui_text(key, language=resolved_language, **kwargs)
 
 
-def build_application(settings: Settings) -> Application:
+def build_application(
+    settings: Settings,
+    *,
+    config_service: RuntimeConfigService,
+) -> Application:
     app = Application.builder().token(settings.telegram_token).build()
     content_store = SQLiteContentStore(db_path=settings.content_db_path)
     content_store.initialize()
     app.bot_data["content_store"] = content_store
+    app.bot_data["config_service"] = config_service
     app.bot_data["smart_parsing_gateway"] = OllamaSmartLessonParsingGateway(
         OllamaLessonExtractionClient(
+            config_service=config_service,
             model=settings.ollama_model,
             model_file_path=settings.ollama_model_file_path,
             base_url=settings.ollama_base_url,
@@ -208,10 +214,11 @@ def build_application(settings: Settings) -> Application:
         )
     )
     app.bot_data["image_generation_gateway"] = ComfyUIImageGenerationGateway(
-        ComfyUIImageGenerationClient()
+        ComfyUIImageGenerationClient(config_service=config_service)
     )
     app.bot_data["training_service"] = build_training_service(db_path=settings.content_db_path)
     lesson_import_pipeline = build_lesson_import_pipeline(
+        config_service=config_service,
         ollama_model=settings.ollama_model,
         ollama_model_file_path=settings.ollama_model_file_path,
         ollama_base_url=settings.ollama_base_url,
@@ -238,6 +245,7 @@ def build_application(settings: Settings) -> Application:
         candidate_generator=ComfyUIImageCandidateGenerator(),
         image_search_client=(
             PixabayImageSearchClient(
+                config_service=config_service,
                 api_key=settings.pixabay_api_key,
                 base_url=settings.pixabay_base_url,
             )
@@ -251,7 +259,7 @@ def build_application(settings: Settings) -> Application:
     content_pack_image_enricher = ContentPackImageEnricher(
         ResilientImageGenerator(
             external_gateway=ComfyUIImageGenerationGateway(
-                ComfyUIImageGenerationClient()
+                ComfyUIImageGenerationClient(config_service=config_service)
             ),
             fallback_client=LocalPlaceholderImageGenerationClient(),
         )

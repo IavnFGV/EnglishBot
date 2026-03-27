@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from englishbot.config import resolve_ollama_model
+from englishbot.config import RuntimeConfigService
 from englishbot.importing.prompt_loader import load_prompt_text
 from englishbot.logging_utils import logged_service_call
 from englishbot.ollama_runtime import resolve_runtime_ollama_model
@@ -35,6 +34,7 @@ class OllamaImagePromptEnricher:
     def __init__(
         self,
         *,
+        config_service: RuntimeConfigService | None = None,
         model: str | None = None,
         model_file_path: Path | None = None,
         base_url: str | None = None,
@@ -44,23 +44,43 @@ class OllamaImagePromptEnricher:
         num_predict: int | None = None,
         prompt_path: Path | None = None,
     ) -> None:
-        self._model = model or resolve_ollama_model()
-        self._model_file_path = model_file_path or (
-            Path(raw_model_file_path)
-            if (raw_model_file_path := os.getenv("OLLAMA_MODEL_FILE_PATH", "").strip())
-            else None
+        self._config_service = config_service
+        self._model = _required_str_setting(
+            name="ollama_model",
+            explicit_value=model,
+            config_service=config_service,
         )
-        self._base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip(
-            "/"
+        self._model_file_path = _optional_path_setting(
+            name="ollama_model_file_path",
+            explicit_value=model_file_path,
+            config_service=config_service,
         )
-        self._timeout = timeout or int(os.getenv("OLLAMA_IMAGE_PROMPT_TIMEOUT_SEC", "30"))
+        self._base_url = _required_str_setting(
+            name="ollama_base_url",
+            explicit_value=base_url,
+            config_service=config_service,
+        ).rstrip("/")
+        self._timeout = (
+            timeout
+            if timeout is not None
+            else (
+                config_service.get_int("ollama_image_prompt_timeout_sec")
+                if config_service is not None
+                else 30
+            )
+        )
         self._options = self._build_options(
             temperature=temperature,
             top_p=top_p,
             num_predict=num_predict,
         )
-        self._prompt_path = prompt_path or Path(
-            os.getenv("OLLAMA_IMAGE_PROMPT_PATH", "prompts/ollama_image_prompt_prompt.txt")
+        self._prompt_path = (
+            prompt_path
+            or _optional_path_setting(
+                name="ollama_image_prompt_path",
+                explicit_value=None,
+                config_service=config_service,
+            )
         )
 
     def _resolved_model(self) -> str:
@@ -68,6 +88,17 @@ class OllamaImagePromptEnricher:
             default_model=self._model,
             model_file_path=self._model_file_path,
         )
+
+    def _optional_float_setting(self, name: str) -> float | None:
+        if self._config_service is None:
+            return None
+        return self._config_service.get_float(name)
+
+    def _optional_int_setting(self, name: str) -> int | None:
+        if self._config_service is None:
+            return None
+        value = self._config_service.get(name)
+        return None if value is None else int(value)
 
     @logged_service_call(
         "OllamaImagePromptEnricher.enrich",
@@ -315,15 +346,15 @@ class OllamaImagePromptEnricher:
         resolved_temperature = (
             temperature
             if temperature is not None
-            else self._optional_float_env("OLLAMA_TEMPERATURE")
+            else self._optional_float_setting("ollama_temperature")
         )
         resolved_top_p = (
-            top_p if top_p is not None else self._optional_float_env("OLLAMA_TOP_P")
+            top_p if top_p is not None else self._optional_float_setting("ollama_top_p")
         )
         resolved_num_predict = (
             num_predict
             if num_predict is not None
-            else self._optional_int_env("OLLAMA_NUM_PREDICT")
+            else self._optional_int_setting("ollama_num_predict")
         )
         options: dict[str, float | int] = {}
         if resolved_temperature is not None:
@@ -333,14 +364,6 @@ class OllamaImagePromptEnricher:
         if resolved_num_predict is not None:
             options["num_predict"] = resolved_num_predict
         return options
-
-    def _optional_float_env(self, name: str) -> float | None:
-        value = os.getenv(name, "").strip()
-        return float(value) if value else None
-
-    def _optional_int_env(self, name: str) -> int | None:
-        value = os.getenv(name, "").strip()
-        return int(value) if value else None
 
     def _parse_content(self, content: str) -> dict[str, object]:
         stripped = content.strip()
@@ -413,3 +436,29 @@ class OllamaImagePromptEnricher:
             ),
             image_prompt=image_prompt,
         )
+
+
+def _required_str_setting(
+    *,
+    name: str,
+    explicit_value: str | None,
+    config_service: RuntimeConfigService | None,
+) -> str:
+    if explicit_value is not None:
+        return explicit_value
+    if config_service is not None:
+        return config_service.get_str(name)
+    raise ValueError(f"{name} must be provided explicitly or via config_service.")
+
+
+def _optional_path_setting(
+    *,
+    name: str,
+    explicit_value: Path | None,
+    config_service: RuntimeConfigService | None,
+) -> Path | None:
+    if explicit_value is not None:
+        return explicit_value
+    if config_service is not None:
+        return config_service.get_path(name)
+    return None

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Annotated
 
@@ -15,7 +14,7 @@ from englishbot.application.add_words_use_cases import (
     StartAddWordsFlowUseCase,
 )
 from englishbot.bootstrap import build_lesson_import_pipeline
-from englishbot.config import resolve_ollama_model
+from englishbot.config import RuntimeConfigService, create_runtime_config_service
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.sqlite_store import SQLiteAddWordsFlowRepository, SQLiteContentStore
@@ -30,15 +29,8 @@ app = typer.Typer(
     help="Run add-words scenarios locally without Telegram.",
 )
 
-_DEFAULT_EXTRACT_PROMPT_PATH = Path(
-    os.getenv("OLLAMA_EXTRACT_LINE_PROMPT_PATH", "prompts/ollama_extract_line_prompt.txt")
-)
-_DEFAULT_EXTRACT_TEXT_PROMPT_PATH = Path(
-    os.getenv("OLLAMA_EXTRACT_TEXT_PROMPT_PATH", "prompts/ollama_extract_text_prompt.txt")
-)
-_DEFAULT_IMAGE_PROMPT_PATH = Path(
-    os.getenv("OLLAMA_IMAGE_PROMPT_PATH", "prompts/ollama_image_prompt_prompt.txt")
-)
+def _runtime_config_service() -> RuntimeConfigService:
+    return create_runtime_config_service()
 
 
 @app.command("run")
@@ -65,93 +57,133 @@ def run_scenario(
         ),
     ] = None,
     db_path: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--db-path",
             dir_okay=False,
             help="Path to the SQLite runtime database used for flow checkpoints and published content.",
         ),
-    ] = Path(os.getenv("CONTENT_DB_PATH", "data/englishbot.db")),
+    ] = None,
     user_id: Annotated[
         int,
         typer.Option("--user-id", help="Synthetic editor user id for scenario runs."),
     ] = 1,
     ollama_model: Annotated[
-        str,
+        str | None,
         typer.Option("--ollama-model", help="Ollama model name for extraction."),
-    ] = resolve_ollama_model(),
+    ] = None,
     ollama_model_file_path: Annotated[
         Path | None,
         typer.Option("--ollama-model-file-path", help="Optional path to a file containing the Ollama model name."),
-    ] = Path(os.getenv("OLLAMA_MODEL_FILE_PATH")) if os.getenv("OLLAMA_MODEL_FILE_PATH") else None,
+    ] = None,
     ollama_base_url: Annotated[
-        str,
+        str | None,
         typer.Option("--ollama-base-url", help="Base URL for the local Ollama server."),
-    ] = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+    ] = None,
     ollama_timeout_sec: Annotated[
-        int,
+        int | None,
         typer.Option("--ollama-timeout-sec", help="Timeout in seconds for extraction requests."),
-    ] = int(os.getenv("OLLAMA_TIMEOUT_SEC", "120")),
+    ] = None,
     ollama_extraction_mode: Annotated[
-        str,
+        str | None,
         typer.Option("--ollama-extraction-mode", help="Extraction mode: line_by_line or full_text."),
-    ] = os.getenv("OLLAMA_EXTRACTION_MODE", "line_by_line"),
+    ] = None,
     ollama_temperature: Annotated[
         float | None,
         typer.Option("--ollama-temperature", help="Optional Ollama temperature."),
-    ] = float(os.getenv("OLLAMA_TEMPERATURE")) if os.getenv("OLLAMA_TEMPERATURE") else None,
+    ] = None,
     ollama_top_p: Annotated[
         float | None,
         typer.Option("--ollama-top-p", help="Optional Ollama top_p."),
-    ] = float(os.getenv("OLLAMA_TOP_P")) if os.getenv("OLLAMA_TOP_P") else None,
+    ] = None,
     ollama_num_predict: Annotated[
         int | None,
         typer.Option("--ollama-num-predict", help="Optional Ollama num_predict."),
-    ] = int(os.getenv("OLLAMA_NUM_PREDICT")) if os.getenv("OLLAMA_NUM_PREDICT") else None,
+    ] = None,
     ollama_extract_line_prompt_path: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--ollama-extract-line-prompt-path",
             dir_okay=False,
             help="Path to the extraction prompt file.",
         ),
-    ] = _DEFAULT_EXTRACT_PROMPT_PATH,
+    ] = None,
     ollama_extract_text_prompt_path: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--ollama-extract-text-prompt-path",
             dir_okay=False,
             help="Path to the full-text extraction prompt file.",
         ),
-    ] = _DEFAULT_EXTRACT_TEXT_PROMPT_PATH,
+    ] = None,
     ollama_image_prompt_path: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--ollama-image-prompt-path",
             dir_okay=False,
             help="Path to the image prompt file.",
         ),
-    ] = _DEFAULT_IMAGE_PROMPT_PATH,
+    ] = None,
     log_level: Annotated[
         str,
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
     configure_logging(log_level.upper())
-    content_store = SQLiteContentStore(db_path=db_path)
+    config_service = _runtime_config_service()
+    resolved_db_path = db_path or config_service.get_path("content_db_path") or Path("data/englishbot.db")
+    resolved_ollama_model = ollama_model or config_service.get_str("ollama_model")
+    resolved_ollama_model_file_path = (
+        ollama_model_file_path or config_service.get_path("ollama_model_file_path")
+    )
+    resolved_ollama_base_url = ollama_base_url or config_service.get_str("ollama_base_url")
+    resolved_ollama_timeout_sec = ollama_timeout_sec or config_service.get_int("ollama_timeout_sec")
+    resolved_ollama_extraction_mode = (
+        ollama_extraction_mode or config_service.get_str("ollama_extraction_mode")
+    )
+    resolved_ollama_temperature = (
+        ollama_temperature
+        if ollama_temperature is not None
+        else config_service.get_float("ollama_temperature")
+    )
+    resolved_ollama_top_p = (
+        ollama_top_p if ollama_top_p is not None else config_service.get_float("ollama_top_p")
+    )
+    resolved_ollama_num_predict = (
+        ollama_num_predict
+        if ollama_num_predict is not None
+        else config_service.get("ollama_num_predict")
+    )
+    resolved_extract_line_prompt_path = (
+        ollama_extract_line_prompt_path
+        or config_service.get_path("ollama_extract_line_prompt_path")
+        or Path("prompts/ollama_extract_line_prompt.txt")
+    )
+    resolved_extract_text_prompt_path = (
+        ollama_extract_text_prompt_path
+        or config_service.get_path("ollama_extract_text_prompt_path")
+        or Path("prompts/ollama_extract_text_prompt.txt")
+    )
+    resolved_image_prompt_path = (
+        ollama_image_prompt_path
+        or config_service.get_path("ollama_image_prompt_path")
+        or Path("prompts/ollama_image_prompt_prompt.txt")
+    )
+    content_store = SQLiteContentStore(db_path=resolved_db_path)
     content_store.initialize()
     pipeline = build_lesson_import_pipeline(
-        ollama_model=ollama_model,
-        ollama_model_file_path=ollama_model_file_path,
-        ollama_base_url=ollama_base_url,
-        ollama_timeout_sec=ollama_timeout_sec,
-        ollama_extraction_mode=ollama_extraction_mode,
-        ollama_temperature=ollama_temperature,
-        ollama_top_p=ollama_top_p,
-        ollama_num_predict=ollama_num_predict,
-        ollama_extract_line_prompt_path=ollama_extract_line_prompt_path,
-        ollama_extract_text_prompt_path=ollama_extract_text_prompt_path,
-        ollama_image_prompt_path=ollama_image_prompt_path,
+        config_service=config_service,
+        ollama_model=resolved_ollama_model,
+        ollama_model_file_path=resolved_ollama_model_file_path,
+        ollama_base_url=resolved_ollama_base_url,
+        ollama_timeout_sec=resolved_ollama_timeout_sec,
+        ollama_extraction_mode=resolved_ollama_extraction_mode,
+        ollama_temperature=resolved_ollama_temperature,
+        ollama_top_p=resolved_ollama_top_p,
+        ollama_num_predict=resolved_ollama_num_predict,
+        ollama_extract_line_prompt_path=resolved_extract_line_prompt_path,
+        ollama_extract_text_prompt_path=resolved_extract_text_prompt_path,
+        ollama_image_prompt_path=resolved_image_prompt_path,
     )
     repository = SQLiteAddWordsFlowRepository(content_store)
     harness = AddWordsFlowHarness(

@@ -137,6 +137,23 @@ CLI modules should:
 - return machine-readable validation errors when possible
 - exit with non-zero code on validation failure
 
+## Configuration Conventions
+
+Runtime configuration must be centralized:
+
+- use `englishbot.config.RuntimeConfigService` as the single source for environment-backed settings
+- build typed `Settings` through `Settings.from_config_service(...)` or `Settings.from_env()`
+- when code needs a config default for URLs, model names, prompt paths, timeouts, API keys, or file paths, read it through the config service instead of calling `os.getenv(...)` directly
+- if a setting needs to become editable, add it to the centralized config service and use its `set(...)/update(...)/save()` flow rather than introducing ad hoc file readers
+- treat model names, prompt paths, and related file-backed parameters the same way as any other runtime setting
+- in tests, prefer injecting a prepared `RuntimeConfigService` over mutating process env vars; keep env precedence tests focused in config-service tests
+
+Do not:
+
+- call `os.getenv(...)` directly in runtime modules outside `englishbot.config`
+- keep separate one-off config files for individual features when the value can live in the centralized config service
+- add new env-backed settings in constructors without registering and reading them through the config service
+
 
 ## Additional notes 
 
