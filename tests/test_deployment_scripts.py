@@ -77,7 +77,8 @@ def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
     assert 'git fetch origin "${DEPLOY_BRANCH}"' in script
     assert 'git reset --hard "origin/${DEPLOY_BRANCH}"' in script
     assert 'BUILD_STATE_FILE="${BUILD_STATE_FILE:-${SHARED_DIR}/deploy/build.env}"' in script
-    assert 'data["project"]["version"]' in script
+    assert "awk -F'\"' " in script
+    assert 'Could not read project.version from pyproject.toml' in script
     assert 'ENGLISHBOT_BUILD_NUMBER="$((PREVIOUS_BUILD_NUMBER + 1))"' in script
     assert 'ENGLISHBOT_BUILD_NUMBER="1"' in script
     assert 'ENGLISHBOT_BUILD_VERSION=${APP_VERSION}' in script

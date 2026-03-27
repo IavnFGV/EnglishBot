@@ -28,14 +28,18 @@ git fetch origin "${DEPLOY_BRANCH}"
 git checkout "${DEPLOY_BRANCH}"
 git reset --hard "origin/${DEPLOY_BRANCH}"
 
-APP_VERSION="$(python - <<'PY'
-from pathlib import Path
-import tomllib
-
-data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-print(data["project"]["version"])
-PY
+APP_VERSION="$(
+  awk -F'"' '
+    /^\[project\]/ { in_project=1; next }
+    /^\[/ && !/^\[project\]/ { in_project=0 }
+    in_project && $1 ~ /^[[:space:]]*version[[:space:]]*=[[:space:]]*$/ { print $2; exit }
+  ' pyproject.toml
 )"
+
+if [[ -z "${APP_VERSION}" ]]; then
+  echo "Could not read project.version from pyproject.toml" >&2
+  exit 1
+fi
 
 PREVIOUS_BUILD_VERSION=""
 PREVIOUS_BUILD_NUMBER="0"
