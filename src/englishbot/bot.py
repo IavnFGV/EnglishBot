@@ -93,6 +93,11 @@ from englishbot.presentation.add_words_text import (
     format_draft_preview,
     parse_edited_vocabulary_line,
 )
+from englishbot.presentation.telegram_ui_text import (
+    DEFAULT_TELEGRAM_UI_LANGUAGE,
+    supported_telegram_ui_languages,
+    telegram_ui_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +115,47 @@ _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
 def _draft_checkpoint_text(flow) -> str:
     if flow.draft_output_path is not None:
         return f"Draft checkpoint: {flow.draft_output_path}"
-    return "Draft checkpoint saved in database."
+    return telegram_ui_text("draft_checkpoint_saved_db")
+
+
+def _normalize_telegram_ui_language(language: str | None) -> str:
+    normalized = (language or "").strip().lower()
+    if not normalized:
+        return DEFAULT_TELEGRAM_UI_LANGUAGE
+    primary = normalized.split("-", maxsplit=1)[0]
+    if primary in supported_telegram_ui_languages():
+        return primary
+    return DEFAULT_TELEGRAM_UI_LANGUAGE
+
+
+def _telegram_ui_language(context: ContextTypes.DEFAULT_TYPE | None, user=None) -> str:
+    configured = DEFAULT_TELEGRAM_UI_LANGUAGE
+    if context is not None:
+        configured = _normalize_telegram_ui_language(
+            context.application.bot_data.get("telegram_ui_language")
+        )
+    if user is not None:
+        user_language_code = getattr(user, "language_code", None)
+        normalized_user = _normalize_telegram_ui_language(user_language_code)
+        if normalized_user in supported_telegram_ui_languages():
+            return normalized_user
+    return configured
+
+
+def _tg(
+    key: str,
+    *,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+    user=None,
+    language: str | None = None,
+    **kwargs: object,
+) -> str:
+    resolved_language = (
+        _normalize_telegram_ui_language(language)
+        if language is not None
+        else _telegram_ui_language(context, user)
+    )
+    return telegram_ui_text(key, language=resolved_language, **kwargs)
 
 
 def build_application(settings: Settings) -> Application:
@@ -161,6 +206,9 @@ def build_application(settings: Settings) -> Application:
     )
     app.bot_data["lesson_import_pipeline"] = lesson_import_pipeline
     app.bot_data["editor_user_ids"] = set(settings.editor_user_ids)
+    app.bot_data["telegram_ui_language"] = _normalize_telegram_ui_language(
+        settings.telegram_ui_language
+    )
     app.bot_data["add_words_start_use_case"] = StartAddWordsFlowUseCase(
         harness=add_words_harness,
         flow_repository=add_words_flow_repository,
@@ -784,11 +832,12 @@ async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFA
     await query.answer()
     try:
         await query.edit_message_text(
-            "Words menu.",
+            _tg("words_menu_title", context=context, user=update.effective_user),
             reply_markup=_words_menu_keyboard(
                 is_editor=bool(
                     update.effective_user and _is_editor(update.effective_user.id, context)
-                )
+                ),
+                language=_telegram_ui_language(context, update.effective_user),
             ),
         )
     except BadRequest as error:
@@ -809,7 +858,10 @@ async def words_topics_callback_handler(
     topics = _service(context).list_topics()
     await query.edit_message_text(
         "Choose a topic to start training.",
-        reply_markup=_topic_keyboard(topics),
+        reply_markup=_topic_keyboard(
+            topics,
+            language=_telegram_ui_language(context, update.effective_user),
+        ),
     )
 
 
@@ -823,7 +875,7 @@ async def words_add_words_callback_handler(
         return
     await query.answer()
     if not _is_editor(user.id, context):
-        await query.edit_message_text("Only editors can add words.")
+        await query.edit_message_text(_tg("only_editors_add_words", context=context, user=user))
         return
     context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
     await query.edit_message_text(
@@ -842,12 +894,15 @@ async def words_edit_words_callback_handler(
         return
     await query.answer()
     if not _is_editor(user.id, context):
-        await query.edit_message_text("Only editors can edit published words.")
+        await query.edit_message_text(_tg("only_editors_edit_words", context=context, user=user))
         return
     topics = _list_editable_topics(context).execute()
     await query.edit_message_text(
         "Choose a topic to edit words.",
-        reply_markup=_editable_topics_keyboard(topics),
+        reply_markup=_editable_topics_keyboard(
+            topics,
+            language=_telegram_ui_language(context, update.effective_user),
+        ),
     )
 
 
@@ -861,12 +916,15 @@ async def words_edit_images_callback_handler(
         return
     await query.answer()
     if not _is_editor(user.id, context):
-        await query.edit_message_text("Only editors can edit published word images.")
+        await query.edit_message_text(_tg("only_editors_edit_images", context=context, user=user))
         return
     topics = _list_editable_topics(context).execute()
     await query.edit_message_text(
         "Choose a topic to edit word images.",
-        reply_markup=_published_image_topics_keyboard(topics),
+        reply_markup=_published_image_topics_keyboard(
+            topics,
+            language=_telegram_ui_language(context, update.effective_user),
+        ),
     )
 
 
@@ -882,7 +940,11 @@ async def words_edit_topic_callback_handler(
     words = _list_editable_words(context).execute(topic_id=topic_id)
     await query.edit_message_text(
         "Choose a word to edit.",
-        reply_markup=_editable_words_keyboard(topic_id=topic_id, words=words),
+        reply_markup=_editable_words_keyboard(
+            topic_id=topic_id,
+            words=words,
+            language=_telegram_ui_language(context, update.effective_user),
+        ),
     )
 
 
@@ -900,7 +962,9 @@ async def words_edit_item_callback_handler(
     try:
         selected_word = words[int(item_index)]
     except (ValueError, IndexError):
-        await query.edit_message_text("Selected word is no longer available.")
+        await query.edit_message_text(
+            _tg("selected_word_unavailable", context=context, user=user)
+        )
         return
     registry = _telegram_flow_messages(context)
     flow_id = _published_word_edit_flow_id(user_id=user.id)
@@ -913,9 +977,11 @@ async def words_edit_item_callback_handler(
     context.user_data["published_edit_topic_id"] = topic_id
     context.user_data["published_edit_item_id"] = selected_word.id
     await query.edit_message_text(
-        "Send the updated word as one line.\n"
-        "Format: English: Translation",
-        reply_markup=_published_word_edit_keyboard(topic_id=topic_id),
+        _tg("send_updated_word_format", context=context, user=user),
+        reply_markup=_published_word_edit_keyboard(
+            topic_id=topic_id,
+            language=_telegram_ui_language(context, update.effective_user),
+        ),
     )
     _track_flow_message(
         context,
@@ -924,7 +990,12 @@ async def words_edit_item_callback_handler(
         message=query.message,
     )
     helper_message = await query.message.reply_text(
-        f"Current value:\n{selected_word.english_word}: {selected_word.translation}",
+        _tg(
+            "current_value",
+            context=context,
+            user=user,
+            value=f"{selected_word.english_word}: {selected_word.translation}",
+        ),
         reply_markup=ForceReply(selective=True),
     )
     _track_flow_message(
@@ -2688,49 +2759,54 @@ def _build_image_review_candidate_strip(*, flow, item_id: str, candidate_paths: 
     )
 
 
-def _draft_review_keyboard(flow_id: str, is_valid: bool) -> InlineKeyboardMarkup:
+def _draft_review_keyboard(
+    flow_id: str,
+    is_valid: bool,
+    *,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
-                "Approve + Auto Images",
+                _tg("approve_auto_images", language=language),
                 callback_data=f"words:approve_auto_images:{flow_id}",
             ),
             InlineKeyboardButton(
-                "Manual Image Review",
+                _tg("manual_image_review", language=language),
                 callback_data=f"words:start_image_review:{flow_id}",
             ),
         ],
         [
             InlineKeyboardButton(
-                "Publish Without Images",
+                _tg("publish_without_images", language=language),
                 callback_data=f"words:approve_draft:{flow_id}",
             ),
         ],
         [
             InlineKeyboardButton(
-                "Re-recognize Draft",
+                _tg("re_recognize_draft", language=language),
                 callback_data=f"words:regenerate_draft:{flow_id}",
             ),
             InlineKeyboardButton(
-                "Edit Text",
+                _tg("edit_text", language=language),
                 callback_data=f"words:edit_text:{flow_id}",
             ),
         ],
         [
             InlineKeyboardButton(
-                "Show JSON",
+                _tg("show_json", language=language),
                 callback_data=f"words:show_json:{flow_id}",
             ),
             InlineKeyboardButton(
-                "Cancel",
+                _tg("cancel", language=language),
                 callback_data=f"words:cancel:{flow_id}",
             ),
         ],
     ]
     if not is_valid:
-        rows[0][0] = InlineKeyboardButton("Approve Disabled", callback_data="words:menu")
-        rows[0][1] = InlineKeyboardButton("Review Disabled", callback_data="words:menu")
-        rows[1][0] = InlineKeyboardButton("Publish Disabled", callback_data="words:menu")
+        rows[0][0] = InlineKeyboardButton(_tg("approve_disabled", language=language), callback_data="words:menu")
+        rows[0][1] = InlineKeyboardButton(_tg("review_disabled", language=language), callback_data="words:menu")
+        rows[1][0] = InlineKeyboardButton(_tg("publish_disabled", language=language), callback_data="words:menu")
     return InlineKeyboardMarkup(rows)
 
 
@@ -2738,11 +2814,12 @@ def _image_review_keyboard(
     *,
     flow_id: str,
     current_item,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     candidate_count = len(current_item.candidates)
     pick_buttons = [
         InlineKeyboardButton(
-            f"Use {index + 1}",
+            _tg("use_n", language=language, index=index + 1),
             callback_data=f"words:image_pick:{flow_id}:{index}",
         )
         for index in range(candidate_count)
@@ -2751,11 +2828,11 @@ def _image_review_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                "Search Images",
+                _tg("search_images", language=language),
                 callback_data=f"words:image_search:{flow_id}",
             ),
             InlineKeyboardButton(
-                "Generate Image",
+                _tg("generate_image", language=language),
                 callback_data=f"words:image_generate:{flow_id}",
             ),
         ]
@@ -2765,13 +2842,13 @@ def _image_review_keyboard(
         if current_item.search_page > 1:
             pagination_row.append(
                 InlineKeyboardButton(
-                    "Previous 6",
+                    _tg("previous_6", language=language),
                     callback_data=f"words:image_previous:{flow_id}",
                 )
             )
         pagination_row.append(
             InlineKeyboardButton(
-                "Next 6",
+                _tg("next_6", language=language),
                 callback_data=f"words:image_next:{flow_id}",
             )
         )
@@ -2779,7 +2856,7 @@ def _image_review_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                "Edit Search Query",
+                _tg("edit_search_query", language=language),
                 callback_data=f"words:image_edit_search_query:{flow_id}",
             ),
         ]
@@ -2787,11 +2864,11 @@ def _image_review_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                "Edit Prompt",
+                _tg("edit_prompt", language=language),
                 callback_data=f"words:image_edit_prompt:{flow_id}",
             ),
             InlineKeyboardButton(
-                "Attach Photo",
+                _tg("attach_photo", language=language),
                 callback_data=f"words:image_attach_photo:{flow_id}",
             ),
         ]
@@ -2799,7 +2876,7 @@ def _image_review_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                "Skip for now",
+                _tg("skip_for_now", language=language),
                 callback_data=f"words:image_skip:{flow_id}",
             )
         ]
@@ -2807,21 +2884,29 @@ def _image_review_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-def _words_menu_keyboard(*, is_editor: bool) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton("Training Topics", callback_data="words:topics")]]
+def _words_menu_keyboard(
+    *,
+    is_editor: bool,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(_tg("training_topics", language=language), callback_data="words:topics")]]
     if is_editor:
-        rows.append([InlineKeyboardButton("Add Words", callback_data="words:add_words")])
-        rows.append([InlineKeyboardButton("Edit Words", callback_data="words:edit_words")])
-        rows.append([InlineKeyboardButton("Edit Word Image", callback_data="words:edit_images")])
+        rows.append([InlineKeyboardButton(_tg("add_words", language=language), callback_data="words:add_words")])
+        rows.append([InlineKeyboardButton(_tg("edit_words", language=language), callback_data="words:edit_words")])
+        rows.append([InlineKeyboardButton(_tg("edit_word_image", language=language), callback_data="words:edit_images")])
     return InlineKeyboardMarkup(rows)
 
 
-def _published_images_menu_keyboard(*, topic_id: str) -> InlineKeyboardMarkup:
+def _published_images_menu_keyboard(
+    *,
+    topic_id: str,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    "Edit Word Image",
+                    _tg("edit_word_image", language=language),
                     callback_data=f"words:edit_images_menu:{topic_id}",
                 )
             ]
@@ -2829,7 +2914,11 @@ def _published_images_menu_keyboard(*, topic_id: str) -> InlineKeyboardMarkup:
     )
 
 
-def _published_image_topics_keyboard(topics) -> InlineKeyboardMarkup:
+def _published_image_topics_keyboard(
+    topics,
+    *,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
@@ -2840,7 +2929,7 @@ def _published_image_topics_keyboard(topics) -> InlineKeyboardMarkup:
         for topic in topics
     ]
     if not rows:
-        rows = [[InlineKeyboardButton("No topics", callback_data="words:menu")]]
+        rows = [[InlineKeyboardButton(_tg("no_topics", language=language), callback_data="words:menu")]]
     return InlineKeyboardMarkup(rows)
 
 
@@ -2848,6 +2937,7 @@ def _published_image_items_keyboard(
     *,
     topic_id: str,
     raw_items: list[object],
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     for index, raw_item in enumerate(raw_items):
@@ -2868,21 +2958,30 @@ def _published_image_items_keyboard(
             ]
         )
     if not rows:
-        rows = [[InlineKeyboardButton("No items", callback_data="words:menu")]]
+        rows = [[InlineKeyboardButton(_tg("no_items", language=language), callback_data="words:menu")]]
     return InlineKeyboardMarkup(rows)
 
 
-def _editable_topics_keyboard(topics) -> InlineKeyboardMarkup:
+def _editable_topics_keyboard(
+    topics,
+    *,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(topic.title, callback_data=f"words:edit_topic:{topic.id}")]
         for topic in topics
     ]
     if not rows:
-        rows = [[InlineKeyboardButton("No topics", callback_data="words:menu")]]
+        rows = [[InlineKeyboardButton(_tg("no_topics", language=language), callback_data="words:menu")]]
     return InlineKeyboardMarkup(rows)
 
 
-def _editable_words_keyboard(*, topic_id: str, words) -> InlineKeyboardMarkup:
+def _editable_words_keyboard(
+    *,
+    topic_id: str,
+    words,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
@@ -2897,16 +2996,20 @@ def _editable_words_keyboard(*, topic_id: str, words) -> InlineKeyboardMarkup:
         for index, word in enumerate(words)
     ]
     if not rows:
-        rows = [[InlineKeyboardButton("No words", callback_data="words:menu")]]
+        rows = [[InlineKeyboardButton(_tg("no_words", language=language), callback_data="words:menu")]]
     return InlineKeyboardMarkup(rows)
 
 
-def _published_word_edit_keyboard(*, topic_id: str) -> InlineKeyboardMarkup:
+def _published_word_edit_keyboard(
+    *,
+    topic_id: str,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    "Cancel",
+                    _tg("cancel", language=language),
                     callback_data=f"words:edit_item_cancel:{topic_id}",
                 )
             ]
@@ -2928,25 +3031,34 @@ def _chat_menu_keyboard(*, is_editor: bool) -> ReplyKeyboardMarkup:
     )
 
 
-def _topic_keyboard(topics: list[Topic]) -> InlineKeyboardMarkup:
+def _topic_keyboard(
+    topics: list[Topic],
+    *,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(topic.title, callback_data=f"topic:{topic.id}")] for topic in topics]
     )
 
 
-def _active_session_keyboard() -> InlineKeyboardMarkup:
+def _active_session_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Continue", callback_data="session:continue"),
-                InlineKeyboardButton("Start Over", callback_data="session:restart"),
+                InlineKeyboardButton(_tg("continue", language=language), callback_data="session:continue"),
+                InlineKeyboardButton(_tg("start_over", language=language), callback_data="session:restart"),
             ]
         ]
     )
 
 
-def _lesson_keyboard(topic_id: str, lessons) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton("All Topic Words", callback_data=f"lesson:{topic_id}:all")]]
+def _lesson_keyboard(
+    topic_id: str,
+    lessons,
+    *,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(_tg("all_topic_words", language=language), callback_data=f"lesson:{topic_id}:all")]]
     rows.extend(
         [
             [InlineKeyboardButton(lesson.title, callback_data=f"lesson:{topic_id}:{lesson.id}")]
@@ -2956,21 +3068,26 @@ def _lesson_keyboard(topic_id: str, lessons) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def _mode_keyboard(topic_id: str, lesson_id: str | None) -> InlineKeyboardMarkup:
+def _mode_keyboard(
+    topic_id: str,
+    lesson_id: str | None,
+    *,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
     lesson_part = lesson_id or "all"
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    "Easy",
+                    _tg("easy", language=language),
                     callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.EASY.value}",
                 ),
                 InlineKeyboardButton(
-                    "Medium",
+                    _tg("medium", language=language),
                     callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.MEDIUM.value}",
                 ),
                 InlineKeyboardButton(
-                    "Hard",
+                    _tg("hard", language=language),
                     callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.HARD.value}",
                 ),
             ]

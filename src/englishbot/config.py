@@ -2,6 +2,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from englishbot.presentation.telegram_ui_text import DEFAULT_TELEGRAM_UI_LANGUAGE
+
 
 def _optional_float_from_env(name: str) -> float | None:
     value = os.getenv(name, "").strip()
@@ -37,6 +39,7 @@ def resolve_ollama_model(default: str = "qwen2.5:7b") -> str:
 class Settings:
     telegram_token: str
     log_level: str
+    telegram_ui_language: str = DEFAULT_TELEGRAM_UI_LANGUAGE
     log_file_path: Path | None = None
     log_max_bytes: int = 10 * 1024 * 1024
     log_backup_count: int = 5
@@ -73,6 +76,10 @@ class Settings:
         return cls(
             telegram_token=token,
             log_level=os.getenv("LOG_LEVEL", "DEBUG").upper(),
+            telegram_ui_language=os.getenv(
+                "TELEGRAM_UI_LANGUAGE", DEFAULT_TELEGRAM_UI_LANGUAGE
+            ).strip().lower()
+            or DEFAULT_TELEGRAM_UI_LANGUAGE,
             log_file_path=(
                 Path(raw_log_file_path)
                 if (raw_log_file_path := os.getenv("LOG_FILE_PATH", "").strip())

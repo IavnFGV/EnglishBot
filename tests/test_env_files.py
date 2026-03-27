@@ -5,6 +5,7 @@ def test_env_example_includes_content_db_path() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
     assert "CONTENT_DB_PATH=" in env_example
+    assert "TELEGRAM_UI_LANGUAGE=" in env_example
     assert "LOG_LEVEL=" in env_example
     assert "LOG_FILE_PATH=" in env_example
     assert "LOG_MAX_BYTES=" in env_example

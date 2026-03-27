@@ -39,7 +39,9 @@ def test_resolve_ollama_extraction_mode_falls_back_for_unknown_value(monkeypatch
 def test_settings_from_env_reads_ollama_trace_file_path(monkeypatch) -> None:
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
     monkeypatch.setenv("OLLAMA_TRACE_FILE_PATH", "logs/ollama_extraction.jsonl")
+    monkeypatch.setenv("TELEGRAM_UI_LANGUAGE", "ru")
 
     settings = Settings.from_env()
 
     assert settings.ollama_trace_file_path == Path("logs/ollama_extraction.jsonl")
+    assert settings.telegram_ui_language == "ru"
