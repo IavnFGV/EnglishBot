@@ -48,6 +48,7 @@ class Settings:
     ollama_model: str = "qwen2.5:7b"
     ollama_model_file_path: Path | None = None
     ollama_timeout_sec: int = 120
+    ollama_trace_file_path: Path | None = None
     ollama_extraction_mode: str = "line_by_line"
     ollama_temperature: float | None = None
     ollama_top_p: float | None = None
@@ -87,6 +88,7 @@ class Settings:
             ollama_model=resolve_ollama_model(),
             ollama_model_file_path=_optional_path_from_env("OLLAMA_MODEL_FILE_PATH"),
             ollama_timeout_sec=int(os.getenv("OLLAMA_TIMEOUT_SEC", "120").strip()),
+            ollama_trace_file_path=_optional_path_from_env("OLLAMA_TRACE_FILE_PATH"),
             ollama_extraction_mode=resolve_ollama_extraction_mode(),
             ollama_temperature=_optional_float_from_env("OLLAMA_TEMPERATURE"),
             ollama_top_p=_optional_float_from_env("OLLAMA_TOP_P"),

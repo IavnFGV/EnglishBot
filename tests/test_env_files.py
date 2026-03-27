@@ -19,6 +19,7 @@ def test_env_example_includes_ollama_prompt_paths() -> None:
     assert "OLLAMA_MODEL=" in env_example
     assert "OLLAMA_MODEL_FILE_PATH=" in env_example
     assert "OLLAMA_TIMEOUT_SEC=" in env_example
+    assert "OLLAMA_TRACE_FILE_PATH=" in env_example
     assert "OLLAMA_EXTRACTION_MODE=" in env_example
     assert "OLLAMA_EXTRACT_LINE_PROMPT_PATH=" in env_example
     assert "OLLAMA_EXTRACT_TEXT_PROMPT_PATH=" in env_example

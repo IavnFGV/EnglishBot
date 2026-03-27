@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
+from time import perf_counter
 from typing import Protocol
+from datetime import datetime, timezone
 
 from englishbot.config import resolve_ollama_model
 from englishbot.importing.extraction_support import (
     build_draft_items,
     build_line_items,
     build_raw_draft_items,
-    candidate_source_lines,
     ensure_source_fragment,
     extract_explicit_topic_and_candidate_lines,
     parse_line_content,
@@ -18,6 +20,7 @@ from englishbot.importing.extraction_support import (
 )
 from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtractionDraft
 from englishbot.importing.prompt_loader import load_prompt_text
+from englishbot.importing.trace import append_jsonl_trace
 from englishbot.logging_utils import logged_service_call
 from englishbot.ollama_runtime import resolve_runtime_ollama_model
 
@@ -33,6 +36,36 @@ def _short_text(value: str, *, limit: int = 180) -> str:
 
 def _normalize_log_text(value: str) -> str:
     return value.replace("\xa0", " ")
+
+
+def _metric_bool(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def _metric_optional_int(value: int | None) -> str:
+    return "none" if value is None else str(value)
+
+
+def _draft_item_to_trace(item: ExtractedVocabularyItemDraft) -> dict[str, object]:
+    return {
+        "english_word": item.english_word,
+        "translation": item.translation,
+        "source_fragment": item.source_fragment,
+        "item_id": item.item_id,
+        "notes": item.notes,
+        "image_prompt": item.image_prompt,
+    }
+
+
+def _raw_item_to_trace(item: dict[str, object]) -> dict[str, object]:
+    return {
+        "english_word": item.get("english_word"),
+        "translation": item.get("translation"),
+        "source_fragment": item.get("source_fragment"),
+        "item_id": item.get("item_id"),
+        "notes": item.get("notes"),
+        "image_prompt": item.get("image_prompt"),
+    }
 
 
 class LessonExtractionClient(Protocol):
@@ -94,6 +127,7 @@ class OllamaLessonExtractionClient:
         model_file_path: Path | None = None,
         base_url: str | None = None,
         timeout: int = 120,
+        trace_file_path: Path | None = None,
         include_image_prompts: bool = False,
         temperature: float | None = None,
         top_p: float | None = None,
@@ -112,6 +146,11 @@ class OllamaLessonExtractionClient:
             "/"
         )
         self._timeout = timeout
+        self._trace_file_path = trace_file_path or (
+            Path(raw_trace_file_path)
+            if (raw_trace_file_path := os.getenv("OLLAMA_TRACE_FILE_PATH", "").strip())
+            else None
+        )
         self._include_image_prompts = include_image_prompts
         self._options = self._build_options(
             temperature=temperature,
@@ -145,6 +184,8 @@ class OllamaLessonExtractionClient:
         ),
     )
     def extract(self, raw_text: str) -> LessonExtractionDraft | object:
+        started = perf_counter()
+        trace_context = self._build_trace_context(raw_text)
         try:
             import requests
         except ImportError as error:
@@ -152,9 +193,25 @@ class OllamaLessonExtractionClient:
             return {"error": f"Missing dependency: {error}"}
         try:
             if self._extraction_mode == "full_text":
-                return self._extract_full_text(raw_text=raw_text, requests_module=requests)
-            return self._extract_line_by_line(raw_text=raw_text, requests_module=requests)
+                draft, metrics = self._extract_full_text(raw_text=raw_text, requests_module=requests)
+            else:
+                draft, metrics = self._extract_line_by_line(raw_text=raw_text, requests_module=requests)
+            self._write_trace_event(
+                raw_text=raw_text,
+                elapsed_ms=int((perf_counter() - started) * 1000),
+                success=True,
+                trace_context={**trace_context, **metrics},
+                topic_title=draft.topic_title,
+            )
+            return draft
         except Exception as error:
+            self._write_trace_event(
+                raw_text=raw_text,
+                elapsed_ms=int((perf_counter() - started) * 1000),
+                success=False,
+                trace_context=trace_context,
+                error=error,
+            )
             logger.exception("OllamaLessonExtractionClient failed: %s", error)
             return {"error": str(error)}
 
@@ -229,7 +286,7 @@ class OllamaLessonExtractionClient:
             ),
         )
 
-    def _extract_full_text(self, *, raw_text: str, requests_module) -> LessonExtractionDraft:
+    def _extract_full_text(self, *, raw_text: str, requests_module) -> tuple[LessonExtractionDraft, dict[str, object]]:
         resolved_model = self._resolved_model()
         logger.debug(
             "OllamaLessonExtractionClient full-text request model=%s resolved_model=%s model_file_path=%s timeout=%s options=%s "
@@ -271,7 +328,8 @@ class OllamaLessonExtractionClient:
             _short_text(content, limit=400),
         )
         raw_items = parse_line_content(content)
-        source_lines = candidate_source_lines(raw_text)
+        topic_title, source_lines = extract_explicit_topic_and_candidate_lines(raw_text)
+        infer_topic_requested = not bool(topic_title.strip())
         items = []
         for raw_item in build_raw_draft_items(
                 raw_items=raw_items,
@@ -292,14 +350,13 @@ class OllamaLessonExtractionClient:
                 default_source_fragment="",
                 include_image_prompts=self._include_image_prompts,
             ))
-        topic_title, _ = extract_explicit_topic_and_candidate_lines(raw_text)
-        if not topic_title.strip():
+        if infer_topic_requested:
             topic_title = self._infer_topic_title(
                 items=items,
                 raw_text=raw_text,
                 requests_module=requests_module,
             )
-        return LessonExtractionDraft(
+        draft = LessonExtractionDraft(
             topic_title=topic_title,
             lesson_title=None,
             vocabulary_items=items,
@@ -307,8 +364,22 @@ class OllamaLessonExtractionClient:
             unparsed_lines=[],
             confidence_notes=[],
         )
+        metrics = {
+            "mode": "full_text",
+            "request_count": 1,
+            "source_line_count": len(source_lines),
+            "parsed_line_count": len(source_lines),
+            "unparsed_line_count": 0,
+            "raw_item_count": len(raw_items),
+            "final_item_count": len(draft.vocabulary_items),
+            "infer_topic_requested": infer_topic_requested,
+            "model_output_items": [_raw_item_to_trace(item) for item in raw_items],
+            "normalized_items": [_draft_item_to_trace(item) for item in draft.vocabulary_items],
+        }
+        self._log_metrics(metrics)
+        return draft, metrics
 
-    def _extract_line_by_line(self, *, raw_text: str, requests_module) -> LessonExtractionDraft:
+    def _extract_line_by_line(self, *, raw_text: str, requests_module) -> tuple[LessonExtractionDraft, dict[str, object]]:
         topic_title, candidate_lines = extract_explicit_topic_and_candidate_lines(raw_text)
 
         source_lines = list(candidate_lines)
@@ -339,14 +410,15 @@ class OllamaLessonExtractionClient:
                 continue
             items.extend(line_items)
 
-        if not topic_title.strip():
+        infer_topic_requested = not topic_title.strip()
+        if infer_topic_requested:
             topic_title = self._infer_topic_title(
                 items=items,
                 raw_text=raw_text,
                 requests_module=requests_module,
             )
 
-        return LessonExtractionDraft(
+        draft = LessonExtractionDraft(
             topic_title=topic_title,
             lesson_title=None,
             vocabulary_items=items,
@@ -354,6 +426,93 @@ class OllamaLessonExtractionClient:
             unparsed_lines=unparsed_lines,
             confidence_notes=[],
         )
+        metrics = {
+            "mode": "line_by_line",
+            "request_count": len(candidate_lines) + (1 if infer_topic_requested else 0),
+            "source_line_count": len(candidate_lines),
+            "parsed_line_count": len(candidate_lines) - len(unparsed_lines),
+            "unparsed_line_count": len(unparsed_lines),
+            "raw_item_count": None,
+            "final_item_count": len(draft.vocabulary_items),
+            "infer_topic_requested": infer_topic_requested,
+            "model_output_items": None,
+            "normalized_items": [_draft_item_to_trace(item) for item in draft.vocabulary_items],
+        }
+        self._log_metrics(metrics)
+        return draft, metrics
+
+    def _build_trace_context(self, raw_text: str) -> dict[str, object]:
+        topic_title, candidate_lines = extract_explicit_topic_and_candidate_lines(raw_text)
+        infer_topic_requested = not bool(topic_title.strip())
+        return {
+            "mode": self._extraction_mode,
+            "prompt_path": str(
+                self._extract_text_prompt_path
+                if self._extraction_mode == "full_text"
+                else self._extract_line_prompt_path
+            ),
+            "request_count": (
+                1
+                if self._extraction_mode == "full_text"
+                else len(candidate_lines) + (1 if infer_topic_requested else 0)
+            ),
+            "source_line_count": len(candidate_lines),
+            "parsed_line_count": None,
+            "unparsed_line_count": None,
+            "raw_item_count": None,
+            "final_item_count": None,
+            "infer_topic_requested": infer_topic_requested,
+            "model_output_items": None,
+            "normalized_items": None,
+        }
+
+    def _log_metrics(self, metrics: dict[str, object]) -> None:
+        logger.info(
+            "OllamaLessonExtractionClient metrics mode=%s request_count=%s source_line_count=%s parsed_line_count=%s "
+            "unparsed_line_count=%s raw_item_count=%s final_item_count=%s infer_topic_requested=%s",
+            metrics["mode"],
+            metrics["request_count"],
+            metrics["source_line_count"],
+            metrics["parsed_line_count"],
+            metrics["unparsed_line_count"],
+            _metric_optional_int(metrics["raw_item_count"] if isinstance(metrics["raw_item_count"], int) else None),
+            metrics["final_item_count"],
+            _metric_bool(bool(metrics["infer_topic_requested"])),
+        )
+
+    def _write_trace_event(
+        self,
+        *,
+        raw_text: str,
+        elapsed_ms: int,
+        success: bool,
+        trace_context: dict[str, object],
+        topic_title: str | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        if self._trace_file_path is None:
+            return
+        event = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "kind": "ollama_extraction",
+            "success": success,
+            "default_model": self._model,
+            "resolved_model": self._resolved_model(),
+            "model_file_path": str(self._model_file_path) if self._model_file_path is not None else None,
+            "base_url": self._base_url,
+            "timeout_sec": self._timeout,
+            "text_length": len(raw_text),
+            "input_preview": _short_text(_normalize_log_text(raw_text), limit=400),
+            "elapsed_ms": elapsed_ms,
+            "topic_title": topic_title,
+            "error_type": type(error).__name__ if error is not None else None,
+            "error": str(error) if error is not None else None,
+            **trace_context,
+        }
+        try:
+            append_jsonl_trace(self._trace_file_path, event)
+        except Exception as trace_error:  # pragma: no cover
+            logger.exception("Failed to append Ollama extraction trace: %s", trace_error)
 
     def _infer_topic_title(
         self,

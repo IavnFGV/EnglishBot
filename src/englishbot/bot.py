@@ -124,6 +124,7 @@ def build_application(settings: Settings) -> Application:
         ollama_model_file_path=settings.ollama_model_file_path,
         ollama_base_url=settings.ollama_base_url,
         ollama_timeout_sec=settings.ollama_timeout_sec,
+        ollama_trace_file_path=settings.ollama_trace_file_path,
         ollama_extraction_mode=settings.ollama_extraction_mode,
         ollama_temperature=settings.ollama_temperature,
         ollama_top_p=settings.ollama_top_p,

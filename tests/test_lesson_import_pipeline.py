@@ -814,6 +814,263 @@ def test_ollama_extraction_client_reloads_model_name_from_file_between_requests(
     assert seen_models == ["qwen3.5:4b", "qwen3.5:8b"]
 
 
+def test_ollama_extraction_client_logs_full_text_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_text = "School supplies\n\nPencil — карандаш\nPen — ручка"
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Pencil",
+                                    "translation": "карандаш",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "Pencil — карандаш",
+                                },
+                                {
+                                    "english_word": "Pen",
+                                    "translation": "ручка",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "Pen — ручка",
+                                },
+                            ]
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:  # noqa: ARG004
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    caplog.set_level(logging.INFO, logger="englishbot.importing.clients")
+    client = OllamaLessonExtractionClient(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+        extraction_mode="full_text",
+    )
+
+    draft = client.extract(raw_text)
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert (
+        "OllamaLessonExtractionClient metrics mode=full_text request_count=1 "
+        "source_line_count=2 parsed_line_count=2 unparsed_line_count=0 raw_item_count=2 "
+        "final_item_count=2 infer_topic_requested=false"
+    ) in caplog.text
+
+
+def test_ollama_extraction_client_logs_line_by_line_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_text = "Pencil — карандаш\nPen — ручка"
+
+    class FakeResponse:
+        def __init__(self, content: str) -> None:
+            self._content = content
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"message": {"content": self._content}}
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:  # noqa: ARG004
+            source_line = json["messages"][-1]["content"]
+            if source_line.startswith("Extracted words:"):
+                return FakeResponse("School supplies")
+            english_word, translation = [part.strip() for part in source_line.split("—", maxsplit=1)]
+            return FakeResponse(
+                json_module.dumps(
+                    {
+                        "vocabulary_items": [
+                            {
+                                "english_word": english_word,
+                                "translation": translation,
+                                "notes": None,
+                                "image_prompt": None,
+                                "source_fragment": source_line,
+                            }
+                        ]
+                    }
+                )
+            )
+
+    json_module = json
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    caplog.set_level(logging.INFO, logger="englishbot.importing.clients")
+    client = OllamaLessonExtractionClient(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+        extraction_mode="line_by_line",
+    )
+
+    draft = client.extract(raw_text)
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert (
+        "OllamaLessonExtractionClient metrics mode=line_by_line request_count=3 "
+        "source_line_count=2 parsed_line_count=2 unparsed_line_count=0 raw_item_count=none "
+        "final_item_count=2 infer_topic_requested=true"
+    ) in caplog.text
+
+
+def test_ollama_extraction_client_writes_trace_event(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    raw_text = "School supplies\n\nPencil — карандаш\nPen — ручка"
+    trace_path = tmp_path / "ollama_extraction.jsonl"
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Pencil",
+                                    "translation": "карандаш",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "Pencil — карандаш",
+                                },
+                                {
+                                    "english_word": "Pen",
+                                    "translation": "ручка",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "Pen — ручка",
+                                },
+                            ]
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:  # noqa: ARG004
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+        extraction_mode="full_text",
+        trace_file_path=trace_path,
+    )
+
+    draft = client.extract(raw_text)
+
+    assert isinstance(draft, LessonExtractionDraft)
+    events = [
+        json.loads(line)
+        for line in trace_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(events) == 1
+    assert events[0]["kind"] == "ollama_extraction"
+    assert events[0]["success"] is True
+    assert events[0]["mode"] == "full_text"
+    assert events[0]["request_count"] == 1
+    assert events[0]["source_line_count"] == 2
+    assert events[0]["final_item_count"] == 2
+    assert events[0]["resolved_model"] == "qwen2.5:7b"
+    assert events[0]["prompt_path"] == "prompts/ollama_extract_text_prompt.txt"
+    assert events[0]["model_output_items"] == [
+        {
+            "english_word": "Pencil",
+            "translation": "карандаш",
+            "source_fragment": "Pencil — карандаш",
+            "item_id": None,
+            "notes": None,
+            "image_prompt": None,
+        },
+        {
+            "english_word": "Pen",
+            "translation": "ручка",
+            "source_fragment": "Pen — ручка",
+            "item_id": None,
+            "notes": None,
+            "image_prompt": None,
+        },
+    ]
+    assert events[0]["normalized_items"] == [
+        {
+            "english_word": "Pencil",
+            "translation": "карандаш",
+            "source_fragment": "Pencil — карандаш",
+            "item_id": None,
+            "notes": None,
+            "image_prompt": None,
+        },
+        {
+            "english_word": "Pen",
+            "translation": "ручка",
+            "source_fragment": "Pen — ручка",
+            "item_id": None,
+            "notes": None,
+            "image_prompt": None,
+        },
+    ]
+
+
+def test_ollama_extraction_client_writes_trace_event_on_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    raw_text = "Pencil — карандаш"
+    trace_path = tmp_path / "ollama_extraction.jsonl"
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> None:  # noqa: ARG004
+            raise TimeoutError("timed out")
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+        extraction_mode="full_text",
+        trace_file_path=trace_path,
+    )
+
+    result = client.extract(raw_text)
+
+    assert result == {"error": "timed out"}
+    events = [
+        json.loads(line)
+        for line in trace_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(events) == 1
+    assert events[0]["success"] is False
+    assert events[0]["error_type"] == "TimeoutError"
+    assert events[0]["error"] == "timed out"
+    assert events[0]["mode"] == "full_text"
+
+
 def test_ollama_extraction_client_repairs_translation_from_source_fragment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

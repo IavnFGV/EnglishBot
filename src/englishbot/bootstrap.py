@@ -131,6 +131,7 @@ def build_lesson_import_pipeline(
     ollama_model_file_path: Path | None = None,
     ollama_base_url: str,
     ollama_timeout_sec: int = 120,
+    ollama_trace_file_path: Path | None = None,
     image_prompt_timeout_sec: int = 30,
     ollama_extraction_mode: str = "line_by_line",
     ollama_temperature: float | None = None,
@@ -142,13 +143,14 @@ def build_lesson_import_pipeline(
 ) -> LessonImportPipeline:
     logger.info(
         "Building lesson import pipeline model=%s model_file=%s base_url=%s extraction_mode=%s timeout=%s "
-        "temperature=%s top_p=%s num_predict=%s extract_line_prompt=%s "
+        "trace_file=%s temperature=%s top_p=%s num_predict=%s extract_line_prompt=%s "
         "extract_text_prompt=%s image_prompt=%s",
         ollama_model,
         ollama_model_file_path,
         ollama_base_url,
         ollama_extraction_mode,
         ollama_timeout_sec,
+        ollama_trace_file_path,
         ollama_temperature,
         ollama_top_p,
         ollama_num_predict,
@@ -162,6 +164,7 @@ def build_lesson_import_pipeline(
             model_file_path=ollama_model_file_path,
             base_url=ollama_base_url,
             timeout=ollama_timeout_sec,
+            trace_file_path=ollama_trace_file_path,
             extraction_mode=ollama_extraction_mode,
             temperature=ollama_temperature,
             top_p=ollama_top_p,

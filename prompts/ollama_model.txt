@@ -1,1 +1,1 @@
-qwen3:8b
+qwen2.5:7b

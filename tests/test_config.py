@@ -1,4 +1,6 @@
-from englishbot.config import resolve_ollama_extraction_mode, resolve_ollama_model
+from pathlib import Path
+
+from englishbot.config import Settings, resolve_ollama_extraction_mode, resolve_ollama_model
 
 
 def test_resolve_ollama_model_prefers_ollama_model(monkeypatch) -> None:
@@ -32,3 +34,12 @@ def test_resolve_ollama_extraction_mode_falls_back_for_unknown_value(monkeypatch
     monkeypatch.setenv("OLLAMA_EXTRACTION_MODE", "weird")
 
     assert resolve_ollama_extraction_mode() == "line_by_line"
+
+
+def test_settings_from_env_reads_ollama_trace_file_path(monkeypatch) -> None:
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("OLLAMA_TRACE_FILE_PATH", "logs/ollama_extraction.jsonl")
+
+    settings = Settings.from_env()
+
+    assert settings.ollama_trace_file_path == Path("logs/ollama_extraction.jsonl")
