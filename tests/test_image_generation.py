@@ -14,6 +14,15 @@ from englishbot.image_generation.clients import (
 from englishbot.image_generation.paths import build_item_asset_path
 from englishbot.image_generation.pipeline import ContentPackImageEnricher
 from englishbot.image_generation.prompts import compose_image_prompt, fallback_image_prompt
+from englishbot.image_generation.resilient import ResilientImageGenerationResult
+from englishbot.image_generation.resilient import (
+    ExternalImageCapabilityAvailability,
+    ExternalImageGenerationGateway,
+    ExternalImageGenerationTimeout,
+    ExternalImageGenerationUnavailable,
+    ResilientImageGenerator,
+)
+from englishbot.domain.image_review_models import ImageGenerationMetadata
 
 
 def test_fallback_image_prompt_generation() -> None:
@@ -84,10 +93,17 @@ def test_content_pack_update_after_image_enrichment(
         def __init__(self) -> None:
             self.calls: list[tuple[str, str, Path]] = []
 
-        def generate(self, *, prompt: str, english_word: str, output_path: Path) -> None:
+        def generate(self, *, prompt: str, english_word: str, output_path: Path):
             self.calls.append((prompt, english_word, output_path))
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(b"png")
+            return ResilientImageGenerationResult(
+                output_path=output_path,
+                metadata=ImageGenerationMetadata(
+                    path="smart",
+                    smart_generation_status="success",
+                ),
+            )
 
     content_pack = {
         "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
@@ -110,10 +126,13 @@ def test_content_pack_update_after_image_enrichment(
     )
 
     assert (
-        enriched["vocabulary_items"][0]["image_ref"]
+        enriched.content_pack["vocabulary_items"][0]["image_ref"]
         == "assets/fairy-tales/fairy-tales-dragon.png"
     )
-    assert enriched["vocabulary_items"][0]["image_prompt"] == fallback_image_prompt("Dragon")
+    assert (
+        enriched.content_pack["vocabulary_items"][0]["image_prompt"]
+        == fallback_image_prompt("Dragon")
+    )
     assert client.calls[0][2] == Path("assets/fairy-tales/fairy-tales-dragon.png")
 
 
@@ -127,10 +146,17 @@ def test_existing_image_prompt_is_wrapped_in_shared_style(
         def __init__(self) -> None:
             self.calls: list[tuple[str, str, Path]] = []
 
-        def generate(self, *, prompt: str, english_word: str, output_path: Path) -> None:
+        def generate(self, *, prompt: str, english_word: str, output_path: Path):
             self.calls.append((prompt, english_word, output_path))
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(b"png")
+            return ResilientImageGenerationResult(
+                output_path=output_path,
+                metadata=ImageGenerationMetadata(
+                    path="smart",
+                    smart_generation_status="success",
+                ),
+            )
 
     content_pack = {
         "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
@@ -154,7 +180,7 @@ def test_existing_image_prompt_is_wrapped_in_shared_style(
     )
 
     expected_prompt = compose_image_prompt("a red dragon with tiny wings")
-    assert enriched["vocabulary_items"][0]["image_prompt"] == expected_prompt
+    assert enriched.content_pack["vocabulary_items"][0]["image_prompt"] == expected_prompt
     assert client.calls[0][0] == expected_prompt
 
 
@@ -197,7 +223,7 @@ def test_skip_behavior_when_image_already_exists(
     )
 
     assert (
-        enriched["vocabulary_items"][0]["image_ref"]
+        enriched.content_pack["vocabulary_items"][0]["image_ref"]
         == "assets/fairy-tales/fairy-tales-dragon.png"
     )
     assert client.called is False
@@ -210,9 +236,16 @@ def test_image_enrichment_reports_progress_for_each_item(
     monkeypatch.chdir(tmp_path)
 
     class RecordingClient:
-        def generate(self, *, prompt: str, english_word: str, output_path: Path) -> None:  # noqa: ARG002
+        def generate(self, *, prompt: str, english_word: str, output_path: Path):  # noqa: ARG002
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(b"png")
+            return ResilientImageGenerationResult(
+                output_path=output_path,
+                metadata=ImageGenerationMetadata(
+                    path="smart",
+                    smart_generation_status="success",
+                ),
+            )
 
     content_pack = {
         "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
@@ -241,6 +274,108 @@ def test_image_enrichment_reports_progress_for_each_item(
     )
 
     assert reported_progress == [(1, 2), (2, 2)]
+
+
+def test_content_pack_enrichment_keeps_fallback_generation_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    class RecordingClient:
+        def generate(self, *, prompt: str, english_word: str, output_path: Path):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"placeholder")
+            return ResilientImageGenerationResult(
+                output_path=output_path,
+                metadata=ImageGenerationMetadata(
+                    path="fallback",
+                    smart_generation_status="unavailable",
+                    status_messages=[
+                        "Local AI image generation is currently unavailable. I will use placeholder images for now.",
+                    ],
+                ),
+            )
+
+    content_pack = {
+        "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+        "lessons": [],
+        "vocabulary_items": [
+            {
+                "id": "fairy-tales-dragon",
+                "english_word": "Dragon",
+                "translation": "дракон",
+                "image_ref": None,
+            }
+        ],
+    }
+
+    result = ContentPackImageEnricher(RecordingClient()).enrich_content_pack(
+        content_pack=content_pack,
+        assets_dir=Path("assets"),
+    )
+
+    assert result.generation_metadata is not None
+    assert result.generation_metadata.path == "fallback"
+    metadata = result.content_pack["metadata"]["image_generation"]
+    assert metadata["smart_generation_status"] == "unavailable"
+
+
+def test_resilient_image_generator_falls_back_when_external_service_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    class UnavailableGateway(ExternalImageGenerationGateway):
+        def check_availability(self) -> ExternalImageCapabilityAvailability:
+            return ExternalImageCapabilityAvailability(is_available=False, detail="offline")
+
+        def generate(self, *, prompt: str, english_word: str, output_path: Path):  # noqa: ARG002
+            return ExternalImageGenerationUnavailable(detail="offline")
+
+    class PlaceholderClient:
+        def generate(self, *, prompt: str, english_word: str, output_path: Path) -> None:  # noqa: ARG002
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"placeholder")
+
+    result = ResilientImageGenerator(
+        external_gateway=UnavailableGateway(),
+        fallback_client=PlaceholderClient(),  # type: ignore[arg-type]
+    ).generate(
+        prompt="dragon",
+        english_word="Dragon",
+        output_path=tmp_path / "dragon.png",
+    )
+
+    assert result.metadata.path == "fallback"
+    assert result.metadata.smart_generation_status == "unavailable"
+    assert result.output_path.exists()
+
+
+def test_resilient_image_generator_falls_back_after_timeout(
+    tmp_path: Path,
+) -> None:
+    class TimeoutGateway(ExternalImageGenerationGateway):
+        def check_availability(self) -> ExternalImageCapabilityAvailability:
+            return ExternalImageCapabilityAvailability(is_available=True)
+
+        def generate(self, *, prompt: str, english_word: str, output_path: Path):  # noqa: ARG002
+            return ExternalImageGenerationTimeout(detail="read timeout")
+
+    class PlaceholderClient:
+        def generate(self, *, prompt: str, english_word: str, output_path: Path) -> None:  # noqa: ARG002
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"placeholder")
+
+    result = ResilientImageGenerator(
+        external_gateway=TimeoutGateway(),
+        fallback_client=PlaceholderClient(),  # type: ignore[arg-type]
+    ).generate(
+        prompt="dragon",
+        english_word="Dragon",
+        output_path=tmp_path / "dragon.png",
+    )
+
+    assert result.metadata.path == "fallback"
+    assert result.metadata.smart_generation_status == "timeout"
 
 
 @pytest.mark.anyio

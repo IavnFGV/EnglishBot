@@ -127,6 +127,10 @@ class ComfyUIImageGenerationClient:
         self._width = width
         self._height = height
 
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
     @logged_service_call(
         "ComfyUIImageGenerationClient.generate",
         transforms={

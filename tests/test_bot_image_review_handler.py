@@ -23,6 +23,7 @@ from englishbot.bot import (
 from englishbot.domain.add_words_models import AddWordsApprovalResult, AddWordsFlowState
 from englishbot.domain.image_review_models import (
     ImageCandidate,
+    ImageGenerationMetadata,
     ImageReviewFlowState,
     ImageReviewItem,
 )
@@ -457,23 +458,32 @@ class _FakeGenerateContentPackImagesUseCase:
         if progress_callback is not None:
             progress_callback(1, 2)
             progress_callback(2, 2)
-        return {
-            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
-            "vocabulary_items": [
-                {
-                    "id": "dragon",
-                    "english_word": "Dragon",
-                    "translation": "дракон",
-                    "image_ref": "assets/fairy-tales/dragon.png",
-                },
-                {
-                    "id": "fairy",
-                    "english_word": "Fairy",
-                    "translation": "фея",
-                    "image_ref": "assets/fairy-tales/fairy.png",
-                },
-            ],
-        }
+        return SimpleNamespace(
+            content_pack={
+                "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+                "vocabulary_items": [
+                    {
+                        "id": "dragon",
+                        "english_word": "Dragon",
+                        "translation": "дракон",
+                        "image_ref": "assets/fairy-tales/dragon.png",
+                    },
+                    {
+                        "id": "fairy",
+                        "english_word": "Fairy",
+                        "translation": "фея",
+                        "image_ref": "assets/fairy-tales/fairy.png",
+                    },
+                ],
+            },
+            generation_metadata=ImageGenerationMetadata(
+                path="fallback",
+                smart_generation_status="unavailable",
+                status_messages=[
+                    "Local AI image generation is currently unavailable. I will use placeholder images for now.",
+                ],
+            ),
+        )
 
 
 class _FakeStartPublishedWordImageEditUseCase:
@@ -615,6 +625,7 @@ async def test_approve_auto_images_handler_generates_images_and_offers_word_edit
     assert "Generating images... 1/2" in query.edits[4]
     assert "Generating images... 2/2" in query.edits[5]
     assert "Draft approved and images generated." in query.edits[6]
+    assert "Local AI image generation is currently unavailable." in query.edits[6]
 
 
 @pytest.mark.anyio
@@ -739,6 +750,137 @@ async def test_published_image_menu_and_item_handlers_show_current_image_and_wai
         assert (1, 999) in fake_bot.deleted_messages
     finally:
         monkeypatch.undo()
+
+
+@pytest.mark.anyio
+async def test_image_review_step_shows_fallback_generation_notice(
+    tmp_path: Path,
+) -> None:
+    candidate_path = tmp_path / "dragon-a.png"
+    _write_test_image(candidate_path)
+    review_flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "vocabulary_items": [],
+        },
+        items=[
+            ImageReviewItem(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                prompt="Prompt for Dragon",
+                candidates=[
+                    ImageCandidate(
+                        model_name="dreamshaper",
+                        image_ref="assets/fairy-tales/review/dragon--dreamshaper.png",
+                        output_path=candidate_path,
+                        prompt="Prompt for Dragon",
+                    )
+                ],
+                candidate_source_type="generated",
+                candidate_generation_metadata=ImageGenerationMetadata(
+                    path="fallback",
+                    smart_generation_status="unavailable",
+                    status_messages=[
+                        "Local AI image generation is currently unavailable. I will use placeholder images for now."
+                    ],
+                ),
+            )
+        ],
+    )
+    message = _FakeCallbackMessage(tmp_path)
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={"telegram_flow_message_repository": _FakeTelegramFlowMessageRepository()}
+        )
+    )
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.chdir(tmp_path)
+    try:
+        from englishbot.bot import _send_image_review_step
+
+        await _send_image_review_step(message, context, review_flow)  # type: ignore[arg-type]
+    finally:
+        monkeypatch.undo()
+
+    assert any(
+        "Local AI image generation is currently unavailable." in text
+        for text in message.reply_text_calls
+    )
+
+
+@pytest.mark.anyio
+async def test_image_review_generate_handler_reports_unavailable_when_button_is_stale(
+    tmp_path: Path,
+) -> None:
+    review_flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={"topic": {"id": "fairy-tales", "title": "Fairy Tales"}},
+        items=[
+            ImageReviewItem(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                prompt="Prompt for Dragon",
+                candidates=[],
+            )
+        ],
+    )
+    message = _FakeCallbackMessage(tmp_path)
+    query = _FakeQuery("words:image_generate:review123", message)
+    update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(review_flow),
+                "local_image_generation_available": False,
+            }
+        )
+    )
+
+    await image_review_generate_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.edits[-1] == "Local AI image generation is currently unavailable."
+
+
+@pytest.mark.anyio
+async def test_approve_auto_images_handler_reports_unavailable_when_button_is_stale(
+    tmp_path: Path,
+) -> None:
+    draft = LessonExtractionDraft(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            ExtractedVocabularyItemDraft(
+                english_word="Dragon",
+                translation="дракон",
+                source_fragment="Dragon — дракон",
+            )
+        ],
+    )
+    add_words_flow = AddWordsFlowState(
+        flow_id="flow123",
+        editor_user_id=42,
+        raw_text="Fairy Tales\nDragon — дракон",
+        draft_result=ImportLessonResult(draft=draft, validation=ValidationResult(errors=[])),
+    )
+    message = _FakeCallbackMessage(tmp_path)
+    query = _FakeQuery("words:approve_auto_images:flow123", message)
+    update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "add_words_get_active_use_case": _FakeGetActiveFlowUseCase(add_words_flow),
+                "local_image_generation_available": False,
+            }
+        )
+    )
+
+    await add_words_approve_auto_images_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.edits[-1] == "Auto image generation is currently unavailable right now."
 
 
 @pytest.mark.anyio

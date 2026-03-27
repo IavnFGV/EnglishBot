@@ -13,10 +13,10 @@ from englishbot.application.image_review_use_cases import (
     SelectImageCandidateUseCase,
     StartPublishedWordImageEditUseCase,
 )
+from englishbot.domain.image_review_models import ImageCandidate, ImageCandidateBatch, ImageGenerationMetadata
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.repositories import InMemoryImageReviewFlowRepository
-from englishbot.domain.image_review_models import ImageCandidate
 from englishbot.image_generation.pixabay import PixabayImageResult
 
 
@@ -30,7 +30,7 @@ class FakeImageCandidateGenerator:
         prompt: str,
         assets_dir: Path,
         model_names: tuple[str, ...],
-    ) -> list[ImageCandidate]:
+    ) -> ImageCandidateBatch:
         candidates: list[ImageCandidate] = []
         for model_name in model_names:
             filename = f"{item_id}--{model_name}.png"
@@ -45,7 +45,13 @@ class FakeImageCandidateGenerator:
                     prompt=prompt,
                 )
             )
-        return candidates
+        return ImageCandidateBatch(
+            candidates=candidates,
+            generation_metadata=ImageGenerationMetadata(
+                path="smart",
+                smart_generation_status="success",
+            ),
+        )
 
 
 class FakePixabaySearchClient:
@@ -84,6 +90,43 @@ class FakeRemoteImageDownloader:
         self.downloads.append((url, output_path))
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(url.encode("utf-8"))
+
+
+class FallbackImageCandidateGenerator:
+    def generate_candidates(
+        self,
+        *,
+        topic_id: str,
+        item_id: str,
+        english_word: str,
+        prompt: str,
+        assets_dir: Path,
+        model_names: tuple[str, ...],
+    ) -> ImageCandidateBatch:
+        candidates: list[ImageCandidate] = []
+        for model_name in model_names:
+            output_path = assets_dir / topic_id / "review" / f"{item_id}--{model_name}.png"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(f"fallback:{english_word}|{prompt}".encode())
+            candidates.append(
+                ImageCandidate(
+                    model_name=model_name,
+                    image_ref=str(output_path).replace("\\", "/"),
+                    output_path=output_path,
+                    prompt=prompt,
+                )
+            )
+        return ImageCandidateBatch(
+            candidates=candidates,
+            generation_metadata=ImageGenerationMetadata(
+                path="fallback",
+                smart_generation_status="unavailable",
+                status_messages=[
+                    "Local AI image generation is currently unavailable. I will use placeholder images for now.",
+                    "You can still search Pixabay, upload a photo, or edit the prompt.",
+                ],
+            ),
+        )
 
 
 def test_start_published_word_image_edit_use_case_focuses_selected_item(
@@ -427,3 +470,41 @@ def test_generation_fallback_still_works_after_pixabay_search(
     assert generated_flow.current_item is not None
     assert generated_flow.current_item.candidate_source_type == "generated"
     assert generated_flow.current_item.candidates[0].model_name == "dreamshaper"
+
+
+def test_generate_candidates_can_fall_back_to_placeholder_metadata(
+    tmp_path: Path,
+) -> None:
+    repository = InMemoryImageReviewFlowRepository()
+    harness = ImageReviewFlowHarness(
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        candidate_generator=FallbackImageCandidateGenerator(),
+        assets_dir=tmp_path / "assets",
+    )
+    flow = harness.start_from_content_pack(
+        editor_user_id=7,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "dragon", "english_word": "Dragon", "translation": "дракон"}
+            ],
+        },
+    )
+    repository.save(flow)
+    generate_use_case = GenerateImageReviewCandidatesUseCase(
+        harness=harness,
+        repository=repository,
+    )
+
+    updated = generate_use_case.execute(user_id=7, flow_id=flow.flow_id)
+
+    assert updated.current_item is not None
+    assert len(updated.current_item.candidates) == 3
+    assert updated.current_item.candidate_generation_metadata is not None
+    assert updated.current_item.candidate_generation_metadata.path == "fallback"
+    assert (
+        updated.current_item.candidate_generation_metadata.smart_generation_status
+        == "unavailable"
+    )

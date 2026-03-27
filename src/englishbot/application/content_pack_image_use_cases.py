@@ -23,9 +23,9 @@ class GenerateContentPackImagesUseCase:
         include=("force",),
         exclude=("progress_callback",),
         result=lambda value: {
-            "item_count": len(value.get("vocabulary_items", [])),
+            "item_count": len(value.content_pack.get("vocabulary_items", [])),
             "generated_count": sum(
-                1 for item in value.get("vocabulary_items", []) if item.get("image_ref")
+                1 for item in value.content_pack.get("vocabulary_items", []) if item.get("image_ref")
             ),
         },
     )
@@ -36,7 +36,7 @@ class GenerateContentPackImagesUseCase:
         assets_dir: Path,
         force: bool = False,
         progress_callback: Callable[[int, int], None] | None = None,
-    ) -> dict[str, object]:
+    ):
         content_pack = self._store.get_content_pack(topic_id)
         enriched = self._enricher.enrich_content_pack(
             content_pack=content_pack,
@@ -44,5 +44,5 @@ class GenerateContentPackImagesUseCase:
             force=force,
             progress_callback=progress_callback,
         )
-        self._store.upsert_content_pack(enriched)
+        self._store.upsert_content_pack(enriched.content_pack)
         return enriched

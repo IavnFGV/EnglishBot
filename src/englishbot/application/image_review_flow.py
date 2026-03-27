@@ -8,6 +8,7 @@ from typing import Protocol
 
 from englishbot.domain.image_review_models import (
     ImageCandidate,
+    ImageCandidateBatch,
     ImageReviewFlowState,
     ImageReviewItem,
 )
@@ -31,7 +32,7 @@ class ImageCandidateGenerator(Protocol):
         prompt: str,
         assets_dir: Path,
         model_names: tuple[str, ...],
-    ) -> list[ImageCandidate]:
+    ) -> ImageCandidateBatch:
         ...
 
 
@@ -204,7 +205,7 @@ class ImageReviewFlowHarness:
                 configured_models = tuple(
                     str(value).strip() for value in raw_model_names if str(value).strip()
                 ) or self._default_model_names
-        current_item.candidates = self._candidate_generator.generate_candidates(
+        candidate_batch = self._candidate_generator.generate_candidates(
             topic_id=topic_id,
             item_id=current_item.item_id,
             english_word=current_item.english_word,
@@ -212,6 +213,8 @@ class ImageReviewFlowHarness:
             assets_dir=self._assets_dir,
             model_names=configured_models,
         )
+        current_item.candidates = candidate_batch.candidates
+        current_item.candidate_generation_metadata = candidate_batch.generation_metadata
         current_item.search_page = 1
         current_item.candidate_source_type = "generated"
         current_item.selected_candidate_index = None

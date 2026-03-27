@@ -14,7 +14,12 @@ from englishbot.application.image_review_use_cases import (
     GenerateImageReviewCandidatesUseCase,
     StartImageReviewUseCase,
 )
-from englishbot.domain.image_review_models import ImageCandidate, ImageReviewFlowState, ImageReviewItem
+from englishbot.domain.image_review_models import (
+    ImageCandidate,
+    ImageCandidateBatch,
+    ImageReviewFlowState,
+    ImageReviewItem,
+)
 from englishbot.bootstrap import build_training_service
 from englishbot.domain.models import TrainingMode
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
@@ -73,15 +78,17 @@ class _StubImageCandidateGenerator:
         prompt: str,
         assets_dir: Path,
         model_names: tuple[str, ...],
-    ) -> list:
-        return [
-            ImageCandidate(
-                model_name=model_names[0],
-                image_ref=f"assets/{topic_id}/{item_id}.png",
-                output_path=assets_dir / topic_id / f"{item_id}.png",
-                prompt=prompt,
-            )
-        ]
+    ) -> ImageCandidateBatch:
+        return ImageCandidateBatch(
+            candidates=[
+                ImageCandidate(
+                    model_name=model_names[0],
+                    image_ref=f"assets/{topic_id}/{item_id}.png",
+                    output_path=assets_dir / topic_id / f"{item_id}.png",
+                    prompt=prompt,
+                )
+            ]
+        )
 
 
 def test_sqlite_content_store_imports_json_and_reconstructs_content_pack(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from englishbot.bot import add_words_text_handler
+from englishbot.bot import add_words_regenerate_draft_handler, add_words_text_handler
 from englishbot.domain.add_words_models import AddWordsFlowState
 from englishbot.importing.models import (
     DraftExtractionMetadata,
@@ -35,6 +35,25 @@ class _FakeIncomingMessage:
         sent = _FakeSentMessage(text=text, message_id=len(self.replies) + 1)
         self.replies.append(sent)
         return sent
+
+
+class _FakeCallbackMessage:
+    async def reply_text(self, text: str, reply_markup=None):  # noqa: ARG002
+        return SimpleNamespace(text=text, message_id=1)
+
+
+class _FakeQuery:
+    def __init__(self, data: str) -> None:
+        self.data = data
+        self.message = _FakeCallbackMessage()
+        self.edits: list[str] = []
+        self.answered = False
+
+    async def answer(self) -> None:
+        self.answered = True
+
+    async def edit_message_text(self, text: str, reply_markup=None) -> None:  # noqa: ARG002
+        self.edits.append(text)
 
 
 class _FakeStartUseCase:
@@ -195,3 +214,27 @@ async def test_add_words_text_handler_reports_ollama_timeout_and_shows_fallback_
     )
     assert "Warnings: 2" in message.replies[1].text
     assert "Unparsed lines: 1" in message.replies[1].text
+
+
+@pytest.mark.anyio
+async def test_add_words_regenerate_draft_handler_reports_unavailable_when_button_is_stale() -> None:
+    query = _FakeQuery("words:regenerate_draft:flow-1")
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123),
+    )
+    flow = _FakeSuccessfulStartUseCase().execute(user_id=123, raw_text="Fairy Tales")
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "editor_user_ids": {123},
+                "add_words_get_active_use_case": SimpleNamespace(execute=lambda *, user_id: flow),
+                "smart_parsing_available": False,
+            }
+        ),
+    )
+
+    await add_words_regenerate_draft_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.answered is True
+    assert query.edits == ["Smart parsing is currently unavailable right now."]

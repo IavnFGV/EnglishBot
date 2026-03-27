@@ -174,6 +174,29 @@ The current editor flow is already a first-class part of the application:
 
 This flow is intentionally application-driven and tested independently from Telegram where possible.
 
+## Image Generation Boundary
+
+Image generation now follows the same resilience rule as lesson parsing:
+
+- local AI image generation is optional and external
+- editor flows must keep working when the external image node is unavailable
+- fallback behavior should stay explicit and readable
+
+Current structure:
+
+- `ComfyUIImageGenerationGateway`: thin boundary for the external ComfyUI capability
+- `ResilientImageGenerator`: explicit smart-or-fallback orchestration
+- `LocalPlaceholderImageGenerationClient`: simple local fallback renderer
+- `ContentPackImageEnricher`: applies resilient generation to published content packs
+- `ImageReviewFlowHarness`: keeps image review usable even when generated candidates come from fallback mode
+
+Behavioral rule:
+
+- if ComfyUI is healthy, the app uses normal local AI generation
+- if ComfyUI is unavailable, times out, or fails, the app falls back to placeholder images
+- the editor can still search Pixabay, edit prompts, or upload a custom image
+- learner flows do not depend on ComfyUI availability
+
 ## Testing Strategy
 
 The project favors application-level integration-style tests over Telegram API tests.

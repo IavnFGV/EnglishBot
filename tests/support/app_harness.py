@@ -44,7 +44,11 @@ from englishbot.application.services import (
 )
 from englishbot.application.training_scenarios import TrainingScenarioController, UserScreen
 from englishbot.domain.add_words_models import AddWordsApprovalResult, AddWordsFlowState
-from englishbot.domain.image_review_models import ImageCandidate, ImageReviewFlowState
+from englishbot.domain.image_review_models import (
+    ImageCandidate,
+    ImageCandidateBatch,
+    ImageReviewFlowState,
+)
 from englishbot.domain.models import Lesson, Topic, TrainingMode, VocabularyItem
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import LessonExtractionClient
@@ -103,7 +107,7 @@ class FakeImageCandidateGenerator:
         prompt: str,
         assets_dir: Path,
         model_names: tuple[str, ...],
-    ) -> list[ImageCandidate]:
+    ) -> ImageCandidateBatch:
         candidates: list[ImageCandidate] = []
         for model_name in model_names:
             filename = f"{item_id}--{model_name}.png"
@@ -118,7 +122,7 @@ class FakeImageCandidateGenerator:
                     prompt=prompt,
                 )
             )
-        return candidates
+        return ImageCandidateBatch(candidates=candidates)
 
 
 def build_import_draft(

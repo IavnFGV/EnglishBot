@@ -4,9 +4,12 @@ import pytest
 from telegram.error import BadRequest
 
 from englishbot.bot import (
+    _draft_review_markup,
+    _draft_review_keyboard,
+    _image_review_markup,
     _image_review_keyboard,
-    _words_menu_keyboard,
     _published_image_items_keyboard,
+    _words_menu_keyboard,
     words_add_words_callback_handler,
     words_edit_images_callback_handler,
     words_menu_callback_handler,
@@ -229,3 +232,87 @@ def test_image_review_keyboard_shows_previous_and_next_on_later_pages() -> None:
     )
 
     assert [button.text for button in keyboard.inline_keyboard[2]] == ["Previous 6", "Next 6"]
+
+
+def test_draft_review_keyboard_hides_auto_images_button_when_generation_is_unavailable() -> None:
+    keyboard = _draft_review_keyboard(
+        flow_id="flow123",
+        is_valid=True,
+        show_auto_image_button=False,
+    )
+
+    assert [button.text for button in keyboard.inline_keyboard[0]] == ["Manual Image Review"]
+
+
+def test_draft_review_keyboard_hides_regenerate_button_when_smart_parsing_is_unavailable() -> None:
+    keyboard = _draft_review_keyboard(
+        flow_id="flow123",
+        is_valid=True,
+        show_regenerate_button=False,
+    )
+
+    assert [button.text for button in keyboard.inline_keyboard[2]] == ["Edit Text"]
+
+
+def test_draft_review_markup_centralizes_ai_button_visibility_from_context() -> None:
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "smart_parsing_available": False,
+                "local_image_generation_available": False,
+                "telegram_ui_language": "en",
+            }
+        )
+    )
+
+    keyboard = _draft_review_markup(
+        flow_id="flow123",
+        is_valid=True,
+        context=context,
+        user=SimpleNamespace(language_code="en"),
+    )
+
+    assert [button.text for button in keyboard.inline_keyboard[0]] == ["Manual Image Review"]
+    assert [button.text for button in keyboard.inline_keyboard[2]] == ["Edit Text"]
+
+
+def test_image_review_keyboard_hides_generate_button_when_generation_is_unavailable() -> None:
+    current_item = SimpleNamespace(
+        candidates=[object()],
+        search_query=None,
+        search_page=1,
+    )
+
+    keyboard = _image_review_keyboard(
+        flow_id="review123",
+        current_item=current_item,
+        show_generate_image_button=False,
+    )
+
+    assert [button.text for button in keyboard.inline_keyboard[1]] == ["Search Images"]
+
+
+def test_image_review_markup_centralizes_generate_button_visibility_from_context() -> None:
+    current_item = SimpleNamespace(
+        candidates=[object()],
+        search_query=None,
+        search_page=1,
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "smart_parsing_available": True,
+                "local_image_generation_available": False,
+                "telegram_ui_language": "en",
+            }
+        )
+    )
+
+    keyboard = _image_review_markup(
+        flow_id="review123",
+        current_item=current_item,
+        context=context,
+        user=SimpleNamespace(language_code="en"),
+    )
+
+    assert [button.text for button in keyboard.inline_keyboard[1]] == ["Search Images"]

@@ -293,6 +293,12 @@ Manual review is part of the design, not an edge case. If a reviewer removes ite
 
 Image generation is a separate local-first enrichment step applied to an already finalized content pack.
 
+Important runtime rule:
+
+- local AI image generation is an optional external capability
+- the bot must continue working even when the external image node is unavailable
+- if local AI image generation fails, the app falls back to local placeholder images instead of breaking the editor flow
+
 Current behavior:
 
 - content packs may contain nullable `image_ref`
@@ -383,6 +389,13 @@ Current backends:
 
 - `placeholder`: local offline PNG renderer for development and tests
 - `comfyui`: local HTTP backend for a running ComfyUI server
+
+Current resilient behavior:
+
+- if `ComfyUI` is available, normal local AI image generation is used
+- if `ComfyUI` is unavailable, times out, or fails, the system falls back to local placeholder images
+- image review still remains usable because the editor can switch to Pixabay, edit the prompt, or upload a custom image
+- auto-image publish still completes, but the final message can indicate that placeholder fallback was used
 
 The image generation layer is intentionally isolated behind a small client interface so additional backends can be added later without changing learner-bot handlers or content-pack structure.
 

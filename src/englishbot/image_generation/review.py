@@ -3,9 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from englishbot.application.image_review_flow import ImageCandidateGenerator
-from englishbot.domain.image_review_models import ImageCandidate
-from englishbot.image_generation.clients import ComfyUIImageGenerationClient
+from englishbot.domain.image_review_models import ImageCandidate, ImageCandidateBatch, ImageGenerationMetadata
+from englishbot.image_generation.clients import (
+    ComfyUIImageGenerationClient,
+    LocalPlaceholderImageGenerationClient,
+)
 from englishbot.image_generation.paths import build_item_image_ref
+from englishbot.image_generation.resilient import ResilientImageGenerator
+from englishbot.image_generation.smart_generation import ComfyUIImageGenerationGateway
 
 _DEFAULT_MODEL_PRESETS: dict[str, tuple[str, str | None]] = {
     "dreamshaper": ("dreamshaper_8.safetensors", None),
@@ -40,23 +45,31 @@ class ComfyUIImageCandidateGenerator(ImageCandidateGenerator):
         prompt: str,
         assets_dir: Path,
         model_names: tuple[str, ...],
-    ) -> list[ImageCandidate]:
+    ) -> ImageCandidateBatch:
         candidates: list[ImageCandidate] = []
+        last_generation_metadata: ImageGenerationMetadata | None = None
         for model_name in model_names:
             checkpoint_name, vae_name = self._resolve_model_preset(model_name)
             output_path = assets_dir / topic_id / "review" / f"{item_id}--{model_name}.png"
-            client = ComfyUIImageGenerationClient(
-                base_url=self._base_url,
-                checkpoint_name=checkpoint_name,
-                vae_name=vae_name,
-                width=self._width,
-                height=self._height,
+            generator = ResilientImageGenerator(
+                external_gateway=ComfyUIImageGenerationGateway(
+                    ComfyUIImageGenerationClient(
+                        base_url=self._base_url,
+                        checkpoint_name=checkpoint_name,
+                        vae_name=vae_name,
+                        width=self._width,
+                        height=self._height,
+                    )
+                ),
+                fallback_client=LocalPlaceholderImageGenerationClient(),
             )
-            client.generate(
+            generation_result = generator.generate(
                 prompt=prompt,
                 english_word=english_word,
                 output_path=output_path,
             )
+            if last_generation_metadata is None or generation_result.metadata.path == "fallback":
+                last_generation_metadata = generation_result.metadata
             candidates.append(
                 ImageCandidate(
                     model_name=model_name,
@@ -69,7 +82,10 @@ class ComfyUIImageCandidateGenerator(ImageCandidateGenerator):
                     prompt=prompt,
                 )
             )
-        return candidates
+        return ImageCandidateBatch(
+            candidates=candidates,
+            generation_metadata=last_generation_metadata,
+        )
 
     def _resolve_model_preset(self, model_name: str) -> tuple[str, str | None]:
         preset = self._model_presets.get(model_name)

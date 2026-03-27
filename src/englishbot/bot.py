@@ -4,6 +4,7 @@ import asyncio
 import html
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 from telegram import (
@@ -75,13 +76,18 @@ from englishbot.bootstrap import build_lesson_import_pipeline, build_training_se
 from englishbot.config import Settings
 from englishbot.domain.models import Topic, TrainingMode, TrainingQuestion
 from englishbot.image_generation.clients import ComfyUIImageGenerationClient
+from englishbot.image_generation.clients import LocalPlaceholderImageGenerationClient
 from englishbot.image_generation.pixabay import PixabayImageSearchClient, RemoteImageDownloader
 from englishbot.image_generation.paths import resolve_existing_image_path
 from englishbot.image_generation.pipeline import ContentPackImageEnricher
 from englishbot.image_generation.previews import ensure_numbered_candidate_strip
+from englishbot.image_generation.resilient import ResilientImageGenerator
 from englishbot.image_generation.review import ComfyUIImageCandidateGenerator
+from englishbot.image_generation.smart_generation import ComfyUIImageGenerationGateway
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
+from englishbot.importing.clients import OllamaLessonExtractionClient
 from englishbot.importing.draft_io import draft_to_data
+from englishbot.importing.smart_parsing import OllamaSmartLessonParsingGateway
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.infrastructure.sqlite_store import (
@@ -164,6 +170,24 @@ def build_application(settings: Settings) -> Application:
     content_store = SQLiteContentStore(db_path=settings.content_db_path)
     content_store.initialize()
     app.bot_data["content_store"] = content_store
+    app.bot_data["smart_parsing_gateway"] = OllamaSmartLessonParsingGateway(
+        OllamaLessonExtractionClient(
+            model=settings.ollama_model,
+            model_file_path=settings.ollama_model_file_path,
+            base_url=settings.ollama_base_url,
+            timeout=settings.ollama_timeout_sec,
+            trace_file_path=settings.ollama_trace_file_path,
+            extraction_mode=settings.ollama_extraction_mode,
+            temperature=settings.ollama_temperature,
+            top_p=settings.ollama_top_p,
+            num_predict=settings.ollama_num_predict,
+            extract_line_prompt_path=settings.ollama_extract_line_prompt_path,
+            extract_text_prompt_path=settings.ollama_extract_text_prompt_path,
+        )
+    )
+    app.bot_data["image_generation_gateway"] = ComfyUIImageGenerationGateway(
+        ComfyUIImageGenerationClient()
+    )
     app.bot_data["training_service"] = build_training_service(db_path=settings.content_db_path)
     lesson_import_pipeline = build_lesson_import_pipeline(
         ollama_model=settings.ollama_model,
@@ -203,7 +227,12 @@ def build_application(settings: Settings) -> Application:
         content_store=content_store,
     )
     content_pack_image_enricher = ContentPackImageEnricher(
-        ComfyUIImageGenerationClient()
+        ResilientImageGenerator(
+            external_gateway=ComfyUIImageGenerationGateway(
+                ComfyUIImageGenerationClient()
+            ),
+            fallback_client=LocalPlaceholderImageGenerationClient(),
+        )
     )
     app.bot_data["lesson_import_pipeline"] = lesson_import_pipeline
     app.bot_data["editor_user_ids"] = set(settings.editor_user_ids)
@@ -645,6 +674,47 @@ def _preview_message_ids(context: ContextTypes.DEFAULT_TYPE) -> dict[int, int]:
     return context.application.bot_data["word_import_preview_message_ids"]
 
 
+@dataclass(frozen=True)
+class _EditorAICapabilities:
+    smart_parsing_available: bool
+    local_image_generation_available: bool
+
+
+def _smart_parsing_available(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    override = context.application.bot_data.get("smart_parsing_available")
+    if isinstance(override, bool):
+        return override
+    gateway = context.application.bot_data.get("smart_parsing_gateway")
+    if gateway is None:
+        return True
+    try:
+        return bool(gateway.check_availability().is_available)
+    except Exception:  # noqa: BLE001
+        logger.exception("Smart parsing availability check failed")
+        return False
+
+
+def _local_image_generation_available(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    override = context.application.bot_data.get("local_image_generation_available")
+    if isinstance(override, bool):
+        return override
+    gateway = context.application.bot_data.get("image_generation_gateway")
+    if gateway is None:
+        return True
+    try:
+        return bool(gateway.check_availability().is_available)
+    except Exception:  # noqa: BLE001
+        logger.exception("Image generation availability check failed")
+        return False
+
+
+def _editor_ai_capabilities(context: ContextTypes.DEFAULT_TYPE) -> _EditorAICapabilities:
+    return _EditorAICapabilities(
+        smart_parsing_available=_smart_parsing_available(context),
+        local_image_generation_available=_local_image_generation_available(context),
+    )
+
+
 def _active_word_flow_for_user(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     return _get_active_add_words_flow(context).execute(user_id=user_id)
 
@@ -708,6 +778,39 @@ def _draft_failure_message(result) -> str | None:
         if "timed out" in lowered or "read timeout" in lowered or "timeout" in lowered:
             return _tg("parsing_draft_failed_timeout")
     return _tg("parsing_draft_failed_generic")
+
+
+def _draft_review_markup(
+    *,
+    flow_id: str,
+    is_valid: bool,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> InlineKeyboardMarkup:
+    capabilities = _editor_ai_capabilities(context)
+    return _draft_review_keyboard(
+        flow_id,
+        is_valid,
+        show_auto_image_button=capabilities.local_image_generation_available,
+        show_regenerate_button=capabilities.smart_parsing_available,
+        language=_telegram_ui_language(context, user),
+    )
+
+
+def _image_review_markup(
+    *,
+    flow_id: str,
+    current_item,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> InlineKeyboardMarkup:
+    capabilities = _editor_ai_capabilities(context)
+    return _image_review_keyboard(
+        flow_id=flow_id,
+        current_item=current_item,
+        show_generate_image_button=capabilities.local_image_generation_available,
+        language=_telegram_ui_language(context, user),
+    )
 
 
 def _resolve_image_review_publish_output_path(flow) -> Path | None:
@@ -1301,10 +1404,11 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.pop("edit_flow_id", None)
         await message.reply_text(
             _tg("draft_updated_from_text", context=context, user=user),
-            reply_markup=_draft_review_keyboard(
-                flow.flow_id,
-                flow.draft_result.validation.is_valid,
-                language=_telegram_ui_language(context, user),
+            reply_markup=_draft_review_markup(
+                flow_id=flow.flow_id,
+                is_valid=flow.draft_result.validation.is_valid,
+                context=context,
+                user=user,
             ),
         )
         preview_message_id = _get_preview_message_id(user.id, context)
@@ -1314,10 +1418,11 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
                     chat_id=message.chat_id,
                     message_id=preview_message_id,
                     text=format_draft_preview(flow.draft_result),
-                    reply_markup=_draft_review_keyboard(
-                        flow.flow_id,
-                        flow.draft_result.validation.is_valid,
-                        language=_telegram_ui_language(context, user),
+                    reply_markup=_draft_review_markup(
+                        flow_id=flow.flow_id,
+                        is_valid=flow.draft_result.validation.is_valid,
+                        context=context,
+                        user=user,
                     ),
                 )
             except BadRequest as error:
@@ -1366,10 +1471,11 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
     await status_message.edit_text(_draft_status_text(flow.draft_result))
     preview_message = await message.reply_text(
         format_draft_preview(flow.draft_result),
-        reply_markup=_draft_review_keyboard(
-            flow.flow_id,
-            flow.draft_result.validation.is_valid,
-            language=_telegram_ui_language(context, user),
+        reply_markup=_draft_review_markup(
+            flow_id=flow.flow_id,
+            is_valid=flow.draft_result.validation.is_valid,
+            context=context,
+            user=user,
         ),
     )
     _set_preview_message_id(user.id, preview_message.message_id, context)
@@ -1430,6 +1536,9 @@ async def add_words_regenerate_draft_handler(
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
         return
+    if not _smart_parsing_available(context):
+        await query.edit_message_text(_tg("smart_parsing_unavailable", context=context, user=user))
+        return
     await query.edit_message_text(_tg("re_recognizing_draft", context=context, user=user))
     stop_event = asyncio.Event()
     heartbeat_task = asyncio.create_task(
@@ -1454,10 +1563,11 @@ async def add_words_regenerate_draft_handler(
         await heartbeat_task
     await query.edit_message_text(
         format_draft_preview(flow.draft_result),
-        reply_markup=_draft_review_keyboard(
-            flow.flow_id,
-            flow.draft_result.validation.is_valid,
-            language=_telegram_ui_language(context, user),
+        reply_markup=_draft_review_markup(
+            flow_id=flow.flow_id,
+            is_valid=flow.draft_result.validation.is_valid,
+            context=context,
+            user=user,
         ),
     )
 
@@ -1480,10 +1590,11 @@ async def add_words_publish_without_images_handler(
     if not result.validation.is_valid:
         await query.edit_message_text(
             format_draft_preview(result),
-            reply_markup=_draft_review_keyboard(
-                flow.flow_id,
-                False,
-                language=_telegram_ui_language(context, user),
+            reply_markup=_draft_review_markup(
+                flow_id=flow.flow_id,
+                is_valid=False,
+                context=context,
+                user=user,
             ),
         )
         return
@@ -1536,10 +1647,11 @@ async def add_words_approve_draft_handler(
     if not result.validation.is_valid:
         await query.edit_message_text(
             format_draft_preview(result),
-            reply_markup=_draft_review_keyboard(
-                flow.flow_id,
-                False,
-                language=_telegram_ui_language(context, user),
+            reply_markup=_draft_review_markup(
+                flow_id=flow.flow_id,
+                is_valid=False,
+                context=context,
+                user=user,
             ),
         )
         return
@@ -1608,14 +1720,18 @@ async def add_words_approve_auto_images_handler(
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
         return
+    if not _local_image_generation_available(context):
+        await query.edit_message_text(_tg("auto_images_unavailable", context=context, user=user))
+        return
     result = flow.draft_result
     if not result.validation.is_valid:
         await query.edit_message_text(
             format_draft_preview(result),
-            reply_markup=_draft_review_keyboard(
-                flow.flow_id,
-                False,
-                language=_telegram_ui_language(context, user),
+            reply_markup=_draft_review_markup(
+                flow_id=flow.flow_id,
+                is_valid=False,
+                context=context,
+                user=user,
             ),
         )
         return
@@ -1694,7 +1810,7 @@ async def add_words_approve_auto_images_handler(
     progress_task = asyncio.create_task(_report_generation_progress())
     try:
         topic_id = approved.published_topic_id
-        enriched_pack = await asyncio.to_thread(
+        enrichment_result = await asyncio.to_thread(
             _generate_content_pack_images(context).execute,
             topic_id=topic_id,
             assets_dir=Path("assets"),
@@ -1708,11 +1824,16 @@ async def add_words_approve_auto_images_handler(
         await progress_task
     _reload_training_service(context)
     _preview_message_ids(context).pop(user.id, None)
+    enriched_pack = enrichment_result.content_pack
     topic = enriched_pack.get("topic", {})
     topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else topic_id
     generated_image_count = sum(
         1 for item in enriched_pack.get("vocabulary_items", []) if item.get("image_ref")
     )
+    generation_notice = ""
+    generation_metadata = getattr(enrichment_result, "generation_metadata", None)
+    if generation_metadata is not None and generation_metadata.status_messages:
+        generation_notice = "\n" + "\n".join(generation_metadata.status_messages)
     await query.edit_message_text(
         _tg(
             "draft_approved_images_generated",
@@ -1720,7 +1841,8 @@ async def add_words_approve_auto_images_handler(
             user=user,
             destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=topic_id),
             generated_count=generated_image_count,
-        ),
+        )
+        + generation_notice,
         reply_markup=(
             _published_images_menu_keyboard(
                 topic_id=topic_id,
@@ -1816,6 +1938,11 @@ async def image_review_generate_handler(
     flow = _get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
+        return
+    if not _local_image_generation_available(context):
+        await query.edit_message_text(
+            _tg("image_generation_unavailable", context=context, user=user)
+        )
         return
     await query.edit_message_text(_tg("start_image_generation", context=context, user=user))
     await _prepare_and_send_image_review_step(query.message, context, user.id, flow)
@@ -2819,6 +2946,10 @@ async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, f
             search_line = f"Pixabay search query: {current_item.search_query}"
     elif current_item.candidate_source_type == "generated":
         source_line = "Local AI candidates."
+    generation_lines: list[str] = []
+    generation_metadata = getattr(current_item, "candidate_generation_metadata", None)
+    if generation_metadata is not None and generation_metadata.status_messages:
+        generation_lines.extend(generation_metadata.status_messages)
     summary_message = await message.reply_text(
         "Reviewing images "
         f"{current_position}/{total_items}\n"
@@ -2826,13 +2957,13 @@ async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, f
         f"Prompt: {current_item.prompt}\n"
         "Prompt is used for local AI generation.\n"
         f"{search_line}\n"
-        f"{source_line}",
-        reply_markup=_image_review_keyboard(
+        f"{source_line}"
+        + (("\n" + "\n".join(generation_lines)) if generation_lines else ""),
+        reply_markup=_image_review_markup(
             flow_id=flow.flow_id,
             current_item=current_item,
-            language=_normalize_telegram_ui_language(
-                getattr(getattr(message, "from_user", None), "language_code", None)
-            ),
+            context=context,
+            user=getattr(message, "from_user", None),
         ),
     )
     _track_flow_message(
@@ -2898,35 +3029,51 @@ def _draft_review_keyboard(
     flow_id: str,
     is_valid: bool,
     *,
+    show_auto_image_button: bool = True,
+    show_regenerate_button: bool = True,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    rows = [
-        [
+    action_row: list[InlineKeyboardButton] = []
+    if show_auto_image_button:
+        action_row.append(
             InlineKeyboardButton(
                 _tg("approve_auto_images", language=language),
                 callback_data=f"words:approve_auto_images:{flow_id}",
-            ),
-            InlineKeyboardButton(
-                _tg("manual_image_review", language=language),
-                callback_data=f"words:start_image_review:{flow_id}",
-            ),
-        ],
+            )
+        )
+    action_row.append(
+        InlineKeyboardButton(
+            _tg("manual_image_review", language=language),
+            callback_data=f"words:start_image_review:{flow_id}",
+        )
+    )
+    rows = []
+    if action_row:
+        rows.append(action_row)
+    rows.append(
         [
             InlineKeyboardButton(
                 _tg("publish_without_images", language=language),
                 callback_data=f"words:approve_draft:{flow_id}",
             ),
-        ],
-        [
+        ]
+    )
+    edit_row: list[InlineKeyboardButton] = []
+    if show_regenerate_button:
+        edit_row.append(
             InlineKeyboardButton(
                 _tg("re_recognize_draft", language=language),
                 callback_data=f"words:regenerate_draft:{flow_id}",
-            ),
-            InlineKeyboardButton(
-                _tg("edit_text", language=language),
-                callback_data=f"words:edit_text:{flow_id}",
-            ),
-        ],
+            )
+        )
+    edit_row.append(
+        InlineKeyboardButton(
+            _tg("edit_text", language=language),
+            callback_data=f"words:edit_text:{flow_id}",
+        )
+    )
+    rows.append(edit_row)
+    rows.append(
         [
             InlineKeyboardButton(
                 _tg("show_json", language=language),
@@ -2936,12 +3083,30 @@ def _draft_review_keyboard(
                 _tg("cancel", language=language),
                 callback_data=f"words:cancel:{flow_id}",
             ),
-        ],
-    ]
+        ]
+    )
     if not is_valid:
-        rows[0][0] = InlineKeyboardButton(_tg("approve_disabled", language=language), callback_data="words:menu")
-        rows[0][1] = InlineKeyboardButton(_tg("review_disabled", language=language), callback_data="words:menu")
-        rows[1][0] = InlineKeyboardButton(_tg("publish_disabled", language=language), callback_data="words:menu")
+        if action_row:
+            if show_auto_image_button:
+                rows[0][0] = InlineKeyboardButton(
+                    _tg("approve_disabled", language=language),
+                    callback_data="words:menu",
+                )
+                if len(rows[0]) > 1:
+                    rows[0][1] = InlineKeyboardButton(
+                        _tg("review_disabled", language=language),
+                        callback_data="words:menu",
+                    )
+            else:
+                rows[0][0] = InlineKeyboardButton(
+                    _tg("review_disabled", language=language),
+                    callback_data="words:menu",
+                )
+        publish_row_index = 1 if action_row else 0
+        rows[publish_row_index][0] = InlineKeyboardButton(
+            _tg("publish_disabled", language=language),
+            callback_data="words:menu",
+        )
     return InlineKeyboardMarkup(rows)
 
 
@@ -2949,6 +3114,7 @@ def _image_review_keyboard(
     *,
     flow_id: str,
     current_item,
+    show_generate_image_button: bool = True,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     candidate_count = len(current_item.candidates)
@@ -2960,18 +3126,20 @@ def _image_review_keyboard(
         for index in range(candidate_count)
     ]
     rows = [pick_buttons[index : index + 3] for index in range(0, len(pick_buttons), 3)]
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _tg("search_images", language=language),
-                callback_data=f"words:image_search:{flow_id}",
-            ),
+    action_row = [
+        InlineKeyboardButton(
+            _tg("search_images", language=language),
+            callback_data=f"words:image_search:{flow_id}",
+        ),
+    ]
+    if show_generate_image_button:
+        action_row.append(
             InlineKeyboardButton(
                 _tg("generate_image", language=language),
                 callback_data=f"words:image_generate:{flow_id}",
-            ),
-        ]
-    )
+            )
+        )
+    rows.append(action_row)
     if current_item.search_query:
         pagination_row: list[InlineKeyboardButton] = []
         if current_item.search_page > 1:

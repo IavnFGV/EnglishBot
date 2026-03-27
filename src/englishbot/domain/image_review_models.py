@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 
 @dataclass(slots=True, frozen=True)
@@ -19,6 +20,25 @@ class ImageCandidate:
     height: int | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class ImageGenerationMetadata:
+    path: Literal["smart", "fallback"]
+    smart_generation_status: Literal[
+        "success",
+        "unavailable",
+        "timeout",
+        "invalid_response",
+        "remote_error",
+    ] | None = None
+    status_messages: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True, frozen=True)
+class ImageCandidateBatch:
+    candidates: list[ImageCandidate]
+    generation_metadata: ImageGenerationMetadata | None = None
+
+
 @dataclass(slots=True)
 class ImageReviewItem:
     item_id: str
@@ -31,6 +51,7 @@ class ImageReviewItem:
     candidate_source_type: str | None = None
     selected_candidate_index: int | None = None
     approved_source_type: str | None = None
+    candidate_generation_metadata: ImageGenerationMetadata | None = None
     needs_review: bool = True
     skipped: bool = False
 
