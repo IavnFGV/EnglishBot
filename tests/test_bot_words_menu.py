@@ -5,6 +5,7 @@ from telegram.error import BadRequest
 
 from englishbot.bot import (
     _image_review_keyboard,
+    _words_menu_keyboard,
     _published_image_items_keyboard,
     words_add_words_callback_handler,
     words_edit_images_callback_handler,
@@ -158,9 +159,36 @@ def test_image_review_keyboard_uses_short_callback_data_for_long_item_id() -> No
     )
 
     assert keyboard.inline_keyboard[0][0].callback_data == "words:image_pick:review123:0"
+
+
+def test_words_menu_keyboard_uses_russian_labels_when_requested() -> None:
+    keyboard = _words_menu_keyboard(is_editor=True, language="ru")
+
+    assert keyboard.inline_keyboard[0][0].text == "Темы тренировки"
+    assert keyboard.inline_keyboard[1][0].text == "Добавить слова"
+    assert keyboard.inline_keyboard[2][0].text == "Редактировать слова"
+
+
+def test_image_review_keyboard_uses_russian_labels_when_requested() -> None:
+    current_item = SimpleNamespace(
+        candidates=[object(), object()],
+        search_query="Dragon",
+        search_page=2,
+    )
+    keyboard = _image_review_keyboard(
+        flow_id="review123",
+        current_item=current_item,
+        language="ru",
+    )
+
+    assert keyboard.inline_keyboard[0][0].text == "Выбрать 1"
+    assert keyboard.inline_keyboard[0][1].text == "Выбрать 2"
+    assert keyboard.inline_keyboard[1][0].text == "Искать картинки"
+    assert keyboard.inline_keyboard[2][0].text == "Предыдущие 6"
+    assert keyboard.inline_keyboard[2][1].text == "Следующие 6"
     assert keyboard.inline_keyboard[0][1].callback_data == "words:image_pick:review123:1"
-    assert keyboard.inline_keyboard[0][2].callback_data == "words:image_pick:review123:2"
-    assert keyboard.inline_keyboard[2][0].callback_data == "words:image_next:review123"
+    assert keyboard.inline_keyboard[2][0].callback_data == "words:image_previous:review123"
+    assert keyboard.inline_keyboard[2][1].callback_data == "words:image_next:review123"
     assert keyboard.inline_keyboard[3][0].callback_data == "words:image_edit_search_query:review123"
     assert keyboard.inline_keyboard[4][1].callback_data == "words:image_attach_photo:review123"
     assert keyboard.inline_keyboard[5][0].callback_data == "words:image_skip:review123"

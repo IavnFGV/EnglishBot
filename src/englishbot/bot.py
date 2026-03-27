@@ -700,15 +700,8 @@ def _draft_failure_message(result) -> str | None:
         raw_error = str(draft.get("error", "")).strip()
         lowered = raw_error.lower()
         if "timed out" in lowered or "read timeout" in lowered or "timeout" in lowered:
-            return (
-                "Parsing draft... failed\n"
-                "Ollama timed out while parsing this text. "
-                "Try a shorter text, a faster model, or increase OLLAMA_TIMEOUT_SEC."
-            )
-    return (
-        "Parsing draft... failed\n"
-        "Could not parse this text. Please try again or simplify the input."
-    )
+            return _tg("parsing_draft_failed_timeout")
+    return _tg("parsing_draft_failed_generic")
 
 
 def _resolve_image_review_publish_output_path(flow) -> Path | None:
@@ -755,16 +748,22 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 TrainingMode.HARD,
             }
             await message.reply_text(
-                "You already have an active session.\n"
-                f"Topic: {active_session.topic_id}\n"
-                f"Lesson: {active_session.lesson_id or 'all topic words'}\n"
-                f"Mode: {active_session.mode.value}\n"
-                f"Progress: {active_session.current_position}/{active_session.total_items}\n"
-                "Do you want to continue or start over?",
-                reply_markup=_active_session_keyboard(),
+                _tg(
+                    "active_session_exists",
+                    context=context,
+                    user=user,
+                    topic_id=active_session.topic_id,
+                    lesson_id=active_session.lesson_id or _tg("all_topic_words", context=context, user=user),
+                    mode=active_session.mode.value,
+                    current_position=active_session.current_position,
+                    total_items=active_session.total_items,
+                ),
+                reply_markup=_active_session_keyboard(
+                    language=_telegram_ui_language(context, user),
+                ),
             )
             await message.reply_text(
-                "Quick actions:",
+                _tg("quick_actions_title", context=context, user=user),
                 reply_markup=_chat_menu_keyboard(
                     is_editor=bool(user and _is_editor(user.id, context))
                 ),
@@ -772,11 +771,14 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             return
     topics = _service(context).list_topics()
     await message.reply_text(
-        "Choose a topic to start training.\nUse /help to see commands.",
-        reply_markup=_topic_keyboard(topics),
+        _tg("choose_topic_start_training_help", context=context, user=user),
+        reply_markup=_topic_keyboard(
+            topics,
+            language=_telegram_ui_language(context, user),
+        ),
     )
     await message.reply_text(
-        "Quick actions:",
+        _tg("quick_actions_title", context=context, user=user),
         reply_markup=_chat_menu_keyboard(
             is_editor=bool(user and _is_editor(user.id, context))
         ),
@@ -801,7 +803,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             ]
         )
     await message.reply_text(
-        "Available commands:\n" + "\n".join(commands),
+        _tg("help_title", context=context, user=user, commands="\n".join(commands)),
         reply_markup=_chat_menu_keyboard(
             is_editor=bool(user and _is_editor(user.id, context))
         ),
@@ -814,11 +816,14 @@ async def words_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if message is None:
         return
     await message.reply_text(
-        "Words menu.",
-        reply_markup=_words_menu_keyboard(is_editor=bool(user and _is_editor(user.id, context))),
+        _tg("words_menu_prompt", context=context, user=user),
+        reply_markup=_words_menu_keyboard(
+            is_editor=bool(user and _is_editor(user.id, context)),
+            language=_telegram_ui_language(context, user),
+        ),
     )
     await message.reply_text(
-        "Quick actions:",
+        _tg("quick_actions_title", context=context, user=user),
         reply_markup=_chat_menu_keyboard(
             is_editor=bool(user and _is_editor(user.id, context))
         ),
@@ -879,8 +884,7 @@ async def words_add_words_callback_handler(
         return
     context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
     await query.edit_message_text(
-        "Send the raw lesson text in one message. The format can be messy.\n"
-        "Use /cancel to stop."
+        _tg("send_raw_lesson_text", context=context, user=user)
     )
 
 
@@ -898,7 +902,7 @@ async def words_edit_words_callback_handler(
         return
     topics = _list_editable_topics(context).execute()
     await query.edit_message_text(
-        "Choose a topic to edit words.",
+        _tg("choose_topic_edit_words", context=context, user=user),
         reply_markup=_editable_topics_keyboard(
             topics,
             language=_telegram_ui_language(context, update.effective_user),
@@ -920,7 +924,7 @@ async def words_edit_images_callback_handler(
         return
     topics = _list_editable_topics(context).execute()
     await query.edit_message_text(
-        "Choose a topic to edit word images.",
+        _tg("choose_topic_edit_images", context=context, user=user),
         reply_markup=_published_image_topics_keyboard(
             topics,
             language=_telegram_ui_language(context, update.effective_user),
@@ -939,7 +943,7 @@ async def words_edit_topic_callback_handler(
     _, _, topic_id = query.data.split(":")
     words = _list_editable_words(context).execute(topic_id=topic_id)
     await query.edit_message_text(
-        "Choose a word to edit.",
+        _tg("choose_word_to_edit", context=context, user=update.effective_user),
         reply_markup=_editable_words_keyboard(
             topic_id=topic_id,
             words=words,
@@ -1048,18 +1052,18 @@ async def add_words_start_handler(update: Update, context: ContextTypes.DEFAULT_
     if message is None or user is None:
         return
     if not _is_editor(user.id, context):
-        await message.reply_text("You do not have permission to add words.")
+        await message.reply_text(_tg("no_permission_add_words", context=context, user=user))
         return
     existing_flow = _active_word_flow_for_user(user.id, context)
     if existing_flow is not None:
         await message.reply_text(
-            "You already have an active add-words flow. Send the text now or use /cancel."
+            _tg("active_add_words_flow_exists", context=context, user=user)
         )
         context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
         return
     context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
     await message.reply_text(
-        "Send the raw lesson text in one message. The format can be messy. Use /cancel to stop.",
+        _tg("send_raw_lesson_text_with_menu", context=context, user=user),
         reply_markup=_chat_menu_keyboard(is_editor=True),
     )
 
@@ -1072,7 +1076,7 @@ async def add_words_cancel_handler(update: Update, context: ContextTypes.DEFAULT
     _clear_active_word_flow(user.id, context)
     context.user_data.pop("words_flow_mode", None)
     await message.reply_text(
-        "Add-words flow cancelled.",
+        _tg("add_words_flow_cancelled", context=context, user=user),
         reply_markup=_chat_menu_keyboard(is_editor=_is_editor(user.id, context)),
     )
 
@@ -1089,13 +1093,13 @@ async def add_words_cancel_callback_handler(
     _, _, flow_id = query.data.split(":")
     flow = _active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text("This draft is no longer active.")
+        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
         return
     _clear_active_word_flow(user.id, context)
     context.user_data.pop("words_flow_mode", None)
-    await query.edit_message_text("Add-words flow cancelled.")
+    await query.edit_message_text(_tg("add_words_flow_cancelled", context=context, user=user))
     await query.message.reply_text(
-        "Quick actions:",
+        _tg("quick_actions_title", context=context, user=user),
         reply_markup=_chat_menu_keyboard(is_editor=_is_editor(user.id, context)),
     )
 
@@ -1125,12 +1129,12 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data.pop("words_flow_mode", None)
             context.user_data.pop("published_edit_topic_id", None)
             context.user_data.pop("published_edit_item_id", None)
-            await message.reply_text("This word edit task is no longer active.")
+            await message.reply_text(_tg("word_edit_task_inactive", context=context, user=user))
             return
         parsed_pair = parse_edited_vocabulary_line(message.text)
         if parsed_pair is None:
             await message.reply_text(
-                "Send one line in the format: English: Translation"
+                _tg("send_one_line_word_format", context=context, user=user)
             )
             return
         english_word, translation = parsed_pair
@@ -1161,13 +1165,21 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             )
         words = _list_editable_words(context).execute(topic_id=topic_id)
         await message.reply_text(
-            "Word updated.\n"
-            f"{updated_word.english_word} — {updated_word.translation}\n"
-            "Changes are now available in training."
+            _tg(
+                "word_updated",
+                context=context,
+                user=user,
+                word=updated_word.english_word,
+                translation=updated_word.translation,
+            )
         )
         await message.reply_text(
-            "Choose another word to edit.",
-            reply_markup=_editable_words_keyboard(topic_id=topic_id, words=words),
+            _tg("choose_another_word_to_edit", context=context, user=user),
+            reply_markup=_editable_words_keyboard(
+                topic_id=topic_id,
+                words=words,
+                language=_telegram_ui_language(context, user),
+            ),
         )
         if registry is not None:
             registry.clear(flow_id=flow_id, tag=_PUBLISHED_WORD_EDIT_TAG)
@@ -1185,12 +1197,12 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data.pop("words_flow_mode", None)
             context.user_data.pop("image_review_flow_id", None)
             context.user_data.pop("image_review_item_id", None)
-            await message.reply_text("This image review task is no longer active.")
+            await message.reply_text(_tg("image_review_task_inactive", context=context, user=user))
             return
         context.user_data.pop("words_flow_mode", None)
         context.user_data.pop("image_review_flow_id", None)
         context.user_data.pop("image_review_item_id", None)
-        status_message = await message.reply_text("Updating image prompt... 0/1")
+        status_message = await message.reply_text(_tg("updating_image_prompt", context=context, user=user))
         stop_event = asyncio.Event()
         heartbeat_task = asyncio.create_task(
             _run_status_heartbeat(
@@ -1211,14 +1223,11 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             stop_event.set()
             await heartbeat_task
             logger.exception("Image review prompt update failed for user=%s", user.id)
-            await status_message.edit_text(
-                "Updating image prompt... failed\n"
-                "Could not update this prompt. Please try again."
-            )
+            await status_message.edit_text(_tg("updating_image_prompt_failed", context=context, user=user))
             return
         stop_event.set()
         await heartbeat_task
-        await status_message.edit_text("Prompt updated.")
+        await status_message.edit_text(_tg("prompt_updated", context=context, user=user))
         await _send_image_review_step(message, context, updated_flow)
         return
     if words_flow_mode == _IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT:
@@ -1234,12 +1243,12 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data.pop("words_flow_mode", None)
             context.user_data.pop("image_review_flow_id", None)
             context.user_data.pop("image_review_item_id", None)
-            await message.reply_text("This image review task is no longer active.")
+            await message.reply_text(_tg("image_review_task_inactive", context=context, user=user))
             return
         context.user_data.pop("words_flow_mode", None)
         context.user_data.pop("image_review_flow_id", None)
         context.user_data.pop("image_review_item_id", None)
-        status_message = await message.reply_text("Searching Pixabay... 0/1")
+        status_message = await message.reply_text(_tg("searching_pixabay", context=context, user=user))
         stop_event = asyncio.Event()
         heartbeat_task = asyncio.create_task(
             _run_status_heartbeat(
@@ -1259,18 +1268,15 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             stop_event.set()
             await heartbeat_task
             logger.exception("Image review Pixabay search update failed for user=%s", user.id)
-            await status_message.edit_text(
-                "Searching Pixabay... failed\n"
-                "Could not search with this query. Please try again."
-            )
+            await status_message.edit_text(_tg("searching_pixabay_failed", context=context, user=user))
             return
         stop_event.set()
         await heartbeat_task
-        await status_message.edit_text("Pixabay candidates updated.")
+        await status_message.edit_text(_tg("pixabay_candidates_updated", context=context, user=user))
         await _send_image_review_step(message, context, updated_flow)
         return
     if words_flow_mode == _IMAGE_REVIEW_AWAITING_PHOTO:
-        await message.reply_text("Send a photo, not text, for this image review step.")
+        await message.reply_text(_tg("send_photo_not_text", context=context, user=user))
         return
     if words_flow_mode == _ADD_WORDS_AWAITING_EDIT_TEXT:
         active_flow_id = context.user_data.get("edit_flow_id")
@@ -1278,7 +1284,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
         if flow is None or flow.flow_id != active_flow_id:
             context.user_data.pop("words_flow_mode", None)
             context.user_data.pop("edit_flow_id", None)
-            await message.reply_text("This draft is no longer active.")
+            await message.reply_text(_tg("add_words_flow_inactive", context=context, user=user))
             return
         flow = _apply_add_words_edit(context).execute(
             user_id=user.id,
@@ -1288,10 +1294,11 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.pop("words_flow_mode", None)
         context.user_data.pop("edit_flow_id", None)
         await message.reply_text(
-            "Draft updated from edited text.",
+            _tg("draft_updated_from_text", context=context, user=user),
             reply_markup=_draft_review_keyboard(
                 flow.flow_id,
                 flow.draft_result.validation.is_valid,
+                language=_telegram_ui_language(context, user),
             ),
         )
         preview_message_id = _get_preview_message_id(user.id, context)
@@ -1304,6 +1311,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
                     reply_markup=_draft_review_keyboard(
                         flow.flow_id,
                         flow.draft_result.validation.is_valid,
+                        language=_telegram_ui_language(context, user),
                     ),
                 )
             except BadRequest as error:
@@ -1319,7 +1327,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
                 logger.debug("Failed to update preview message after edit", exc_info=True)
         return
     logger.info("User %s submitted raw text for add-words flow", user.id)
-    status_message = await message.reply_text("Parsing draft... 0/1")
+    status_message = await message.reply_text(_tg("parsing_draft", context=context, user=user))
     stop_event = asyncio.Event()
     heartbeat_task = asyncio.create_task(
         _run_status_heartbeat(
@@ -1337,8 +1345,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
     except Exception:  # noqa: BLE001
         logger.exception("Add-words draft extraction failed for user=%s", user.id)
         await status_message.edit_text(
-            "Parsing draft... failed\n"
-            "Could not parse this text. Please try again or simplify the input."
+            _tg("parsing_draft_failed_generic", context=context, user=user)
         )
         context.user_data.pop("words_flow_mode", None)
         return
@@ -1353,7 +1360,11 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
     await status_message.edit_text(_draft_status_text(flow.draft_result))
     preview_message = await message.reply_text(
         format_draft_preview(flow.draft_result),
-        reply_markup=_draft_review_keyboard(flow.flow_id, flow.draft_result.validation.is_valid),
+        reply_markup=_draft_review_keyboard(
+            flow.flow_id,
+            flow.draft_result.validation.is_valid,
+            language=_telegram_ui_language(context, user),
+        ),
     )
     _set_preview_message_id(user.id, preview_message.message_id, context)
 
@@ -1367,13 +1378,12 @@ async def add_words_edit_text_handler(update: Update, context: ContextTypes.DEFA
     _, _, flow_id = query.data.split(":")
     flow = _active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text("This draft is no longer active.")
+        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
         return
     context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_EDIT_TEXT
     context.user_data["edit_flow_id"] = flow.flow_id
     await query.message.reply_text(
-        "Edit only the word list below, then send the full edited version back as one message.\n"
-        "Use one line per item in the format: English: Translation",
+        _tg("edit_word_list_instruction", context=context, user=user),
         reply_markup=ForceReply(selective=True),
     )
     await query.message.reply_text(format_draft_edit_text(flow.draft_result.draft))
@@ -1388,7 +1398,7 @@ async def add_words_show_json_handler(update: Update, context: ContextTypes.DEFA
     _, _, flow_id = query.data.split(":")
     flow = _active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text("This draft is no longer active.")
+        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
         return
     payload = json.dumps(
         draft_to_data(flow.draft_result.draft),
@@ -1412,9 +1422,9 @@ async def add_words_regenerate_draft_handler(
     _, _, flow_id = query.data.split(":")
     flow = _active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text("This draft is no longer active.")
+        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
         return
-    await query.edit_message_text("Re-recognizing draft... 0/1")
+    await query.edit_message_text(_tg("re_recognizing_draft", context=context, user=user))
     stop_event = asyncio.Event()
     heartbeat_task = asyncio.create_task(
         _run_status_heartbeat(
@@ -1431,17 +1441,18 @@ async def add_words_regenerate_draft_handler(
         )
     except Exception:  # noqa: BLE001
         logger.exception("Add-words draft regeneration failed for user=%s", user.id)
-        await query.edit_message_text(
-            "Re-recognizing draft... failed\n"
-            "Could not parse this text. Please try again or simplify the input."
-        )
+        await query.edit_message_text(_tg("parsing_draft_failed_generic", context=context, user=user))
         return
     finally:
         stop_event.set()
         await heartbeat_task
     await query.edit_message_text(
         format_draft_preview(flow.draft_result),
-        reply_markup=_draft_review_keyboard(flow.flow_id, flow.draft_result.validation.is_valid),
+        reply_markup=_draft_review_keyboard(
+            flow.flow_id,
+            flow.draft_result.validation.is_valid,
+            language=_telegram_ui_language(context, user),
+        ),
     )
 
 
@@ -1457,13 +1468,17 @@ async def add_words_publish_without_images_handler(
     _, _, flow_id = query.data.split(":")
     flow = _active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text("This draft is no longer active.")
+        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
         return
     result = flow.draft_result
     if not result.validation.is_valid:
         await query.edit_message_text(
             format_draft_preview(result),
-            reply_markup=_draft_review_keyboard(flow.flow_id, False),
+            reply_markup=_draft_review_keyboard(
+                flow.flow_id,
+                False,
+                language=_telegram_ui_language(context, user),
+            ),
         )
         return
     await query.edit_message_text(
@@ -1477,19 +1492,22 @@ async def add_words_publish_without_images_handler(
     )
     finalized = approved.import_result
     if not finalized.validation.is_valid or finalized.canonicalization is None:
-        await query.edit_message_text("Draft finalization failed.")
+        await query.edit_message_text(_tg("draft_finalization_failed", context=context, user=user))
         return
     topic_id = approved.published_topic_id
     _reload_training_service(context)
     _preview_message_ids(context).pop(user.id, None)
     await query.edit_message_text(
-        "Draft approved and published.\n"
-        f"{_publish_destination_text(context, output_path=approved.output_path, topic_id=topic_id)}\n"
-        f"Added words: {len(finalized.draft.vocabulary_items)}\n"
-        "New words are now available in the bot."
+        _tg(
+            "draft_approved_published",
+            context=context,
+            user=user,
+            destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=topic_id),
+            item_count=len(finalized.draft.vocabulary_items),
+        )
     )
     await query.message.reply_text(
-        "Quick actions:",
+        _tg("quick_actions_title", context=context, user=user),
         reply_markup=_chat_menu_keyboard(is_editor=_is_editor(user.id, context)),
     )
 
@@ -1506,25 +1524,32 @@ async def add_words_approve_draft_handler(
     _, _, flow_id = query.data.split(":")
     flow = _active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text("This draft is no longer active.")
+        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
         return
     result = flow.draft_result
     if not result.validation.is_valid:
         await query.edit_message_text(
             format_draft_preview(result),
-            reply_markup=_draft_review_keyboard(flow.flow_id, False),
+            reply_markup=_draft_review_keyboard(
+                flow.flow_id,
+                False,
+                language=_telegram_ui_language(context, user),
+            ),
         )
         return
-    await query.edit_message_text("Saving approved draft... 0/1")
+    await query.edit_message_text(_tg("saving_approved_draft", context=context, user=user))
     saved_flow = await asyncio.to_thread(
         _save_approved_add_words_draft(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
     await query.edit_message_text(
-        "Approved draft saved.\n"
-        f"{_draft_checkpoint_text(saved_flow)}\n"
-        "Generating image prompts... 0/1"
+        _tg(
+            "approved_draft_saved_generating_prompts",
+            context=context,
+            user=user,
+            checkpoint=_draft_checkpoint_text(saved_flow),
+        )
     )
     prompt_flow = await asyncio.to_thread(
         _generate_add_words_image_prompts(context).execute,
@@ -1532,10 +1557,13 @@ async def add_words_approve_draft_handler(
         flow_id=flow.flow_id,
     )
     await query.edit_message_text(
-        "Image prompts generated.\n"
-        f"{_draft_checkpoint_text(prompt_flow)}\n"
-        f"Image prompts: {_draft_prompt_count(prompt_flow.draft_result) or 0}\n"
-        "Starting image review..."
+        _tg(
+            "image_prompts_generated_starting_review",
+            context=context,
+            user=user,
+            checkpoint=_draft_checkpoint_text(prompt_flow),
+            prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
+        )
     )
     image_review_flow = await asyncio.to_thread(
         _start_image_review(context).execute,
@@ -1549,10 +1577,13 @@ async def add_words_approve_draft_handler(
         image_review_flow_id=image_review_flow.flow_id,
     )
     await query.edit_message_text(
-        "Image prompts generated and saved.\n"
-        f"{_draft_checkpoint_text(prompt_flow)}\n"
-        f"Image prompts: {_draft_prompt_count(prompt_flow.draft_result) or 0}\n"
-        "Everything is saved. Continue image review in the messages below."
+        _tg(
+            "image_prompts_generated_saved_continue_review",
+            context=context,
+            user=user,
+            checkpoint=_draft_checkpoint_text(prompt_flow),
+            prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
+        )
     )
     await _send_image_review_step(query.message, context, image_review_flow)
 
@@ -1569,26 +1600,33 @@ async def add_words_approve_auto_images_handler(
     _, _, flow_id = query.data.split(":")
     flow = _active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text("This draft is no longer active.")
+        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
         return
     result = flow.draft_result
     if not result.validation.is_valid:
         await query.edit_message_text(
             format_draft_preview(result),
-            reply_markup=_draft_review_keyboard(flow.flow_id, False),
+            reply_markup=_draft_review_keyboard(
+                flow.flow_id,
+                False,
+                language=_telegram_ui_language(context, user),
+            ),
         )
         return
 
-    await query.edit_message_text("Saving approved draft... 0/1")
+    await query.edit_message_text(_tg("saving_approved_draft", context=context, user=user))
     saved_flow = await asyncio.to_thread(
         _save_approved_add_words_draft(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
     await query.edit_message_text(
-        "Approved draft saved.\n"
-        f"{_draft_checkpoint_text(saved_flow)}\n"
-        "Generating image prompts... 0/1"
+        _tg(
+            "approved_draft_saved_generating_prompts",
+            context=context,
+            user=user,
+            checkpoint=_draft_checkpoint_text(saved_flow),
+        )
     )
     prompt_flow = await asyncio.to_thread(
         _generate_add_words_image_prompts(context).execute,
@@ -1596,10 +1634,13 @@ async def add_words_approve_auto_images_handler(
         flow_id=flow.flow_id,
     )
     await query.edit_message_text(
-        "Image prompts generated.\n"
-        f"{_draft_checkpoint_text(prompt_flow)}\n"
-        f"Image prompts: {_draft_prompt_count(prompt_flow.draft_result) or 0}\n"
-        "Publishing content pack... 0/1"
+        _tg(
+            "image_prompts_generated_publishing",
+            context=context,
+            user=user,
+            checkpoint=_draft_checkpoint_text(prompt_flow),
+            prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
+        )
     )
     approved = await asyncio.to_thread(
         _approve_add_words_draft(context).execute,
@@ -1609,10 +1650,15 @@ async def add_words_approve_auto_images_handler(
     total_items = len(approved.import_result.draft.vocabulary_items)
     rendered_total_items = total_items if total_items > 0 else 1
     await query.edit_message_text(
-        "Content pack published.\n"
-        f"{_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id)}\n"
-        f"Added words: {len(approved.import_result.draft.vocabulary_items)}\n"
-        f"Generating images... 0/{rendered_total_items}"
+        _tg(
+            "content_pack_published_generating_images",
+            context=context,
+            user=user,
+            destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id),
+            item_count=len(approved.import_result.draft.vocabulary_items),
+            processed=0,
+            total=rendered_total_items,
+        )
     )
     progress_queue: asyncio.Queue[tuple[int, int] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
@@ -1628,10 +1674,15 @@ async def add_words_approve_auto_images_handler(
             last_progress = progress
             processed_count, total_count = progress
             await query.edit_message_text(
-                "Content pack published.\n"
-                f"{_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id)}\n"
-                f"Added words: {len(approved.import_result.draft.vocabulary_items)}\n"
-                f"Generating images... {processed_count}/{total_count}"
+                _tg(
+                    "content_pack_published_generating_images",
+                    context=context,
+                    user=user,
+                    destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id),
+                    item_count=len(approved.import_result.draft.vocabulary_items),
+                    processed=processed_count,
+                    total=total_count,
+                )
             )
 
     progress_task = asyncio.create_task(_report_generation_progress())
@@ -1657,12 +1708,18 @@ async def add_words_approve_auto_images_handler(
         1 for item in enriched_pack.get("vocabulary_items", []) if item.get("image_ref")
     )
     await query.edit_message_text(
-        "Draft approved and images generated.\n"
-        f"{_publish_destination_text(context, output_path=approved.output_path, topic_id=topic_id)}\n"
-        f"Generated images: {generated_image_count}\n"
-        "You can edit the image for a specific word if needed.",
+        _tg(
+            "draft_approved_images_generated",
+            context=context,
+            user=user,
+            destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=topic_id),
+            generated_count=generated_image_count,
+        ),
         reply_markup=(
-            _published_images_menu_keyboard(topic_id=topic_id)
+            _published_images_menu_keyboard(
+                topic_id=topic_id,
+                language=_telegram_ui_language(context, user),
+            )
             if topic_id
             else None
         ),
@@ -1682,17 +1739,18 @@ async def published_images_menu_handler(
     try:
         content_pack = _content_store(context).get_content_pack(topic_id)
     except ValueError:
-        await query.edit_message_text("Published content pack not found.")
+        await query.edit_message_text(_tg("published_content_not_found", context=context, user=user))
         return
     raw_items = content_pack.get("vocabulary_items", [])
     if not isinstance(raw_items, list) or not raw_items:
-        await query.edit_message_text("No vocabulary items found in this content pack.")
+        await query.edit_message_text(_tg("no_vocabulary_items_found", context=context, user=user))
         return
     await query.edit_message_text(
-        "Choose a word to edit its image.",
+        _tg("choose_word_edit_image", context=context, user=user),
         reply_markup=_published_image_items_keyboard(
             topic_id=topic_id,
             raw_items=raw_items,
+            language=_telegram_ui_language(context, user),
         ),
     )
 
@@ -1710,23 +1768,23 @@ async def published_image_item_handler(
     try:
         content_pack = _content_store(context).get_content_pack(topic_id)
     except ValueError:
-        await query.edit_message_text("Published content pack not found.")
+        await query.edit_message_text(_tg("published_content_not_found", context=context, user=user))
         return
     raw_items = content_pack.get("vocabulary_items", [])
     if not isinstance(raw_items, list):
-        await query.edit_message_text("No vocabulary items found in this content pack.")
+        await query.edit_message_text(_tg("no_vocabulary_items_found", context=context, user=user))
         return
     try:
         selected_item = raw_items[int(item_index)]
     except (ValueError, IndexError):
-        await query.edit_message_text("Selected word is no longer available.")
+        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
         return
     if not isinstance(selected_item, dict):
-        await query.edit_message_text("Selected word is no longer available.")
+        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
         return
     item_id = str(selected_item.get("id", "")).strip()
     if not item_id:
-        await query.edit_message_text("Selected word is no longer available.")
+        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
         return
     review_flow = await asyncio.to_thread(
         _start_published_word_image_review(context).execute,
@@ -1751,9 +1809,9 @@ async def image_review_generate_handler(
     _, _, flow_id = query.data.split(":")
     flow = _get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text("This image review flow is no longer active.")
+        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
         return
-    await query.edit_message_text("Starting image generation...")
+    await query.edit_message_text(_tg("start_image_generation", context=context, user=user))
     await _prepare_and_send_image_review_step(query.message, context, user.id, flow)
 
 
@@ -1769,11 +1827,13 @@ async def image_review_search_handler(
     _, _, flow_id = query.data.split(":")
     flow = _get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text("This image review flow is no longer active.")
+        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
         return
     current_position = flow.current_index + 1
     total_items = len(flow.items)
-    await query.edit_message_text(f"Searching Pixabay {current_position}/{total_items}...")
+    await query.edit_message_text(
+        _tg("pixabay_search_progress", context=context, user=user, current=current_position, total=total_items)
+    )
     try:
         updated_flow = await asyncio.to_thread(
             _search_image_review_candidates(context).execute,
@@ -1785,7 +1845,7 @@ async def image_review_search_handler(
         await query.edit_message_text(str(error))
         return
     await query.edit_message_text(
-        f"Pixabay candidates ready {current_position}/{total_items}"
+        _tg("pixabay_candidates_ready", context=context, user=user, current=current_position, total=total_items)
     )
     await _send_image_review_step(query.message, context, updated_flow)
 
@@ -1802,12 +1862,12 @@ async def image_review_next_handler(
     _, _, flow_id = query.data.split(":")
     flow = _get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text("This image review flow is no longer active.")
+        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
         return
     current_position = flow.current_index + 1
     total_items = len(flow.items)
     await query.edit_message_text(
-        f"Loading next Pixabay candidates {current_position}/{total_items}..."
+        _tg("loading_next_pixabay", context=context, user=user, current=current_position, total=total_items)
     )
     try:
         updated_flow = await asyncio.to_thread(
@@ -1819,7 +1879,7 @@ async def image_review_next_handler(
         await query.edit_message_text(str(error))
         return
     await query.edit_message_text(
-        f"Pixabay candidates ready {current_position}/{total_items}"
+        _tg("pixabay_candidates_ready", context=context, user=user, current=current_position, total=total_items)
     )
     await _send_image_review_step(query.message, context, updated_flow)
 
@@ -1836,12 +1896,12 @@ async def image_review_previous_handler(
     _, _, flow_id = query.data.split(":")
     flow = _get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text("This image review flow is no longer active.")
+        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
         return
     current_position = flow.current_index + 1
     total_items = len(flow.items)
     await query.edit_message_text(
-        f"Loading previous Pixabay candidates {current_position}/{total_items}..."
+        _tg("loading_previous_pixabay", context=context, user=user, current=current_position, total=total_items)
     )
     try:
         updated_flow = await asyncio.to_thread(
@@ -1853,7 +1913,7 @@ async def image_review_previous_handler(
         await query.edit_message_text(str(error))
         return
     await query.edit_message_text(
-        f"Pixabay candidates ready {current_position}/{total_items}"
+        _tg("pixabay_candidates_ready", context=context, user=user, current=current_position, total=total_items)
     )
     await _send_image_review_step(query.message, context, updated_flow)
 
@@ -1870,7 +1930,7 @@ async def image_review_pick_handler(
     _, _, flow_id, candidate_index = query.data.split(":")
     flow = _get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text("This image review flow is no longer active.")
+        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
         return
     updated_flow = await asyncio.to_thread(
         _select_image_review_candidate(context).execute,
@@ -1895,10 +1955,11 @@ async def image_review_pick_handler(
             topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
             raw_items = updated_flow.content_pack.get("vocabulary_items", [])
             await query.edit_message_text(
-                "No changes made. Choose another word to edit.",
+                _tg("no_changes_choose_another_word", context=context, user=user),
                 reply_markup=_published_image_items_keyboard(
                     topic_id=topic_id,
                     raw_items=raw_items if isinstance(raw_items, list) else [],
+                    language=_telegram_ui_language(context, user),
                 ),
             )
             if registry is not None:
@@ -1925,14 +1986,17 @@ async def image_review_pick_handler(
         _reload_training_service(context)
         _clear_active_word_flow(user.id, context)
         await query.edit_message_text(
-            "Image review completed and content pack published.\n"
-            f"{_publish_destination_text(context, output_path=output_path, topic_id=topic_id)}\n"
-            "New words are now available in the bot."
+            _tg(
+                "image_review_completed_published",
+                context=context,
+                user=user,
+                destination=_publish_destination_text(context, output_path=output_path, topic_id=topic_id),
+            )
         )
         if registry is not None:
             registry.clear(flow_id=flow_id)
         return
-    await query.edit_message_text("Image selected.")
+    await query.edit_message_text(_tg("image_selected", context=context, user=user))
     await _send_image_review_step(query.message, context, updated_flow)
 
 
@@ -1948,7 +2012,7 @@ async def image_review_skip_handler(
     _, _, flow_id = query.data.split(":")
     flow = _get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text("This image review flow is no longer active.")
+        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
         return
     updated_flow = await asyncio.to_thread(
         _skip_image_review_item(context).execute,
@@ -1972,10 +2036,11 @@ async def image_review_skip_handler(
             topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
             raw_items = updated_flow.content_pack.get("vocabulary_items", [])
             await query.edit_message_text(
-                "No changes made. Choose another word to edit.",
+                _tg("no_changes_choose_another_word", context=context, user=user),
                 reply_markup=_published_image_items_keyboard(
                     topic_id=topic_id,
                     raw_items=raw_items if isinstance(raw_items, list) else [],
+                    language=_telegram_ui_language(context, user),
                 ),
             )
             if registry is not None:
@@ -2002,14 +2067,17 @@ async def image_review_skip_handler(
         _reload_training_service(context)
         _clear_active_word_flow(user.id, context)
         await query.edit_message_text(
-            "Image review completed and content pack published.\n"
-            f"{_publish_destination_text(context, output_path=output_path, topic_id=topic_id)}\n"
-            "New words are now available in the bot."
+            _tg(
+                "image_review_completed_published",
+                context=context,
+                user=user,
+                destination=_publish_destination_text(context, output_path=output_path, topic_id=topic_id),
+            )
         )
         if registry is not None:
             registry.clear(flow_id=flow_id)
         return
-    await query.edit_message_text("Image skipped.")
+    await query.edit_message_text(_tg("image_skipped", context=context, user=user))
     await _send_image_review_step(query.message, context, updated_flow)
 
 
@@ -2029,17 +2097,17 @@ async def image_review_edit_prompt_handler(
         or flow.flow_id != flow_id
         or flow.current_item is None
     ):
-        await query.edit_message_text("This image review flow is no longer active.")
+        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
         return
     context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_PROMPT_TEXT
     context.user_data["image_review_flow_id"] = flow_id
     context.user_data["image_review_item_id"] = flow.current_item.item_id
     await query.message.reply_text(
-        "Send a new full image prompt for this word as one message.",
+        _tg("send_new_full_prompt", context=context, user=user),
         reply_markup=ForceReply(selective=True),
     )
     await query.message.reply_text(
-        f"Current prompt:\n{flow.current_item.prompt}",
+        _tg("current_prompt", context=context, user=user, prompt=flow.current_item.prompt),
     )
 
 
@@ -2055,18 +2123,18 @@ async def image_review_edit_search_query_handler(
     _, _, flow_id = query.data.split(":")
     flow = _get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text("This image review flow is no longer active.")
+        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
         return
     context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT
     context.user_data["image_review_flow_id"] = flow_id
     context.user_data["image_review_item_id"] = flow.current_item.item_id
     current_query = flow.current_item.search_query or flow.current_item.english_word
     await query.message.reply_text(
-        "Send a new Pixabay search query for this word as one message.",
+        _tg("send_new_search_query", context=context, user=user),
         reply_markup=ForceReply(selective=True),
     )
     await query.message.reply_text(
-        f"Current query:\n{current_query}",
+        _tg("current_query", context=context, user=user, query=current_query),
     )
 
 
@@ -2086,13 +2154,13 @@ async def image_review_attach_photo_handler(
         or flow.flow_id != flow_id
         or flow.current_item is None
     ):
-        await query.edit_message_text("This image review flow is no longer active.")
+        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
         return
     context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_PHOTO
     context.user_data["image_review_flow_id"] = flow_id
     context.user_data["image_review_item_id"] = flow.current_item.item_id
     await query.message.reply_text(
-        "Attach one photo for this word.",
+        _tg("attach_one_photo", context=context, user=user),
         reply_markup=ForceReply(selective=True),
     )
 
@@ -2116,12 +2184,12 @@ async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAU
         context.user_data.pop("words_flow_mode", None)
         context.user_data.pop("image_review_flow_id", None)
         context.user_data.pop("image_review_item_id", None)
-        await message.reply_text("This image review task is no longer active.")
+        await message.reply_text(_tg("image_review_task_inactive", context=context, user=user))
         return
     context.user_data.pop("words_flow_mode", None)
     context.user_data.pop("image_review_flow_id", None)
     context.user_data.pop("image_review_item_id", None)
-    status_message = await message.reply_text("Saving uploaded photo... 0/1")
+    status_message = await message.reply_text(_tg("saving_uploaded_photo", context=context, user=user))
     photo = message.photo[-1]
     telegram_file = await photo.get_file()
     topic = flow.content_pack.get("topic", {})
@@ -2143,7 +2211,7 @@ async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAU
         image_ref=image_ref,
         output_path=output_path,
     )
-    await status_message.edit_text("Uploaded photo attached.")
+    await status_message.edit_text(_tg("uploaded_photo_attached", context=context, user=user))
     if updated_flow.completed:
         output_path = _resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
@@ -2160,9 +2228,12 @@ async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAU
         _reload_training_service(context)
         _clear_active_word_flow(user.id, context)
         await message.reply_text(
-            "Image review completed and content pack published.\n"
-            f"{_publish_destination_text(context, output_path=output_path, topic_id=topic_id)}\n"
-            "New words are now available in the bot."
+            _tg(
+                "image_review_completed_published",
+                context=context,
+                user=user,
+                destination=_publish_destination_text(context, output_path=output_path, topic_id=topic_id),
+            )
         )
         return
     await _send_image_review_step(message, context, updated_flow)
@@ -2179,13 +2250,13 @@ async def continue_session_handler(update: Update, context: ContextTypes.DEFAULT
         question = _service(context).get_current_question(user_id=user.id)
     except InvalidSessionStateError:
         context.user_data["awaiting_text_answer"] = False
-        await query.edit_message_text("There is no active session anymore. Send /start.")
+        await query.edit_message_text(_tg("no_active_session_send_start", context=context, user=user))
         return
     context.user_data["awaiting_text_answer"] = question.mode in {
         TrainingMode.MEDIUM,
         TrainingMode.HARD,
     }
-    await query.edit_message_text("Continuing your current session.")
+    await query.edit_message_text(_tg("continue_current_session", context=context, user=user))
     await _send_question(update, context, question)
 
 
@@ -2198,10 +2269,13 @@ async def restart_session_handler(update: Update, context: ContextTypes.DEFAULT_
     logger.info("User %s chose to discard the active session", user.id)
     _service(context).discard_active_session(user_id=user.id)
     context.user_data["awaiting_text_answer"] = False
-    await query.edit_message_text("Previous session discarded.")
+    await query.edit_message_text(_tg("previous_session_discarded", context=context, user=user))
     await query.message.reply_text(
-        "Choose a topic to start training.",
-        reply_markup=_topic_keyboard(_service(context).list_topics()),
+        _tg("choose_topic_start_training", context=context, user=user),
+        reply_markup=_topic_keyboard(
+            _service(context).list_topics(),
+            language=_telegram_ui_language(context, user),
+        ),
     )
 
 
@@ -2214,13 +2288,21 @@ async def topic_selected_handler(update: Update, context: ContextTypes.DEFAULT_T
     lesson_selection = _service(context).list_lessons_by_topic(topic_id=topic_id)
     if lesson_selection.has_lessons:
         await query.edit_message_text(
-            "Choose all words in the topic or a specific lesson.",
-            reply_markup=_lesson_keyboard(topic_id, lesson_selection.lessons),
+            _tg("choose_lesson", context=context, user=update.effective_user),
+            reply_markup=_lesson_keyboard(
+                topic_id,
+                lesson_selection.lessons,
+                language=_telegram_ui_language(context, update.effective_user),
+            ),
         )
         return
     await query.edit_message_text(
-        "Choose a training mode.",
-        reply_markup=_mode_keyboard(topic_id, None),
+        _tg("choose_mode", context=context, user=update.effective_user),
+        reply_markup=_mode_keyboard(
+            topic_id,
+            None,
+            language=_telegram_ui_language(context, update.effective_user),
+        ),
     )
 
 
@@ -2232,8 +2314,12 @@ async def lesson_selected_handler(update: Update, context: ContextTypes.DEFAULT_
     _, topic_id, lesson_id = query.data.split(":")
     selected_lesson_id = None if lesson_id == "all" else lesson_id
     await query.edit_message_text(
-        "Choose a training mode.",
-        reply_markup=_mode_keyboard(topic_id, selected_lesson_id),
+        _tg("choose_mode", context=context, user=update.effective_user),
+        reply_markup=_mode_keyboard(
+            topic_id,
+            selected_lesson_id,
+            language=_telegram_ui_language(context, update.effective_user),
+        ),
     )
 
 
@@ -2262,7 +2348,7 @@ async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TY
         TrainingMode.MEDIUM,
         TrainingMode.HARD,
     }
-    await query.edit_message_text("Session started.")
+    await query.edit_message_text(_tg("session_started", context=context, user=user))
     await _send_question(update, context, question)
 
 
@@ -2376,7 +2462,7 @@ async def _process_answer(
         outcome = service.submit_answer(user_id=user.id, answer=answer)
     except InvalidSessionStateError:
         context.user_data["awaiting_text_answer"] = False
-        await message.reply_text("No active session. Send /start to begin.")
+        await message.reply_text(_tg("no_active_session_begin", context=context, user=user))
         return
     except ApplicationError as error:
         await message.reply_text(str(error))
@@ -2392,13 +2478,19 @@ async def _process_answer(
 
 async def _send_feedback(message, outcome: AnswerOutcome) -> None:
     if outcome.result.is_correct:
-        text = "Correct."
+        text = _tg("correct", user=getattr(message, "from_user", None))
     else:
-        text = f"Not quite. Correct answer: {outcome.result.expected_answer}."
+        text = _tg(
+            "not_quite",
+            user=getattr(message, "from_user", None),
+            expected_answer=outcome.result.expected_answer,
+        )
     if outcome.summary is not None:
-        text += (
-            f"\nSession complete: {outcome.summary.correct_answers}/"
-            f"{outcome.summary.total_questions} correct."
+        text += _tg(
+            "session_complete",
+            user=getattr(message, "from_user", None),
+            correct_answers=outcome.summary.correct_answers,
+            total_questions=outcome.summary.total_questions,
         )
     await message.reply_text(text)
 
@@ -2573,12 +2665,17 @@ async def _prepare_and_send_image_review_step(
 ) -> None:
     current_item = flow.current_item
     if current_item is None:
-        await message.reply_text("Image review completed.")
+        await message.reply_text(_tg("image_review_completed", user=getattr(message, "from_user", None)))
         return
     total_items = len(flow.items)
     current_position = flow.current_index + 1
     status_message = await message.reply_text(
-        f"Generating local image candidates {current_position}/{total_items}..."
+        _tg(
+            "local_candidates_generating",
+            user=getattr(message, "from_user", None),
+            current=current_position,
+            total=total_items,
+        )
     )
     stop_event = asyncio.Event()
     heartbeat_task = asyncio.create_task(
@@ -2598,7 +2695,12 @@ async def _prepare_and_send_image_review_step(
         stop_event.set()
         await heartbeat_task
     await status_message.edit_text(
-        f"Local image candidates ready {current_position}/{total_items}"
+        _tg(
+            "local_candidates_ready",
+            user=getattr(message, "from_user", None),
+            current=current_position,
+            total=total_items,
+        )
     )
     await _send_image_review_step(message, context, prepared_flow)
 
@@ -2637,8 +2739,7 @@ async def _send_current_published_image_preview(
     image_path = resolve_existing_image_path(image_ref)
     if image_path is None:
         empty_message = await message.reply_text(
-            "No current image is saved for this word yet.\n"
-            "You can search Pixabay, generate a local image, edit the prompt, or attach your own photo."
+            _tg("no_current_image_intro", user=getattr(message, "from_user", None))
         )
         _track_flow_message(
             context,
@@ -2652,8 +2753,7 @@ async def _send_current_published_image_preview(
         preview_message = await message.reply_photo(
             photo=photo_file,
             caption=(
-                "Current image.\n"
-                "You can keep it, search Pixabay, generate a local image, edit the prompt, or attach your own photo."
+                _tg("current_image_intro", user=getattr(message, "from_user", None))
             ),
         )
     _track_flow_message(
@@ -2698,6 +2798,9 @@ async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, f
         reply_markup=_image_review_keyboard(
             flow_id=flow.flow_id,
             current_item=current_item,
+            language=_normalize_telegram_ui_language(
+                getattr(getattr(message, "from_user", None), "language_code", None)
+            ),
         ),
     )
     _track_flow_message(
