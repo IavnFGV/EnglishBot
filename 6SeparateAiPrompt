@@ -1,0 +1,159 @@
+Refactor the current teacher-import / AI-assisted behavior so that AI is treated as an external optional dependency, not as a built-in always-available capability.
+
+Goal:
+The application must continue working 24/7 on hosting even when the external AI node is unavailable.
+AI-assisted parsing should be treated as an optional external service.
+If AI is unavailable, times out, or fails, the admin flow should gracefully fall back to simpler parsing / template-based extraction / partial draft creation and clearly inform the user.
+
+Important constraints:
+- Keep the current project architecture practical and understandable
+- Do not overengineer
+- Do not add queues/workers/background infrastructure for this iteration
+- Keep the admin/import flow synchronous for now
+- Keep learner bot behavior working
+- Use pytest
+- Do not replace tests with manual scripts
+- Prefer small focused services/functions over large managers/coordinators
+
+Desired high-level behavior:
+
+1. AI available:
+- teacher text is sent to the external AI capability
+- AI result is validated
+- if valid, continue with the normal draft/preview/save flow
+
+2. AI unavailable or failed:
+- app detects that the AI capability is unavailable / timed out / errored
+- app informs the admin/user that smart parsing is currently unavailable
+- app falls back to simpler local parsing/template extraction where possible
+- if fallback parsing is partial/incomplete, show the partial result and tell the user to fix the remaining parts manually
+
+Example desired UX message:
+- "Smart parsing is currently unavailable. I will try a simpler template-based parse."
+- If fallback succeeds partially:
+  "Here is the partial result. Please review and complete the missing parts manually."
+
+Please implement the following.
+
+1. Introduce an explicit AI capability boundary
+Create a small external-AI interface/service abstraction for smart parsing.
+This should clearly represent:
+- availability check
+- parse request
+- parse response
+- failure cases
+
+Do NOT scatter direct AI calls across the app.
+
+Suggested idea:
+- SmartLessonParsingService or AIParsingGateway
+- a local fallback parser/service next to it
+
+2. External dependency semantics
+Treat AI parsing as an external dependency that can fail.
+
+Support these failure types:
+- unavailable / health check failed
+- timeout
+- invalid response
+- parsing error from remote AI node
+
+Represent failures explicitly and do not crash the admin flow.
+
+3. Fallback behavior
+Implement a simpler fallback parsing path for teacher text when AI parsing is unavailable.
+
+This fallback does NOT need to be smart.
+It can be limited and heuristic/template-based.
+
+Acceptable fallback behavior:
+- extract obvious vocabulary pairs from simple formats
+- preserve raw fragments for manual correction
+- return a partial draft plus warnings
+- clearly indicate which parts could not be parsed
+
+Do not try to make fallback as powerful as AI parsing.
+
+4. Admin flow changes
+Adjust the admin/import flow so that:
+- if AI parsing works, show normal draft preview
+- if AI parsing fails, show a message that smart parsing is unavailable
+- then run fallback parsing
+- show the fallback result plus warnings
+- allow the user to continue review/edit manually
+
+The flow should remain synchronous for now.
+
+5. Status/health handling
+Add a simple health/availability check for the external AI node/service.
+This can be minimal, for example:
+- ping/health endpoint
+- or safe request failure handling if a separate health check is not practical
+
+Avoid heavy infrastructure.
+
+6. Error/result modeling
+Introduce clear result types for:
+- smart parse success
+- smart parse unavailable
+- smart parse failed
+- fallback parse result
+- partial draft with warnings
+
+Avoid returning ambiguous mixed objects.
+Keep result handling explicit and readable.
+
+7. Keep core app independent from AI
+Ensure the core import flow and learner bot do not require the external AI service to function.
+The app must still support:
+- manual/fixed-format content addition
+- fallback parsing
+- manual review
+- Pixabay-based image flow
+even when AI is down
+
+8. Tests
+Add pytest coverage for:
+- AI available -> smart parse success path
+- AI unavailable -> fallback path
+- AI timeout -> fallback path
+- AI invalid response -> fallback path
+- fallback partial parse with warnings
+- admin flow messages / result state changes at application level
+- core functionality still working without AI
+
+Use fakes/mocks for the external AI dependency.
+Do not require a live AI node in tests.
+
+9. Documentation
+Update README / ARCHITECTURE with:
+- AI is an optional external capability
+- the app supports graceful fallback when AI is unavailable
+- current admin/import flow behavior in both modes
+- what remains manual in fallback mode
+
+10. Scope discipline
+Do NOT:
+- add background job infrastructure
+- add queues
+- add workers
+- redesign the whole app
+- create architecture theater
+- replace tests with scripts
+
+Keep it boring, explicit, and resilient.
+
+Final output:
+- summary of changes
+- files changed
+- new AI boundary/service description
+- fallback behavior description
+- tests added
+- known limitations
+
+Additional implementation style constraints:
+- Keep the AI boundary thin
+- Keep fallback parser simple and limited
+- Prefer explicit branching over abstract orchestration layers
+- If one class can be replaced by one readable function, prefer the function
+- Testing is mandatory for all AI/fallback branches
