@@ -2,6 +2,21 @@
 
 This repo can be run on the Hetzner server with Docker after the host bootstrap step.
 
+## Documentation Rule
+
+Every important deployment or runtime-safety step must be reflected in documentation immediately.
+
+This especially includes:
+
+- deploy workflow changes
+- rollback workflow changes
+- backup and restore procedures
+- retention policy changes
+- new required secrets
+- new required server directories or files
+
+If the operational process changes, update this document in the same change set.
+
 ## Expected server layout
 
 ```text
@@ -11,6 +26,8 @@ This repo can be run on the Hetzner server with Docker after the host bootstrap 
     .env
     data/
     assets/
+    backups/
+      db/
     logs/
     deploy/
       build-counter.env
@@ -42,6 +59,7 @@ It runs on every push to `main` and does:
 3. Run [deploy-docker-app.sh](/workspaces/EnglishBot/scripts/deploy-docker-app.sh)
 4. Rebuild and restart the Docker container with `docker compose up -d --build`
 5. Create a git tag for the successful deploy, for example `deploy-v0.1.0-b3`
+6. Keep the latest 5 SQLite backups in `shared/backups/db/`
 
 ### Required GitHub repository secrets
 
@@ -83,6 +101,13 @@ cd /srv/englishbot/app
 bash scripts/rollback-docker-app.sh deploy-v0.1.0-b3
 ```
 
+If the release damaged runtime data, restore the database from a backup copy:
+
+```bash
+cd /srv/englishbot/app
+bash scripts/restore-runtime-db.sh /srv/englishbot/shared/backups/db/englishbot-db-deploy-v0.1.0-b3-20260327T183000Z.sqlite3
+```
+
 ## Useful commands
 
 ```bash
@@ -91,13 +116,16 @@ docker compose ps
 docker compose logs -f englishbot
 docker compose restart englishbot
 docker compose up -d --build
+bash scripts/backup-runtime-db.sh manual
 bash scripts/deploy-docker-app.sh
 bash scripts/rollback-docker-app.sh
+bash scripts/restore-runtime-db.sh /srv/englishbot/shared/backups/db/<backup-file>.sqlite3
 ```
 
 ## Persistence
 
 - `data/` keeps SQLite runtime state
 - `assets/` keeps generated and downloaded images
+- `backups/db/` keeps the latest 5 SQLite backup copies
 - `logs/` keeps rotating log files
 - `content/custom/` keeps editor-created content packs

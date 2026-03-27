@@ -47,6 +47,12 @@ On the host, the workspace root is:
 - Do not place changing build metadata such as git SHA, branch name, build timestamp, or commit-derived `ARG`/`ENV` near the top of the `Dockerfile`.
 - Prefer adding build metadata as one of the last layers, ideally right before `CMD`, so Docker cache remains effective for package install and dependency layers.
 
+## Deployment Documentation Conventions
+
+- Every important deployment, rollback, backup, restore, retention, or release-safety change must be documented in the same change set.
+- If you add or change a server script, GitHub Actions workflow, required secret, runtime directory, backup policy, rollback path, or recovery step, update the relevant documentation immediately.
+- Do not leave operational knowledge only in shell scripts or workflow files; mirror it in `docs/...` so the team can follow it during incidents.
+
 ## Logging Conventions
 
 Use standard Python `logging` with one shared formatter configured at application startup:
