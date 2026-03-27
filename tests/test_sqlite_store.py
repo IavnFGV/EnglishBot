@@ -484,6 +484,33 @@ def test_image_review_flow_restores_null_search_query_as_none(tmp_path: Path) ->
     assert restored_flow.current_item.approved_source_type is None
 
 
+def test_content_pack_round_trip_preserves_item_level_pixabay_search_query(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+
+    topic_id = store.upsert_content_pack(
+        {
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "lessons": [],
+            "vocabulary_items": [
+                {
+                    "id": "dragon",
+                    "english_word": "Dragon",
+                    "translation": "дракон",
+                    "image_prompt": "dragon toy, cartoon style, simple, centered, white background",
+                    "pixabay_search_query": "dragon scissors clipart",
+                }
+            ],
+        }
+    )
+
+    restored = store.get_content_pack(topic_id)
+
+    assert restored["vocabulary_items"][0]["image_prompt"] == (
+        "dragon toy, cartoon style, simple, centered, white background"
+    )
+    assert restored["vocabulary_items"][0]["pixabay_search_query"] == "dragon scissors clipart"
+
+
 def test_sqlite_telegram_flow_message_repository_tracks_and_clears_by_tag(tmp_path: Path) -> None:
     store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
     repository = SQLiteTelegramFlowMessageRepository(store)

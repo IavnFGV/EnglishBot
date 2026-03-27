@@ -128,6 +128,13 @@ _EN: dict[str, str] = {
     "pixabay_candidates_updated": "Pixabay candidates updated.",
     "local_candidates_generating": "Generating local image candidates {current}/{total}...",
     "local_candidates_ready": "Local image candidates ready {current}/{total}",
+    "pixabay_search_query": "Pixabay search query: {query}",
+    "image_review_no_candidates_loaded": "No candidates loaded yet.",
+    "pixabay_candidates_page": "Pixabay candidates page {page}",
+    "image_review_local_ai_candidates": "Local AI candidates.",
+    "image_review_progress": "Reviewing images {current}/{total}",
+    "image_review_prompt_line": "Prompt: {prompt}",
+    "image_review_prompt_usage_note": "Prompt is used for local AI generation.",
 }
 
 _RU: dict[str, str] = {
@@ -256,6 +263,13 @@ _RU: dict[str, str] = {
     "pixabay_candidates_updated": "Кандидаты Pixabay обновлены.",
     "local_candidates_generating": "Генерирую локальные кандидаты {current}/{total}...",
     "local_candidates_ready": "Локальные кандидаты готовы {current}/{total}",
+    "pixabay_search_query": "Поиск в Pixabay: {query}",
+    "image_review_no_candidates_loaded": "Кандидаты ещё не загружены.",
+    "pixabay_candidates_page": "Кандидаты Pixabay, страница {page}",
+    "image_review_local_ai_candidates": "Локальные AI-кандидаты.",
+    "image_review_progress": "Проверка изображений {current}/{total}",
+    "image_review_prompt_line": "Промпт: {prompt}",
+    "image_review_prompt_usage_note": "Этот промпт используется для локальной AI-генерации.",
 }
 
 _UK: dict[str, str] = {
@@ -383,6 +397,13 @@ _UK: dict[str, str] = {
     "pixabay_candidates_updated": "Кандидатів Pixabay оновлено.",
     "local_candidates_generating": "Генерую локальних кандидатів {current}/{total}...",
     "local_candidates_ready": "Локальні кандидати готові {current}/{total}",
+    "pixabay_search_query": "Пошук у Pixabay: {query}",
+    "image_review_no_candidates_loaded": "Кандидатів ще не завантажено.",
+    "pixabay_candidates_page": "Кандидати Pixabay, сторінка {page}",
+    "image_review_local_ai_candidates": "Локальні AI-кандидати.",
+    "image_review_progress": "Перевірка зображень {current}/{total}",
+    "image_review_prompt_line": "Промпт: {prompt}",
+    "image_review_prompt_usage_note": "Цей промпт використовується для локальної AI-генерації.",
 }
 
 _STRINGS = {

@@ -140,7 +140,7 @@ class ImageReviewFlowHarness:
             found_selected_item = True
             raw_prompt = str(raw_item.get("image_prompt", "")).strip()
             prompt = (
-                compose_image_prompt(raw_prompt, english_word=english_word)
+                _resolve_persisted_item_prompt(raw_prompt=raw_prompt, english_word=english_word)
                 if raw_prompt
                 else fallback_image_prompt(english_word)
             )
@@ -151,6 +151,7 @@ class ImageReviewFlowHarness:
                     translation=translation,
                     prompt=prompt,
                     candidates=[],
+                    search_query=_optional_item_string(raw_item.get("pixabay_search_query")),
                     search_page=1,
                 )
             )
@@ -254,6 +255,11 @@ class ImageReviewFlowHarness:
             per_page=per_page,
         )
         current_item.search_query = normalized_query
+        self._update_item_review_settings(
+            updated.content_pack,
+            item_id=current_item.item_id,
+            pixabay_search_query=normalized_query,
+        )
         current_item.search_page = target_page
         current_item.candidate_source_type = "pixabay"
         current_item.selected_candidate_index = None
@@ -338,6 +344,11 @@ class ImageReviewFlowHarness:
         if not normalized_prompt:
             raise ValueError("Image prompt is required.")
         current_item.prompt = normalized_prompt
+        self._update_item_review_settings(
+            updated.content_pack,
+            item_id=current_item.item_id,
+            image_prompt=normalized_prompt,
+        )
         current_item.candidates = []
         current_item.selected_candidate_index = None
         current_item.skipped = False
@@ -526,3 +537,39 @@ class ImageReviewFlowHarness:
             width=result.width,
             height=result.height,
         )
+
+    def _update_item_review_settings(
+        self,
+        content_pack: dict[str, object],
+        *,
+        item_id: str,
+        image_prompt: str | None = None,
+        pixabay_search_query: str | None = None,
+    ) -> None:
+        raw_items = content_pack.get("vocabulary_items", [])
+        if not isinstance(raw_items, list):
+            return
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+            if str(raw_item.get("id", "")).strip() != item_id:
+                continue
+            if image_prompt is not None:
+                raw_item["image_prompt"] = image_prompt
+            if pixabay_search_query is not None:
+                raw_item["pixabay_search_query"] = pixabay_search_query
+            return
+
+
+def _optional_item_string(value: object) -> str | None:
+    normalized = str(value).strip() if value is not None else ""
+    return normalized or None
+
+
+def _resolve_persisted_item_prompt(*, raw_prompt: str, english_word: str) -> str:
+    normalized_prompt = " ".join(raw_prompt.split()).strip()
+    if not normalized_prompt:
+        return fallback_image_prompt(english_word)
+    if "cartoon style, simple, centered, white background" in normalized_prompt.lower():
+        return normalized_prompt
+    return compose_image_prompt(normalized_prompt, english_word=english_word)

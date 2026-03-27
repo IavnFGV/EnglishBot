@@ -194,13 +194,29 @@ def test_image_review_keyboard_uses_russian_labels_when_requested() -> None:
     assert keyboard.inline_keyboard[2][1].callback_data == "words:image_next:review123"
     assert keyboard.inline_keyboard[3][0].callback_data == "words:image_edit_search_query:review123"
     assert keyboard.inline_keyboard[4][1].callback_data == "words:image_attach_photo:review123"
-    assert keyboard.inline_keyboard[5][0].callback_data == "words:image_skip:review123"
+    assert keyboard.inline_keyboard[5][0].callback_data == "words:image_show_json:review123"
+    assert keyboard.inline_keyboard[6][0].callback_data == "words:image_skip:review123"
     assert all(
         len(button.callback_data) < 64
         for row in keyboard.inline_keyboard
         for button in row
         if button.callback_data is not None
     )
+
+
+def test_image_review_keyboard_includes_show_json_button() -> None:
+    current_item = SimpleNamespace(
+        candidates=[object()],
+        search_query=None,
+        search_page=1,
+    )
+
+    keyboard = _image_review_keyboard(
+        flow_id="review123",
+        current_item=current_item,
+    )
+
+    assert keyboard.inline_keyboard[4][0].callback_data == "words:image_show_json:review123"
 
 
 def test_image_review_keyboard_lays_out_six_pick_buttons_in_two_rows() -> None:

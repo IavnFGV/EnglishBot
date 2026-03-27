@@ -11,11 +11,13 @@ from englishbot.importing.extraction_support import (
 )
 from englishbot.importing.models import ExtractedVocabularyItemDraft, FallbackParseResult, LessonExtractionDraft
 from englishbot.logging_utils import logged_service_call
+from englishbot.text_variants import expand_aligned_slash_variants
 
 logger = logging.getLogger(__name__)
 
 _LATIN_RE = re.compile(r"[A-Za-z]")
 _CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+_TRAILING_PUNCTUATION_RE = re.compile(r"[.!?]+$")
 
 
 class FallbackLessonParser(Protocol):
@@ -86,8 +88,8 @@ def _parse_simple_line(line: str) -> list[ExtractedVocabularyItemDraft]:
         if separator not in stripped:
             continue
         left, _, right = stripped.partition(separator)
-        english_word = left.strip()
-        translation = right.strip()
+        english_word = _normalize_fallback_token(left)
+        translation = _normalize_fallback_token(right)
         if not english_word or not translation:
             return []
         if not _looks_like_supported_pair(english_word=english_word, translation=translation):
@@ -99,9 +101,33 @@ def _parse_simple_line(line: str) -> list[ExtractedVocabularyItemDraft]:
                 source_fragment=stripped,
             )
         )
-        return split_paired_item(repaired)
+        split_items = split_paired_item(repaired)
+        expanded_items: list[ExtractedVocabularyItemDraft] = []
+        for item in split_items:
+            english_variants, translation_variants = expand_aligned_slash_variants(
+                english_word=item.english_word,
+                translation=item.translation,
+            )
+            for variant, resolved_translation in zip(
+                english_variants,
+                translation_variants,
+                strict=False,
+            ):
+                expanded_items.append(
+                    ExtractedVocabularyItemDraft(
+                        english_word=variant,
+                        translation=resolved_translation,
+                        source_fragment=f"{variant} — {resolved_translation}",
+                    )
+                )
+        return expanded_items
     return []
 
 
 def _looks_like_supported_pair(*, english_word: str, translation: str) -> bool:
     return bool(_LATIN_RE.search(english_word)) and bool(_CYRILLIC_RE.search(translation))
+
+
+def _normalize_fallback_token(value: str) -> str:
+    normalized = " ".join(value.split()).strip()
+    return _TRAILING_PUNCTUATION_RE.sub("", normalized).strip()

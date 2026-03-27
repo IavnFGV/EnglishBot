@@ -13,6 +13,7 @@ _CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
 _PAIR_SPLIT_RE = re.compile(r"\s*/\s*")
 _EDGE_PUNCTUATION_RE = re.compile(r'^[\s"\'.!,:;?()]+|[\s"\'.!,:;?()]+$')
+_LEADING_LIST_MARKER_RE = re.compile(r"^\s*\d+[.)]\s*")
 
 
 def extract_explicit_topic_and_candidate_lines(raw_text: str) -> tuple[str, list[str]]:
@@ -197,9 +198,17 @@ def candidate_source_lines(raw_text: str) -> list[str]:
 def repair_item_from_source(item: ExtractedVocabularyItemDraft) -> ExtractedVocabularyItemDraft:
     parsed = _parse_source_fragment(item.source_fragment)
     if parsed is None:
-        return item
+        return ExtractedVocabularyItemDraft(
+            english_word=_strip_leading_list_marker(item.english_word),
+            translation=item.translation,
+            source_fragment=item.source_fragment,
+            item_id=item.item_id,
+            notes=item.notes,
+            image_prompt=item.image_prompt,
+        )
     parsed_english, parsed_translation = parsed
-    english_word = item.english_word
+    parsed_english = _strip_leading_list_marker(parsed_english)
+    english_word = _strip_leading_list_marker(item.english_word)
     translation = item.translation
     source_english_parts = _split_pair_parts(parsed_english)
     source_translation_parts = _split_pair_parts(parsed_translation)
@@ -295,11 +304,15 @@ def _parse_source_fragment(value: str) -> tuple[str, str] | None:
     parts = _SOURCE_SPLIT_RE.split(value, maxsplit=1)
     if len(parts) != 2:
         return None
-    left = parts[0].strip()
+    left = _strip_leading_list_marker(parts[0].strip())
     right = parts[1].strip()
     if not left or not right:
         return None
     return left, right
+
+
+def _strip_leading_list_marker(value: str) -> str:
+    return _LEADING_LIST_MARKER_RE.sub("", value).strip()
 
 
 def _looks_like_bad_translation(translation: str, parsed_translation: str) -> bool:

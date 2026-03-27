@@ -248,6 +248,71 @@ def test_ai_unavailable_falls_back_to_template_parse() -> None:
     assert "Smart parsing is currently unavailable." in result.extraction_metadata.status_messages[0]
 
 
+def test_ai_unavailable_fallback_strips_leading_numbers_from_initial_raw_input() -> None:
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="health check failed")),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(raw_text="Birthday\n\n1. Birthday boy — именинник")
+
+    assert result.validation.is_valid is True
+    assert [item.english_word for item in result.draft.vocabulary_items] == ["Birthday boy"]
+    assert [item.translation for item in result.draft.vocabulary_items] == ["именинник"]
+    assert [item.source_fragment for item in result.draft.vocabulary_items] == [
+        "Birthday boy — именинник"
+    ]
+
+
+def test_ai_unavailable_fallback_splits_slash_synonyms_in_preview_draft() -> None:
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="health check failed")),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(raw_text="Birthday\n\nPresents / Gifts — подарки.")
+
+    assert result.validation.is_valid is True
+    assert [item.english_word for item in result.draft.vocabulary_items] == [
+        "Presents",
+        "Gifts",
+    ]
+    assert [item.translation for item in result.draft.vocabulary_items] == [
+        "подарки",
+        "подарки",
+    ]
+
+
+def test_ai_unavailable_fallback_splits_aligned_slash_pairs_in_preview_draft() -> None:
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="health check failed")),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(
+        raw_text="Birthday\n\nBirthday boy / Birthday girl — именинник / именинница."
+    )
+
+    assert result.validation.is_valid is True
+    assert [item.english_word for item in result.draft.vocabulary_items] == [
+        "Birthday boy",
+        "Birthday girl",
+    ]
+    assert [item.translation for item in result.draft.vocabulary_items] == [
+        "именинник",
+        "именинница",
+    ]
+
+
 def test_ai_timeout_falls_back_and_marks_partial_result() -> None:
     pipeline = LessonImportPipeline(
         smart_parser=_FakeSmartParser(SmartParseTimeout(detail="read timeout")),

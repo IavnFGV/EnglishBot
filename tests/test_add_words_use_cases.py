@@ -130,6 +130,60 @@ def test_add_words_use_cases_support_extract_and_edit() -> None:
     assert flow.draft_result.draft.vocabulary_items[0].image_prompt is None
 
 
+def test_add_words_edit_splits_slash_synonyms_into_separate_draft_items() -> None:
+    repository = InMemoryAddWordsFlowRepository()
+    harness = _harness()
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+    apply_edit = ApplyAddWordsEditUseCase(harness=harness, flow_repository=repository)
+
+    flow = start.execute(user_id=7, raw_text="messy birthday text")
+    updated = apply_edit.execute(
+        user_id=7,
+        flow_id=flow.flow_id,
+        edited_text=(
+            "Topic: Birthday Celebration\n"
+            "Lesson: -\n\n"
+            "Presents / Gifts: подарки\n"
+        ),
+    )
+
+    assert [item.english_word for item in updated.draft_result.draft.vocabulary_items] == [
+        "Presents",
+        "Gifts",
+    ]
+    assert [item.translation for item in updated.draft_result.draft.vocabulary_items] == [
+        "подарки",
+        "подарки",
+    ]
+
+
+def test_add_words_edit_splits_aligned_slash_pairs_into_two_items() -> None:
+    repository = InMemoryAddWordsFlowRepository()
+    harness = _harness()
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+    apply_edit = ApplyAddWordsEditUseCase(harness=harness, flow_repository=repository)
+
+    flow = start.execute(user_id=7, raw_text="messy birthday text")
+    updated = apply_edit.execute(
+        user_id=7,
+        flow_id=flow.flow_id,
+        edited_text=(
+            "Topic: Birthday Celebration\n"
+            "Lesson: -\n\n"
+            "Birthday boy / Birthday girl: именинник / именинница\n"
+        ),
+    )
+
+    assert [item.english_word for item in updated.draft_result.draft.vocabulary_items] == [
+        "Birthday boy",
+        "Birthday girl",
+    ]
+    assert [item.translation for item in updated.draft_result.draft.vocabulary_items] == [
+        "именинник",
+        "именинница",
+    ]
+
+
 def test_start_add_words_does_not_persist_malformed_extraction_result() -> None:
     repository = InMemoryAddWordsFlowRepository()
     harness = AddWordsFlowHarness(
@@ -178,6 +232,33 @@ def test_start_add_words_persists_fallback_draft_when_ai_is_unavailable() -> Non
     assert flow.draft_result.extraction_metadata.parse_path == "fallback"
     assert [item.english_word for item in flow.draft_result.draft.vocabulary_items] == ["Dragon"]
     assert get_active.execute(user_id=7) is not None
+
+
+def test_start_add_words_fallback_preview_splits_slash_synonyms_when_ai_is_unavailable() -> None:
+    repository = InMemoryAddWordsFlowRepository()
+    harness = AddWordsFlowHarness(
+        pipeline=LessonImportPipeline(
+            smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="offline")),
+            fallback_parser=TemplateLessonFallbackParser(),
+            validator=LessonExtractionValidator(),
+            canonicalizer=DraftToContentPackCanonicalizer(),
+            writer=JsonContentPackWriter(),
+        ),
+        validator=LessonExtractionValidator(),
+        writer=JsonContentPackWriter(),
+    )
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+
+    flow = start.execute(user_id=7, raw_text="Birthday\n\nPresents / Gifts — подарки.")
+
+    assert [item.english_word for item in flow.draft_result.draft.vocabulary_items] == [
+        "Presents",
+        "Gifts",
+    ]
+    assert [item.translation for item in flow.draft_result.draft.vocabulary_items] == [
+        "подарки",
+        "подарки",
+    ]
 
 
 def test_start_add_words_keeps_partial_fallback_result_after_timeout() -> None:

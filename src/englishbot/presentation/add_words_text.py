@@ -7,6 +7,7 @@ from englishbot.importing.models import (
     ImportLessonResult,
     LessonExtractionDraft,
 )
+from englishbot.text_variants import expand_aligned_slash_variants
 
 
 def format_draft_preview(result: ImportLessonResult) -> str:
@@ -93,19 +94,26 @@ def parse_edited_draft_text(
         if parsed_pair is None:
             continue
         english_word, translation = parsed_pair
-        previous_item = previous_by_word.get(english_word.lower())
-        items.append(
-            ExtractedVocabularyItemDraft(
-                item_id=previous_item.item_id if previous_item is not None else None,
-                english_word=english_word,
-                translation=translation,
-                source_fragment=(
-                    previous_item.source_fragment if previous_item is not None else line
-                ),
-                notes=previous_item.notes if previous_item is not None else None,
-                image_prompt=previous_item.image_prompt if previous_item is not None else None,
-            )
+        english_variants, translation_variants = _expand_edited_variants(
+            english_word=english_word,
+            translation=translation,
         )
+        for variant, resolved_translation in zip(english_variants, translation_variants, strict=False):
+            previous_item = previous_by_word.get(variant.lower())
+            items.append(
+                ExtractedVocabularyItemDraft(
+                    item_id=previous_item.item_id if previous_item is not None else None,
+                    english_word=variant,
+                    translation=resolved_translation,
+                    source_fragment=(
+                        previous_item.source_fragment
+                        if previous_item is not None
+                        else f"{variant} — {resolved_translation}"
+                    ),
+                    notes=previous_item.notes if previous_item is not None else None,
+                    image_prompt=previous_item.image_prompt if previous_item is not None else None,
+                )
+            )
 
     return LessonExtractionDraft(
         topic_title=topic_title,
@@ -142,3 +150,7 @@ def parse_edited_vocabulary_line(line: str) -> tuple[str, str] | None:
         if english_word and translation:
             return english_word, translation
     return None
+
+
+def _expand_edited_variants(*, english_word: str, translation: str) -> tuple[list[str], list[str]]:
+    return expand_aligned_slash_variants(english_word=english_word, translation=translation)

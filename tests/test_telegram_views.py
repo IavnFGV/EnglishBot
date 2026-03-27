@@ -236,6 +236,22 @@ def test_build_image_review_step_view_includes_source_and_generation_messages() 
     assert "Fallback images used." in view.text
 
 
+def test_build_image_review_step_view_uses_english_word_as_default_pixabay_query() -> None:
+    view = build_image_review_step_view(
+        current_position=1,
+        total_items=1,
+        english_word="Presents",
+        translation="подарки",
+        prompt="presents, cartoon style, simple, centered, white background",
+        candidate_source_type="generated",
+        search_query=None,
+        search_page=1,
+        generation_status_messages=None,
+    )
+
+    assert "Pixabay search query: Presents" in view.text
+
+
 @pytest.mark.anyio
 async def test_send_telegram_view_sends_photo_view(tmp_path: Path) -> None:
     image_path = tmp_path / "preview.txt"

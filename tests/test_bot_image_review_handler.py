@@ -15,6 +15,7 @@ from englishbot.bot import (
     image_review_previous_handler,
     image_review_pick_handler,
     image_review_photo_handler,
+    image_review_show_json_handler,
     image_review_skip_handler,
     image_review_search_handler,
     published_image_item_handler,
@@ -53,7 +54,7 @@ class _FakeCallbackMessage:
         self.reply_photo_names: list[str] = []
         self.replies: list[SimpleNamespace] = []
 
-    async def reply_text(self, text: str, reply_markup=None):  # noqa: ARG002
+    async def reply_text(self, text: str, reply_markup=None, parse_mode=None):  # noqa: ARG002
         self.reply_text_calls.append(text)
         self.reply_text_markups.append(reply_markup)
         sent = _FakeSentMessage(text=text, message_id=len(self.reply_text_calls), chat_id=self.chat_id)
@@ -568,7 +569,7 @@ async def test_approve_draft_handler_starts_image_review_without_auto_generation
     review_index = next(index for index, text in enumerate(message.reply_text_calls) if "Reviewing images 1/1" in text)
     assert message.reply_text_markups[review_index] is not None
     assert "Prompt is used for local AI generation." in message.reply_text_calls[review_index]
-    assert "Pixabay search: word only by default." in message.reply_text_calls[review_index]
+    assert "Pixabay search query: Dragon" in message.reply_text_calls[review_index]
     assert "No candidates loaded yet." in message.reply_text_calls[review_index]
     assert message.reply_photo_captions == []
 
@@ -1130,6 +1131,57 @@ async def test_image_review_edit_search_query_flow_runs_search_with_custom_text(
         "Pixabay search query: dragon scissors clipart" in text
         for text in text_message.reply_text_calls
     )
+
+
+@pytest.mark.anyio
+async def test_image_review_show_json_handler_displays_current_item_review_settings(
+    tmp_path: Path,
+) -> None:
+    message = _FakeCallbackMessage(tmp_path)
+    query = _FakeQuery("words:image_show_json:review123", message)
+    flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "vocabulary_items": [
+                {
+                    "id": "dragon",
+                    "english_word": "Dragon",
+                    "translation": "дракон",
+                    "image_prompt": "dragon toy, cartoon style, simple, centered, white background",
+                    "pixabay_search_query": "dragon scissors clipart",
+                }
+            ],
+        },
+        items=[
+            ImageReviewItem(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                prompt="dragon toy, cartoon style, simple, centered, white background",
+                search_query="dragon scissors clipart",
+                candidates=[],
+            )
+        ],
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "editor_user_ids": {42},
+                "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(flow),
+            }
+        ),
+    )
+
+    await image_review_show_json_handler(update, context)  # type: ignore[arg-type]
+
+    assert '"image_prompt": "dragon toy, cartoon style, simple, centered, white background"' in message.reply_text_calls[-1]
+    assert '"pixabay_search_query": "dragon scissors clipart"' in message.reply_text_calls[-1]
 
 
 @pytest.mark.anyio

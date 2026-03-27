@@ -12,6 +12,7 @@ from englishbot.application.image_review_use_cases import (
     SearchImageReviewCandidatesUseCase,
     SelectImageCandidateUseCase,
     StartPublishedWordImageEditUseCase,
+    UpdateImageReviewPromptUseCase,
 )
 from englishbot.domain.image_review_models import ImageCandidate, ImageCandidateBatch, ImageGenerationMetadata
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
@@ -188,6 +189,69 @@ def test_start_published_word_image_edit_use_case_focuses_selected_item(
     assert flow.output_path is None
     assert flow.content_pack["vocabulary_items"][0]["id"] == "dragon"
     assert flow.content_pack["vocabulary_items"][1]["id"] == "fairy"
+
+
+def test_updated_prompt_and_pixabay_query_are_persisted_for_next_review_start(tmp_path: Path) -> None:
+    repository = InMemoryImageReviewFlowRepository()
+    harness = ImageReviewFlowHarness(
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        candidate_generator=FakeImageCandidateGenerator(),
+        image_search_client=FakePixabaySearchClient(),
+        remote_image_downloader=FakeRemoteImageDownloader(),
+        assets_dir=tmp_path / "assets",
+    )
+    content_pack = {
+        "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+        "lessons": [],
+        "vocabulary_items": [
+            {
+                "id": "dragon",
+                "english_word": "Dragon",
+                "translation": "дракон",
+                "image_prompt": "a green dragon",
+            }
+        ],
+    }
+    started = harness.start_from_content_pack(
+        editor_user_id=7,
+        content_pack=content_pack,
+        selected_item_id="dragon",
+        review_origin="published_word_edit",
+    )
+    repository.save(started)
+    search = SearchImageReviewCandidatesUseCase(harness=harness, repository=repository)
+    update_prompt = UpdateImageReviewPromptUseCase(harness=harness, repository=repository)
+
+    searched = search.execute(
+        user_id=7,
+        flow_id=started.flow_id,
+        query="dragon scissors clipart",
+    )
+    updated = update_prompt.execute(
+        user_id=7,
+        flow_id=searched.flow_id,
+        item_id="dragon",
+        prompt="dragon toy, cartoon style, simple, centered, white background",
+    )
+
+    restarted = harness.start_from_content_pack(
+        editor_user_id=7,
+        content_pack=updated.content_pack,
+        selected_item_id="dragon",
+        review_origin="published_word_edit",
+    )
+
+    assert restarted.current_item is not None
+    assert restarted.current_item.prompt == (
+        "dragon toy, cartoon style, simple, centered, white background"
+    )
+    assert restarted.current_item.search_query == "dragon scissors clipart"
+    stored_item = restarted.content_pack["vocabulary_items"][0]
+    assert stored_item["image_prompt"] == (
+        "dragon toy, cartoon style, simple, centered, white background"
+    )
+    assert stored_item["pixabay_search_query"] == "dragon scissors clipart"
 
 
 def test_published_word_image_edit_publishes_back_to_original_file_without_duplicate_topic_file(

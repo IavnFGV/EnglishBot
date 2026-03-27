@@ -242,21 +242,34 @@ def build_image_review_step_view(
     search_page: int,
     generation_status_messages: list[str] | None,
     reply_markup: TelegramReplyMarkup | None = None,
+    translate: Callable[..., str] | None = None,
+    user=None,
 ) -> TelegramTextView:
-    search_line = "Pixabay search: word only by default."
-    source_line = "No candidates loaded yet."
+    translate = translate or (lambda key, **kwargs: _default_image_review_text(key, **kwargs))
+    resolved_search_query = search_query or english_word
+    search_line = translate("pixabay_search_query", user=user, query=resolved_search_query)
+    source_line = translate("image_review_no_candidates_loaded", user=user)
     if candidate_source_type == "pixabay":
-        source_line = f"Pixabay candidates page {search_page}"
-        if search_query:
-            search_line = f"Pixabay search query: {search_query}"
+        source_line = translate(
+            "pixabay_candidates_page",
+            user=user,
+            page=search_page,
+        )
     elif candidate_source_type == "generated":
-        source_line = "Local AI candidates."
+        source_line = translate("image_review_local_ai_candidates", user=user)
     text = (
-        "Reviewing images "
-        f"{current_position}/{total_items}\n"
+        translate(
+            "image_review_progress",
+            user=user,
+            current=current_position,
+            total=total_items,
+        )
+        + "\n"
         f"{english_word} — {translation}\n"
-        f"Prompt: {prompt}\n"
-        "Prompt is used for local AI generation.\n"
+        + translate("image_review_prompt_line", user=user, prompt=prompt)
+        + "\n"
+        + translate("image_review_prompt_usage_note", user=user)
+        + "\n"
         f"{search_line}\n"
         f"{source_line}"
     )
@@ -266,6 +279,19 @@ def build_image_review_step_view(
         text=text,
         reply_markup=reply_markup,
     )
+
+
+def _default_image_review_text(key: str, **kwargs: object) -> str:
+    defaults = {
+        "pixabay_search_query": "Pixabay search query: {query}",
+        "image_review_no_candidates_loaded": "No candidates loaded yet.",
+        "pixabay_candidates_page": "Pixabay candidates page {page}",
+        "image_review_local_ai_candidates": "Local AI candidates.",
+        "image_review_progress": "Reviewing images {current}/{total}",
+        "image_review_prompt_line": "Prompt: {prompt}",
+        "image_review_prompt_usage_note": "Prompt is used for local AI generation.",
+    }
+    return defaults[key].format(**kwargs)
 
 
 async def send_telegram_view(message, view: TelegramView):

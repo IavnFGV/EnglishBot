@@ -510,6 +510,12 @@ def build_application(
     )
     app.add_handler(
         CallbackQueryHandler(
+            image_review_show_json_handler,
+            pattern=r"^words:image_show_json:",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
             image_review_attach_photo_handler,
             pattern=r"^words:image_attach_photo:",
         )
@@ -1602,35 +1608,25 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
         )
         context.user_data.pop("words_flow_mode", None)
         context.user_data.pop("edit_flow_id", None)
-        await message.reply_text(
-            _tg("draft_updated_from_text", context=context, user=user),
-            reply_markup=_draft_review_markup(
-                flow_id=flow.flow_id,
-                is_valid=flow.draft_result.validation.is_valid,
-                context=context,
-                user=user,
-            ),
+        preview_view = _draft_review_view(
+            flow_id=flow.flow_id,
+            result=flow.draft_result,
+            is_valid=flow.draft_result.validation.is_valid,
+            context=context,
+            user=user,
         )
         preview_message_id = _get_preview_message_id(user.id, context)
+        await message.reply_text(
+            f"{_tg('draft_updated_from_text', context=context, user=user)}\n\n{preview_view.text}",
+            reply_markup=preview_view.reply_markup,
+        )
         if preview_message_id is not None:
             try:
                 await context.bot.edit_message_text(
                     chat_id=message.chat_id,
                     message_id=preview_message_id,
-                    text=_draft_review_view(
-                        flow_id=flow.flow_id,
-                        result=flow.draft_result,
-                        is_valid=flow.draft_result.validation.is_valid,
-                        context=context,
-                        user=user,
-                    ).text,
-                    reply_markup=_draft_review_view(
-                        flow_id=flow.flow_id,
-                        result=flow.draft_result,
-                        is_valid=flow.draft_result.validation.is_valid,
-                        context=context,
-                        user=user,
-                    ).reply_markup,
+                    text=preview_view.text,
+                    reply_markup=preview_view.reply_markup,
                 )
             except BadRequest as error:
                 if "message is not modified" in str(error).lower():
@@ -2610,6 +2606,45 @@ async def image_review_edit_search_query_handler(
     await send_telegram_view(query.message, current_query_view)
 
 
+async def image_review_show_json_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, flow_id = query.data.split(":")
+    flow = _get_active_image_review(context).execute(user_id=user.id)
+    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
+        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
+        return
+    current_item_id = flow.current_item.item_id
+    raw_items = flow.content_pack.get("vocabulary_items", [])
+    item_payload: dict[str, object] | None = None
+    if isinstance(raw_items, list):
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+            if str(raw_item.get("id", "")).strip() != current_item_id:
+                continue
+            item_payload = raw_item
+            break
+    if item_payload is None:
+        item_payload = {
+            "id": flow.current_item.item_id,
+            "english_word": flow.current_item.english_word,
+            "translation": flow.current_item.translation,
+            "image_prompt": flow.current_item.prompt,
+            "pixabay_search_query": flow.current_item.search_query,
+        }
+    payload = json.dumps(item_payload, ensure_ascii=False, indent=2)
+    if len(payload) > 3500:
+        payload = payload[:3400].rstrip() + "\n..."
+    await query.message.reply_text(f"```json\n{payload}\n```", parse_mode="Markdown")
+
+
 async def image_review_attach_photo_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -3271,6 +3306,8 @@ async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, f
             context=context,
             user=getattr(message, "from_user", None),
         ),
+        translate=_tg,
+        user=getattr(message, "from_user", None),
     )
     summary_message = await send_telegram_view(message, summary_view)
     _track_flow_message(
@@ -3480,6 +3517,14 @@ def _image_review_keyboard(
             InlineKeyboardButton(
                 _tg("attach_photo", language=language),
                 callback_data=f"words:image_attach_photo:{flow_id}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                _tg("show_json", language=language),
+                callback_data=f"words:image_show_json:{flow_id}",
             ),
         ]
     )

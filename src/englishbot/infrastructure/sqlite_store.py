@@ -73,6 +73,7 @@ def _expand_slash_synonym_items(  # noqa: PLR0913
     image_ref: str | None,
     image_source: str | None,
     image_prompt: str | None,
+    pixabay_search_query: str | None,
     source_fragment: str | None,
     is_active: bool,
 ) -> list[VocabularyItem]:
@@ -94,6 +95,7 @@ def _expand_slash_synonym_items(  # noqa: PLR0913
                 image_ref=image_ref,
                 image_source=image_source,
                 image_prompt=image_prompt,
+                pixabay_search_query=pixabay_search_query,
                 source_fragment=source_fragment,
                 is_active=is_active,
             )
@@ -110,6 +112,7 @@ def _expand_slash_synonym_items(  # noqa: PLR0913
             image_ref=image_ref,
             image_source=image_source,
             image_prompt=image_prompt,
+            pixabay_search_query=pixabay_search_query,
             source_fragment=source_fragment,
             is_active=is_active,
         )
@@ -196,6 +199,7 @@ class SQLiteContentStore:
                     image_ref TEXT,
                     image_source TEXT,
                     image_prompt TEXT,
+                    pixabay_search_query TEXT,
                     source_fragment TEXT,
                     is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -322,6 +326,7 @@ class SQLiteContentStore:
                     image_ref=item.image_ref,
                     image_source=item.image_source,
                     image_prompt=item.image_prompt,
+                    pixabay_search_query=item.pixabay_search_query,
                     source_fragment=item.source_fragment,
                     is_active=item.is_active,
                 ):
@@ -492,6 +497,7 @@ class SQLiteContentStore:
                 li.image_ref,
                 li.image_source,
                 li.image_prompt,
+                li.pixabay_search_query,
                 li.source_fragment,
                 li.is_active
             FROM topic_learning_items AS tli
@@ -537,6 +543,7 @@ class SQLiteContentStore:
                     li.image_ref,
                     li.image_source,
                     li.image_prompt,
+                    li.pixabay_search_query,
                     li.source_fragment,
                     li.is_active
                 FROM learning_items AS li
@@ -573,6 +580,7 @@ class SQLiteContentStore:
                     li.image_ref,
                     li.image_source,
                     li.image_prompt,
+                    li.pixabay_search_query,
                     li.source_fragment,
                     li.is_active
                 FROM learning_items AS li
@@ -668,6 +676,11 @@ class SQLiteContentStore:
                     **({"image_source": item.image_source} if item.image_source is not None else {}),
                     **({"image_prompt": item.image_prompt} if item.image_prompt is not None else {}),
                     **(
+                        {"pixabay_search_query": item.pixabay_search_query}
+                        if item.pixabay_search_query is not None
+                        else {}
+                    ),
+                    **(
                         {"source_fragment": item.source_fragment}
                         if item.source_fragment is not None
                         else {}
@@ -743,6 +756,7 @@ class SQLiteContentStore:
                     image_ref=_optional_json_str(item_raw.get("image_ref")),
                     image_source=_optional_json_str(item_raw.get("image_source")),
                     image_prompt=_optional_json_str(item_raw.get("image_prompt")),
+                    pixabay_search_query=_optional_json_str(item_raw.get("pixabay_search_query")),
                     source_fragment=_optional_json_str(item_raw.get("source_fragment")),
                     is_active=bool(item_raw.get("is_active", True)),
                 )
@@ -1292,8 +1306,8 @@ class SQLiteContentStore:
             """
             INSERT INTO learning_items (
                 id, lexeme_id, display_word, display_translation, meaning_hint,
-                image_ref, image_source, image_prompt, source_fragment, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                image_ref, image_source, image_prompt, pixabay_search_query, source_fragment, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 lexeme_id=excluded.lexeme_id,
                 display_word=excluded.display_word,
@@ -1302,6 +1316,7 @@ class SQLiteContentStore:
                 image_ref=excluded.image_ref,
                 image_source=excluded.image_source,
                 image_prompt=excluded.image_prompt,
+                pixabay_search_query=excluded.pixabay_search_query,
                 source_fragment=excluded.source_fragment,
                 is_active=excluded.is_active
             """,
@@ -1314,6 +1329,7 @@ class SQLiteContentStore:
                 item.image_ref,
                 item.image_source,
                 item.image_prompt,
+                item.pixabay_search_query,
                 item.source_fragment,
                 1 if item.is_active else 0,
             ),
@@ -1331,6 +1347,7 @@ class SQLiteContentStore:
             image_ref=row["image_ref"],
             image_source=row["image_source"],
             image_prompt=row["image_prompt"],
+            pixabay_search_query=row["pixabay_search_query"],
             source_fragment=row["source_fragment"],
             is_active=bool(row["is_active"]),
         )

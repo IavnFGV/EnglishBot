@@ -53,6 +53,27 @@ def test_parse_edited_draft_text_accepts_preview_style_lines() -> None:
 
     assert [item.english_word for item in parsed.vocabulary_items] == ["Princess", "Prince"]
     assert [item.translation for item in parsed.vocabulary_items] == ["принцесса", "принц"]
+    assert [item.source_fragment for item in parsed.vocabulary_items] == [
+        "Princess — принцесса",
+        "Prince — принц",
+    ]
+
+
+def test_parse_edited_draft_text_strips_leading_number_from_new_items_source_fragment() -> None:
+    parsed = parse_edited_draft_text(
+        "Topic: Birthday\nLesson: -\n\n1. Birthday boy — именинник",
+        previous_draft=LessonExtractionDraft(
+            topic_title="Birthday",
+            lesson_title=None,
+            vocabulary_items=[],
+        ),
+    )
+
+    assert [item.english_word for item in parsed.vocabulary_items] == ["Birthday boy"]
+    assert [item.translation for item in parsed.vocabulary_items] == ["именинник"]
+    assert [item.source_fragment for item in parsed.vocabulary_items] == [
+        "Birthday boy — именинник"
+    ]
 
 
 def test_parse_edited_draft_text_ignores_preview_metadata_lines() -> None:

@@ -45,7 +45,7 @@ def configure_logging(
 
 def main() -> None:
     env_file_path = _REPO_ROOT / ".env"
-    load_dotenv(env_file_path)
+    load_dotenv(env_file_path, override=True)
     config_service = create_runtime_config_service(env_file_path=env_file_path)
     settings = Settings.from_config_service(config_service)
     configure_logging(
