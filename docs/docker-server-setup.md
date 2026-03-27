@@ -12,6 +12,9 @@ This repo can be run on the Hetzner server with Docker after the host bootstrap 
     data/
     assets/
     logs/
+    deploy/
+      build-counter.env
+      current-release.env
     content/
       custom/
 ```
@@ -38,6 +41,7 @@ It runs on every push to `main` and does:
 2. SSH into the Hetzner server
 3. Run [deploy-docker-app.sh](/workspaces/EnglishBot/scripts/deploy-docker-app.sh)
 4. Rebuild and restart the Docker container with `docker compose up -d --build`
+5. Create a git tag for the successful deploy, for example `deploy-v0.1.0-b3`
 
 ### Required GitHub repository secrets
 
@@ -61,6 +65,24 @@ docker compose up -d --build
 
 After that, GitHub Actions can deploy updates by SSH.
 
+## Rollback
+
+After successful deploys are tagged, you can roll back on the server with one command:
+
+```bash
+cd /srv/englishbot/app
+bash scripts/rollback-docker-app.sh
+```
+
+That rolls back to the previous successful deploy tag.
+
+To roll back to a specific tagged deploy:
+
+```bash
+cd /srv/englishbot/app
+bash scripts/rollback-docker-app.sh deploy-v0.1.0-b3
+```
+
 ## Useful commands
 
 ```bash
@@ -70,6 +92,7 @@ docker compose logs -f englishbot
 docker compose restart englishbot
 docker compose up -d --build
 bash scripts/deploy-docker-app.sh
+bash scripts/rollback-docker-app.sh
 ```
 
 ## Persistence

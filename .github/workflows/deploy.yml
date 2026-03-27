@@ -1,5 +1,8 @@
 name: Deploy
 
+permissions:
+  contents: write
+
 on:
   push:
     branches:
@@ -55,3 +58,37 @@ jobs:
              git checkout ${DEPLOY_BRANCH} && \
              git reset --hard origin/${DEPLOY_BRANCH} && \
              DEPLOY_BRANCH=${DEPLOY_BRANCH} bash scripts/deploy-docker-app.sh"
+
+      - name: Read deployed release metadata
+        id: release_meta
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cat /srv/englishbot/shared/deploy/current-release.env" > /tmp/current-release.env
+          cat /tmp/current-release.env
+          . /tmp/current-release.env
+          echo "deploy_tag=${ENGLISHBOT_DEPLOY_TAG}" >> "$GITHUB_OUTPUT"
+          echo "build_version=${ENGLISHBOT_BUILD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${ENGLISHBOT_BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag successful deploy
+        env:
+          DEPLOY_TAG: ${{ steps.release_meta.outputs.deploy_tag }}
+          BUILD_VERSION: ${{ steps.release_meta.outputs.build_version }}
+          BUILD_NUMBER: ${{ steps.release_meta.outputs.build_number }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/${DEPLOY_TAG}" >/dev/null; then
+            echo "Tag ${DEPLOY_TAG} already exists locally."
+            exit 0
+          fi
+          if git ls-remote --tags origin "refs/tags/${DEPLOY_TAG}" | grep -q "${DEPLOY_TAG}$"; then
+            echo "Tag ${DEPLOY_TAG} already exists on origin."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${DEPLOY_TAG}" -m "Successful deploy ${BUILD_VERSION} build ${BUILD_NUMBER}"
+          git push origin "${DEPLOY_TAG}"

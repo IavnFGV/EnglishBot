@@ -79,21 +79,39 @@ def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
     assert 'DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"' in script
     assert 'git fetch origin "${DEPLOY_BRANCH}"' in script
     assert 'git reset --hard "origin/${DEPLOY_BRANCH}"' in script
-    assert 'BUILD_STATE_FILE="${BUILD_STATE_FILE:-${SHARED_DIR}/deploy/build.env}"' in script
+    assert 'BUILD_COUNTER_FILE="${BUILD_COUNTER_FILE:-${SHARED_DIR}/deploy/build-counter.env}"' in script
+    assert 'CURRENT_RELEASE_FILE="${CURRENT_RELEASE_FILE:-${SHARED_DIR}/deploy/current-release.env}"' in script
     assert "awk -F'\"' " in script
     assert 'Could not read project.version from pyproject.toml' in script
     assert 'ENGLISHBOT_BUILD_NUMBER="$((PREVIOUS_BUILD_NUMBER + 1))"' in script
     assert 'ENGLISHBOT_BUILD_NUMBER="1"' in script
+    assert 'ENGLISHBOT_DEPLOY_TAG="deploy-v${APP_VERSION}-b${ENGLISHBOT_BUILD_NUMBER}"' in script
     assert 'ENGLISHBOT_BUILD_VERSION=${APP_VERSION}' in script
     assert 'ENGLISHBOT_BUILD_NUMBER=${ENGLISHBOT_BUILD_NUMBER}' in script
+    assert 'ENGLISHBOT_DEPLOY_TAG=${ENGLISHBOT_DEPLOY_TAG}' in script
     assert 'ENGLISHBOT_GIT_SHA="$(git rev-parse --short HEAD)"' in script
-    assert 'export ENGLISHBOT_GIT_BRANCH="${DEPLOY_BRANCH}"' in script
+    assert 'ENGLISHBOT_GIT_BRANCH="${DEPLOY_BRANCH}"' in script
+    assert "export ENGLISHBOT_GIT_BRANCH" in script
+    assert "docker compose up -d --build" in script
+
+
+def test_server_rollback_script_supports_previous_or_explicit_deploy_tag() -> None:
+    script = Path("scripts/rollback-docker-app.sh").read_text(encoding="utf-8")
+
+    assert 'CURRENT_RELEASE_FILE="${CURRENT_RELEASE_FILE:-${SHARED_DIR}/deploy/current-release.env}"' in script
+    assert 'DEPLOY_TAG_PREFIX="${DEPLOY_TAG_PREFIX:-deploy-v}"' in script
+    assert 'git fetch --tags origin' in script
+    assert 'TARGET_TAG="${1:-}"' in script
+    assert 'git for-each-ref --sort=-creatordate --format=' in script
+    assert 'git checkout --detach "${TARGET_TAG}"' in script
+    assert 'ENGLISHBOT_GIT_BRANCH="rollback:${TARGET_TAG}"' in script
     assert "docker compose up -d --build" in script
 
 
 def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
     workflow = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
 
+    assert "contents: write" in workflow
     assert "branches:" in workflow
     assert "- main" in workflow
     assert 'python -m pip install -e ".[dev,llm]"' in workflow
@@ -104,3 +122,6 @@ def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
     assert "git fetch origin ${DEPLOY_BRANCH}" in workflow
     assert "git reset --hard origin/${DEPLOY_BRANCH}" in workflow
     assert "bash scripts/deploy-docker-app.sh" in workflow
+    assert "current-release.env" in workflow
+    assert "git tag -a" in workflow
+    assert "git push origin" in workflow
