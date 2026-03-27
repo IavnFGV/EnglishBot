@@ -213,6 +213,7 @@ Current structure:
 - `LocalPlaceholderImageGenerationClient`: simple local fallback renderer
 - `ContentPackImageEnricher`: applies resilient generation to published content packs
 - `ImageReviewFlowHarness`: keeps image review usable even when generated candidates come from fallback mode
+- `englishbot.image_generation.prompts`: shared prompt-normalization policy used by enrichment, review, and generation flows
 
 Behavioral rule:
 
@@ -220,6 +221,14 @@ Behavioral rule:
 - if ComfyUI is unavailable, times out, or fails, the app falls back to placeholder images
 - the editor can still search Pixabay, edit prompts, or upload a custom image
 - learner flows do not depend on ComfyUI availability
+
+Prompt contract:
+
+- image prompt shaping must go through shared helpers instead of being rebuilt ad hoc in handlers or use cases
+- the canonical fallback/rendering style is `cartoon style, simple, centered, white background`
+- existing prompts may be normalized into that shared style before generation
+- role-sensitive words such as `king`, `queen`, `prince`, `princess`, and `wizard` may be strengthened into explicitly human-oriented prompts
+- negative prompts should stay protective against text/watermark artifacts and animal-bias mistakes for human royal roles
 
 ## Testing Strategy
 
