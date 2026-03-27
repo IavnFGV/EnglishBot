@@ -558,3 +558,38 @@ pytest
 - Content import from teacher text, spreadsheets, or photo-derived OCR
 - Review scheduling and spaced repetition
 - Manual moderation and editing of imported vocabulary
+## Bulk Topic Import
+
+You can bulk-import multiple topic word lists from one text file without images:
+
+```bash
+python -m englishbot.bulk_import_topics bulk-topics.txt
+```
+
+Supported input format:
+
+```text
+Birthday
+Birthday boy - именинник
+Birthday girl - именинница
+
+School
+Board - доска
+Chalk - мел
+```
+
+You can also use explicit topic headers:
+
+```text
+Topic: Food
+Bread - хлеб
+Milk - молоко
+```
+
+By default the command imports directly into the SQLite runtime database.
+
+If you also want JSON files in `content/custom`, pass an output directory:
+
+```bash
+python -m englishbot.bulk_import_topics bulk-topics.txt --output-dir content/custom
+```
