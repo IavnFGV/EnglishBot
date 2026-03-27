@@ -121,11 +121,15 @@ def build_application(settings: Settings) -> Application:
     app.bot_data["training_service"] = build_training_service(db_path=settings.content_db_path)
     lesson_import_pipeline = build_lesson_import_pipeline(
         ollama_model=settings.ollama_model,
+        ollama_model_file_path=settings.ollama_model_file_path,
         ollama_base_url=settings.ollama_base_url,
+        ollama_timeout_sec=settings.ollama_timeout_sec,
+        ollama_extraction_mode=settings.ollama_extraction_mode,
         ollama_temperature=settings.ollama_temperature,
         ollama_top_p=settings.ollama_top_p,
         ollama_num_predict=settings.ollama_num_predict,
         ollama_extract_line_prompt_path=settings.ollama_extract_line_prompt_path,
+        ollama_extract_text_prompt_path=settings.ollama_extract_text_prompt_path,
         ollama_image_prompt_path=settings.ollama_image_prompt_path,
     )
     add_words_flow_repository = SQLiteAddWordsFlowRepository(content_store)
@@ -636,6 +640,26 @@ def _draft_status_text(result) -> str:
     if prompt_count is not None and prompt_count > 0:
         lines.insert(2, f"Image prompts: {prompt_count}")
     return "\n".join(lines)
+
+
+def _draft_failure_message(result) -> str | None:
+    error_codes = {error.code for error in result.validation.errors}
+    if "malformed_result" not in error_codes:
+        return None
+    draft = result.draft
+    if isinstance(draft, dict):
+        raw_error = str(draft.get("error", "")).strip()
+        lowered = raw_error.lower()
+        if "timed out" in lowered or "read timeout" in lowered or "timeout" in lowered:
+            return (
+                "Parsing draft... failed\n"
+                "Ollama timed out while parsing this text. "
+                "Try a shorter text, a faster model, or increase OLLAMA_TIMEOUT_SEC."
+            )
+    return (
+        "Parsing draft... failed\n"
+        "Could not parse this text. Please try again or simplify the input."
+    )
 
 
 def _resolve_image_review_publish_output_path(flow) -> Path | None:
@@ -1250,6 +1274,10 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
         stop_event.set()
         await heartbeat_task
     context.user_data.pop("words_flow_mode", None)
+    failure_message = _draft_failure_message(flow.draft_result)
+    if failure_message is not None:
+        await status_message.edit_text(failure_message)
+        return
     await status_message.edit_text(_draft_status_text(flow.draft_result))
     preview_message = await message.reply_text(
         format_draft_preview(flow.draft_result),

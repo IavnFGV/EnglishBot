@@ -16,7 +16,12 @@ def test_env_example_includes_content_db_path() -> None:
 def test_env_example_includes_ollama_prompt_paths() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
+    assert "OLLAMA_MODEL=" in env_example
+    assert "OLLAMA_MODEL_FILE_PATH=" in env_example
+    assert "OLLAMA_TIMEOUT_SEC=" in env_example
+    assert "OLLAMA_EXTRACTION_MODE=" in env_example
     assert "OLLAMA_EXTRACT_LINE_PROMPT_PATH=" in env_example
+    assert "OLLAMA_EXTRACT_TEXT_PROMPT_PATH=" in env_example
     assert "OLLAMA_IMAGE_PROMPT_PATH=" in env_example
 
 
@@ -26,3 +31,4 @@ def test_main_loads_dotenv_from_repo_root() -> None:
     assert 'load_dotenv(_REPO_ROOT / ".env")' in main_module
     assert "log_max_bytes=settings.log_max_bytes" in main_module
     assert "log_backup_count=settings.log_backup_count" in main_module
+    assert "settings.ollama_extraction_mode" in main_module

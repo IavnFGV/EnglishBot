@@ -10,6 +10,7 @@ from pathlib import Path
 from englishbot.config import resolve_ollama_model
 from englishbot.importing.prompt_loader import load_prompt_text
 from englishbot.logging_utils import logged_service_call
+from englishbot.ollama_runtime import resolve_runtime_ollama_model
 
 logger = logging.getLogger(__name__)
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -35,6 +36,7 @@ class OllamaImagePromptEnricher:
         self,
         *,
         model: str | None = None,
+        model_file_path: Path | None = None,
         base_url: str | None = None,
         timeout: int | None = None,
         temperature: float | None = None,
@@ -43,6 +45,11 @@ class OllamaImagePromptEnricher:
         prompt_path: Path | None = None,
     ) -> None:
         self._model = model or resolve_ollama_model()
+        self._model_file_path = model_file_path or (
+            Path(raw_model_file_path)
+            if (raw_model_file_path := os.getenv("OLLAMA_MODEL_FILE_PATH", "").strip())
+            else None
+        )
         self._base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip(
             "/"
         )
@@ -54,6 +61,12 @@ class OllamaImagePromptEnricher:
         )
         self._prompt_path = prompt_path or Path(
             os.getenv("OLLAMA_IMAGE_PROMPT_PATH", "prompts/ollama_image_prompt_prompt.txt")
+        )
+
+    def _resolved_model(self) -> str:
+        return resolve_runtime_ollama_model(
+            default_model=self._model,
+            model_file_path=self._model_file_path,
         )
 
     @logged_service_call(
@@ -122,7 +135,7 @@ class OllamaImagePromptEnricher:
             raise RuntimeError(f"Missing dependency: {error}") from error
 
         payload = {
-            "model": self._model,
+            "model": self._resolved_model(),
             "stream": False,
             "format": "json",
             "messages": [
@@ -150,7 +163,7 @@ class OllamaImagePromptEnricher:
         logger.debug(
             "OllamaImagePromptEnricher request model=%s timeout=%s options=%s prompt_path=%s "
             "english_word=%s",
-            self._model,
+            self._resolved_model(),
             self._timeout,
             self._options,
             self._prompt_path,

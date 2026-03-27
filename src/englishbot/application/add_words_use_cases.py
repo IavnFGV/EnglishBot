@@ -5,6 +5,7 @@ from pathlib import Path
 from englishbot.application.add_words_flow import AddWordsFlowHarness
 from englishbot.domain.add_words_models import AddWordsApprovalResult, AddWordsFlowState
 from englishbot.domain.repositories import AddWordsFlowRepository
+from englishbot.importing.models import LessonExtractionDraft
 from englishbot.logging_utils import logged_service_call
 
 
@@ -35,7 +36,8 @@ class StartAddWordsFlowUseCase:
     )
     def execute(self, *, user_id: int, raw_text: str) -> AddWordsFlowState:
         flow = self._harness.extract(editor_user_id=user_id, raw_text=raw_text)
-        self._flow_repository.save(flow)
+        if isinstance(flow.draft_result.draft, LessonExtractionDraft):
+            self._flow_repository.save(flow)
         return flow
 
 

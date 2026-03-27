@@ -7,7 +7,11 @@ from typing import Protocol
 
 from englishbot.config import resolve_ollama_model
 from englishbot.importing.extraction_support import (
+    build_draft_items,
     build_line_items,
+    build_raw_draft_items,
+    candidate_source_lines,
+    ensure_source_fragment,
     extract_explicit_topic_and_candidate_lines,
     parse_line_content,
     parse_topic_inference_content,
@@ -15,6 +19,7 @@ from englishbot.importing.extraction_support import (
 from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtractionDraft
 from englishbot.importing.prompt_loader import load_prompt_text
 from englishbot.logging_utils import logged_service_call
+from englishbot.ollama_runtime import resolve_runtime_ollama_model
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +29,10 @@ def _short_text(value: str, *, limit: int = 180) -> str:
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[: limit - 3]}..."
+
+
+def _normalize_log_text(value: str) -> str:
+    return value.replace("\xa0", " ")
 
 
 class LessonExtractionClient(Protocol):
@@ -82,15 +91,23 @@ class OllamaLessonExtractionClient:
         self,
         *,
         model: str | None = None,
+        model_file_path: Path | None = None,
         base_url: str | None = None,
         timeout: int = 120,
         include_image_prompts: bool = False,
         temperature: float | None = None,
         top_p: float | None = None,
         num_predict: int | None = None,
+        extraction_mode: str | None = None,
         extract_line_prompt_path: Path | None = None,
+        extract_text_prompt_path: Path | None = None,
     ) -> None:
         self._model = model or resolve_ollama_model()
+        self._model_file_path = model_file_path or (
+            Path(raw_model_file_path)
+            if (raw_model_file_path := os.getenv("OLLAMA_MODEL_FILE_PATH", "").strip())
+            else None
+        )
         self._base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip(
             "/"
         )
@@ -101,8 +118,14 @@ class OllamaLessonExtractionClient:
             top_p=top_p,
             num_predict=num_predict,
         )
+        self._extraction_mode = (
+            extraction_mode or os.getenv("OLLAMA_EXTRACTION_MODE", "line_by_line")
+        ).strip().lower()
         self._extract_line_prompt_path = extract_line_prompt_path or Path(
             os.getenv("OLLAMA_EXTRACT_LINE_PROMPT_PATH", "prompts/ollama_extract_line_prompt.txt")
+        )
+        self._extract_text_prompt_path = extract_text_prompt_path or Path(
+            os.getenv("OLLAMA_EXTRACT_TEXT_PROMPT_PATH", "prompts/ollama_extract_text_prompt.txt")
         )
         self._infer_topic_prompt_path = Path(
             os.getenv("OLLAMA_INFER_TOPIC_PROMPT_PATH", "prompts/ollama_infer_topic_prompt.txt")
@@ -128,10 +151,65 @@ class OllamaLessonExtractionClient:
             logger.error("requests is required for OllamaLessonExtractionClient")
             return {"error": f"Missing dependency: {error}"}
         try:
+            if self._extraction_mode == "full_text":
+                return self._extract_full_text(raw_text=raw_text, requests_module=requests)
             return self._extract_line_by_line(raw_text=raw_text, requests_module=requests)
         except Exception as error:
             logger.exception("OllamaLessonExtractionClient failed: %s", error)
             return {"error": str(error)}
+
+    def _resolved_model(self) -> str:
+        return resolve_runtime_ollama_model(
+            default_model=self._model,
+            model_file_path=self._model_file_path,
+        )
+
+    def _text_system_prompt(self) -> str:
+        return load_prompt_text(
+            path=self._extract_text_prompt_path,
+            fallback=(
+                "You extract vocabulary items from teacher-written lesson text.\n\n"
+                "Return ONLY valid JSON.\n"
+                "Do not return markdown.\n"
+                "Do not return explanations.\n"
+                "Do not return any text before or after JSON.\n\n"
+                "Return JSON in exactly this format:\n"
+                "{\n"
+                '  "vocabulary_items": [\n'
+                "    {\n"
+                '      "english_word": "string",\n'
+                '      "translation": "string",\n'
+                '      "notes": null,\n'
+                '      "image_prompt": null,\n'
+                '      "source_fragment": "string"\n'
+                "    }\n"
+                "  ]\n"
+                "}\n\n"
+                "Task:\n"
+                "Extract vocabulary pairs from the INPUT_TEXT.\n\n"
+                "Rules:\n"
+                "- INPUT_TEXT may contain one or more vocabulary pairs.\n"
+                '- A vocabulary pair may appear in formats like:\n'
+                '  - "Princess / Prince — принцесса / принц"\n'
+                '  - "kind (добрый)"\n'
+                '  - "kind (добрый), shy (застенчивый), friendly (дружелюбный)"\n'
+                '  - "Eraser / Rubber — ластик"\n'
+                "- If both sides contain slash-separated synonyms, map them intelligently.\n"
+                "- If one English side maps to one translation, allow multiple vocabulary_items with the same translation when appropriate.\n"
+                "- If one fragment contains multiple vocabulary pairs, return multiple items.\n"
+                "- Preserve translation text exactly as written.\n"
+                "- Set notes to null unless extra clarification is explicitly present.\n"
+                "- Set image_prompt to null.\n"
+                "- source_fragment should contain the original fragment from which the item was extracted.\n"
+                "- Ignore non-vocabulary instructions such as homework directions, grammar explanations, or dialogue practice unless they directly contain vocabulary pairs.\n"
+                '- If no vocabulary pairs are found, return: {"vocabulary_items": []}\n\n'
+                "Important:\n"
+                "- Prefer correctness and strict JSON over completeness.\n"
+                "- Do not invent words that are not present in INPUT_TEXT.\n"
+                "- Do not merge unrelated fragments.\n"
+                "- Do not extract grammar patterns as vocabulary items."
+            ),
+        )
 
     def _line_system_prompt(self) -> str:
         return load_prompt_text(
@@ -149,6 +227,85 @@ class OllamaLessonExtractionClient:
                 "Set notes and image_prompt to null unless explicitly present. "
                 "If the line cannot be parsed into vocabulary pairs, return an empty array."
             ),
+        )
+
+    def _extract_full_text(self, *, raw_text: str, requests_module) -> LessonExtractionDraft:
+        resolved_model = self._resolved_model()
+        logger.debug(
+            "OllamaLessonExtractionClient full-text request model=%s resolved_model=%s model_file_path=%s timeout=%s options=%s "
+            "prompt_path=%s text_length=%s",
+            self._model,
+            resolved_model,
+            self._model_file_path,
+            self._timeout,
+            self._options,
+            self._extract_text_prompt_path,
+            len(raw_text),
+        )
+        logger.debug(
+            "OllamaLessonExtractionClient full-text payload system_prompt=%r user_content=%r",
+            self._text_system_prompt(),
+            _normalize_log_text(raw_text),
+        )
+        payload = {
+            "model": resolved_model,
+            "stream": False,
+            "format": "json",
+            "messages": [
+                {"role": "system", "content": self._text_system_prompt()},
+                {"role": "user", "content": raw_text},
+            ],
+        }
+        if self._options:
+            payload["options"] = dict(self._options)
+        response = requests_module.post(
+            f"{self._base_url}/api/chat",
+            json=payload,
+            timeout=self._timeout,
+        )
+        response.raise_for_status()
+        content = response.json()["message"]["content"]
+        logger.debug(
+            "OllamaLessonExtractionClient full-text response raw_content=%r compact=%s",
+            content,
+            _short_text(content, limit=400),
+        )
+        raw_items = parse_line_content(content)
+        source_lines = candidate_source_lines(raw_text)
+        items = []
+        for raw_item in build_raw_draft_items(
+                raw_items=raw_items,
+                default_source_fragment="",
+                include_image_prompts=self._include_image_prompts,
+            ):
+            ensured_item = ensure_source_fragment(raw_item, source_lines=source_lines)
+            items.extend(build_draft_items(
+                raw_items=[
+                    {
+                        "english_word": ensured_item.english_word,
+                        "translation": ensured_item.translation,
+                        "notes": ensured_item.notes,
+                        "image_prompt": ensured_item.image_prompt,
+                        "source_fragment": ensured_item.source_fragment,
+                    }
+                ],
+                default_source_fragment="",
+                include_image_prompts=self._include_image_prompts,
+            ))
+        topic_title, _ = extract_explicit_topic_and_candidate_lines(raw_text)
+        if not topic_title.strip():
+            topic_title = self._infer_topic_title(
+                items=items,
+                raw_text=raw_text,
+                requests_module=requests_module,
+            )
+        return LessonExtractionDraft(
+            topic_title=topic_title,
+            lesson_title=None,
+            vocabulary_items=items,
+            warnings=[],
+            unparsed_lines=[],
+            confidence_notes=[],
         )
 
     def _extract_line_by_line(self, *, raw_text: str, requests_module) -> LessonExtractionDraft:
@@ -208,6 +365,7 @@ class OllamaLessonExtractionClient:
         if not items:
             return "Imported Topic"
 
+        resolved_model = self._resolved_model()
         item_summary = ", ".join(item.english_word for item in items if item.english_word.strip())
         prompt_input = (
             f"Extracted words: {item_summary}\n"
@@ -216,9 +374,11 @@ class OllamaLessonExtractionClient:
         logger.debug(
             (
                 "OllamaLessonExtractionClient infer topic "
-                "model=%s timeout=%s prompt_path=%s item_count=%s"
+                "model=%s resolved_model=%s model_file_path=%s timeout=%s prompt_path=%s item_count=%s"
             ),
             self._model,
+            resolved_model,
+            self._model_file_path,
             self._timeout,
             self._infer_topic_prompt_path,
             len(items),
@@ -226,10 +386,10 @@ class OllamaLessonExtractionClient:
         logger.debug(
             "OllamaLessonExtractionClient infer topic payload system_prompt=%r user_content=%r",
             self._infer_topic_system_prompt(),
-            prompt_input,
+            _normalize_log_text(prompt_input),
         )
         payload = {
-            "model": self._model,
+            "model": resolved_model,
             "stream": False,
             "messages": [
                 {"role": "system", "content": self._infer_topic_system_prompt()},
@@ -275,15 +435,18 @@ class OllamaLessonExtractionClient:
         source_line: str,
         requests_module,
     ) -> list[ExtractedVocabularyItemDraft]:
+        resolved_model = self._resolved_model()
         logger.debug(
-            "OllamaLessonExtractionClient line request line_index=%s model=%s timeout=%s "
+            "OllamaLessonExtractionClient line request line_index=%s model=%s resolved_model=%s model_file_path=%s timeout=%s "
             "options=%s prompt_path=%s source_line=%s",
             line_index,
             self._model,
+            resolved_model,
+            self._model_file_path,
             self._timeout,
             self._options,
             self._extract_line_prompt_path,
-            _short_text(source_line),
+            _short_text(_normalize_log_text(source_line)),
         )
         logger.debug(
             (
@@ -292,10 +455,10 @@ class OllamaLessonExtractionClient:
             ),
             line_index,
             self._line_system_prompt(),
-            source_line,
+            _normalize_log_text(source_line),
         )
         payload = {
-            "model": self._model,
+            "model": resolved_model,
             "stream": False,
             "format": "json",
             "messages": [

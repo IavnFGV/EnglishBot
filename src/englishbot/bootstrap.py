@@ -128,33 +128,46 @@ def build_training_service(
 def build_lesson_import_pipeline(
     *,
     ollama_model: str,
+    ollama_model_file_path: Path | None = None,
     ollama_base_url: str,
+    ollama_timeout_sec: int = 120,
     image_prompt_timeout_sec: int = 30,
+    ollama_extraction_mode: str = "line_by_line",
     ollama_temperature: float | None = None,
     ollama_top_p: float | None = None,
     ollama_num_predict: int | None = None,
     ollama_extract_line_prompt_path: Path | None = None,
+    ollama_extract_text_prompt_path: Path | None = None,
     ollama_image_prompt_path: Path | None = None,
 ) -> LessonImportPipeline:
     logger.info(
-        "Building lesson import pipeline model=%s base_url=%s temperature=%s top_p=%s "
-        "num_predict=%s extract_prompt=%s image_prompt=%s",
+        "Building lesson import pipeline model=%s model_file=%s base_url=%s extraction_mode=%s timeout=%s "
+        "temperature=%s top_p=%s num_predict=%s extract_line_prompt=%s "
+        "extract_text_prompt=%s image_prompt=%s",
         ollama_model,
+        ollama_model_file_path,
         ollama_base_url,
+        ollama_extraction_mode,
+        ollama_timeout_sec,
         ollama_temperature,
         ollama_top_p,
         ollama_num_predict,
         ollama_extract_line_prompt_path,
+        ollama_extract_text_prompt_path,
         ollama_image_prompt_path,
     )
     return LessonImportPipeline(
         extraction_client=OllamaLessonExtractionClient(
             model=ollama_model,
+            model_file_path=ollama_model_file_path,
             base_url=ollama_base_url,
+            timeout=ollama_timeout_sec,
+            extraction_mode=ollama_extraction_mode,
             temperature=ollama_temperature,
             top_p=ollama_top_p,
             num_predict=ollama_num_predict,
             extract_line_prompt_path=ollama_extract_line_prompt_path,
+            extract_text_prompt_path=ollama_extract_text_prompt_path,
         ),
         validator=LessonExtractionValidator(),
         canonicalizer=DraftToContentPackCanonicalizer(),
@@ -163,6 +176,7 @@ def build_lesson_import_pipeline(
         draft_reader=JsonDraftReader(),
         image_prompt_enricher=OllamaImagePromptEnricher(
             model=ollama_model,
+            model_file_path=ollama_model_file_path,
             base_url=ollama_base_url,
             timeout=image_prompt_timeout_sec,
             temperature=ollama_temperature,

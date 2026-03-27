@@ -54,18 +54,22 @@ def main() -> None:
     )
     logger = logging.getLogger(__name__)
     logger.info(
-        "Runtime settings log_level=%s log_file_path=%s log_max_bytes=%s log_backup_count=%s ollama_model=%s ollama_base_url=%s "
-        "temperature=%s top_p=%s num_predict=%s extract_prompt=%s image_prompt=%s",
+        "Runtime settings log_level=%s log_file_path=%s log_max_bytes=%s log_backup_count=%s ollama_model=%s ollama_model_file=%s ollama_base_url=%s "
+        "timeout=%s extraction_mode=%s temperature=%s top_p=%s num_predict=%s extract_line_prompt=%s extract_text_prompt=%s image_prompt=%s",
         settings.log_level,
         settings.log_file_path,
         settings.log_max_bytes,
         settings.log_backup_count,
         settings.ollama_model,
+        settings.ollama_model_file_path,
         settings.ollama_base_url,
+        settings.ollama_timeout_sec,
+        settings.ollama_extraction_mode,
         settings.ollama_temperature,
         settings.ollama_top_p,
         settings.ollama_num_predict,
         settings.ollama_extract_line_prompt_path,
+        settings.ollama_extract_text_prompt_path,
         settings.ollama_image_prompt_path,
     )
     app = build_application(settings)

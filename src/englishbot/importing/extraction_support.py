@@ -95,18 +95,48 @@ def build_line_items(
     source_line: str,
     include_image_prompts: bool,
 ) -> list[ExtractedVocabularyItemDraft]:
+    return build_draft_items(
+        raw_items=raw_items,
+        default_source_fragment=source_line,
+        include_image_prompts=include_image_prompts,
+    )
+
+
+def build_raw_draft_items(
+    *,
+    raw_items: list[dict[str, object]],
+    default_source_fragment: str,
+    include_image_prompts: bool,
+) -> list[ExtractedVocabularyItemDraft]:
     items: list[ExtractedVocabularyItemDraft] = []
     for raw_item in raw_items:
-        source_fragment = _string_or_empty(raw_item.get("source_fragment")) or source_line
-        draft_item = ExtractedVocabularyItemDraft(
-            english_word=_string_or_empty(raw_item.get("english_word")),
-            translation=_string_or_empty(raw_item.get("translation")),
-            source_fragment=source_fragment,
-            notes=_optional_string(raw_item.get("notes")),
-            image_prompt=(
-                _optional_string(raw_item.get("image_prompt")) if include_image_prompts else None
-            ),
+        source_fragment = _string_or_empty(raw_item.get("source_fragment")) or default_source_fragment
+        items.append(
+            ExtractedVocabularyItemDraft(
+                english_word=_string_or_empty(raw_item.get("english_word")),
+                translation=_string_or_empty(raw_item.get("translation")),
+                source_fragment=source_fragment,
+                notes=_optional_string(raw_item.get("notes")),
+                image_prompt=(
+                    _optional_string(raw_item.get("image_prompt")) if include_image_prompts else None
+                ),
+            )
         )
+    return items
+
+
+def build_draft_items(
+    *,
+    raw_items: list[dict[str, object]],
+    default_source_fragment: str,
+    include_image_prompts: bool,
+) -> list[ExtractedVocabularyItemDraft]:
+    items: list[ExtractedVocabularyItemDraft] = []
+    for draft_item in build_raw_draft_items(
+        raw_items=raw_items,
+        default_source_fragment=default_source_fragment,
+        include_image_prompts=include_image_prompts,
+    ):
         repaired_item = repair_item_from_source(draft_item)
         items.extend(split_paired_item(repaired_item))
     return items
@@ -117,7 +147,11 @@ def ensure_source_fragment(
     *,
     source_lines: list[str],
 ) -> ExtractedVocabularyItemDraft:
-    if item.source_fragment.strip():
+    current_source_fragment = item.source_fragment.strip()
+    if current_source_fragment and any(
+        _normalize_text(source_line) == _normalize_text(current_source_fragment)
+        for source_line in source_lines
+    ):
         return item
 
     matched_fragment = _match_source_fragment(
@@ -128,10 +162,18 @@ def ensure_source_fragment(
     if not matched_fragment:
         return item
 
-    logger.info(
-        "Recovered source_fragment from raw text for english_word=%s",
-        item.english_word,
-    )
+    if current_source_fragment:
+        logger.info(
+            "Replaced malformed source_fragment from raw text for english_word=%s old_source_fragment=%s new_source_fragment=%s",
+            item.english_word,
+            item.source_fragment,
+            matched_fragment,
+        )
+    else:
+        logger.info(
+            "Recovered source_fragment from raw text for english_word=%s",
+            item.english_word,
+        )
     repaired = ExtractedVocabularyItemDraft(
         english_word=item.english_word,
         translation=item.translation,
@@ -287,8 +329,16 @@ def _match_source_fragment(
         parsed_english, parsed_translation = parsed
         line_english = _normalize_text(parsed_english).lower()
         line_translation = _normalize_text(parsed_translation).lower()
-        english_matches = bool(normalized_english) and line_english == normalized_english
-        translation_matches = bool(normalized_translation) and line_translation == normalized_translation
+        source_english_parts = [_normalize_text(part).lower() for part in _split_pair_parts(parsed_english)]
+        source_translation_parts = [
+            _normalize_text(part).lower() for part in _split_pair_parts(parsed_translation)
+        ]
+        english_matches = bool(normalized_english) and (
+            line_english == normalized_english or normalized_english in source_english_parts
+        )
+        translation_matches = bool(normalized_translation) and (
+            line_translation == normalized_translation or normalized_translation in source_translation_parts
+        )
 
         if english_matches and translation_matches:
             exact_matches.append(source_line)

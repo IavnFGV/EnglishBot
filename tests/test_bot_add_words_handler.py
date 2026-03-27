@@ -8,6 +8,7 @@ from englishbot.importing.models import (
     ExtractedVocabularyItemDraft,
     ImportLessonResult,
     LessonExtractionDraft,
+    ValidationError,
     ValidationResult,
 )
 
@@ -66,6 +67,26 @@ class _FakeSuccessfulStartUseCase:
         )
 
 
+class _FakeTimeoutStartUseCase:
+    def execute(self, *, user_id: int, raw_text: str):  # noqa: ARG002
+        return AddWordsFlowState(
+            flow_id="flow-timeout",
+            editor_user_id=user_id,
+            raw_text=raw_text,
+            draft_result=ImportLessonResult(
+                draft={"error": "HTTPConnectionPool(host='127.0.0.1', port=11434): Read timed out. (read timeout=180)"},  # type: ignore[arg-type]
+                validation=ValidationResult(
+                    errors=[
+                        ValidationError(
+                            code="malformed_result",
+                            message="Extraction client returned an invalid draft structure.",
+                        )
+                    ]
+                ),
+            ),
+        )
+
+
 @pytest.mark.anyio
 async def test_add_words_text_handler_reports_failure_to_user() -> None:
     message = _FakeIncomingMessage("Fairy Tales\n\nDragon — дракон")
@@ -120,3 +141,33 @@ async def test_add_words_text_handler_sends_only_one_draft_preview_after_success
     assert len(message.replies) == 2
     assert message.replies[0].edits[-1].startswith("Parsing draft... done")
     assert message.replies[1].text.startswith("Draft preview\nTopic: Fairy Tales")
+
+
+@pytest.mark.anyio
+async def test_add_words_text_handler_reports_ollama_timeout_without_preview() -> None:
+    message = _FakeIncomingMessage("Fairy Tales\n\nDragon — дракон")
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_user=SimpleNamespace(id=123),
+    )
+    context = SimpleNamespace(
+        user_data={"words_flow_mode": "awaiting_raw_text"},
+        application=SimpleNamespace(
+            bot_data={
+                "editor_user_ids": {123},
+                "add_words_start_use_case": _FakeTimeoutStartUseCase(),
+                "word_import_preview_message_ids": {},
+            }
+        ),
+        bot=SimpleNamespace(),
+    )
+
+    await add_words_text_handler(update, context)  # type: ignore[arg-type]
+
+    assert context.user_data.get("words_flow_mode") is None
+    assert len(message.replies) == 1
+    assert message.replies[0].edits[-1] == (
+        "Parsing draft... failed\n"
+        "Ollama timed out while parsing this text. "
+        "Try a shorter text, a faster model, or increase OLLAMA_TIMEOUT_SEC."
+    )

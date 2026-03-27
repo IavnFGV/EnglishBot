@@ -681,6 +681,139 @@ def test_ollama_extraction_client_parses_birthday_celebration_list(
     ]
 
 
+def test_ollama_extraction_client_full_text_mode_uses_single_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_text = (
+        "Birthday celebration\n\n"
+        "Birthday boy / Birthday girl — именинник / именинница.\n"
+        "Birthday cake — торт ко дню рождения.\n"
+    )
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Birthday boy",
+                                    "translation": "именинник",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "Birthday boy / Birthday girl — именинник / именинница.",
+                                },
+                                {
+                                    "english_word": "Birthday girl",
+                                    "translation": "именинница",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "Birthday boy / Birthday girl — именинник / именинница.",
+                                },
+                                {
+                                    "english_word": "Birthday cake",
+                                    "translation": "торт ко дню рождения",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "Birthday cake — торт ко дню рождения.",
+                                },
+                            ]
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        call_count = 0
+
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            FakeRequestsModule.call_count += 1
+            assert url == "http://127.0.0.1:11434/api/chat"
+            assert json["model"] == "qwen2.5:7b"
+            assert json["messages"][-1]["content"] == raw_text
+            assert "You extract vocabulary items from teacher-written lesson text." in json["messages"][0]["content"]
+            assert timeout == 120
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+        extraction_mode="full_text",
+    )
+
+    draft = client.extract(raw_text)
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert FakeRequestsModule.call_count == 1
+    assert draft.topic_title == "Birthday celebration"
+    assert [item.english_word for item in draft.vocabulary_items] == [
+        "Birthday boy",
+        "Birthday girl",
+        "Birthday cake",
+    ]
+
+
+def test_ollama_extraction_client_reloads_model_name_from_file_between_requests(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "ollama_model.txt"
+    model_path.write_text("qwen3.5:4b", encoding="utf-8")
+    seen_models: list[str] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Pencil",
+                                    "translation": "карандаш",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "Pencil — карандаш",
+                                }
+                            ]
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:  # noqa: ARG004
+            seen_models.append(str(json["model"]))
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(
+        model="fallback-model",
+        model_file_path=model_path,
+        base_url="http://127.0.0.1:11434",
+        extraction_mode="full_text",
+    )
+
+    raw_text = "School supplies\n\nPencil — карандаш"
+    first = client.extract(raw_text)
+    model_path.write_text("qwen3.5:8b", encoding="utf-8")
+    second = client.extract(raw_text)
+
+    assert isinstance(first, LessonExtractionDraft)
+    assert isinstance(second, LessonExtractionDraft)
+    assert seen_models == ["qwen3.5:4b", "qwen3.5:8b"]
+
+
 def test_ollama_extraction_client_repairs_translation_from_source_fragment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -723,6 +856,61 @@ def test_ollama_extraction_client_repairs_translation_from_source_fragment(
     assert isinstance(draft, LessonExtractionDraft)
     assert draft.vocabulary_items[0].translation == "гномик"
     assert draft.vocabulary_items[0].image_prompt is None
+
+
+def test_ollama_extraction_client_recovers_malformed_paired_source_fragment_without_duplicates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_text = "School Supplies\n\nPupil / Student — ученик"
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Pupil",
+                                    "translation": "ученик /think",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "Pupil / Student — ученик /think",
+                                },
+                                {
+                                    "english_word": "Student",
+                                    "translation": "ученик /think",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": "Pupil / Student — ученик /think",
+                                },
+                            ]
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:  # noqa: ARG004
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(
+        model="qwen2.5:7b",
+        base_url="http://127.0.0.1:11434",
+        extraction_mode="full_text",
+    )
+
+    draft = client.extract(raw_text)
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert [item.english_word for item in draft.vocabulary_items] == ["Pupil", "Student"]
+    assert [item.translation for item in draft.vocabulary_items] == ["ученик", "ученик"]
+    assert all(item.source_fragment == "Pupil / Student — ученик" for item in draft.vocabulary_items)
 
 
 def test_ollama_extraction_client_recovers_missing_source_fragment_from_raw_text(

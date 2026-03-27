@@ -111,6 +111,29 @@ def test_add_words_use_cases_support_extract_and_edit() -> None:
     assert flow.draft_result.draft.vocabulary_items[0].image_prompt is None
 
 
+def test_start_add_words_does_not_persist_malformed_extraction_result() -> None:
+    repository = InMemoryAddWordsFlowRepository()
+    harness = AddWordsFlowHarness(
+        pipeline=LessonImportPipeline(
+            extraction_client=FakeLessonExtractionClient({"error": "timeout"}),
+            validator=LessonExtractionValidator(),
+            canonicalizer=DraftToContentPackCanonicalizer(),
+            writer=JsonContentPackWriter(),
+        ),
+        validator=LessonExtractionValidator(),
+        writer=JsonContentPackWriter(),
+    )
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+    get_active = GetActiveAddWordsFlowUseCase(repository)
+
+    flow = start.execute(user_id=7, raw_text="broken teacher text")
+
+    assert isinstance(flow.draft_result.draft, dict)
+    assert flow.draft_result.validation.is_valid is False
+    assert flow.draft_result.validation.errors[0].code == "malformed_result"
+    assert get_active.execute(user_id=7) is None
+
+
 def test_regenerate_uses_edited_text_as_new_source() -> None:
     repository = InMemoryAddWordsFlowRepository()
     harness = AddWordsFlowHarness(
