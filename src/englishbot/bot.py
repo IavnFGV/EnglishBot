@@ -152,6 +152,8 @@ def _normalize_telegram_ui_language(language: str | None) -> str:
     if not normalized:
         return DEFAULT_TELEGRAM_UI_LANGUAGE
     primary = normalized.split("-", maxsplit=1)[0]
+    if primary == "ua":
+        primary = "uk"
     if primary in supported_telegram_ui_languages():
         return primary
     return DEFAULT_TELEGRAM_UI_LANGUAGE
@@ -165,9 +167,11 @@ def _telegram_ui_language(context: ContextTypes.DEFAULT_TYPE | None, user=None) 
         )
     if user is not None:
         user_language_code = getattr(user, "language_code", None)
-        normalized_user = _normalize_telegram_ui_language(user_language_code)
-        if normalized_user in supported_telegram_ui_languages():
-            return normalized_user
+        user_primary = (user_language_code or "").strip().lower().split("-", maxsplit=1)[0]
+        if user_primary == "ua":
+            user_primary = "uk"
+        if user_primary in supported_telegram_ui_languages():
+            return user_primary
     return configured
 
 
