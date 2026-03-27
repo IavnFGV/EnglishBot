@@ -1010,7 +1010,7 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
 
     await image_review_search_handler(search_update, context)  # type: ignore[arg-type]
     assert search_query.edits[0] == "Searching Pixabay 1/1..."
-    assert search_query.edits[1] == "Pixabay candidates ready 1/1"
+    assert search_query.edits[1] == "Pixabay candidates ready 1/1."
     assert any("Pixabay candidates page 1" in text for text in message.reply_text_calls)
     assert any("Pixabay search query: Dragon" in text for text in message.reply_text_calls)
     assert message.reply_photo_captions == [""]
@@ -1021,7 +1021,7 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
     )
     await image_review_next_handler(next_update, context)  # type: ignore[arg-type]
     assert next_query.edits[0] == "Loading next Pixabay candidates 1/1..."
-    assert next_query.edits[1] == "Pixabay candidates ready 1/1"
+    assert next_query.edits[1] == "Pixabay candidates ready 1/1."
     assert any("Pixabay candidates page 2" in text for text in message.reply_text_calls)
     assert any("Pixabay search query: Dragon" in text for text in message.reply_text_calls)
     assert message.reply_photo_captions == ["", ""]
@@ -1033,7 +1033,7 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
     )
     await image_review_previous_handler(previous_update, context)  # type: ignore[arg-type]
     assert previous_query.edits[0] == "Loading previous Pixabay candidates 1/1..."
-    assert previous_query.edits[1] == "Pixabay candidates ready 1/1"
+    assert previous_query.edits[1] == "Pixabay candidates ready 1/1."
     assert any("Pixabay candidates page 1" in text for text in message.reply_text_calls)
     assert message.reply_photo_captions == ["", "", ""]
     assert message.reply_photo_names[2].endswith("review123-dragon--review-strip-256.jpg")

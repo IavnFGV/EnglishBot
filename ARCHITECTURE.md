@@ -70,6 +70,17 @@ The current codebase should be treated as a working POC with real editor and lea
 
 The adapter does not contain business rules. It only maps Telegram updates to application service calls.
 
+Telegram response formatting is now split into a small presentation sublayer:
+
+- `englishbot.presentation.telegram_ui_text`: localized string catalog
+- `englishbot.presentation.telegram_views`: Telegram-specific screen/message builders plus send/edit helpers for user-visible screens and status updates
+
+Behavioral rule:
+
+- `bot.py` may decide when to send or edit a message
+- user-visible screen text, captions, and message shape should be constructed in presentation helpers
+- the goal is to make it obvious from one place what the user actually sees in chat
+
 ## Storage abstraction
 
 Repository protocols isolate the application layer from persistence:

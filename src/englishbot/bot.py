@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import html
 import json
 import logging
 from dataclasses import dataclass
@@ -97,8 +96,31 @@ from englishbot.infrastructure.sqlite_store import (
 )
 from englishbot.presentation.add_words_text import (
     format_draft_edit_text,
-    format_draft_preview,
     parse_edited_vocabulary_line,
+)
+from englishbot.presentation.telegram_views import (
+    TelegramTextView,
+    build_active_session_exists_view,
+    build_answer_feedback_view,
+    build_current_image_preview_view,
+    build_draft_preview_view,
+    build_editable_topics_view,
+    build_editable_words_view,
+    build_help_view,
+    build_image_review_attach_photo_view,
+    build_image_review_prompt_edit_view,
+    build_image_review_search_query_edit_view,
+    build_image_review_step_view,
+    build_lesson_selection_view,
+    build_mode_selection_view,
+    build_published_word_edit_prompt_view,
+    build_quick_actions_view,
+    build_status_view,
+    build_topic_selection_view,
+    build_training_question_view,
+    build_words_menu_view,
+    edit_telegram_text_view,
+    send_telegram_view,
 )
 from englishbot.presentation.telegram_ui_text import (
     DEFAULT_TELEGRAM_UI_LANGUAGE,
@@ -797,6 +819,25 @@ def _draft_review_markup(
     )
 
 
+def _draft_review_view(
+    *,
+    flow_id: str,
+    result,
+    is_valid: bool,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    return build_draft_preview_view(
+        result,
+        reply_markup=_draft_review_markup(
+            flow_id=flow_id,
+            is_valid=is_valid,
+            context=context,
+            user=user,
+        ),
+    )
+
+
 def _image_review_markup(
     *,
     flow_id: str,
@@ -811,6 +852,144 @@ def _image_review_markup(
         show_generate_image_button=capabilities.local_image_generation_available,
         language=_telegram_ui_language(context, user),
     )
+
+
+def _quick_actions_view(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    return build_quick_actions_view(
+        text=_tg("quick_actions_title", context=context, user=user),
+        reply_markup=_chat_menu_keyboard(
+            is_editor=bool(user and _is_editor(user.id, context))
+        ),
+    )
+
+
+def _topic_selection_view(
+    *,
+    text: str,
+    topics,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    return build_topic_selection_view(
+        text=text,
+        reply_markup=_topic_keyboard(
+            topics,
+            language=_telegram_ui_language(context, user),
+        ),
+    )
+
+
+def _lesson_selection_view(
+    *,
+    text: str,
+    topic_id: str,
+    lessons,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    return build_lesson_selection_view(
+        text=text,
+        reply_markup=_lesson_keyboard(
+            topic_id,
+            lessons,
+            language=_telegram_ui_language(context, user),
+        ),
+    )
+
+
+def _mode_selection_view(
+    *,
+    text: str,
+    topic_id: str,
+    lesson_id: str | None,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    return build_mode_selection_view(
+        text=text,
+        reply_markup=_mode_keyboard(
+            topic_id,
+            lesson_id,
+            language=_telegram_ui_language(context, user),
+        ),
+    )
+
+
+def _words_menu_view(
+    *,
+    text: str,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    return build_words_menu_view(
+        text=text,
+        reply_markup=_words_menu_keyboard(
+            is_editor=bool(user and _is_editor(user.id, context)),
+            language=_telegram_ui_language(context, user),
+        ),
+    )
+
+
+def _help_view(
+    *,
+    text: str,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    return build_help_view(
+        text=text,
+        reply_markup=_chat_menu_keyboard(
+            is_editor=bool(user and _is_editor(user.id, context))
+        ),
+    )
+
+
+def _editable_topics_view(
+    *,
+    text: str,
+    topics,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    for_images: bool = False,
+) -> TelegramTextView:
+    markup = (
+        _published_image_topics_keyboard(
+            topics,
+            language=_telegram_ui_language(context, user),
+        )
+        if for_images
+        else _editable_topics_keyboard(
+            topics,
+            language=_telegram_ui_language(context, user),
+        )
+    )
+    return build_editable_topics_view(text=text, reply_markup=markup)
+
+
+def _editable_words_view(
+    *,
+    text: str,
+    topic_id: str,
+    words,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    return build_editable_words_view(
+        text=text,
+        reply_markup=_editable_words_keyboard(
+            topic_id=topic_id,
+            words=words,
+            language=_telegram_ui_language(context, user),
+        ),
+    )
+
+
+def _status_view(*, text: str, reply_markup=None) -> TelegramTextView:
+    return build_status_view(text=text, reply_markup=reply_markup)
 
 
 def _resolve_image_review_publish_output_path(flow) -> Path | None:
@@ -856,42 +1035,38 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 TrainingMode.MEDIUM,
                 TrainingMode.HARD,
             }
-            await message.reply_text(
-                _tg(
-                    "active_session_exists",
-                    context=context,
-                    user=user,
-                    topic_id=active_session.topic_id,
-                    lesson_id=active_session.lesson_id or _tg("all_topic_words", context=context, user=user),
-                    mode=active_session.mode.value,
-                    current_position=active_session.current_position,
-                    total_items=active_session.total_items,
-                ),
-                reply_markup=_active_session_keyboard(
-                    language=_telegram_ui_language(context, user),
-                ),
-            )
-            await message.reply_text(
-                _tg("quick_actions_title", context=context, user=user),
-                reply_markup=_chat_menu_keyboard(
-                    is_editor=bool(user and _is_editor(user.id, context))
+            await send_telegram_view(
+                message,
+                build_active_session_exists_view(
+                    text=_tg(
+                        "active_session_exists",
+                        context=context,
+                        user=user,
+                        topic_id=active_session.topic_id,
+                        lesson_id=active_session.lesson_id
+                        or _tg("all_topic_words", context=context, user=user),
+                        mode=active_session.mode.value,
+                        current_position=active_session.current_position,
+                        total_items=active_session.total_items,
+                    ),
+                    reply_markup=_active_session_keyboard(
+                        language=_telegram_ui_language(context, user),
+                    ),
                 ),
             )
+            await send_telegram_view(message, _quick_actions_view(context=context, user=user))
             return
     topics = _service(context).list_topics()
-    await message.reply_text(
-        _tg("choose_topic_start_training_help", context=context, user=user),
-        reply_markup=_topic_keyboard(
-            topics,
-            language=_telegram_ui_language(context, user),
+    await send_telegram_view(
+        message,
+        _topic_selection_view(
+            text=_tg("choose_topic_start_training_help", context=context, user=user),
+            topics=topics,
+            context=context,
+            user=user,
         ),
     )
-    await message.reply_text(
-        _tg("quick_actions_title", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(
-            is_editor=bool(user and _is_editor(user.id, context))
-        ),
-    )
+    await send_telegram_view(message, _quick_actions_view(context=context, user=user))
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -911,10 +1086,12 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "/cancel - cancel the current add-words flow",
             ]
         )
-    await message.reply_text(
-        _tg("help_title", context=context, user=user, commands="\n".join(commands)),
-        reply_markup=_chat_menu_keyboard(
-            is_editor=bool(user and _is_editor(user.id, context))
+    await send_telegram_view(
+        message,
+        _help_view(
+            text=_tg("help_title", context=context, user=user, commands="\n".join(commands)),
+            context=context,
+            user=user,
         ),
     )
 
@@ -924,19 +1101,15 @@ async def words_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     if message is None:
         return
-    await message.reply_text(
-        _tg("words_menu_prompt", context=context, user=user),
-        reply_markup=_words_menu_keyboard(
-            is_editor=bool(user and _is_editor(user.id, context)),
-            language=_telegram_ui_language(context, user),
+    await send_telegram_view(
+        message,
+        _words_menu_view(
+            text=_tg("words_menu_prompt", context=context, user=user),
+            context=context,
+            user=user,
         ),
     )
-    await message.reply_text(
-        _tg("quick_actions_title", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(
-            is_editor=bool(user and _is_editor(user.id, context))
-        ),
-    )
+    await send_telegram_view(message, _quick_actions_view(context=context, user=user))
 
 
 async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -945,13 +1118,12 @@ async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFA
         return
     await query.answer()
     try:
-        await query.edit_message_text(
-            _tg("words_menu_title", context=context, user=update.effective_user),
-            reply_markup=_words_menu_keyboard(
-                is_editor=bool(
-                    update.effective_user and _is_editor(update.effective_user.id, context)
-                ),
-                language=_telegram_ui_language(context, update.effective_user),
+        await edit_telegram_text_view(
+            query,
+            _words_menu_view(
+                text=_tg("words_menu_title", context=context, user=update.effective_user),
+                context=context,
+                user=update.effective_user,
             ),
         )
     except BadRequest as error:
@@ -970,13 +1142,13 @@ async def words_topics_callback_handler(
         return
     await query.answer()
     topics = _service(context).list_topics()
-    await query.edit_message_text(
-        "Choose a topic to start training.",
-        reply_markup=_topic_keyboard(
-            topics,
-            language=_telegram_ui_language(context, update.effective_user),
-        ),
+    topic_view = _topic_selection_view(
+        text="Choose a topic to start training.",
+        topics=topics,
+        context=context,
+        user=update.effective_user,
     )
+    await edit_telegram_text_view(query, topic_view)
 
 
 async def words_add_words_callback_handler(
@@ -1010,13 +1182,13 @@ async def words_edit_words_callback_handler(
         await query.edit_message_text(_tg("only_editors_edit_words", context=context, user=user))
         return
     topics = _list_editable_topics(context).execute()
-    await query.edit_message_text(
-        _tg("choose_topic_edit_words", context=context, user=user),
-        reply_markup=_editable_topics_keyboard(
-            topics,
-            language=_telegram_ui_language(context, update.effective_user),
-        ),
+    topics_view = _editable_topics_view(
+        text=_tg("choose_topic_edit_words", context=context, user=user),
+        topics=topics,
+        context=context,
+        user=update.effective_user,
     )
+    await query.edit_message_text(topics_view.text, reply_markup=topics_view.reply_markup)
 
 
 async def words_edit_images_callback_handler(
@@ -1032,13 +1204,14 @@ async def words_edit_images_callback_handler(
         await query.edit_message_text(_tg("only_editors_edit_images", context=context, user=user))
         return
     topics = _list_editable_topics(context).execute()
-    await query.edit_message_text(
-        _tg("choose_topic_edit_images", context=context, user=user),
-        reply_markup=_published_image_topics_keyboard(
-            topics,
-            language=_telegram_ui_language(context, update.effective_user),
-        ),
+    topics_view = _editable_topics_view(
+        text=_tg("choose_topic_edit_images", context=context, user=user),
+        topics=topics,
+        context=context,
+        user=update.effective_user,
+        for_images=True,
     )
+    await query.edit_message_text(topics_view.text, reply_markup=topics_view.reply_markup)
 
 
 async def words_edit_topic_callback_handler(
@@ -1051,14 +1224,14 @@ async def words_edit_topic_callback_handler(
     await query.answer()
     _, _, topic_id = query.data.split(":")
     words = _list_editable_words(context).execute(topic_id=topic_id)
-    await query.edit_message_text(
-        _tg("choose_word_to_edit", context=context, user=update.effective_user),
-        reply_markup=_editable_words_keyboard(
-            topic_id=topic_id,
-            words=words,
-            language=_telegram_ui_language(context, update.effective_user),
-        ),
+    words_view = _editable_words_view(
+        text=_tg("choose_word_to_edit", context=context, user=update.effective_user),
+        topic_id=topic_id,
+        words=words,
+        context=context,
+        user=update.effective_user,
     )
+    await query.edit_message_text(words_view.text, reply_markup=words_view.reply_markup)
 
 
 async def words_edit_item_callback_handler(
@@ -1089,28 +1262,31 @@ async def words_edit_item_callback_handler(
     context.user_data["words_flow_mode"] = _PUBLISHED_WORD_AWAITING_EDIT_TEXT
     context.user_data["published_edit_topic_id"] = topic_id
     context.user_data["published_edit_item_id"] = selected_word.id
-    await query.edit_message_text(
-        _tg("send_updated_word_format", context=context, user=user),
-        reply_markup=_published_word_edit_keyboard(
-            topic_id=topic_id,
-            language=_telegram_ui_language(context, update.effective_user),
-        ),
-    )
     _track_flow_message(
         context,
         flow_id=flow_id,
         tag=_PUBLISHED_WORD_EDIT_TAG,
         message=query.message,
     )
-    helper_message = await query.message.reply_text(
-        _tg(
+    instruction_view, current_value_view = build_published_word_edit_prompt_view(
+        instruction_text=_tg("send_updated_word_format", context=context, user=user),
+        current_value_text=_tg(
             "current_value",
             context=context,
             user=user,
             value=f"{selected_word.english_word}: {selected_word.translation}",
         ),
-        reply_markup=ForceReply(selective=True),
+        instruction_markup=_published_word_edit_keyboard(
+            topic_id=topic_id,
+            language=_telegram_ui_language(context, update.effective_user),
+        ),
+        current_value_markup=ForceReply(selective=True),
     )
+    await query.edit_message_text(
+        instruction_view.text,
+        reply_markup=instruction_view.reply_markup,
+    )
+    helper_message = await send_telegram_view(query.message, current_value_view)
     _track_flow_message(
         context,
         flow_id=flow_id,
@@ -1332,11 +1508,17 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             stop_event.set()
             await heartbeat_task
             logger.exception("Image review prompt update failed for user=%s", user.id)
-            await status_message.edit_text(_tg("updating_image_prompt_failed", context=context, user=user))
+            await status_message.edit_text(
+                _status_view(
+                    text=_tg("updating_image_prompt_failed", context=context, user=user)
+                ).text
+            )
             return
         stop_event.set()
         await heartbeat_task
-        await status_message.edit_text(_tg("prompt_updated", context=context, user=user))
+        await status_message.edit_text(
+            _status_view(text=_tg("prompt_updated", context=context, user=user)).text
+        )
         await _send_image_review_step(message, context, updated_flow)
         return
     if words_flow_mode == _IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT:
@@ -1377,11 +1559,17 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             stop_event.set()
             await heartbeat_task
             logger.exception("Image review Pixabay search update failed for user=%s", user.id)
-            await status_message.edit_text(_tg("searching_pixabay_failed", context=context, user=user))
+            await status_message.edit_text(
+                _status_view(
+                    text=_tg("searching_pixabay_failed", context=context, user=user)
+                ).text
+            )
             return
         stop_event.set()
         await heartbeat_task
-        await status_message.edit_text(_tg("pixabay_candidates_updated", context=context, user=user))
+        await status_message.edit_text(
+            _status_view(text=_tg("pixabay_candidates_updated", context=context, user=user)).text
+        )
         await _send_image_review_step(message, context, updated_flow)
         return
     if words_flow_mode == _IMAGE_REVIEW_AWAITING_PHOTO:
@@ -1417,13 +1605,20 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
                 await context.bot.edit_message_text(
                     chat_id=message.chat_id,
                     message_id=preview_message_id,
-                    text=format_draft_preview(flow.draft_result),
-                    reply_markup=_draft_review_markup(
+                    text=_draft_review_view(
                         flow_id=flow.flow_id,
+                        result=flow.draft_result,
                         is_valid=flow.draft_result.validation.is_valid,
                         context=context,
                         user=user,
-                    ),
+                    ).text,
+                    reply_markup=_draft_review_view(
+                        flow_id=flow.flow_id,
+                        result=flow.draft_result,
+                        is_valid=flow.draft_result.validation.is_valid,
+                        context=context,
+                        user=user,
+                    ).reply_markup,
                 )
             except BadRequest as error:
                 if "message is not modified" in str(error).lower():
@@ -1456,7 +1651,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
     except Exception:  # noqa: BLE001
         logger.exception("Add-words draft extraction failed for user=%s", user.id)
         await status_message.edit_text(
-            _tg("parsing_draft_failed_generic", context=context, user=user)
+            _status_view(text=_tg("parsing_draft_failed_generic", context=context, user=user)).text
         )
         context.user_data.pop("words_flow_mode", None)
         return
@@ -1466,18 +1661,19 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data.pop("words_flow_mode", None)
     failure_message = _draft_failure_message(flow.draft_result)
     if failure_message is not None:
-        await status_message.edit_text(failure_message)
+        await status_message.edit_text(_status_view(text=failure_message).text)
         return
-    await status_message.edit_text(_draft_status_text(flow.draft_result))
-    preview_message = await message.reply_text(
-        format_draft_preview(flow.draft_result),
-        reply_markup=_draft_review_markup(
-            flow_id=flow.flow_id,
-            is_valid=flow.draft_result.validation.is_valid,
-            context=context,
-            user=user,
-        ),
+    await status_message.edit_text(
+        _status_view(text=_draft_status_text(flow.draft_result)).text
     )
+    preview_view = _draft_review_view(
+        flow_id=flow.flow_id,
+        result=flow.draft_result,
+        is_valid=flow.draft_result.validation.is_valid,
+        context=context,
+        user=user,
+    )
+    preview_message = await send_telegram_view(message, preview_view)
     _set_preview_message_id(user.id, preview_message.message_id, context)
 
 
@@ -1537,9 +1733,15 @@ async def add_words_regenerate_draft_handler(
         await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
         return
     if not _smart_parsing_available(context):
-        await query.edit_message_text(_tg("smart_parsing_unavailable", context=context, user=user))
+        await edit_telegram_text_view(
+            query,
+            _status_view(text=_tg("smart_parsing_unavailable", context=context, user=user)),
+        )
         return
-    await query.edit_message_text(_tg("re_recognizing_draft", context=context, user=user))
+    await edit_telegram_text_view(
+        query,
+        _status_view(text=_tg("re_recognizing_draft", context=context, user=user)),
+    )
     stop_event = asyncio.Event()
     heartbeat_task = asyncio.create_task(
         _run_status_heartbeat(
@@ -1556,19 +1758,29 @@ async def add_words_regenerate_draft_handler(
         )
     except Exception:  # noqa: BLE001
         logger.exception("Add-words draft regeneration failed for user=%s", user.id)
-        await query.edit_message_text(_tg("parsing_draft_failed_generic", context=context, user=user))
+        await edit_telegram_text_view(
+            query,
+            _status_view(text=_tg("parsing_draft_failed_generic", context=context, user=user)),
+        )
         return
     finally:
         stop_event.set()
         await heartbeat_task
     await query.edit_message_text(
-        format_draft_preview(flow.draft_result),
-        reply_markup=_draft_review_markup(
+        _draft_review_view(
             flow_id=flow.flow_id,
+            result=flow.draft_result,
             is_valid=flow.draft_result.validation.is_valid,
             context=context,
             user=user,
-        ),
+        ).text,
+        reply_markup=_draft_review_view(
+            flow_id=flow.flow_id,
+            result=flow.draft_result,
+            is_valid=flow.draft_result.validation.is_valid,
+            context=context,
+            user=user,
+        ).reply_markup,
     )
 
 
@@ -1589,13 +1801,20 @@ async def add_words_publish_without_images_handler(
     result = flow.draft_result
     if not result.validation.is_valid:
         await query.edit_message_text(
-            format_draft_preview(result),
-            reply_markup=_draft_review_markup(
+            _draft_review_view(
                 flow_id=flow.flow_id,
+                result=result,
                 is_valid=False,
                 context=context,
                 user=user,
-            ),
+            ).text,
+            reply_markup=_draft_review_view(
+                flow_id=flow.flow_id,
+                result=result,
+                is_valid=False,
+                context=context,
+                user=user,
+            ).reply_markup,
         )
         return
     await query.edit_message_text(
@@ -1646,42 +1865,58 @@ async def add_words_approve_draft_handler(
     result = flow.draft_result
     if not result.validation.is_valid:
         await query.edit_message_text(
-            format_draft_preview(result),
-            reply_markup=_draft_review_markup(
+            _draft_review_view(
                 flow_id=flow.flow_id,
+                result=result,
                 is_valid=False,
                 context=context,
                 user=user,
-            ),
+            ).text,
+            reply_markup=_draft_review_view(
+                flow_id=flow.flow_id,
+                result=result,
+                is_valid=False,
+                context=context,
+                user=user,
+            ).reply_markup,
         )
         return
-    await query.edit_message_text(_tg("saving_approved_draft", context=context, user=user))
+    await edit_telegram_text_view(
+        query,
+        _status_view(text=_tg("saving_approved_draft", context=context, user=user)),
+    )
     saved_flow = await asyncio.to_thread(
         _save_approved_add_words_draft(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
-    await query.edit_message_text(
-        _tg(
-            "approved_draft_saved_generating_prompts",
-            context=context,
-            user=user,
-            checkpoint=_draft_checkpoint_text(saved_flow),
-        )
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "approved_draft_saved_generating_prompts",
+                context=context,
+                user=user,
+                checkpoint=_draft_checkpoint_text(saved_flow),
+            )
+        ),
     )
     prompt_flow = await asyncio.to_thread(
         _generate_add_words_image_prompts(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
-    await query.edit_message_text(
-        _tg(
-            "image_prompts_generated_starting_review",
-            context=context,
-            user=user,
-            checkpoint=_draft_checkpoint_text(prompt_flow),
-            prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
-        )
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "image_prompts_generated_starting_review",
+                context=context,
+                user=user,
+                checkpoint=_draft_checkpoint_text(prompt_flow),
+                prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
+            )
+        ),
     )
     image_review_flow = await asyncio.to_thread(
         _start_image_review(context).execute,
@@ -1694,14 +1929,17 @@ async def add_words_approve_draft_handler(
         flow_id=flow.flow_id,
         image_review_flow_id=image_review_flow.flow_id,
     )
-    await query.edit_message_text(
-        _tg(
-            "image_prompts_generated_saved_continue_review",
-            context=context,
-            user=user,
-            checkpoint=_draft_checkpoint_text(prompt_flow),
-            prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
-        )
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "image_prompts_generated_saved_continue_review",
+                context=context,
+                user=user,
+                checkpoint=_draft_checkpoint_text(prompt_flow),
+                prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
+            )
+        ),
     )
     await _send_image_review_step(query.message, context, image_review_flow)
 
@@ -1726,43 +1964,59 @@ async def add_words_approve_auto_images_handler(
     result = flow.draft_result
     if not result.validation.is_valid:
         await query.edit_message_text(
-            format_draft_preview(result),
-            reply_markup=_draft_review_markup(
+            _draft_review_view(
                 flow_id=flow.flow_id,
+                result=result,
                 is_valid=False,
                 context=context,
                 user=user,
-            ),
+            ).text,
+            reply_markup=_draft_review_view(
+                flow_id=flow.flow_id,
+                result=result,
+                is_valid=False,
+                context=context,
+                user=user,
+            ).reply_markup,
         )
         return
 
-    await query.edit_message_text(_tg("saving_approved_draft", context=context, user=user))
+    await edit_telegram_text_view(
+        query,
+        _status_view(text=_tg("saving_approved_draft", context=context, user=user)),
+    )
     saved_flow = await asyncio.to_thread(
         _save_approved_add_words_draft(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
-    await query.edit_message_text(
-        _tg(
-            "approved_draft_saved_generating_prompts",
-            context=context,
-            user=user,
-            checkpoint=_draft_checkpoint_text(saved_flow),
-        )
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "approved_draft_saved_generating_prompts",
+                context=context,
+                user=user,
+                checkpoint=_draft_checkpoint_text(saved_flow),
+            )
+        ),
     )
     prompt_flow = await asyncio.to_thread(
         _generate_add_words_image_prompts(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
-    await query.edit_message_text(
-        _tg(
-            "image_prompts_generated_publishing",
-            context=context,
-            user=user,
-            checkpoint=_draft_checkpoint_text(prompt_flow),
-            prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
-        )
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "image_prompts_generated_publishing",
+                context=context,
+                user=user,
+                checkpoint=_draft_checkpoint_text(prompt_flow),
+                prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
+            )
+        ),
     )
     approved = await asyncio.to_thread(
         _approve_add_words_draft(context).execute,
@@ -1771,16 +2025,19 @@ async def add_words_approve_auto_images_handler(
     )
     total_items = len(approved.import_result.draft.vocabulary_items)
     rendered_total_items = total_items if total_items > 0 else 1
-    await query.edit_message_text(
-        _tg(
-            "content_pack_published_generating_images",
-            context=context,
-            user=user,
-            destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id),
-            item_count=len(approved.import_result.draft.vocabulary_items),
-            processed=0,
-            total=rendered_total_items,
-        )
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "content_pack_published_generating_images",
+                context=context,
+                user=user,
+                destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id),
+                item_count=len(approved.import_result.draft.vocabulary_items),
+                processed=0,
+                total=rendered_total_items,
+            )
+        ),
     )
     progress_queue: asyncio.Queue[tuple[int, int] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
@@ -1795,16 +2052,19 @@ async def add_words_approve_auto_images_handler(
                 continue
             last_progress = progress
             processed_count, total_count = progress
-            await query.edit_message_text(
-                _tg(
-                    "content_pack_published_generating_images",
-                    context=context,
-                    user=user,
-                    destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id),
-                    item_count=len(approved.import_result.draft.vocabulary_items),
-                    processed=processed_count,
-                    total=total_count,
-                )
+            await edit_telegram_text_view(
+                query,
+                _status_view(
+                    text=_tg(
+                        "content_pack_published_generating_images",
+                        context=context,
+                        user=user,
+                        destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id),
+                        item_count=len(approved.import_result.draft.vocabulary_items),
+                        processed=processed_count,
+                        total=total_count,
+                    )
+                ),
             )
 
     progress_task = asyncio.create_task(_report_generation_progress())
@@ -1944,7 +2204,10 @@ async def image_review_generate_handler(
             _tg("image_generation_unavailable", context=context, user=user)
         )
         return
-    await query.edit_message_text(_tg("start_image_generation", context=context, user=user))
+    await edit_telegram_text_view(
+        query,
+        _status_view(text=_tg("start_image_generation", context=context, user=user)),
+    )
     await _prepare_and_send_image_review_step(query.message, context, user.id, flow)
 
 
@@ -1964,8 +2227,17 @@ async def image_review_search_handler(
         return
     current_position = flow.current_index + 1
     total_items = len(flow.items)
-    await query.edit_message_text(
-        _tg("pixabay_search_progress", context=context, user=user, current=current_position, total=total_items)
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "pixabay_search_progress",
+                context=context,
+                user=user,
+                current=current_position,
+                total=total_items,
+            )
+        ),
     )
     try:
         updated_flow = await asyncio.to_thread(
@@ -1977,8 +2249,17 @@ async def image_review_search_handler(
     except ValueError as error:
         await query.edit_message_text(str(error))
         return
-    await query.edit_message_text(
-        _tg("pixabay_candidates_ready", context=context, user=user, current=current_position, total=total_items)
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "pixabay_candidates_ready",
+                context=context,
+                user=user,
+                current=current_position,
+                total=total_items,
+            )
+        ),
     )
     await _send_image_review_step(query.message, context, updated_flow)
 
@@ -1999,8 +2280,17 @@ async def image_review_next_handler(
         return
     current_position = flow.current_index + 1
     total_items = len(flow.items)
-    await query.edit_message_text(
-        _tg("loading_next_pixabay", context=context, user=user, current=current_position, total=total_items)
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "loading_next_pixabay",
+                context=context,
+                user=user,
+                current=current_position,
+                total=total_items,
+            )
+        ),
     )
     try:
         updated_flow = await asyncio.to_thread(
@@ -2011,8 +2301,17 @@ async def image_review_next_handler(
     except ValueError as error:
         await query.edit_message_text(str(error))
         return
-    await query.edit_message_text(
-        _tg("pixabay_candidates_ready", context=context, user=user, current=current_position, total=total_items)
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "pixabay_candidates_ready",
+                context=context,
+                user=user,
+                current=current_position,
+                total=total_items,
+            )
+        ),
     )
     await _send_image_review_step(query.message, context, updated_flow)
 
@@ -2033,8 +2332,17 @@ async def image_review_previous_handler(
         return
     current_position = flow.current_index + 1
     total_items = len(flow.items)
-    await query.edit_message_text(
-        _tg("loading_previous_pixabay", context=context, user=user, current=current_position, total=total_items)
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "loading_previous_pixabay",
+                context=context,
+                user=user,
+                current=current_position,
+                total=total_items,
+            )
+        ),
     )
     try:
         updated_flow = await asyncio.to_thread(
@@ -2045,8 +2353,17 @@ async def image_review_previous_handler(
     except ValueError as error:
         await query.edit_message_text(str(error))
         return
-    await query.edit_message_text(
-        _tg("pixabay_candidates_ready", context=context, user=user, current=current_position, total=total_items)
+    await edit_telegram_text_view(
+        query,
+        _status_view(
+            text=_tg(
+                "pixabay_candidates_ready",
+                context=context,
+                user=user,
+                current=current_position,
+                total=total_items,
+            )
+        ),
     )
     await _send_image_review_step(query.message, context, updated_flow)
 
@@ -2235,13 +2552,18 @@ async def image_review_edit_prompt_handler(
     context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_PROMPT_TEXT
     context.user_data["image_review_flow_id"] = flow_id
     context.user_data["image_review_item_id"] = flow.current_item.item_id
-    await query.message.reply_text(
-        _tg("send_new_full_prompt", context=context, user=user),
-        reply_markup=ForceReply(selective=True),
+    instruction_view, current_prompt_view = build_image_review_prompt_edit_view(
+        instruction_text=_tg("send_new_full_prompt", context=context, user=user),
+        current_prompt_text=_tg(
+            "current_prompt",
+            context=context,
+            user=user,
+            prompt=flow.current_item.prompt,
+        ),
+        instruction_markup=ForceReply(selective=True),
     )
-    await query.message.reply_text(
-        _tg("current_prompt", context=context, user=user, prompt=flow.current_item.prompt),
-    )
+    await send_telegram_view(query.message, instruction_view)
+    await send_telegram_view(query.message, current_prompt_view)
 
 
 async def image_review_edit_search_query_handler(
@@ -2262,13 +2584,18 @@ async def image_review_edit_search_query_handler(
     context.user_data["image_review_flow_id"] = flow_id
     context.user_data["image_review_item_id"] = flow.current_item.item_id
     current_query = flow.current_item.search_query or flow.current_item.english_word
-    await query.message.reply_text(
-        _tg("send_new_search_query", context=context, user=user),
-        reply_markup=ForceReply(selective=True),
+    instruction_view, current_query_view = build_image_review_search_query_edit_view(
+        instruction_text=_tg("send_new_search_query", context=context, user=user),
+        current_query_text=_tg(
+            "current_query",
+            context=context,
+            user=user,
+            query=current_query,
+        ),
+        instruction_markup=ForceReply(selective=True),
     )
-    await query.message.reply_text(
-        _tg("current_query", context=context, user=user, query=current_query),
-    )
+    await send_telegram_view(query.message, instruction_view)
+    await send_telegram_view(query.message, current_query_view)
 
 
 async def image_review_attach_photo_handler(
@@ -2292,9 +2619,12 @@ async def image_review_attach_photo_handler(
     context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_PHOTO
     context.user_data["image_review_flow_id"] = flow_id
     context.user_data["image_review_item_id"] = flow.current_item.item_id
-    await query.message.reply_text(
-        _tg("attach_one_photo", context=context, user=user),
-        reply_markup=ForceReply(selective=True),
+    await send_telegram_view(
+        query.message,
+        build_image_review_attach_photo_view(
+            instruction_text=_tg("attach_one_photo", context=context, user=user),
+            instruction_markup=ForceReply(selective=True),
+        ),
     )
 
 
@@ -2344,7 +2674,9 @@ async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAU
         image_ref=image_ref,
         output_path=output_path,
     )
-    await status_message.edit_text(_tg("uploaded_photo_attached", context=context, user=user))
+    await status_message.edit_text(
+        _status_view(text=_tg("uploaded_photo_attached", context=context, user=user)).text
+    )
     if updated_flow.completed:
         output_path = _resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
@@ -2403,11 +2735,13 @@ async def restart_session_handler(update: Update, context: ContextTypes.DEFAULT_
     _service(context).discard_active_session(user_id=user.id)
     context.user_data["awaiting_text_answer"] = False
     await query.edit_message_text(_tg("previous_session_discarded", context=context, user=user))
-    await query.message.reply_text(
-        _tg("choose_topic_start_training", context=context, user=user),
-        reply_markup=_topic_keyboard(
-            _service(context).list_topics(),
-            language=_telegram_ui_language(context, user),
+    await send_telegram_view(
+        query.message,
+        _topic_selection_view(
+            text=_tg("choose_topic_start_training", context=context, user=user),
+            topics=_service(context).list_topics(),
+            context=context,
+            user=user,
         ),
     )
 
@@ -2420,22 +2754,28 @@ async def topic_selected_handler(update: Update, context: ContextTypes.DEFAULT_T
     topic_id = query.data.removeprefix("topic:")
     lesson_selection = _service(context).list_lessons_by_topic(topic_id=topic_id)
     if lesson_selection.has_lessons:
+        lesson_view = _lesson_selection_view(
+            text=_tg("choose_lesson", context=context, user=update.effective_user),
+            topic_id=topic_id,
+            lessons=lesson_selection.lessons,
+            context=context,
+            user=update.effective_user,
+        )
         await query.edit_message_text(
-            _tg("choose_lesson", context=context, user=update.effective_user),
-            reply_markup=_lesson_keyboard(
-                topic_id,
-                lesson_selection.lessons,
-                language=_telegram_ui_language(context, update.effective_user),
-            ),
+            lesson_view.text,
+            reply_markup=lesson_view.reply_markup,
         )
         return
+    mode_view = _mode_selection_view(
+        text=_tg("choose_mode", context=context, user=update.effective_user),
+        topic_id=topic_id,
+        lesson_id=None,
+        context=context,
+        user=update.effective_user,
+    )
     await query.edit_message_text(
-        _tg("choose_mode", context=context, user=update.effective_user),
-        reply_markup=_mode_keyboard(
-            topic_id,
-            None,
-            language=_telegram_ui_language(context, update.effective_user),
-        ),
+        mode_view.text,
+        reply_markup=mode_view.reply_markup,
     )
 
 
@@ -2446,13 +2786,16 @@ async def lesson_selected_handler(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
     _, topic_id, lesson_id = query.data.split(":")
     selected_lesson_id = None if lesson_id == "all" else lesson_id
+    mode_view = _mode_selection_view(
+        text=_tg("choose_mode", context=context, user=update.effective_user),
+        topic_id=topic_id,
+        lesson_id=selected_lesson_id,
+        context=context,
+        user=update.effective_user,
+    )
     await query.edit_message_text(
-        _tg("choose_mode", context=context, user=update.effective_user),
-        reply_markup=_mode_keyboard(
-            topic_id,
-            selected_lesson_id,
-            language=_telegram_ui_language(context, update.effective_user),
-        ),
+        mode_view.text,
+        reply_markup=mode_view.reply_markup,
     )
 
 
@@ -2615,22 +2958,12 @@ async def _process_answer(
 
 
 async def _send_feedback(message, outcome: AnswerOutcome) -> None:
-    if outcome.result.is_correct:
-        text = _tg("correct", user=getattr(message, "from_user", None))
-    else:
-        text = _tg(
-            "not_quite",
-            user=getattr(message, "from_user", None),
-            expected_answer=outcome.result.expected_answer,
-        )
-    if outcome.summary is not None:
-        text += _tg(
-            "session_complete",
-            user=getattr(message, "from_user", None),
-            correct_answers=outcome.summary.correct_answers,
-            total_questions=outcome.summary.total_questions,
-        )
-    await message.reply_text(text)
+    view = build_answer_feedback_view(
+        outcome,
+        translate=_tg,
+        user=getattr(message, "from_user", None),
+    )
+    await send_telegram_view(message, view)
 
 
 async def _send_question(
@@ -2649,34 +2982,13 @@ async def _send_question(
                 for option in question.options
             ]
         )
-    rendered_question = _render_compact_training_question(question)
     image_path = resolve_existing_image_path(question.image_ref)
-    if image_path is not None:
-        with image_path.open("rb") as photo_file:
-            await message.reply_photo(
-                photo=photo_file,
-                caption=rendered_question,
-                reply_markup=reply_markup,
-                parse_mode="HTML",
-            )
-        return
-    await message.reply_text(rendered_question, reply_markup=reply_markup, parse_mode="HTML")
-
-
-def _extract_translation_from_prompt(prompt: str) -> str:
-    for line in prompt.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("Translation:"):
-            return stripped.removeprefix("Translation:").strip()
-    return prompt.strip()
-
-
-def _render_compact_training_question(question: TrainingQuestion) -> str:
-    translation = html.escape(_extract_translation_from_prompt(question.prompt))
-    parts = [f"<b>{translation}</b>"]
-    if question.mode is not TrainingMode.EASY and question.letter_hint:
-        parts.append(f"<b>{html.escape(question.letter_hint)}</b>")
-    return "\n\n".join(part for part in parts if part.strip())
+    view = build_training_question_view(
+        question,
+        image_path=image_path,
+        reply_markup=reply_markup,
+    )
+    await send_telegram_view(message, view)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2854,12 +3166,14 @@ async def _prepare_and_send_image_review_step(
         stop_event.set()
         await heartbeat_task
     await status_message.edit_text(
-        _tg(
-            "local_candidates_ready",
-            user=getattr(message, "from_user", None),
-            current=current_position,
-            total=total_items,
-        )
+        _status_view(
+            text=_tg(
+                "local_candidates_ready",
+                user=getattr(message, "from_user", None),
+                current=current_position,
+                total=total_items,
+            )
+        ).text
     )
     await _send_image_review_step(message, context, prepared_flow)
 
@@ -2896,25 +3210,12 @@ async def _send_current_published_image_preview(
             image_ref = raw_image_ref
         break
     image_path = resolve_existing_image_path(image_ref)
-    if image_path is None:
-        empty_message = await message.reply_text(
-            _tg("no_current_image_intro", user=getattr(message, "from_user", None))
-        )
-        _track_flow_message(
-            context,
-            flow_id=flow.flow_id,
-            tag=_IMAGE_REVIEW_CONTEXT_TAG,
-            message=empty_message,
-            fallback_chat_id=fallback_chat_id,
-        )
-        return
-    with image_path.open("rb") as photo_file:
-        preview_message = await message.reply_photo(
-            photo=photo_file,
-            caption=(
-                _tg("current_image_intro", user=getattr(message, "from_user", None))
-            ),
-        )
+    preview_view = build_current_image_preview_view(
+        image_path=image_path,
+        current_image_intro=_tg("current_image_intro", user=getattr(message, "from_user", None)),
+        no_current_image_intro=_tg("no_current_image_intro", user=getattr(message, "from_user", None)),
+    )
+    preview_message = await send_telegram_view(message, preview_view)
     _track_flow_message(
         context,
         flow_id=flow.flow_id,
@@ -2938,27 +3239,20 @@ async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, f
     fallback_chat_id = _message_chat_id(message)
     total_items = len(flow.items)
     current_position = flow.current_index + 1
-    search_line = "Pixabay search: word only by default."
-    source_line = "No candidates loaded yet."
-    if current_item.candidate_source_type == "pixabay":
-        source_line = f"Pixabay candidates page {current_item.search_page}"
-        if current_item.search_query:
-            search_line = f"Pixabay search query: {current_item.search_query}"
-    elif current_item.candidate_source_type == "generated":
-        source_line = "Local AI candidates."
     generation_lines: list[str] = []
     generation_metadata = getattr(current_item, "candidate_generation_metadata", None)
     if generation_metadata is not None and generation_metadata.status_messages:
         generation_lines.extend(generation_metadata.status_messages)
-    summary_message = await message.reply_text(
-        "Reviewing images "
-        f"{current_position}/{total_items}\n"
-        f"{current_item.english_word} — {current_item.translation}\n"
-        f"Prompt: {current_item.prompt}\n"
-        "Prompt is used for local AI generation.\n"
-        f"{search_line}\n"
-        f"{source_line}"
-        + (("\n" + "\n".join(generation_lines)) if generation_lines else ""),
+    summary_view = build_image_review_step_view(
+        current_position=current_position,
+        total_items=total_items,
+        english_word=current_item.english_word,
+        translation=current_item.translation,
+        prompt=current_item.prompt,
+        candidate_source_type=current_item.candidate_source_type,
+        search_query=current_item.search_query,
+        search_page=current_item.search_page,
+        generation_status_messages=generation_lines,
         reply_markup=_image_review_markup(
             flow_id=flow.flow_id,
             current_item=current_item,
@@ -2966,6 +3260,7 @@ async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, f
             user=getattr(message, "from_user", None),
         ),
     )
+    summary_message = await send_telegram_view(message, summary_view)
     _track_flow_message(
         context,
         flow_id=flow.flow_id,
