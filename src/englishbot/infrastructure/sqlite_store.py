@@ -28,6 +28,7 @@ from englishbot.domain.models import (
 from englishbot.infrastructure.content_loader import JsonContentPackLoader
 from englishbot.importing.draft_io import JsonDraftReader, draft_to_data
 from englishbot.importing.models import ImportLessonResult, ValidationError, ValidationResult
+from englishbot.text_variants import split_slash_variants
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,61 @@ def _normalize_headword(value: str) -> str:
     )
     collapsed = " ".join(normalized.lower().split()).strip()
     return collapsed
+
+
+def _expand_slash_synonym_items(  # noqa: PLR0913
+    *,
+    item_id: str,
+    english_word: str,
+    translation: str,
+    topic_id: str | None,
+    lesson_id: str | None,
+    meaning_hint: str | None,
+    image_ref: str | None,
+    image_source: str | None,
+    image_prompt: str | None,
+    source_fragment: str | None,
+    is_active: bool,
+) -> list[VocabularyItem]:
+    english_variants = (
+        split_slash_variants(english_word)
+        if "/" in english_word and "/" not in translation
+        else [english_word]
+    )
+    if len(english_variants) <= 1:
+        return [
+            VocabularyItem(
+                id=item_id,
+                english_word=english_word,
+                translation=translation,
+                lexeme_id=None,
+                topic_id=topic_id,
+                lesson_id=lesson_id,
+                meaning_hint=meaning_hint,
+                image_ref=image_ref,
+                image_source=image_source,
+                image_prompt=image_prompt,
+                source_fragment=source_fragment,
+                is_active=is_active,
+            )
+        ]
+    return [
+        VocabularyItem(
+            id=f"{item_id}-{_normalize_headword(variant).replace(' ', '-')}",
+            english_word=variant,
+            translation=translation,
+            lexeme_id=None,
+            topic_id=topic_id,
+            lesson_id=lesson_id,
+            meaning_hint=meaning_hint,
+            image_ref=image_ref,
+            image_source=image_source,
+            image_prompt=image_prompt,
+            source_fragment=source_fragment,
+            is_active=is_active,
+        )
+        for variant in english_variants
+    ]
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -256,7 +312,20 @@ class SQLiteContentStore:
             for lesson in loaded.lessons:
                 lesson_map[lesson.id] = lesson
             for item in loaded.vocabulary_items:
-                item_map[item.id] = item
+                for expanded_item in _expand_slash_synonym_items(
+                    item_id=item.id,
+                    english_word=item.english_word,
+                    translation=item.translation,
+                    topic_id=item.topic_id,
+                    lesson_id=item.lesson_id,
+                    meaning_hint=item.meaning_hint,
+                    image_ref=item.image_ref,
+                    image_source=item.image_source,
+                    image_prompt=item.image_prompt,
+                    source_fragment=item.source_fragment,
+                    is_active=item.is_active,
+                ):
+                    item_map[expanded_item.id] = expanded_item
         with _connect(self._db_path) as connection:
             if replace:
                 connection.execute("DELETE FROM training_session_answers")
@@ -652,7 +721,8 @@ class SQLiteContentStore:
                     "INSERT INTO lessons (id, title, topic_id) VALUES (?, ?, ?)",
                     (lesson_id, lesson_title, topic_id),
                 )
-            for sort_order, item_raw in enumerate(items_raw):
+            sort_order = 0
+            for item_raw in items_raw:
                 if not isinstance(item_raw, dict):
                     continue
                 item_id = str(item_raw.get("id", "")).strip()
@@ -663,11 +733,10 @@ class SQLiteContentStore:
                 lesson_id = item_raw.get("lesson_id")
                 if lesson_id is not None:
                     lesson_id = str(lesson_id).strip() or None
-                item = VocabularyItem(
-                    id=item_id,
+                expanded_items = _expand_slash_synonym_items(
+                    item_id=item_id,
                     english_word=english_word,
                     translation=translation,
-                    lexeme_id=None,
                     topic_id=topic_id,
                     lesson_id=lesson_id,
                     meaning_hint=_optional_json_str(item_raw.get("meaning_hint")),
@@ -677,27 +746,39 @@ class SQLiteContentStore:
                     source_fragment=_optional_json_str(item_raw.get("source_fragment")),
                     is_active=bool(item_raw.get("is_active", True)),
                 )
-                lexeme_id = self._upsert_lexeme(connection, headword=english_word)
-                self._upsert_learning_item(connection, item=item, lexeme_id=lexeme_id)
-                connection.execute(
-                    """
-                    INSERT INTO topic_learning_items (id, topic_id, learning_item_id, sort_order)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(topic_id, learning_item_id) DO UPDATE SET
-                        sort_order=excluded.sort_order
-                    """,
-                    (f"{topic_id}:{item_id}", topic_id, item_id, sort_order),
-                )
-                if lesson_id is not None:
+                for expanded_item in expanded_items:
+                    lexeme_id = self._upsert_lexeme(connection, headword=expanded_item.english_word)
+                    self._upsert_learning_item(connection, item=expanded_item, lexeme_id=lexeme_id)
                     connection.execute(
                         """
-                        INSERT INTO lesson_learning_items (id, lesson_id, learning_item_id, sort_order)
+                        INSERT INTO topic_learning_items (id, topic_id, learning_item_id, sort_order)
                         VALUES (?, ?, ?, ?)
-                        ON CONFLICT(lesson_id, learning_item_id) DO UPDATE SET
+                        ON CONFLICT(topic_id, learning_item_id) DO UPDATE SET
                             sort_order=excluded.sort_order
                         """,
-                        (f"{lesson_id}:{item_id}", lesson_id, item_id, sort_order),
+                        (
+                            f"{topic_id}:{expanded_item.id}",
+                            topic_id,
+                            expanded_item.id,
+                            sort_order,
+                        ),
                     )
+                    if lesson_id is not None:
+                        connection.execute(
+                            """
+                            INSERT INTO lesson_learning_items (id, lesson_id, learning_item_id, sort_order)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(lesson_id, learning_item_id) DO UPDATE SET
+                                sort_order=excluded.sort_order
+                            """,
+                            (
+                                f"{lesson_id}:{expanded_item.id}",
+                                lesson_id,
+                                expanded_item.id,
+                                sort_order,
+                            ),
+                        )
+                    sort_order += 1
         return topic_id
 
     def get_progress(self, user_id: int, item_id: str) -> UserProgress | None:

@@ -164,6 +164,40 @@ def test_sqlite_content_store_reuses_lexeme_across_multiple_learning_items(tmp_p
     assert {item.meaning_hint for item in items} == {"classroom surface", "group of directors"}
 
 
+def test_sqlite_content_store_splits_slash_synonyms_into_separate_learning_items(
+    tmp_path: Path,
+) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "school-things", "title": "School Things"},
+            "lessons": [],
+            "vocabulary_items": [
+                {
+                    "id": "eraser-rubber",
+                    "english_word": "Eraser / Rubber",
+                    "translation": "ластик",
+                }
+            ],
+        }
+    )
+
+    items = store.list_all_vocabulary()
+    lexemes = store.list_lexemes()
+    content_pack = store.get_content_pack("school-things")
+
+    assert [(item.id, item.english_word, item.translation) for item in items] == [
+        ("eraser-rubber-eraser", "Eraser", "ластик"),
+        ("eraser-rubber-rubber", "Rubber", "ластик"),
+    ]
+    assert {lexeme.normalized_headword for lexeme in lexemes} == {"eraser", "rubber"}
+    assert [item["english_word"] for item in content_pack["vocabulary_items"]] == [
+        "Eraser",
+        "Rubber",
+    ]
+
+
 def test_same_learning_item_can_belong_to_multiple_topics_and_lessons(tmp_path: Path) -> None:
     store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
 

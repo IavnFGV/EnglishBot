@@ -2145,3 +2145,36 @@ def test_ollama_image_prompt_enricher_logs_full_request_and_response_payloads(
     assert '"english_word": "King"' in caplog.text
     assert "response english_word=King" in caplog.text
     assert "result_prompt" in caplog.text
+
+
+def test_canonicalizer_splits_slash_synonyms_into_separate_vocabulary_items() -> None:
+    result = DraftToContentPackCanonicalizer().convert(
+        LessonExtractionDraft(
+            topic_title="School Things",
+            vocabulary_items=[
+                ExtractedVocabularyItemDraft(
+                    item_id="eraser-rubber",
+                    english_word="Eraser / Rubber",
+                    translation="ластик",
+                    source_fragment="Eraser / Rubber — ластик",
+                )
+            ],
+        )
+    )
+
+    assert result.content_pack.data["vocabulary_items"] == [
+        {
+            "id": "eraser-rubber-eraser",
+            "english_word": "Eraser",
+            "translation": "ластик",
+            "image_ref": None,
+            "source_fragment": "Eraser / Rubber — ластик",
+        },
+        {
+            "id": "eraser-rubber-rubber",
+            "english_word": "Rubber",
+            "translation": "ластик",
+            "image_ref": None,
+            "source_fragment": "Eraser / Rubber — ластик",
+        },
+    ]

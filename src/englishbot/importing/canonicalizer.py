@@ -10,6 +10,7 @@ from englishbot.importing.models import (
     LessonExtractionDraft,
 )
 from englishbot.logging_utils import logged_service_call
+from englishbot.text_variants import split_slash_variants
 
 logger = logging.getLogger(__name__)
 
@@ -57,27 +58,37 @@ class DraftToContentPackCanonicalizer:
             english_word = _normalize_text(item.english_word) or ""
             translation = _normalize_text(item.translation) or ""
             proposed_id = _normalize_text(item.item_id)
-            base_id = proposed_id or f"{topic_id}-{_slugify(english_word)}"
-            stable_id = self._make_unique(base_id, used_ids)
-            used_ids.add(stable_id)
-            entry: dict[str, object] = {
-                "id": stable_id,
-                "english_word": english_word,
-                "translation": translation,
-                "image_ref": None,
-            }
-            if lesson_id is not None:
-                entry["lesson_id"] = lesson_id
-            notes = _normalize_text(item.notes)
-            image_prompt = _normalize_text(item.image_prompt)
-            source_fragment = _normalize_text(item.source_fragment)
-            if notes is not None:
-                entry["notes"] = notes
-            if image_prompt is not None:
-                entry["image_prompt"] = image_prompt
-            if source_fragment is not None:
-                entry["source_fragment"] = source_fragment
-            vocabulary_items.append(entry)
+            english_variants = _expand_english_variants(
+                english_word=english_word,
+                translation=translation,
+            )
+            for variant in english_variants:
+                base_id = _build_base_item_id(
+                    topic_id=topic_id,
+                    english_word=variant,
+                    proposed_id=proposed_id,
+                    is_split=len(english_variants) > 1,
+                )
+                stable_id = self._make_unique(base_id, used_ids)
+                used_ids.add(stable_id)
+                entry: dict[str, object] = {
+                    "id": stable_id,
+                    "english_word": variant,
+                    "translation": translation,
+                    "image_ref": None,
+                }
+                if lesson_id is not None:
+                    entry["lesson_id"] = lesson_id
+                notes = _normalize_text(item.notes)
+                image_prompt = _normalize_text(item.image_prompt)
+                source_fragment = _normalize_text(item.source_fragment)
+                if notes is not None:
+                    entry["notes"] = notes
+                if image_prompt is not None:
+                    entry["image_prompt"] = image_prompt
+                if source_fragment is not None:
+                    entry["source_fragment"] = source_fragment
+                vocabulary_items.append(entry)
 
         pack: dict[str, object] = {
             "topic": {"id": topic_id, "title": topic_title},
@@ -105,3 +116,24 @@ class DraftToContentPackCanonicalizer:
         while f"{base_id}-{suffix}" in used_ids:
             suffix += 1
         return f"{base_id}-{suffix}"
+
+
+def _expand_english_variants(*, english_word: str, translation: str) -> list[str]:
+    if "/" in translation:
+        return [english_word]
+    variants = split_slash_variants(english_word)
+    return variants or [english_word]
+
+
+def _build_base_item_id(
+    *,
+    topic_id: str,
+    english_word: str,
+    proposed_id: str | None,
+    is_split: bool,
+) -> str:
+    if proposed_id is not None and not is_split:
+        return proposed_id
+    if proposed_id is not None and is_split:
+        return f"{proposed_id}-{_slugify(english_word)}"
+    return f"{topic_id}-{_slugify(english_word)}"
