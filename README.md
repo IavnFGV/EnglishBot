@@ -191,10 +191,16 @@ Required environment variables:
 
 The project now includes a separate import pipeline for messy teacher-provided lesson text.
 
+Important runtime rule:
+
+- AI-assisted parsing is an optional external capability, not a required core dependency
+- the bot must continue working even when the external AI node is unavailable
+- when smart parsing fails, the admin flow falls back to a simpler local template-based parse and keeps manual review in the loop
+
 Flow:
 
 1. raw text ingestion
-2. semantic extraction into a draft structure
+2. semantic extraction into a draft structure when the external AI capability is available
 3. strict code-level validation
 4. canonicalization into the JSON content-pack format
 5. JSON content-pack writing
@@ -215,6 +221,13 @@ Draft extraction data includes:
 Canonical output remains the same content-pack JSON family already used by the bot, with stable slugs and `image_ref: null` by default.
 
 Human review is still part of the design before publishing extracted packs to learner-facing content.
+
+Fallback behavior:
+
+- if smart parsing is available and returns a valid structured draft, the normal draft-review flow continues
+- if smart parsing is unavailable, times out, or returns an invalid response, the app switches to a simpler local fallback parser
+- the fallback parser only extracts obvious vocabulary pairs from simple line formats
+- partial results stay editable, and the draft explicitly keeps warnings plus unparsed lines for manual completion
 
 ## Local Import CLI
 
@@ -249,6 +262,12 @@ python -m englishbot.import_lesson_text extract-draft \
 ```
 
 Tests still stay offline because they use fake/mock extraction clients instead of a live Ollama server.
+
+When `--extractor ollama` is used, Ollama is treated as an external optional dependency:
+
+- if Ollama is healthy, smart parsing is used
+- if Ollama is unavailable or fails, the pipeline falls back to the local template parser
+- fallback mode is intentionally limited and may produce partial drafts that need manual completion
 
 The intended workflow is:
 

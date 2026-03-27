@@ -12,8 +12,16 @@ from englishbot.application.add_words_use_cases import (
 )
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import FakeLessonExtractionClient
-from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtractionDraft
+from englishbot.importing.fallback_parser import TemplateLessonFallbackParser
+from englishbot.importing.models import (
+    AICapabilityAvailability,
+    ExtractedVocabularyItemDraft,
+    LessonExtractionDraft,
+    SmartParseTimeout,
+    SmartParseUnavailable,
+)
 from englishbot.importing.pipeline import LessonImportPipeline
+from englishbot.importing.smart_parsing import SmartLessonParsingGateway
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.repositories import InMemoryAddWordsFlowRepository
@@ -32,6 +40,17 @@ class FakeImagePromptEnricher:
             updated["image_prompt"] = f"Prompt for {item['english_word']}"
             enriched.append(updated)
         return enriched
+
+
+class _FakeSmartParser(SmartLessonParsingGateway):
+    def __init__(self, result) -> None:
+        self._result = result
+
+    def check_availability(self) -> AICapabilityAvailability:
+        return AICapabilityAvailability(is_available=not isinstance(self._result, SmartParseUnavailable))
+
+    def parse(self, *, raw_text: str):  # noqa: ARG002
+        return self._result
 
 
 def _pipeline() -> LessonImportPipeline:
@@ -128,10 +147,63 @@ def test_start_add_words_does_not_persist_malformed_extraction_result() -> None:
 
     flow = start.execute(user_id=7, raw_text="broken teacher text")
 
-    assert isinstance(flow.draft_result.draft, dict)
+    assert isinstance(flow.draft_result.draft, LessonExtractionDraft)
     assert flow.draft_result.validation.is_valid is False
-    assert flow.draft_result.validation.errors[0].code == "malformed_result"
-    assert get_active.execute(user_id=7) is None
+    assert flow.draft_result.validation.errors[0].code == "empty_vocabulary_items"
+    assert flow.draft_result.extraction_metadata is not None
+    assert flow.draft_result.extraction_metadata.smart_parse_status == "timeout"
+    assert get_active.execute(user_id=7) is not None
+
+
+def test_start_add_words_persists_fallback_draft_when_ai_is_unavailable() -> None:
+    repository = InMemoryAddWordsFlowRepository()
+    harness = AddWordsFlowHarness(
+        pipeline=LessonImportPipeline(
+            smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="offline")),
+            fallback_parser=TemplateLessonFallbackParser(),
+            validator=LessonExtractionValidator(),
+            canonicalizer=DraftToContentPackCanonicalizer(),
+            writer=JsonContentPackWriter(),
+        ),
+        validator=LessonExtractionValidator(),
+        writer=JsonContentPackWriter(),
+    )
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+    get_active = GetActiveAddWordsFlowUseCase(repository)
+
+    flow = start.execute(user_id=7, raw_text="Fairy Tales\n\nDragon — дракон")
+
+    assert flow.draft_result.validation.is_valid is True
+    assert flow.draft_result.extraction_metadata is not None
+    assert flow.draft_result.extraction_metadata.parse_path == "fallback"
+    assert [item.english_word for item in flow.draft_result.draft.vocabulary_items] == ["Dragon"]
+    assert get_active.execute(user_id=7) is not None
+
+
+def test_start_add_words_keeps_partial_fallback_result_after_timeout() -> None:
+    repository = InMemoryAddWordsFlowRepository()
+    harness = AddWordsFlowHarness(
+        pipeline=LessonImportPipeline(
+            smart_parser=_FakeSmartParser(SmartParseTimeout(detail="read timeout")),
+            fallback_parser=TemplateLessonFallbackParser(),
+            validator=LessonExtractionValidator(),
+            canonicalizer=DraftToContentPackCanonicalizer(),
+            writer=JsonContentPackWriter(),
+        ),
+        validator=LessonExtractionValidator(),
+        writer=JsonContentPackWriter(),
+    )
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+
+    flow = start.execute(
+        user_id=7,
+        raw_text="Fairy Tales\n\nDragon — дракон\nсовсем непонятная строка",
+    )
+
+    assert flow.draft_result.validation.is_valid is True
+    assert flow.draft_result.extraction_metadata is not None
+    assert flow.draft_result.extraction_metadata.smart_parse_status == "timeout"
+    assert flow.draft_result.draft.unparsed_lines == ["совсем непонятная строка"]
 
 
 def test_regenerate_uses_edited_text_as_new_source() -> None:

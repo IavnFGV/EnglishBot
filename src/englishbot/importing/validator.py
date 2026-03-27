@@ -60,6 +60,14 @@ class LessonExtractionValidator:
                     field_name="topic_title",
                 )
             )
+        if not draft.vocabulary_items:
+            errors.append(
+                ValidationError(
+                    code="empty_vocabulary_items",
+                    message="At least one vocabulary item is required.",
+                    field_name="vocabulary_items",
+                )
+            )
 
         proposed_ids: set[str] = set()
         normalized_words: set[str] = set()

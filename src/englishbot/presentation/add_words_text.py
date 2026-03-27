@@ -29,6 +29,12 @@ def format_draft_preview(result: ImportLessonResult) -> str:
         f"Lesson: {draft.lesson_title or '-'}",
         f"Items: {len(draft.vocabulary_items)}",
     ]
+    if draft.warnings:
+        lines.append(f"Warnings: {len(draft.warnings)}")
+        for warning in draft.warnings[:3]:
+            lines.append(f"- {warning}")
+    if draft.unparsed_lines:
+        lines.append(f"Unparsed lines: {len(draft.unparsed_lines)}")
     if result.validation.errors:
         lines.append(f"Validation errors: {len(result.validation.errors)}")
         for error in result.validation.errors[:5]:

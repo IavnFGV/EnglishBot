@@ -15,8 +15,10 @@ from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import OllamaLessonExtractionClient, StubLessonExtractionClient
 from englishbot.importing.draft_io import JsonDraftReader, JsonDraftWriter
 from englishbot.importing.enrichment import OllamaImagePromptEnricher
+from englishbot.importing.fallback_parser import TemplateLessonFallbackParser
 from englishbot.importing.models import CanonicalContentPack
 from englishbot.importing.pipeline import LessonImportPipeline
+from englishbot.importing.smart_parsing import LegacySmartLessonParsingGateway, OllamaSmartLessonParsingGateway
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
@@ -68,8 +70,14 @@ def _build_pipeline(
             extract_line_prompt_path=ollama_extract_line_prompt_path,
             extract_text_prompt_path=ollama_extract_text_prompt_path,
         )
+    smart_parser = (
+        OllamaSmartLessonParsingGateway(extraction_client)
+        if extractor == "ollama"
+        else LegacySmartLessonParsingGateway(extraction_client)
+    )
     return LessonImportPipeline(
-        extraction_client=extraction_client,
+        smart_parser=smart_parser,
+        fallback_parser=TemplateLessonFallbackParser(),
         validator=LessonExtractionValidator(),
         canonicalizer=DraftToContentPackCanonicalizer(),
         writer=JsonContentPackWriter(),
@@ -273,7 +281,8 @@ def finalize_draft(
 ) -> None:
     configure_logging(log_level.upper())
     pipeline = LessonImportPipeline(
-        extraction_client=StubLessonExtractionClient(),
+        smart_parser=LegacySmartLessonParsingGateway(StubLessonExtractionClient()),
+        fallback_parser=TemplateLessonFallbackParser(),
         validator=LessonExtractionValidator(),
         canonicalizer=DraftToContentPackCanonicalizer(),
         writer=JsonContentPackWriter(),

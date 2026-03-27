@@ -682,11 +682,16 @@ def _draft_status_text(result) -> str:
     item_count = _draft_item_count(result)
     prompt_count = _draft_prompt_count(result)
     rendered_item_count = item_count if item_count is not None else "-"
-    lines = [
-        "Parsing draft... done",
-        f"Items found: {rendered_item_count}",
-        f"Validation errors: {len(result.validation.errors)}",
-    ]
+    lines = ["Parsing draft... done"]
+    extraction_metadata = getattr(result, "extraction_metadata", None)
+    if extraction_metadata is not None:
+        lines.extend(extraction_metadata.status_messages)
+    lines.extend(
+        [
+            f"Items found: {rendered_item_count}",
+            f"Validation errors: {len(result.validation.errors)}",
+        ]
+    )
     if prompt_count is not None and prompt_count > 0:
         lines.insert(2, f"Image prompts: {prompt_count}")
     return "\n".join(lines)
@@ -2572,7 +2577,10 @@ async def _run_status_heartbeat(
 ) -> None:
     elapsed_seconds = 0
     while not stop_event.is_set():
-        await asyncio.sleep(interval_seconds)
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+        except TimeoutError:
+            pass
         if stop_event.is_set():
             break
         elapsed_seconds += int(interval_seconds)

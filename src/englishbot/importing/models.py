@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass(slots=True, frozen=True)
@@ -52,7 +53,59 @@ class CanonicalizationResult:
 
 
 @dataclass(slots=True, frozen=True)
+class AICapabilityAvailability:
+    is_available: bool
+    detail: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class SmartParseSuccess:
+    draft: LessonExtractionDraft
+
+
+@dataclass(slots=True, frozen=True)
+class SmartParseUnavailable:
+    detail: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class SmartParseTimeout:
+    detail: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class SmartParseInvalidResponse:
+    detail: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class SmartParseRemoteError:
+    detail: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class FallbackParseResult:
+    draft: LessonExtractionDraft
+    is_partial: bool = False
+
+
+@dataclass(slots=True, frozen=True)
+class DraftExtractionMetadata:
+    parse_path: Literal["smart", "fallback"]
+    smart_parse_status: Literal[
+        "success",
+        "unavailable",
+        "timeout",
+        "invalid_response",
+        "remote_error",
+    ] | None = None
+    status_messages: list[str] = field(default_factory=list)
+    fallback_is_partial: bool = False
+
+
+@dataclass(slots=True, frozen=True)
 class ImportLessonResult:
     draft: LessonExtractionDraft
     validation: ValidationResult
     canonicalization: CanonicalizationResult | None = None
+    extraction_metadata: DraftExtractionMetadata | None = None

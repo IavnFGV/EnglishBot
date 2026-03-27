@@ -5,6 +5,7 @@ import pytest
 from englishbot.bot import add_words_text_handler
 from englishbot.domain.add_words_models import AddWordsFlowState
 from englishbot.importing.models import (
+    DraftExtractionMetadata,
     ExtractedVocabularyItemDraft,
     ImportLessonResult,
     LessonExtractionDraft,
@@ -69,19 +70,38 @@ class _FakeSuccessfulStartUseCase:
 
 class _FakeTimeoutStartUseCase:
     def execute(self, *, user_id: int, raw_text: str):  # noqa: ARG002
+        draft = LessonExtractionDraft(
+            topic_title="Fairy Tales",
+            lesson_title=None,
+            vocabulary_items=[
+                ExtractedVocabularyItemDraft(
+                    item_id="fairy-tales-dragon",
+                    english_word="Dragon",
+                    translation="дракон",
+                    source_fragment="Dragon — дракон",
+                )
+            ],
+            warnings=[
+                "Smart parsing timed out. I will try a simpler template-based parse.",
+                "Here is the partial result. Please review and complete the missing parts manually.",
+            ],
+            unparsed_lines=["непонятная строка"],
+        )
         return AddWordsFlowState(
             flow_id="flow-timeout",
             editor_user_id=user_id,
             raw_text=raw_text,
             draft_result=ImportLessonResult(
-                draft={"error": "HTTPConnectionPool(host='127.0.0.1', port=11434): Read timed out. (read timeout=180)"},  # type: ignore[arg-type]
-                validation=ValidationResult(
-                    errors=[
-                        ValidationError(
-                            code="malformed_result",
-                            message="Extraction client returned an invalid draft structure.",
-                        )
-                    ]
+                draft=draft,
+                validation=ValidationResult(errors=[]),
+                extraction_metadata=DraftExtractionMetadata(
+                    parse_path="fallback",
+                    smart_parse_status="timeout",
+                    status_messages=[
+                        "Smart parsing timed out. I will try a simpler template-based parse.",
+                        "Here is the partial result. Please review and complete the missing parts manually.",
+                    ],
+                    fallback_is_partial=True,
                 ),
             ),
         )
@@ -144,7 +164,7 @@ async def test_add_words_text_handler_sends_only_one_draft_preview_after_success
 
 
 @pytest.mark.anyio
-async def test_add_words_text_handler_reports_ollama_timeout_without_preview() -> None:
+async def test_add_words_text_handler_reports_ollama_timeout_and_shows_fallback_preview() -> None:
     message = _FakeIncomingMessage("Fairy Tales\n\nDragon — дракон")
     update = SimpleNamespace(
         effective_message=message,
@@ -165,9 +185,13 @@ async def test_add_words_text_handler_reports_ollama_timeout_without_preview() -
     await add_words_text_handler(update, context)  # type: ignore[arg-type]
 
     assert context.user_data.get("words_flow_mode") is None
-    assert len(message.replies) == 1
+    assert len(message.replies) == 2
     assert message.replies[0].edits[-1] == (
-        "Parsing draft... failed\n"
-        "Ollama timed out while parsing this text. "
-        "Try a shorter text, a faster model, or increase OLLAMA_TIMEOUT_SEC."
+        "Parsing draft... done\n"
+        "Smart parsing timed out. I will try a simpler template-based parse.\n"
+        "Here is the partial result. Please review and complete the missing parts manually.\n"
+        "Items found: 1\n"
+        "Validation errors: 0"
     )
+    assert "Warnings: 2" in message.replies[1].text
+    assert "Unparsed lines: 1" in message.replies[1].text

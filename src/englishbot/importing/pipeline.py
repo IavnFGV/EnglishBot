@@ -4,14 +4,22 @@ import logging
 from pathlib import Path
 
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
+from englishbot.importing.fallback_parser import FallbackLessonParser, TemplateLessonFallbackParser
 from englishbot.importing.clients import LessonExtractionClient
 from englishbot.importing.draft_io import JsonDraftReader, JsonDraftWriter
 from englishbot.importing.enrichment import OllamaImagePromptEnricher
 from englishbot.importing.models import (
+    DraftExtractionMetadata,
     ExtractedVocabularyItemDraft,
     ImportLessonResult,
     LessonExtractionDraft,
+    SmartParseInvalidResponse,
+    SmartParseRemoteError,
+    SmartParseSuccess,
+    SmartParseTimeout,
+    SmartParseUnavailable,
 )
+from englishbot.importing.smart_parsing import LegacySmartLessonParsingGateway, SmartLessonParsingGateway
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.logging_utils import logged_service_call
@@ -23,7 +31,9 @@ class LessonImportPipeline:
     def __init__(
         self,
         *,
-        extraction_client: LessonExtractionClient,
+        extraction_client: LessonExtractionClient | None = None,
+        smart_parser: SmartLessonParsingGateway | None = None,
+        fallback_parser: FallbackLessonParser | None = None,
         validator: LessonExtractionValidator,
         canonicalizer: DraftToContentPackCanonicalizer,
         writer: JsonContentPackWriter,
@@ -31,7 +41,10 @@ class LessonImportPipeline:
         draft_reader: JsonDraftReader | None = None,
         image_prompt_enricher: OllamaImagePromptEnricher | None = None,
     ) -> None:
-        self._extraction_client = extraction_client
+        if smart_parser is None and extraction_client is None:
+            raise ValueError("Either smart_parser or extraction_client must be provided.")
+        self._smart_parser = smart_parser or LegacySmartLessonParsingGateway(extraction_client)
+        self._fallback_parser = fallback_parser or TemplateLessonFallbackParser()
         self._validator = validator
         self._canonicalizer = canonicalizer
         self._writer = writer
@@ -65,11 +78,8 @@ class LessonImportPipeline:
         intermediate_output_path: Path | None = None,
         enrich_image_prompts: bool = False,
     ) -> ImportLessonResult:
-        draft = self._extraction_client.extract(raw_text)
+        draft, extraction_metadata = self._extract_with_fallback(raw_text=raw_text)
         validation = self._validator.validate(draft)
-        if not isinstance(draft, LessonExtractionDraft):
-            logger.warning("LessonImportPipeline draft extraction returned malformed result")
-            return ImportLessonResult(draft=draft, validation=validation)  # type: ignore[arg-type]
         parsed_output_path = intermediate_output_path
         if parsed_output_path is None and enrich_image_prompts and output_path is not None:
             parsed_output_path = self._default_intermediate_output_path(output_path)
@@ -81,7 +91,11 @@ class LessonImportPipeline:
             draft = self._enrich_draft_image_prompts(draft)
         if output_path is not None:
             self._draft_writer.write(draft=draft, output_path=output_path)
-        return ImportLessonResult(draft=draft, validation=validation)
+        return ImportLessonResult(
+            draft=draft,
+            validation=validation,
+            extraction_metadata=extraction_metadata,
+        )
 
     @logged_service_call(
         "LessonImportPipeline.finalize_draft",
@@ -189,6 +203,37 @@ class LessonImportPipeline:
             self._draft_writer.write(draft=enriched_draft, output_path=output_path)
         return ImportLessonResult(draft=enriched_draft, validation=validation)
 
+    def _extract_with_fallback(
+        self,
+        *,
+        raw_text: str,
+    ) -> tuple[LessonExtractionDraft, DraftExtractionMetadata]:
+        smart_result = self._smart_parser.parse(raw_text=raw_text)
+        if isinstance(smart_result, SmartParseSuccess):
+            return smart_result.draft, DraftExtractionMetadata(
+                parse_path="smart",
+                smart_parse_status="success",
+            )
+
+        fallback_result = self._fallback_parser.parse(raw_text=raw_text)
+        draft = LessonExtractionDraft(
+            topic_title=fallback_result.draft.topic_title,
+            lesson_title=fallback_result.draft.lesson_title,
+            vocabulary_items=list(fallback_result.draft.vocabulary_items),
+            warnings=[
+                *_status_messages_for_smart_failure(smart_result),
+                *fallback_result.draft.warnings,
+            ],
+            unparsed_lines=list(fallback_result.draft.unparsed_lines),
+            confidence_notes=list(fallback_result.draft.confidence_notes),
+        )
+        return draft, DraftExtractionMetadata(
+            parse_path="fallback",
+            smart_parse_status=_smart_status_code(smart_result),
+            status_messages=_status_messages_for_smart_failure(smart_result),
+            fallback_is_partial=fallback_result.is_partial,
+        )
+
     def _enrich_draft_image_prompts(self, draft: LessonExtractionDraft) -> LessonExtractionDraft:
         enriched_items_data = self._image_prompt_enricher.enrich(
             topic_title=draft.topic_title,
@@ -239,3 +284,39 @@ class LessonImportPipeline:
 
     def _default_intermediate_output_path(self, output_path: Path) -> Path:
         return output_path.with_name(f"{output_path.stem}.parsed{output_path.suffix}")
+
+
+def _smart_status_code(
+    result: SmartParseUnavailable | SmartParseTimeout | SmartParseInvalidResponse | SmartParseRemoteError,
+) -> str:
+    if isinstance(result, SmartParseUnavailable):
+        return "unavailable"
+    if isinstance(result, SmartParseTimeout):
+        return "timeout"
+    if isinstance(result, SmartParseInvalidResponse):
+        return "invalid_response"
+    return "remote_error"
+
+
+def _status_messages_for_smart_failure(
+    result: SmartParseUnavailable | SmartParseTimeout | SmartParseInvalidResponse | SmartParseRemoteError,
+) -> list[str]:
+    if isinstance(result, SmartParseUnavailable):
+        return [
+            "Smart parsing is currently unavailable. I will try a simpler template-based parse.",
+            "Here is the fallback result. Please review it carefully.",
+        ]
+    if isinstance(result, SmartParseTimeout):
+        return [
+            "Smart parsing timed out. I will try a simpler template-based parse.",
+            "Here is the partial result. Please review and complete the missing parts manually.",
+        ]
+    if isinstance(result, SmartParseInvalidResponse):
+        return [
+            "Smart parsing returned an invalid response. I will try a simpler template-based parse.",
+            "Here is the partial result. Please review and complete the missing parts manually.",
+        ]
+    return [
+        "Smart parsing failed. I will try a simpler template-based parse.",
+        "Here is the partial result. Please review and complete the missing parts manually.",
+    ]

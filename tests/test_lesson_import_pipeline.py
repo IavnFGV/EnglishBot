@@ -9,10 +9,20 @@ import pytest
 
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import FakeLessonExtractionClient, OllamaLessonExtractionClient
+from englishbot.importing.fallback_parser import TemplateLessonFallbackParser
 from englishbot.importing.draft_io import JsonDraftReader
 from englishbot.importing.enrichment import OllamaImagePromptEnricher
-from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtractionDraft
+from englishbot.importing.models import (
+    AICapabilityAvailability,
+    ExtractedVocabularyItemDraft,
+    LessonExtractionDraft,
+    SmartParseInvalidResponse,
+    SmartParseSuccess,
+    SmartParseTimeout,
+    SmartParseUnavailable,
+)
 from englishbot.importing.pipeline import LessonImportPipeline
+from englishbot.importing.smart_parsing import SmartLessonParsingGateway
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 
@@ -24,6 +34,17 @@ def build_pipeline(draft: LessonExtractionDraft | object) -> LessonImportPipelin
         canonicalizer=DraftToContentPackCanonicalizer(),
         writer=JsonContentPackWriter(),
     )
+
+
+class _FakeSmartParser(SmartLessonParsingGateway):
+    def __init__(self, result) -> None:
+        self._result = result
+
+    def check_availability(self) -> AICapabilityAvailability:
+        return AICapabilityAvailability(is_available=True)
+
+    def parse(self, *, raw_text: str):  # noqa: ARG002
+        return self._result
 
 
 def test_valid_extracted_draft_becomes_canonical_content_pack(tmp_path: Path) -> None:
@@ -174,8 +195,112 @@ def test_warning_propagation_reaches_canonical_result() -> None:
 def test_malformed_extraction_results_do_not_crash_pipeline() -> None:
     result = build_pipeline({"unexpected": "shape"}).run(raw_text="broken")
     assert result.validation.is_valid is False
-    assert result.validation.errors[0].code == "malformed_result"
+    assert result.validation.errors[0].code == "empty_vocabulary_items"
     assert result.canonicalization is None
+    assert result.extraction_metadata is not None
+    assert result.extraction_metadata.parse_path == "fallback"
+    assert result.extraction_metadata.smart_parse_status == "invalid_response"
+
+
+def test_smart_parse_success_path_marks_metadata() -> None:
+    draft = LessonExtractionDraft(
+        topic_title="Weather",
+        vocabulary_items=[
+            ExtractedVocabularyItemDraft(
+                english_word="Sun",
+                translation="солнце",
+                source_fragment="Sun — солнце",
+            )
+        ],
+    )
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseSuccess(draft=draft)),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(raw_text="Sun — солнце")
+
+    assert result.validation.is_valid is True
+    assert result.extraction_metadata is not None
+    assert result.extraction_metadata.parse_path == "smart"
+    assert result.extraction_metadata.smart_parse_status == "success"
+
+
+def test_ai_unavailable_falls_back_to_template_parse() -> None:
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="health check failed")),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(raw_text="Fairy Tales\n\nDragon — дракон")
+
+    assert result.validation.is_valid is True
+    assert [item.english_word for item in result.draft.vocabulary_items] == ["Dragon"]
+    assert result.extraction_metadata is not None
+    assert result.extraction_metadata.parse_path == "fallback"
+    assert result.extraction_metadata.smart_parse_status == "unavailable"
+    assert "Smart parsing is currently unavailable." in result.extraction_metadata.status_messages[0]
+
+
+def test_ai_timeout_falls_back_and_marks_partial_result() -> None:
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseTimeout(detail="read timeout")),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(
+        raw_text="Fairy Tales\n\nDragon — дракон\n?? mystery line"
+    )
+
+    assert result.validation.is_valid is True
+    assert result.extraction_metadata is not None
+    assert result.extraction_metadata.parse_path == "fallback"
+    assert result.extraction_metadata.smart_parse_status == "timeout"
+    assert result.extraction_metadata.fallback_is_partial is True
+    assert result.draft.unparsed_lines == ["?? mystery line"]
+    assert any("partial result" in warning.lower() for warning in result.draft.warnings)
+
+
+def test_ai_invalid_response_falls_back_with_warnings() -> None:
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseInvalidResponse(detail="bad json")),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(raw_text="Topic: Fairy Tales\n\nDragon: дракон")
+
+    assert result.validation.is_valid is True
+    assert result.extraction_metadata is not None
+    assert result.extraction_metadata.smart_parse_status == "invalid_response"
+    assert "simpler template-based parse" in result.draft.warnings[0]
+
+
+def test_fallback_partial_parse_keeps_unparsed_lines_and_validation_error_when_no_items() -> None:
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="offline")),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(raw_text="Fairy Tales\n\nсовсем непонятный текст")
+
+    assert result.validation.is_valid is False
+    assert [error.code for error in result.validation.errors] == ["empty_vocabulary_items"]
+    assert result.draft.unparsed_lines == ["совсем непонятный текст"]
 
 
 def test_extract_draft_writes_editable_json(tmp_path: Path) -> None:

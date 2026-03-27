@@ -125,14 +125,17 @@ Messy teacher-provided lesson text is handled by a separate import pipeline inst
 Stages:
 
 - raw input ingestion
-- semantic extraction into a draft result
+- smart semantic extraction into a draft result when the external AI capability is available
+- fallback template-based extraction when the AI capability is unavailable or fails
 - strict validation in code
 - canonicalization into content-pack JSON
 - file writing
 
 Key components:
 
-- `LessonExtractionClient`: abstraction for semantic extraction
+- `SmartLessonParsingGateway`: thin boundary for external AI-backed parsing
+- `TemplateLessonFallbackParser`: simple local fallback parser for obvious line formats
+- `LessonExtractionClient`: low-level extraction client used behind the smart parsing boundary
 - `LessonExtractionDraft`: structured draft schema from free-form text
 - `LessonExtractionValidator`: code-level validation that returns structured errors
 - `DraftToContentPackCanonicalizer`: stable slug/id generation and canonical normalization
@@ -148,7 +151,14 @@ The draft schema supports:
 
 This keeps future OCR compatibility straightforward: OCR can feed raw text or an extraction draft into the same downstream validation, canonicalization, and writing path.
 
-The current implementation already supports real Ollama-backed extraction and prompt generation, while tests still stay deterministic through fake clients and app-level harnesses.
+Behavioral rule:
+
+- AI parsing is optional and external
+- learner flows must not depend on AI availability
+- admin import remains synchronous
+- when smart parsing fails, the pipeline produces a fallback draft with explicit warnings and unparsed lines instead of crashing the flow
+
+The current implementation supports real Ollama-backed extraction behind an explicit AI boundary, graceful fallback to local parsing, and deterministic tests through fakes and app-level harnesses.
 
 ## Editor and Content Curation Flow
 

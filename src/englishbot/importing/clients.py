@@ -170,6 +170,10 @@ class OllamaLessonExtractionClient:
             os.getenv("OLLAMA_INFER_TOPIC_PROMPT_PATH", "prompts/ollama_infer_topic_prompt.txt")
         )
 
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
     @logged_service_call(
         "OllamaLessonExtractionClient.extract",
         include=(),

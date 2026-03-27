@@ -43,15 +43,20 @@ def test_editor_starts_flow_with_fairy_tales_lesson_text_and_gets_valid_twenty_i
     ]
 
 
-def test_editor_starts_flow_with_malformed_extraction_and_sees_invalid_draft() -> None:
+def test_editor_starts_flow_with_malformed_extraction_and_falls_back_to_valid_draft() -> None:
     scenario = build_driver(drafts=[{"error": "broken extraction"}]).when_editor_starts_flow(
         raw_text=FAIRY_TALES_LESSON_TEXT
     )
 
     assert scenario.flow is not None
-    assert scenario.flow.draft_result.validation.is_valid is False
-    assert [error.code for error in scenario.flow.draft_result.validation.errors] == [
-        "malformed_result"
+    assert scenario.flow.draft_result.validation.is_valid is True
+    assert scenario.flow.draft_result.extraction_metadata is not None
+    assert scenario.flow.draft_result.extraction_metadata.parse_path == "fallback"
+    assert scenario.flow.draft_result.extraction_metadata.smart_parse_status == "remote_error"
+    assert [item.english_word for item in scenario.flow.draft_result.draft.vocabulary_items[:3]] == [
+        "Рrincess",
+        "Prince",
+        "Castle",
     ]
 
 
