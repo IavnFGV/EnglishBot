@@ -3,6 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        ENGLISHBOT_BUILD_VERSION: ${ENGLISHBOT_BUILD_VERSION:-unknown}
+        ENGLISHBOT_BUILD_NUMBER: ${ENGLISHBOT_BUILD_NUMBER:-0}
+        ENGLISHBOT_GIT_SHA: ${ENGLISHBOT_GIT_SHA:-unknown}
+        ENGLISHBOT_GIT_BRANCH: ${ENGLISHBOT_GIT_BRANCH:-main}
     container_name: englishbot
     restart: unless-stopped
     env_file:

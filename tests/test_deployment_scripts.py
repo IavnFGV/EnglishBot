@@ -24,6 +24,7 @@ def test_hetzner_bootstrap_script_prepares_runtime_directories() -> None:
     assert 'mkdir -p "${APP_ROOT}/shared/data"' in script
     assert 'mkdir -p "${APP_ROOT}/shared/assets"' in script
     assert 'mkdir -p "${APP_ROOT}/shared/content/custom"' in script
+    assert 'mkdir -p "${APP_ROOT}/shared/deploy"' in script
     assert 'mkdir -p "${APP_ROOT}/shared/logs"' in script
     assert 'touch "${APP_ROOT}/shared/.env"' in script
 
@@ -33,6 +34,14 @@ def test_production_dockerfile_installs_bot_runtime_and_demo_content() -> None:
 
     assert "FROM python:3.11-slim" in dockerfile
     assert "fonts-dejavu-core" in dockerfile
+    assert "ARG ENGLISHBOT_GIT_SHA=unknown" in dockerfile
+    assert "ARG ENGLISHBOT_GIT_BRANCH=unknown" in dockerfile
+    assert "ARG ENGLISHBOT_BUILD_VERSION=unknown" in dockerfile
+    assert "ARG ENGLISHBOT_BUILD_NUMBER=0" in dockerfile
+    assert "ENGLISHBOT_BUILD_VERSION=${ENGLISHBOT_BUILD_VERSION}" in dockerfile
+    assert "ENGLISHBOT_BUILD_NUMBER=${ENGLISHBOT_BUILD_NUMBER}" in dockerfile
+    assert "ENGLISHBOT_GIT_SHA=${ENGLISHBOT_GIT_SHA}" in dockerfile
+    assert "ENGLISHBOT_GIT_BRANCH=${ENGLISHBOT_GIT_BRANCH}" in dockerfile
     assert "python -m pip install -e '.[llm]'" in dockerfile
     assert "COPY content/demo ./content/demo" in dockerfile
     assert 'CMD ["python", "-m", "englishbot"]' in dockerfile
@@ -41,6 +50,10 @@ def test_production_dockerfile_installs_bot_runtime_and_demo_content() -> None:
 def test_docker_compose_mounts_persistent_runtime_directories() -> None:
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
 
+    assert "ENGLISHBOT_BUILD_VERSION: ${ENGLISHBOT_BUILD_VERSION:-unknown}" in compose
+    assert "ENGLISHBOT_BUILD_NUMBER: ${ENGLISHBOT_BUILD_NUMBER:-0}" in compose
+    assert "ENGLISHBOT_GIT_SHA: ${ENGLISHBOT_GIT_SHA:-unknown}" in compose
+    assert "ENGLISHBOT_GIT_BRANCH: ${ENGLISHBOT_GIT_BRANCH:-main}" in compose
     assert "/srv/englishbot/shared/.env:/app/.env:ro" in compose
     assert "/srv/englishbot/shared/data:/app/data" in compose
     assert "/srv/englishbot/shared/assets:/app/assets" in compose
@@ -63,6 +76,14 @@ def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
     assert 'DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"' in script
     assert 'git fetch origin "${DEPLOY_BRANCH}"' in script
     assert 'git reset --hard "origin/${DEPLOY_BRANCH}"' in script
+    assert 'BUILD_STATE_FILE="${BUILD_STATE_FILE:-${SHARED_DIR}/deploy/build.env}"' in script
+    assert 'data["project"]["version"]' in script
+    assert 'ENGLISHBOT_BUILD_NUMBER="$((PREVIOUS_BUILD_NUMBER + 1))"' in script
+    assert 'ENGLISHBOT_BUILD_NUMBER="1"' in script
+    assert 'ENGLISHBOT_BUILD_VERSION=${APP_VERSION}' in script
+    assert 'ENGLISHBOT_BUILD_NUMBER=${ENGLISHBOT_BUILD_NUMBER}' in script
+    assert 'ENGLISHBOT_GIT_SHA="$(git rev-parse --short HEAD)"' in script
+    assert 'export ENGLISHBOT_GIT_BRANCH="${DEPLOY_BRANCH}"' in script
     assert "docker compose up -d --build" in script
 
 

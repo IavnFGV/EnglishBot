@@ -129,6 +129,7 @@ from englishbot.presentation.telegram_ui_text import (
     supported_telegram_ui_languages,
     telegram_ui_text,
 )
+from englishbot.runtime_version import RuntimeVersionInfo, get_runtime_version_info
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +178,10 @@ def _telegram_ui_language(context: ContextTypes.DEFAULT_TYPE | None, user=None) 
     return configured
 
 
+def _runtime_version_info(context: ContextTypes.DEFAULT_TYPE) -> RuntimeVersionInfo:
+    return context.application.bot_data["runtime_version_info"]
+
+
 def _tg(
     key: str,
     *,
@@ -203,6 +208,7 @@ def build_application(
     content_store.initialize()
     app.bot_data["content_store"] = content_store
     app.bot_data["config_service"] = config_service
+    app.bot_data["runtime_version_info"] = get_runtime_version_info()
     app.bot_data["smart_parsing_gateway"] = (
         DisabledSmartLessonParsingGateway()
         if not settings.ollama_enabled
@@ -399,6 +405,7 @@ def build_application(
     app.add_handler(TypeHandler(Update, raw_update_logger_handler), group=-1)
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", help_handler))
+    app.add_handler(CommandHandler("version", version_handler))
     app.add_handler(CommandHandler("words", words_menu_handler))
     app.add_handler(CommandHandler("add_words", add_words_start_handler))
     app.add_handler(CommandHandler("cancel", add_words_cancel_handler))
@@ -1110,6 +1117,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     commands = [
         "/start - choose a topic and start training",
         "/help - show commands",
+        "/version - show the current bot version",
         "/words - open the words menu",
     ]
     if user is not None and _is_editor(user.id, context):
@@ -1126,6 +1134,54 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             context=context,
             user=user,
         ),
+    )
+
+
+async def version_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    user = update.effective_user
+    if message is None:
+        return
+    version_info = _runtime_version_info(context)
+    lines = [
+        _tg("version_title", context=context, user=user),
+        _tg(
+            "version_line",
+            context=context,
+            user=user,
+            version=version_info.package_version,
+        ),
+    ]
+    if version_info.build_number:
+        lines.append(
+            _tg(
+                "build_line",
+                context=context,
+                user=user,
+                build_number=version_info.build_number,
+            )
+        )
+    if version_info.git_sha:
+        lines.append(
+            _tg(
+                "git_sha_line",
+                context=context,
+                user=user,
+                git_sha=version_info.git_sha,
+            )
+        )
+    if version_info.git_branch:
+        lines.append(
+            _tg(
+                "git_branch_line",
+                context=context,
+                user=user,
+                branch=version_info.git_branch,
+            )
+        )
+    await send_telegram_view(
+        message,
+        build_status_view(text="\n".join(lines)),
     )
 
 
@@ -3062,6 +3118,7 @@ async def _post_init(app: Application) -> None:
         [
             BotCommand("start", "Start training"),
             BotCommand("help", "Show commands"),
+            BotCommand("version", "Show bot version"),
             BotCommand("words", "Open words menu"),
             BotCommand("add_words", "Add words from raw text"),
             BotCommand("cancel", "Cancel current add-words flow"),

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/srv/englishbot/app}"
+SHARED_DIR="${SHARED_DIR:-/srv/englishbot/shared}"
+BUILD_STATE_FILE="${BUILD_STATE_FILE:-${SHARED_DIR}/deploy/build.env}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 
 if [[ ! -d "${APP_DIR}" ]]; then
@@ -26,6 +28,41 @@ git fetch origin "${DEPLOY_BRANCH}"
 git checkout "${DEPLOY_BRANCH}"
 git reset --hard "origin/${DEPLOY_BRANCH}"
 
+APP_VERSION="$(python - <<'PY'
+from pathlib import Path
+import tomllib
+
+data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+print(data["project"]["version"])
+PY
+)"
+
+PREVIOUS_BUILD_VERSION=""
+PREVIOUS_BUILD_NUMBER="0"
+if [[ -f "${BUILD_STATE_FILE}" ]]; then
+  PREVIOUS_BUILD_VERSION="$(grep '^ENGLISHBOT_BUILD_VERSION=' "${BUILD_STATE_FILE}" | cut -d= -f2- || true)"
+  PREVIOUS_BUILD_NUMBER="$(grep '^ENGLISHBOT_BUILD_NUMBER=' "${BUILD_STATE_FILE}" | cut -d= -f2- || true)"
+fi
+
+if [[ "${PREVIOUS_BUILD_VERSION}" == "${APP_VERSION}" ]] && [[ "${PREVIOUS_BUILD_NUMBER}" =~ ^[0-9]+$ ]]; then
+  ENGLISHBOT_BUILD_NUMBER="$((PREVIOUS_BUILD_NUMBER + 1))"
+else
+  ENGLISHBOT_BUILD_NUMBER="1"
+fi
+
+mkdir -p "$(dirname "${BUILD_STATE_FILE}")"
+cat > "${BUILD_STATE_FILE}" <<EOF
+ENGLISHBOT_BUILD_VERSION=${APP_VERSION}
+ENGLISHBOT_BUILD_NUMBER=${ENGLISHBOT_BUILD_NUMBER}
+EOF
+
+export ENGLISHBOT_BUILD_VERSION="${APP_VERSION}"
+export ENGLISHBOT_BUILD_NUMBER
+export ENGLISHBOT_GIT_SHA
+ENGLISHBOT_GIT_SHA="$(git rev-parse --short HEAD)"
+export ENGLISHBOT_GIT_BRANCH="${DEPLOY_BRANCH}"
+
+echo "==> Building runtime version metadata version=${ENGLISHBOT_BUILD_VERSION} build=${ENGLISHBOT_BUILD_NUMBER} git_sha=${ENGLISHBOT_GIT_SHA} branch=${ENGLISHBOT_GIT_BRANCH}"
 echo "==> Rebuilding and restarting englishbot"
 docker compose up -d --build
 

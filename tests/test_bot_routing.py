@@ -11,6 +11,7 @@ from englishbot.bot import (
     image_review_search_handler,
     raw_update_logger_handler,
     text_answer_handler,
+    version_handler,
 )
 from englishbot.config import Settings
 from englishbot.image_generation.smart_generation import DisabledImageGenerationGateway
@@ -56,6 +57,7 @@ def test_text_answer_handler_is_registered_after_add_words_handler() -> None:
     assert 2 in app.handlers
     assert any(handler.callback is raw_update_logger_handler for handler in app.handlers[-1])
     assert any(handler.callback is add_words_text_handler for handler in app.handlers[0])
+    assert any(handler.callback is version_handler for handler in app.handlers[0])
     assert any(handler.callback is chat_member_logger_handler for handler in app.handlers[0])
     assert any(handler.callback is image_review_search_handler for handler in app.handlers[0])
     assert any(handler.callback is image_review_next_handler for handler in app.handlers[0])

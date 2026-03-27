@@ -41,6 +41,12 @@ On the host, the workspace root is:
 - Codex sessions are shared via a bind mount from the host into `/home/vscode/.codex`.
 - Avoid assumptions that Docker named volumes are host directories.
 
+## Docker Build Conventions
+
+- Keep stable Docker layers early and frequently changing metadata late.
+- Do not place changing build metadata such as git SHA, branch name, build timestamp, or commit-derived `ARG`/`ENV` near the top of the `Dockerfile`.
+- Prefer adding build metadata as one of the last layers, ideally right before `CMD`, so Docker cache remains effective for package install and dependency layers.
+
 ## Logging Conventions
 
 Use standard Python `logging` with one shared formatter configured at application startup:
