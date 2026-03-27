@@ -75,4 +75,7 @@ def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
     assert "PYTHONPATH=. pytest -q" in workflow
     assert "ssh-keyscan" in workflow
     assert "DEPLOY_SSH_KEY" in workflow
-    assert "bash /srv/englishbot/app/scripts/deploy-docker-app.sh" in workflow
+    assert "cd /srv/englishbot/app" in workflow
+    assert "git fetch origin ${DEPLOY_BRANCH}" in workflow
+    assert "git reset --hard origin/${DEPLOY_BRANCH}" in workflow
+    assert "bash scripts/deploy-docker-app.sh" in workflow

@@ -47,7 +47,11 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_BRANCH: master
+          DEPLOY_BRANCH: main
         run: |
           ssh -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "DEPLOY_BRANCH=${DEPLOY_BRANCH} bash /srv/englishbot/app/scripts/deploy-docker-app.sh"
+            "cd /srv/englishbot/app && \
+             git fetch origin ${DEPLOY_BRANCH} && \
+             git checkout ${DEPLOY_BRANCH} && \
+             git reset --hard origin/${DEPLOY_BRANCH} && \
+             DEPLOY_BRANCH=${DEPLOY_BRANCH} bash scripts/deploy-docker-app.sh"
