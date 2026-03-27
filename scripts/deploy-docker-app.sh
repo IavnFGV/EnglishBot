@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/srv/englishbot/app}"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-master}"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 
 if [[ ! -d "${APP_DIR}" ]]; then
   echo "App directory does not exist: ${APP_DIR}" >&2
