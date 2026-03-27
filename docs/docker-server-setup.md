@@ -32,7 +32,7 @@ docker compose up -d --build
 
 This repo includes [deploy.yml](/workspaces/EnglishBot/.github/workflows/deploy.yml).
 
-It runs on every push to `master` and does:
+It runs on every push to `main` and does:
 
 1. `pytest -q`
 2. SSH into the Hetzner server
@@ -54,7 +54,7 @@ After the bootstrap step, run this once on the server as `deploy`:
 cd /srv/englishbot
 git clone YOUR_REPO_URL app
 cd /srv/englishbot/app
-git checkout master
+git checkout main
 cp .env.server.bot-only.example /srv/englishbot/shared/.env
 docker compose up -d --build
 ```

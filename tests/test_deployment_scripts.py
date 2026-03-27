@@ -60,7 +60,7 @@ def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
     script = Path("scripts/deploy-docker-app.sh").read_text(encoding="utf-8")
 
     assert 'APP_DIR="${APP_DIR:-/srv/englishbot/app}"' in script
-    assert 'DEPLOY_BRANCH="${DEPLOY_BRANCH:-master}"' in script
+    assert 'DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"' in script
     assert 'git fetch origin "${DEPLOY_BRANCH}"' in script
     assert 'git reset --hard "origin/${DEPLOY_BRANCH}"' in script
     assert "docker compose up -d --build" in script
@@ -70,7 +70,7 @@ def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
     workflow = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
 
     assert "branches:" in workflow
-    assert "- master" in workflow
+    assert "- main" in workflow
     assert 'python -m pip install -e ".[dev,llm]"' in workflow
     assert "PYTHONPATH=. pytest -q" in workflow
     assert "ssh-keyscan" in workflow
