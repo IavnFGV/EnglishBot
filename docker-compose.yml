@@ -1,0 +1,15 @@
+services:
+  englishbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: englishbot
+    restart: unless-stopped
+    env_file:
+      - /srv/englishbot/shared/.env
+    volumes:
+      - /srv/englishbot/shared/.env:/app/.env:ro
+      - /srv/englishbot/shared/data:/app/data
+      - /srv/englishbot/shared/assets:/app/assets
+      - /srv/englishbot/shared/logs:/app/logs
+      - /srv/englishbot/shared/content/custom:/app/content/custom
