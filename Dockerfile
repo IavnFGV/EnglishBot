@@ -12,8 +12,7 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md ./
 
-RUN python -m pip install --upgrade pip \
-    && python - <<'PY' > /tmp/requirements.txt
+RUN python - <<'PY' > /tmp/requirements.txt
 import tomllib
 from pathlib import Path
 
