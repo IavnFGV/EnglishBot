@@ -32,6 +32,7 @@ def test_production_dockerfile_installs_bot_runtime_and_demo_content() -> None:
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
 
     assert "FROM python:3.11-slim" in dockerfile
+    assert "fonts-dejavu-core" in dockerfile
     assert "python -m pip install -e '.[llm]'" in dockerfile
     assert "COPY content/demo ./content/demo" in dockerfile
     assert 'CMD ["python", "-m", "englishbot"]' in dockerfile
@@ -45,3 +46,33 @@ def test_docker_compose_mounts_persistent_runtime_directories() -> None:
     assert "/srv/englishbot/shared/assets:/app/assets" in compose
     assert "/srv/englishbot/shared/logs:/app/logs" in compose
     assert "/srv/englishbot/shared/content/custom:/app/content/custom" in compose
+
+
+def test_server_bot_only_env_template_disables_local_ai_services() -> None:
+    env_template = Path(".env.server.bot-only.example").read_text(encoding="utf-8")
+
+    assert "OLLAMA_ENABLED=false" in env_template
+    assert "COMFYUI_ENABLED=false" in env_template
+    assert "PIXABAY_API_KEY=" in env_template
+
+
+def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
+    script = Path("scripts/deploy-docker-app.sh").read_text(encoding="utf-8")
+
+    assert 'APP_DIR="${APP_DIR:-/srv/englishbot/app}"' in script
+    assert 'DEPLOY_BRANCH="${DEPLOY_BRANCH:-master}"' in script
+    assert 'git fetch origin "${DEPLOY_BRANCH}"' in script
+    assert 'git reset --hard "origin/${DEPLOY_BRANCH}"' in script
+    assert "docker compose up -d --build" in script
+
+
+def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
+    workflow = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
+
+    assert "branches:" in workflow
+    assert "- master" in workflow
+    assert 'python -m pip install -e ".[dev,llm]"' in workflow
+    assert "PYTHONPATH=. pytest -q" in workflow
+    assert "ssh-keyscan" in workflow
+    assert "DEPLOY_SSH_KEY" in workflow
+    assert "bash /srv/englishbot/app/scripts/deploy-docker-app.sh" in workflow

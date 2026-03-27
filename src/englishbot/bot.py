@@ -83,10 +83,12 @@ from englishbot.image_generation.previews import ensure_numbered_candidate_strip
 from englishbot.image_generation.resilient import ResilientImageGenerator
 from englishbot.image_generation.review import ComfyUIImageCandidateGenerator
 from englishbot.image_generation.smart_generation import ComfyUIImageGenerationGateway
+from englishbot.image_generation.smart_generation import DisabledImageGenerationGateway
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import OllamaLessonExtractionClient
 from englishbot.importing.draft_io import draft_to_data
 from englishbot.importing.smart_parsing import OllamaSmartLessonParsingGateway
+from englishbot.importing.smart_parsing import DisabledSmartLessonParsingGateway
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.infrastructure.sqlite_store import (
@@ -201,28 +203,37 @@ def build_application(
     content_store.initialize()
     app.bot_data["content_store"] = content_store
     app.bot_data["config_service"] = config_service
-    app.bot_data["smart_parsing_gateway"] = OllamaSmartLessonParsingGateway(
-        OllamaLessonExtractionClient(
-            config_service=config_service,
-            model=settings.ollama_model,
-            model_file_path=settings.ollama_model_file_path,
-            base_url=settings.ollama_base_url,
-            timeout=settings.ollama_timeout_sec,
-            trace_file_path=settings.ollama_trace_file_path,
-            extraction_mode=settings.ollama_extraction_mode,
-            temperature=settings.ollama_temperature,
-            top_p=settings.ollama_top_p,
-            num_predict=settings.ollama_num_predict,
-            extract_line_prompt_path=settings.ollama_extract_line_prompt_path,
-            extract_text_prompt_path=settings.ollama_extract_text_prompt_path,
+    app.bot_data["smart_parsing_gateway"] = (
+        DisabledSmartLessonParsingGateway()
+        if not settings.ollama_enabled
+        else OllamaSmartLessonParsingGateway(
+            OllamaLessonExtractionClient(
+                config_service=config_service,
+                model=settings.ollama_model,
+                model_file_path=settings.ollama_model_file_path,
+                base_url=settings.ollama_base_url,
+                timeout=settings.ollama_timeout_sec,
+                trace_file_path=settings.ollama_trace_file_path,
+                extraction_mode=settings.ollama_extraction_mode,
+                temperature=settings.ollama_temperature,
+                top_p=settings.ollama_top_p,
+                num_predict=settings.ollama_num_predict,
+                extract_line_prompt_path=settings.ollama_extract_line_prompt_path,
+                extract_text_prompt_path=settings.ollama_extract_text_prompt_path,
+            )
         )
     )
-    app.bot_data["image_generation_gateway"] = ComfyUIImageGenerationGateway(
-        ComfyUIImageGenerationClient(config_service=config_service)
+    app.bot_data["image_generation_gateway"] = (
+        DisabledImageGenerationGateway()
+        if not settings.comfyui_enabled
+        else ComfyUIImageGenerationGateway(
+            ComfyUIImageGenerationClient(config_service=config_service)
+        )
     )
     app.bot_data["training_service"] = build_training_service(db_path=settings.content_db_path)
     lesson_import_pipeline = build_lesson_import_pipeline(
         config_service=config_service,
+        ollama_enabled=settings.ollama_enabled,
         ollama_model=settings.ollama_model,
         ollama_model_file_path=settings.ollama_model_file_path,
         ollama_base_url=settings.ollama_base_url,
@@ -262,8 +273,12 @@ def build_application(
     )
     content_pack_image_enricher = ContentPackImageEnricher(
         ResilientImageGenerator(
-            external_gateway=ComfyUIImageGenerationGateway(
-                ComfyUIImageGenerationClient(config_service=config_service)
+            external_gateway=(
+                DisabledImageGenerationGateway()
+                if not settings.comfyui_enabled
+                else ComfyUIImageGenerationGateway(
+                    ComfyUIImageGenerationClient(config_service=config_service)
+                )
             ),
             fallback_client=LocalPlaceholderImageGenerationClient(),
         )

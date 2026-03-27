@@ -53,6 +53,7 @@ _SETTING_DEFINITIONS: dict[str, RuntimeSettingDefinition] = {
         "https://pixabay.com/api/",
     ),
     "pixabay_timeout_sec": RuntimeSettingDefinition("pixabay_timeout_sec", ("PIXABAY_TIMEOUT_SEC",), 30, "int"),
+    "ollama_enabled": RuntimeSettingDefinition("ollama_enabled", ("OLLAMA_ENABLED",), True, "bool"),
     "ollama_base_url": RuntimeSettingDefinition(
         "ollama_base_url",
         ("OLLAMA_BASE_URL",),
@@ -119,6 +120,7 @@ _SETTING_DEFINITIONS: dict[str, RuntimeSettingDefinition] = {
         Path("prompts/ollama_image_prompt_prompt.txt"),
         "path",
     ),
+    "comfyui_enabled": RuntimeSettingDefinition("comfyui_enabled", ("COMFYUI_ENABLED",), True, "bool"),
     "comfyui_base_url": RuntimeSettingDefinition(
         "comfyui_base_url",
         ("COMFYUI_BASE_URL",),
@@ -223,6 +225,9 @@ class RuntimeConfigService:
             return int(raw_value)
         if definition.value_type == "float":
             return float(raw_value)
+        if definition.value_type == "bool":
+            lowered = raw_value.strip().lower()
+            return lowered in {"1", "true", "yes", "on"}
         if definition.value_type == "path":
             return Path(raw_value)
         if definition.value_type == "csv_int":
@@ -292,6 +297,7 @@ class Settings:
     content_db_path: Path = Path("data/englishbot.db")
     pixabay_api_key: str = ""
     pixabay_base_url: str = "https://pixabay.com/api/"
+    ollama_enabled: bool = True
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:7b"
     ollama_model_file_path: Path | None = None
@@ -304,6 +310,7 @@ class Settings:
     ollama_extract_line_prompt_path: Path = Path("prompts/ollama_extract_line_prompt.txt")
     ollama_extract_text_prompt_path: Path = Path("prompts/ollama_extract_text_prompt.txt")
     ollama_image_prompt_path: Path = Path("prompts/ollama_image_prompt_prompt.txt")
+    comfyui_enabled: bool = True
 
     @classmethod
     def from_config_service(cls, service: RuntimeConfigService) -> "Settings":
@@ -318,6 +325,7 @@ class Settings:
             content_db_path=service.get_path("content_db_path") or Path("data/englishbot.db"),
             pixabay_api_key=service.get_str("pixabay_api_key"),
             pixabay_base_url=service.get_str("pixabay_base_url"),
+            ollama_enabled=bool(service.get("ollama_enabled")),
             ollama_base_url=service.get_str("ollama_base_url"),
             ollama_model=service.get_str("ollama_model"),
             ollama_model_file_path=service.get_path("ollama_model_file_path"),
@@ -333,6 +341,7 @@ class Settings:
             or Path("prompts/ollama_extract_text_prompt.txt"),
             ollama_image_prompt_path=service.get_path("ollama_image_prompt_path")
             or Path("prompts/ollama_image_prompt_prompt.txt"),
+            comfyui_enabled=bool(service.get("comfyui_enabled")),
         )
 
     @classmethod
