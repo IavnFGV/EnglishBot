@@ -14,6 +14,21 @@ from englishbot.infrastructure.repositories import InMemoryAddWordsFlowRepositor
 from tests.support.add_words_scenarios import FAIRY_TALES_ITEMS, FAIRY_TALES_LESSON_TEXT
 from tests.support.app_harness import AppHarness, build_import_draft
 
+_BIRTHDAY_CELEBRATION_TEXT = """Birtday celebration
+
+Birthday boy / Birthday girl — именинник / именинница.
+
+Birthday cake — торт ко дню рождения.
+Candles — свечи.
+
+Balloons — воздушные шары.
+Presents / Gifts — подарки.
+
+Card — открытка.
+
+To celebrate — праздновать.
+"""
+
 
 def test_beta_reproduction_editor_imports_reviews_publishes_and_learns_fairy_tales(
     tmp_path: Path,
@@ -159,3 +174,60 @@ def test_beta_reproduction_real_ollama_extracts_fairy_tales_input_without_valida
         "King",
         "Queen",
     ]
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_OLLAMA_INTEGRATION_TESTS", "").strip().lower() not in {"1", "true", "yes"},
+    reason="Set RUN_OLLAMA_INTEGRATION_TESTS=1 to run against a live Ollama instance.",
+)
+def test_beta_reproduction_real_ollama_keeps_birthday_import_flow_working(
+    tmp_path: Path,
+) -> None:
+    """
+    sh command
+    RUN_OLLAMA_INTEGRATION_TESTS=1 python -m pytest -q tests/test_beta_reproduction_scenarios.py -k birthday_import_flow -s -o log_cli=true --log-cli-level=DEBUG
+
+    """
+
+    pipeline = LessonImportPipeline(
+        extraction_client=OllamaLessonExtractionClient(
+            model=os.getenv("OLLAMA_MODEL") or None,
+            base_url=os.getenv("OLLAMA_BASE_URL") or None,
+            timeout=int(os.getenv("OLLAMA_TIMEOUT_SEC", "120")),
+        ),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    output_path = tmp_path / "birthday-celebration.json"
+    result = pipeline.run(raw_text=_BIRTHDAY_CELEBRATION_TEXT, output_path=output_path)
+
+    assert result.validation.is_valid is True
+    assert len(result.validation.errors) == 0
+    assert result.canonicalization is not None
+    assert output_path.exists()
+    assert result.draft.unparsed_lines == []
+
+    words = [item.english_word.strip() for item in result.draft.vocabulary_items]
+    normalized_words = {word.lower() for word in words}
+
+    assert "birthday boy" in normalized_words
+    assert "birthday girl" in normalized_words
+    assert "birthday cake" in normalized_words
+    assert "candles" in normalized_words
+    assert "balloons" in normalized_words
+    assert "card" in normalized_words
+    assert "to celebrate" in normalized_words
+
+    assert len(words) >= 8
+
+    items_by_word = {
+        item.english_word.strip().lower(): item.translation.strip()
+        for item in result.draft.vocabulary_items
+    }
+    assert items_by_word["birthday cake"] == "торт ко дню рождения"
+    assert items_by_word["candles"] == "свечи"
+    assert items_by_word["balloons"] == "воздушные шары"
+    assert items_by_word["card"] == "открытка"
+    assert items_by_word["to celebrate"] == "праздновать"

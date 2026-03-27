@@ -515,6 +515,172 @@ def test_ollama_extraction_client_does_not_duplicate_already_split_pair_items(
     assert [item.english_word for item in draft.vocabulary_items].count("Prince") == 1
 
 
+def test_ollama_extraction_client_does_not_duplicate_already_split_pair_items_with_periods(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_text = (
+        "Birtday celebration\n\n"
+        "Birthday boy / Birthday girl — именинник / именинница.\n"
+    )
+    source_line = "Birthday boy / Birthday girl — именинник / именинница."
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": "Birthday boy",
+                                    "translation": "именинник",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                                {
+                                    "english_word": "Birthday girl",
+                                    "translation": "именинница",
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                },
+                            ]
+                        }
+                    )
+                }
+            }
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            assert url == "http://127.0.0.1:11434/api/chat"
+            assert json["messages"][-1]["content"] == source_line
+            assert timeout == 120
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+
+    draft = client.extract(raw_text)
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert [item.english_word for item in draft.vocabulary_items] == [
+        "Birthday boy",
+        "Birthday girl",
+    ]
+    assert [item.translation for item in draft.vocabulary_items] == [
+        "именинник",
+        "именинница",
+    ]
+
+
+def test_ollama_extraction_client_parses_birthday_celebration_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_text = (
+        "Birtday celebration\n\n"
+        "Birthday boy / Birthday girl — именинник / именинница.\n\n"
+        "Birthday cake — торт ко дню рождения.\n"
+        "Candles — свечи.\n\n"
+        "Balloons — воздушные шары.\n"
+        "Presents / Gifts — подарки.\n\n"
+        "Card — открытка.\n\n"
+        "To celebrate — праздновать.\n"
+    )
+
+    class FakeResponse:
+        def __init__(self, content: str) -> None:
+            self._content = content
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"message": {"content": self._content}}
+
+    class FakeRequestsModule:
+        @staticmethod
+        def post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            assert url == "http://127.0.0.1:11434/api/chat"
+            assert json["model"] == "qwen2.5:7b"
+            assert timeout == 120
+            source_line = json["messages"][-1]["content"]
+            dumps = __import__("json").dumps
+            if "/" in source_line:
+                english_word, translation = [
+                    part.strip().rstrip(".")
+                    for part in source_line.split("—", maxsplit=1)
+                ]
+                return FakeResponse(
+                    dumps(
+                        {
+                            "vocabulary_items": [
+                                {
+                                    "english_word": english_word,
+                                    "translation": translation,
+                                    "notes": None,
+                                    "image_prompt": None,
+                                    "source_fragment": source_line,
+                                }
+                            ]
+                        }
+                    )
+                )
+            english_word, translation = [
+                part.strip().rstrip(".")
+                for part in source_line.split("—", maxsplit=1)
+            ]
+            return FakeResponse(
+                dumps(
+                    {
+                        "vocabulary_items": [
+                            {
+                                "english_word": english_word,
+                                "translation": translation,
+                                "notes": None,
+                                "image_prompt": None,
+                                "source_fragment": source_line.rstrip("."),
+                            }
+                        ]
+                    }
+                )
+            )
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequestsModule)
+    client = OllamaLessonExtractionClient(model="qwen2.5:7b", base_url="http://127.0.0.1:11434")
+
+    draft = client.extract(raw_text)
+
+    assert isinstance(draft, LessonExtractionDraft)
+    assert draft.topic_title == "Birtday celebration"
+    assert draft.unparsed_lines == []
+    assert len(draft.vocabulary_items) == 8
+    assert [item.english_word for item in draft.vocabulary_items] == [
+        "Birthday boy",
+        "Birthday girl",
+        "Birthday cake",
+        "Candles",
+        "Balloons",
+        "Presents / Gifts",
+        "Card",
+        "To celebrate",
+    ]
+    assert [item.translation for item in draft.vocabulary_items] == [
+        "именинник",
+        "именинница",
+        "торт ко дню рождения",
+        "свечи",
+        "воздушные шары",
+        "подарки",
+        "открытка",
+        "праздновать",
+    ]
+
+
 def test_ollama_extraction_client_repairs_translation_from_source_fragment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

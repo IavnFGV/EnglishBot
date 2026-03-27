@@ -12,6 +12,7 @@ from englishbot.bot import (
     image_review_edit_prompt_handler,
     image_review_generate_handler,
     image_review_next_handler,
+    image_review_previous_handler,
     image_review_pick_handler,
     image_review_photo_handler,
     image_review_skip_handler,
@@ -236,6 +237,15 @@ class _FakeSearchImageReviewCandidatesUseCase:
 
 
 class _FakeLoadNextImageReviewCandidatesUseCase:
+    def __init__(self, flow: ImageReviewFlowState) -> None:
+        self._flow = flow
+
+    def execute(self, *, user_id: int, flow_id: str):  # noqa: ARG002
+        assert flow_id == self._flow.flow_id
+        return self._flow
+
+
+class _FakeLoadPreviousImageReviewCandidatesUseCase:
     def __init__(self, flow: ImageReviewFlowState) -> None:
         self._flow = flow
 
@@ -737,8 +747,10 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
 ) -> None:
     candidate_a_path = tmp_path / "pixabay-a.jpg"
     candidate_b_path = tmp_path / "pixabay-b.jpg"
+    candidate_c_path = tmp_path / "pixabay-c.jpg"
     _write_test_image(candidate_a_path)
     _write_test_image(candidate_b_path)
+    _write_test_image(candidate_c_path)
     search_flow = ImageReviewFlowState(
         flow_id="review123",
         editor_user_id=42,
@@ -795,6 +807,34 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
             )
         ],
     )
+    previous_flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack=search_flow.content_pack,
+        items=[
+            ImageReviewItem(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                prompt="Prompt for Dragon",
+                search_query="Dragon",
+                search_page=1,
+                candidate_source_type="pixabay",
+                candidates=[
+                    ImageCandidate(
+                        model_name="pixabay",
+                        image_ref="assets/fairy-tales/review/dragon--pixabay-3.jpg",
+                        output_path=candidate_c_path,
+                        prompt="Prompt for Dragon",
+                        source_type="pixabay",
+                        source_id="3",
+                        width=700,
+                        height=500,
+                    )
+                ],
+            )
+        ],
+    )
     message = _FakeCallbackMessage(tmp_path)
     search_query = _FakeQuery("words:image_search:review123", message)
     search_update = SimpleNamespace(
@@ -806,6 +846,11 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
         callback_query=next_query,
         effective_user=SimpleNamespace(id=42),
     )
+    previous_query = _FakeQuery("words:image_previous:review123", message)
+    previous_update = SimpleNamespace(
+        callback_query=previous_query,
+        effective_user=SimpleNamespace(id=42),
+    )
     context = SimpleNamespace(
         bot=_FakeBot(),
         application=SimpleNamespace(
@@ -813,6 +858,9 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
                 "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(search_flow),
                 "image_review_search_use_case": _FakeSearchImageReviewCandidatesUseCase(search_flow),
                 "image_review_next_use_case": _FakeLoadNextImageReviewCandidatesUseCase(next_flow),
+                "image_review_previous_use_case": _FakeLoadPreviousImageReviewCandidatesUseCase(
+                    previous_flow
+                ),
                 "telegram_flow_message_repository": _FakeTelegramFlowMessageRepository(),
             }
         ),
@@ -837,6 +885,17 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
     assert message.reply_photo_captions == ["", ""]
     assert message.reply_photo_names[1].endswith("review123-dragon--review-strip-256.jpg")
     assert context.bot.deleted_messages == [(1, 1), (1, 101)]
+
+    context.application.bot_data["image_review_get_active_use_case"] = _FakeGetActiveImageReviewUseCase(
+        next_flow
+    )
+    await image_review_previous_handler(previous_update, context)  # type: ignore[arg-type]
+    assert previous_query.edits[0] == "Loading previous Pixabay candidates 1/1..."
+    assert previous_query.edits[1] == "Pixabay candidates ready 1/1"
+    assert any("Pixabay candidates page 1" in text for text in message.reply_text_calls)
+    assert message.reply_photo_captions == ["", "", ""]
+    assert message.reply_photo_names[2].endswith("review123-dragon--review-strip-256.jpg")
+    assert context.bot.deleted_messages == [(1, 1), (1, 101), (1, 2), (1, 102)]
 
 
 @pytest.mark.anyio

@@ -1,22 +1,22 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 from pathlib import Path
 from typing import Protocol
 
 from englishbot.config import resolve_ollama_model
+from englishbot.importing.extraction_support import (
+    build_line_items,
+    extract_explicit_topic_and_candidate_lines,
+    parse_line_content,
+    parse_topic_inference_content,
+)
 from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtractionDraft
 from englishbot.importing.prompt_loader import load_prompt_text
 from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
-_SOURCE_SPLIT_RE = re.compile(r"\s*[—–-]\s*")
-_CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
-_LATIN_RE = re.compile(r"[A-Za-z]")
-_PAIR_SPLIT_RE = re.compile(r"\s*/\s*")
 
 
 def _short_text(value: str, *, limit: int = 180) -> str:
@@ -133,28 +133,6 @@ class OllamaLessonExtractionClient:
             logger.exception("OllamaLessonExtractionClient failed: %s", error)
             return {"error": str(error)}
 
-    def _system_prompt(self) -> str:
-        return (
-            "Extract English lesson vocabulary from messy teacher text. "
-            "Return only valid JSON with the keys: "
-            "topic_title, lesson_title, vocabulary_items, warnings, "
-            "unparsed_lines, confidence_notes. "
-            "Each vocabulary item must contain: english_word, translation, "
-            "notes, image_prompt, source_fragment. "
-            "Use null for missing optional fields. "
-            "If one source line contains alternative forms separated by '/' such as "
-            "'Princess / Prince — принцесса / принц' or "
-            "'Child / Children — ребенок / дети', return separate vocabulary items "
-            "for each aligned pair instead of one combined item. "
-            "Preserve translations exactly from the source text language; "
-            "do not transliterate Russian or Bulgarian words into Latin. "
-            "Keep source_fragment close to the original line. "
-            "Set image_prompt to null unless explicitly requested by the caller "
-            "or clearly present in the source text. "
-            "If lesson title is missing, return null. "
-            "Do not invent extra words that are not supported by the text."
-        )
-
     def _line_system_prompt(self) -> str:
         return load_prompt_text(
             path=self._extract_line_prompt_path,
@@ -174,7 +152,7 @@ class OllamaLessonExtractionClient:
         )
 
     def _extract_line_by_line(self, *, raw_text: str, requests_module) -> LessonExtractionDraft:
-        topic_title, candidate_lines = self._extract_explicit_topic_and_candidate_lines(raw_text)
+        topic_title, candidate_lines = extract_explicit_topic_and_candidate_lines(raw_text)
 
         source_lines = list(candidate_lines)
         unparsed_lines: list[str] = []
@@ -219,41 +197,6 @@ class OllamaLessonExtractionClient:
             unparsed_lines=unparsed_lines,
             confidence_notes=[],
         )
-
-    def _extract_explicit_topic_and_candidate_lines(self, raw_text: str) -> tuple[str, list[str]]:
-        raw_lines = raw_text.splitlines()
-        nonempty_lines = [line.strip() for line in raw_lines if line.strip()]
-        if not nonempty_lines:
-            return "Imported Topic", []
-
-        first_content_index = next(
-            (index for index, line in enumerate(raw_lines) if line.strip()),
-            None,
-        )
-        if first_content_index is None:
-            return "Imported Topic", []
-
-        first_line = raw_lines[first_content_index].strip()
-        if self._is_bracketed_topic_line(first_line):
-            topic_title = first_line[1:-1].strip() or "Imported Topic"
-            candidate_lines = [
-                line.strip() for line in raw_lines[first_content_index + 1 :] if line.strip()
-            ]
-            return topic_title, candidate_lines
-
-        next_line_index = first_content_index + 1
-        if next_line_index < len(raw_lines) and not raw_lines[next_line_index].strip():
-            candidate_lines = [
-                line.strip()
-                for line in raw_lines[next_line_index + 1 :]
-                if line.strip()
-            ]
-            return first_line, candidate_lines
-
-        return "", nonempty_lines
-
-    def _is_bracketed_topic_line(self, line: str) -> bool:
-        return line.startswith("[") and line.endswith("]") and len(line) > 2
 
     def _infer_topic_title(
         self,
@@ -323,19 +266,7 @@ class OllamaLessonExtractionClient:
         )
 
     def _parse_topic_inference_content(self, content: str) -> str:
-        stripped = content.strip().strip('"').strip("'")
-        if not stripped:
-            return ""
-        if stripped.startswith("{") and stripped.endswith("}"):
-            try:
-                parsed = json.loads(stripped)
-            except json.JSONDecodeError:
-                return stripped
-            if isinstance(parsed, dict):
-                value = parsed.get("topic_title")
-                if isinstance(value, str):
-                    return value.strip()
-        return stripped
+        return parse_topic_inference_content(content)
 
     def _extract_line_items(
         self,
@@ -387,23 +318,12 @@ class OllamaLessonExtractionClient:
             content,
             _short_text(content, limit=400),
         )
-        raw_items = self._parse_line_content(content)
-        items: list[ExtractedVocabularyItemDraft] = []
-        for raw_item in raw_items:
-            source_fragment = self._string_or_empty(raw_item.get("source_fragment")) or source_line
-            draft_item = ExtractedVocabularyItemDraft(
-                english_word=self._string_or_empty(raw_item.get("english_word")),
-                translation=self._string_or_empty(raw_item.get("translation")),
-                source_fragment=source_fragment,
-                notes=self._optional_string(raw_item.get("notes")),
-                image_prompt=(
-                    self._optional_string(raw_item.get("image_prompt"))
-                    if self._include_image_prompts
-                    else None
-                ),
-            )
-            repaired_item = self._repair_item_from_source(draft_item)
-            items.extend(self._split_paired_item(repaired_item))
+        raw_items = parse_line_content(content)
+        items = build_line_items(
+            raw_items=raw_items,
+            source_line=source_line,
+            include_image_prompts=self._include_image_prompts,
+        )
         logger.debug(
             (
                 "OllamaLessonExtractionClient line parsed "
@@ -453,83 +373,6 @@ class OllamaLessonExtractionClient:
         value = os.getenv(name, "").strip()
         return int(value) if value else None
 
-    def _parse_content(self, content: str) -> dict[str, object]:
-        stripped = content.strip()
-        if stripped.startswith("```"):
-            stripped = stripped.strip("`")
-            if stripped.startswith("json"):
-                stripped = stripped[4:].strip()
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start == -1 or end == -1:
-            raise ValueError("Ollama response did not contain a JSON object.")
-        parsed = json.loads(stripped[start : end + 1])
-        if not isinstance(parsed, dict):
-            raise ValueError("Ollama response root must be a JSON object.")
-        return parsed
-
-    def _parse_line_content(self, content: str) -> list[dict[str, object]]:
-        stripped = content.strip()
-        if stripped.startswith("```"):
-            stripped = stripped.strip("`")
-            if stripped.startswith("json"):
-                stripped = stripped[4:].strip()
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start != -1 and end != -1:
-            parsed = json.loads(stripped[start : end + 1])
-        else:
-            parsed = json.loads(stripped)
-
-        if isinstance(parsed, dict):
-            raw_items = parsed.get("vocabulary_items")
-            if raw_items is None and any(
-                key in parsed for key in ("english_word", "translation", "source_fragment")
-            ):
-                raw_items = [parsed]
-            if raw_items is None:
-                return []
-        elif isinstance(parsed, list):
-            raw_items = parsed
-        else:
-            raise ValueError("Line extraction response must be a JSON object or array.")
-
-        if not isinstance(raw_items, list):
-            raise ValueError("Line extraction vocabulary_items must be an array.")
-        return [item for item in raw_items if isinstance(item, dict)]
-
-    def _build_draft(self, parsed: dict[str, object], *, raw_text: str) -> LessonExtractionDraft:
-        raw_items = parsed.get("vocabulary_items", [])
-        if not isinstance(raw_items, list):
-            raise ValueError("vocabulary_items must be an array.")
-        source_lines = self._candidate_source_lines(raw_text)
-        items: list[ExtractedVocabularyItemDraft] = []
-        for item in raw_items:
-            if not isinstance(item, dict):
-                raise ValueError("Each vocabulary item must be an object.")
-            draft_item = ExtractedVocabularyItemDraft(
-                english_word=self._string_or_empty(item.get("english_word")),
-                translation=self._string_or_empty(item.get("translation")),
-                source_fragment=self._string_or_empty(item.get("source_fragment")),
-                notes=self._optional_string(item.get("notes")),
-                image_prompt=(
-                    self._optional_string(item.get("image_prompt"))
-                    if self._include_image_prompts
-                    else None
-                ),
-            )
-            repaired_item = self._repair_item_from_source(draft_item)
-            ensured_item = self._ensure_source_fragment(repaired_item, source_lines)
-            items.extend(self._split_paired_item(ensured_item))
-        return LessonExtractionDraft(
-            topic_title=self._string_or_empty(parsed.get("topic_title")),
-            lesson_title=self._optional_string(parsed.get("lesson_title")),
-            vocabulary_items=items,
-            warnings=self._string_list(parsed.get("warnings")),
-            unparsed_lines=self._string_list(parsed.get("unparsed_lines")),
-            confidence_notes=self._string_list(parsed.get("confidence_notes")),
-        )
-
     def _string_or_empty(self, value: object) -> str:
         return value.strip() if isinstance(value, str) else ""
 
@@ -545,216 +388,3 @@ class OllamaLessonExtractionClient:
         if not isinstance(value, list):
             return []
         return [item.strip() for item in value if isinstance(item, str) and item.strip()]
-
-    def _repair_item_from_source(
-        self, item: ExtractedVocabularyItemDraft
-    ) -> ExtractedVocabularyItemDraft:
-        parsed = self._parse_source_fragment(item.source_fragment)
-        if parsed is None:
-            return item
-        parsed_english, parsed_translation = parsed
-        english_word = item.english_word
-        translation = item.translation
-        source_english_parts = self._split_pair_parts(parsed_english)
-        source_translation_parts = self._split_pair_parts(parsed_translation)
-        item_english_parts = self._split_pair_parts(english_word)
-        item_translation_parts = self._split_pair_parts(translation)
-        item_already_matches_aligned_source_pair = self._matches_aligned_source_pair(
-            english_word=english_word,
-            translation=translation,
-            source_english_parts=source_english_parts,
-            source_translation_parts=source_translation_parts,
-        )
-
-        if (
-            len(source_english_parts) >= 2
-            and len(source_english_parts) == len(source_translation_parts)
-            and not item_already_matches_aligned_source_pair
-            and (
-                len(item_english_parts) != len(source_english_parts)
-                or len(item_translation_parts) != len(source_translation_parts)
-            )
-        ):
-            logger.info(
-                "Repairing paired item from source_fragment english_word=%s source_fragment=%s",
-                english_word or parsed_english,
-                item.source_fragment,
-            )
-            english_word = parsed_english
-            translation = parsed_translation
-
-        if self._looks_like_bad_translation(translation, parsed_translation):
-            logger.info(
-                "Repairing translation from source_fragment for english_word=%s",
-                english_word or parsed_english,
-            )
-            translation = parsed_translation
-
-        if self._looks_like_bad_english_word(english_word, parsed_english):
-            logger.info("Repairing english_word from source_fragment value=%s", parsed_english)
-            english_word = parsed_english
-
-        return ExtractedVocabularyItemDraft(
-            english_word=english_word,
-            translation=translation,
-            source_fragment=item.source_fragment,
-            item_id=item.item_id,
-            notes=item.notes,
-            image_prompt=item.image_prompt,
-        )
-
-    def _ensure_source_fragment(
-        self,
-        item: ExtractedVocabularyItemDraft,
-        source_lines: list[str],
-    ) -> ExtractedVocabularyItemDraft:
-        if item.source_fragment.strip():
-            return item
-
-        matched_fragment = self._match_source_fragment(
-            english_word=item.english_word,
-            translation=item.translation,
-            source_lines=source_lines,
-        )
-        if not matched_fragment:
-            return item
-
-        logger.info(
-            "Recovered source_fragment from raw text for english_word=%s",
-            item.english_word,
-        )
-        repaired = ExtractedVocabularyItemDraft(
-            english_word=item.english_word,
-            translation=item.translation,
-            source_fragment=matched_fragment,
-            item_id=item.item_id,
-            notes=item.notes,
-            image_prompt=item.image_prompt,
-        )
-        return self._repair_item_from_source(repaired)
-
-    def _parse_source_fragment(self, value: str) -> tuple[str, str] | None:
-        parts = _SOURCE_SPLIT_RE.split(value, maxsplit=1)
-        if len(parts) != 2:
-            return None
-        left = parts[0].strip()
-        right = parts[1].strip()
-        if not left or not right:
-            return None
-        return left, right
-
-    def _looks_like_bad_translation(self, translation: str, parsed_translation: str) -> bool:
-        return bool(_LATIN_RE.search(translation)) and bool(_CYRILLIC_RE.search(parsed_translation))
-
-    def _looks_like_bad_english_word(self, english_word: str, parsed_english: str) -> bool:
-        return bool(_CYRILLIC_RE.search(english_word)) and bool(_LATIN_RE.search(parsed_english))
-
-    def _candidate_source_lines(self, raw_text: str) -> list[str]:
-        candidates: list[str] = []
-        for line in raw_text.splitlines():
-            stripped = line.strip()
-            if stripped:
-                candidates.append(stripped)
-        return candidates
-
-    def _match_source_fragment(
-        self,
-        *,
-        english_word: str,
-        translation: str,
-        source_lines: list[str],
-    ) -> str | None:
-        normalized_english = self._normalize_text(english_word).lower()
-        normalized_translation = self._normalize_text(translation).lower()
-
-        exact_matches: list[str] = []
-        english_only_matches: list[str] = []
-        translation_only_matches: list[str] = []
-        for source_line in source_lines:
-            parsed = self._parse_source_fragment(source_line)
-            if parsed is None:
-                continue
-            parsed_english, parsed_translation = parsed
-            line_english = self._normalize_text(parsed_english).lower()
-            line_translation = self._normalize_text(parsed_translation).lower()
-            english_matches = bool(normalized_english) and line_english == normalized_english
-            translation_matches = bool(normalized_translation) and (
-                line_translation == normalized_translation
-            )
-
-            if english_matches and translation_matches:
-                exact_matches.append(source_line)
-            elif english_matches:
-                english_only_matches.append(source_line)
-            elif translation_matches:
-                translation_only_matches.append(source_line)
-
-        if exact_matches:
-            return exact_matches[0]
-        if english_only_matches:
-            return english_only_matches[0]
-        if translation_only_matches:
-            return translation_only_matches[0]
-        return None
-
-    def _normalize_text(self, value: str) -> str:
-        return re.sub(r"\s+", " ", value.strip())
-
-    def _split_paired_item(
-        self,
-        item: ExtractedVocabularyItemDraft,
-    ) -> list[ExtractedVocabularyItemDraft]:
-        english_parts = self._split_pair_parts(item.english_word)
-        translation_parts = self._split_pair_parts(item.translation)
-        if len(english_parts) < 2 or len(english_parts) != len(translation_parts):
-            return [item]
-
-        logger.info(
-            "Splitting paired vocabulary item english_word=%s parts=%s",
-            item.english_word,
-            len(english_parts),
-        )
-        return [
-            ExtractedVocabularyItemDraft(
-                english_word=english_part,
-                translation=translation_part,
-                source_fragment=f"{english_part} — {translation_part}",
-                item_id=item.item_id,
-                notes=item.notes,
-                image_prompt=None,
-            )
-            for english_part, translation_part in zip(english_parts, translation_parts, strict=True)
-        ]
-
-    def _split_pair_parts(self, value: str) -> list[str]:
-        if "/" not in value:
-            return [value.strip()] if value.strip() else []
-        return [part.strip() for part in _PAIR_SPLIT_RE.split(value) if part.strip()]
-
-    def _matches_aligned_source_pair(
-        self,
-        *,
-        english_word: str,
-        translation: str,
-        source_english_parts: list[str],
-        source_translation_parts: list[str],
-    ) -> bool:
-        normalized_english = self._normalize_text(english_word).lower()
-        normalized_translation = self._normalize_text(translation).lower()
-        if not normalized_english or not normalized_translation:
-            return False
-        for source_english, source_translation in zip(
-            source_english_parts,
-            source_translation_parts,
-            strict=False,
-        ):
-            normalized_source_english = self._normalize_text(source_english).lower()
-            normalized_source_translation = self._normalize_text(source_translation).lower()
-            if (
-                normalized_source_english == normalized_english
-                and normalized_source_translation == normalized_translation
-            ):
-                return True
-            if normalized_source_translation == normalized_translation:
-                return True
-        return False

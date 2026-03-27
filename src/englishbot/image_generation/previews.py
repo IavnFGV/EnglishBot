@@ -101,7 +101,10 @@ def ensure_numbered_candidate_strip(
             fill=(0, 0, 0),
         )
         text_x = label_box_left + (label_box_width - text_width) // 2
-        text_y = label_box_top + (label_box_height - text_height) // 2 - 2
+        text_y = label_box_top + (label_box_height - text_height) // 2 - max(
+            label_box_height // 7,
+            6,
+        )
         draw.text((text_x, text_y), label, fill=(255, 255, 255), font=font)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output_path, format="JPEG", quality=85, optimize=True)

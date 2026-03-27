@@ -50,6 +50,7 @@ from englishbot.application.image_review_use_cases import (
     GenerateImageReviewCandidatesUseCase,
     GetActiveImageReviewUseCase,
     LoadNextImageReviewCandidatesUseCase,
+    LoadPreviousImageReviewCandidatesUseCase,
     PublishImageReviewUseCase,
     SearchImageReviewCandidatesUseCase,
     SelectImageCandidateUseCase,
@@ -222,6 +223,10 @@ def build_application(settings: Settings) -> Application:
         harness=image_review_harness,
         repository=image_review_repository,
     )
+    app.bot_data["image_review_previous_use_case"] = LoadPreviousImageReviewCandidatesUseCase(
+        harness=image_review_harness,
+        repository=image_review_repository,
+    )
     app.bot_data["image_review_select_use_case"] = SelectImageCandidateUseCase(
         harness=image_review_harness,
         repository=image_review_repository,
@@ -363,6 +368,12 @@ def build_application(settings: Settings) -> Application:
         CallbackQueryHandler(
             image_review_next_handler,
             pattern=r"^words:image_next:",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            image_review_previous_handler,
+            pattern=r"^words:image_previous:",
         )
     )
     app.add_handler(
@@ -512,6 +523,12 @@ def _load_next_image_review_candidates(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> LoadNextImageReviewCandidatesUseCase:
     return context.application.bot_data["image_review_next_use_case"]
+
+
+def _load_previous_image_review_candidates(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> LoadPreviousImageReviewCandidatesUseCase:
+    return context.application.bot_data["image_review_previous_use_case"]
 
 
 def _select_image_review_candidate(
@@ -1707,6 +1724,40 @@ async def image_review_next_handler(
     await _send_image_review_step(query.message, context, updated_flow)
 
 
+async def image_review_previous_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    _, _, flow_id = query.data.split(":")
+    flow = _get_active_image_review(context).execute(user_id=user.id)
+    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
+        await query.edit_message_text("This image review flow is no longer active.")
+        return
+    current_position = flow.current_index + 1
+    total_items = len(flow.items)
+    await query.edit_message_text(
+        f"Loading previous Pixabay candidates {current_position}/{total_items}..."
+    )
+    try:
+        updated_flow = await asyncio.to_thread(
+            _load_previous_image_review_candidates(context).execute,
+            user_id=user.id,
+            flow_id=flow_id,
+        )
+    except ValueError as error:
+        await query.edit_message_text(str(error))
+        return
+    await query.edit_message_text(
+        f"Pixabay candidates ready {current_position}/{total_items}"
+    )
+    await _send_image_review_step(query.message, context, updated_flow)
+
+
 async def image_review_pick_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -2681,14 +2732,21 @@ def _image_review_keyboard(
         ]
     )
     if current_item.search_query:
-        rows.append(
-            [
+        pagination_row: list[InlineKeyboardButton] = []
+        if current_item.search_page > 1:
+            pagination_row.append(
                 InlineKeyboardButton(
-                    "Next 6",
-                    callback_data=f"words:image_next:{flow_id}",
+                    "Previous 6",
+                    callback_data=f"words:image_previous:{flow_id}",
                 )
-            ]
+            )
+        pagination_row.append(
+            InlineKeyboardButton(
+                "Next 6",
+                callback_data=f"words:image_next:{flow_id}",
+            )
         )
+        rows.append(pagination_row)
     rows.append(
         [
             InlineKeyboardButton(

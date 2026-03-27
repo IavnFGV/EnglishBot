@@ -147,7 +147,11 @@ def test_published_image_items_keyboard_uses_short_index_based_callback_data() -
 
 
 def test_image_review_keyboard_uses_short_callback_data_for_long_item_id() -> None:
-    current_item = SimpleNamespace(candidates=[object(), object(), object()], search_query="Dragon")
+    current_item = SimpleNamespace(
+        candidates=[object(), object(), object()],
+        search_query="Dragon",
+        search_page=1,
+    )
     keyboard = _image_review_keyboard(
         flow_id="review123",
         current_item=current_item,
@@ -172,6 +176,7 @@ def test_image_review_keyboard_lays_out_six_pick_buttons_in_two_rows() -> None:
     current_item = SimpleNamespace(
         candidates=[object(), object(), object(), object(), object(), object()],
         search_query="Dragon",
+        search_page=1,
     )
 
     keyboard = _image_review_keyboard(
@@ -181,3 +186,18 @@ def test_image_review_keyboard_lays_out_six_pick_buttons_in_two_rows() -> None:
 
     assert [button.text for button in keyboard.inline_keyboard[0]] == ["Use 1", "Use 2", "Use 3"]
     assert [button.text for button in keyboard.inline_keyboard[1]] == ["Use 4", "Use 5", "Use 6"]
+
+
+def test_image_review_keyboard_shows_previous_and_next_on_later_pages() -> None:
+    current_item = SimpleNamespace(
+        candidates=[object()],
+        search_query="Dragon",
+        search_page=2,
+    )
+
+    keyboard = _image_review_keyboard(
+        flow_id="review123",
+        current_item=current_item,
+    )
+
+    assert [button.text for button in keyboard.inline_keyboard[2]] == ["Previous 6", "Next 6"]

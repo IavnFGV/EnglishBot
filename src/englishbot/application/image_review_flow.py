@@ -284,6 +284,26 @@ class ImageReviewFlowHarness:
             per_page=per_page,
         )
 
+    def load_previous_search_candidates(
+        self,
+        *,
+        flow: ImageReviewFlowState,
+        per_page: int = 6,
+    ) -> ImageReviewFlowState:
+        current_item = flow.current_item
+        if current_item is None:
+            return flow
+        if not current_item.search_query:
+            raise ValueError("Search is not active for this review item.")
+        if current_item.search_page <= 1:
+            raise ValueError("Already showing the first Pixabay page.")
+        return self.search_current_item_candidates(
+            flow=flow,
+            query=current_item.search_query,
+            page=current_item.search_page - 1,
+            per_page=per_page,
+        )
+
     @logged_service_call(
         "ImageReviewFlowHarness.update_current_item_prompt",
         transforms={

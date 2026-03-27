@@ -7,6 +7,7 @@ from englishbot.bot import (
     group_text_observer_handler,
     image_review_edit_search_query_handler,
     image_review_next_handler,
+    image_review_previous_handler,
     image_review_search_handler,
     raw_update_logger_handler,
     text_answer_handler,
@@ -42,6 +43,7 @@ def test_text_answer_handler_is_registered_after_add_words_handler() -> None:
     assert any(handler.callback is chat_member_logger_handler for handler in app.handlers[0])
     assert any(handler.callback is image_review_search_handler for handler in app.handlers[0])
     assert any(handler.callback is image_review_next_handler for handler in app.handlers[0])
+    assert any(handler.callback is image_review_previous_handler for handler in app.handlers[0])
     assert any(handler.callback is image_review_edit_search_query_handler for handler in app.handlers[0])
     assert any(handler.callback is text_answer_handler for handler in app.handlers[1])
     assert any(handler.callback is group_text_observer_handler for handler in app.handlers[2])

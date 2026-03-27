@@ -7,6 +7,7 @@ from englishbot.application.image_review_flow import ImageReviewFlowHarness
 from englishbot.application.image_review_use_cases import (
     GenerateImageReviewCandidatesUseCase,
     LoadNextImageReviewCandidatesUseCase,
+    LoadPreviousImageReviewCandidatesUseCase,
     PublishImageReviewUseCase,
     SearchImageReviewCandidatesUseCase,
     SelectImageCandidateUseCase,
@@ -277,6 +278,60 @@ def test_pixabay_search_and_next_page_replace_candidates_and_preserve_query(
     assert search_client.calls == [
         ("Dragon", None, 1, 6),
         ("Dragon", "Dragon", 2, 6),
+    ]
+
+
+def test_pixabay_previous_page_loads_prior_candidates_and_preserves_query(
+    tmp_path: Path,
+) -> None:
+    repository = InMemoryImageReviewFlowRepository()
+    search_client = FakePixabaySearchClient()
+    downloader = FakeRemoteImageDownloader()
+    harness = ImageReviewFlowHarness(
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        candidate_generator=FakeImageCandidateGenerator(),
+        image_search_client=search_client,
+        remote_image_downloader=downloader,
+        assets_dir=tmp_path / "assets",
+    )
+    flow = harness.start_from_content_pack(
+        editor_user_id=7,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "dragon", "english_word": "Dragon", "translation": "дракон"}
+            ],
+        },
+    )
+    repository.save(flow)
+    search_use_case = SearchImageReviewCandidatesUseCase(
+        harness=harness,
+        repository=repository,
+    )
+    next_use_case = LoadNextImageReviewCandidatesUseCase(
+        harness=harness,
+        repository=repository,
+    )
+    previous_use_case = LoadPreviousImageReviewCandidatesUseCase(
+        harness=harness,
+        repository=repository,
+    )
+
+    search_use_case.execute(user_id=7, flow_id=flow.flow_id)
+    next_use_case.execute(user_id=7, flow_id=flow.flow_id)
+    previous_flow = previous_use_case.execute(user_id=7, flow_id=flow.flow_id)
+
+    assert previous_flow.current_item is not None
+    assert previous_flow.current_item.search_page == 1
+    assert previous_flow.current_item.search_query == "Dragon"
+    assert len(previous_flow.current_item.candidates) == 6
+    assert previous_flow.current_item.candidates[0].source_id == "1000"
+    assert search_client.calls == [
+        ("Dragon", None, 1, 6),
+        ("Dragon", "Dragon", 2, 6),
+        ("Dragon", "Dragon", 1, 6),
     ]
 
 
