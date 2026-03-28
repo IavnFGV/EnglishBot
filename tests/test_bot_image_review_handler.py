@@ -346,8 +346,12 @@ class _FakeAttachUploadedImageUseCase:
 class _FakePublishImageReviewUseCase:
     def __init__(self) -> None:
         self.output_path: Path | None = None
+        self.called_flow_id: str | None = None
+        self.called_user_id: int | None = None
 
     def execute(self, *, user_id: int, flow_id: str, output_path: Path | None = None):  # noqa: ARG002
+        self.called_user_id = user_id
+        self.called_flow_id = flow_id
         self.output_path = output_path
         return output_path
 
@@ -1428,6 +1432,226 @@ async def test_image_review_pick_completion_keeps_callback_message_for_final_edi
     assert fake_bot.deleted_messages == [(1, 1001), (1, 888)]
     assert "Image review completed and content pack published." in query.edits[-1]
     assert registry.list(flow_id="review123") == []
+
+
+@pytest.mark.anyio
+async def test_published_image_pick_returns_to_word_list_with_success_message(
+    tmp_path: Path,
+) -> None:
+    flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "metadata": {"image_review_origin": "published_word_edit"},
+            "vocabulary_items": [
+                {
+                    "id": "castle",
+                    "english_word": "Castle",
+                    "translation": "замок",
+                    "image_ref": "assets/fairy-tales/castle.png",
+                },
+                {
+                    "id": "prince",
+                    "english_word": "Prince",
+                    "translation": "принц",
+                },
+            ],
+        },
+        items=[
+            ImageReviewItem(
+                item_id="castle",
+                english_word="Castle",
+                translation="замок",
+                prompt="Prompt for Castle",
+                candidates=[
+                    ImageCandidate(
+                        model_name="pixabay",
+                        image_ref="assets/fairy-tales/review/castle--pixabay-1.jpg",
+                        output_path=tmp_path / "castle-a.png",
+                        prompt="Prompt for Castle",
+                        source_type="pixabay",
+                    )
+                ],
+            )
+        ],
+    )
+    publish_use_case = _FakePublishImageReviewUseCase()
+    registry = _FakeTelegramFlowMessageRepository()
+    registry.track(flow_id="review123", chat_id=1, message_id=999, tag="image_review_step")
+    registry.track(flow_id="review123", chat_id=1, message_id=888, tag="image_review_context")
+    fake_bot = _FakeBot()
+    query_message = _FakeCallbackMessage(tmp_path)
+    query = _FakeQuery("words:image_pick:review123:0", query_message)
+    update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=42))
+
+    class _PublishedPickUseCase:
+        def execute(self, *, user_id: int, flow_id: str, item_id: str, candidate_index: int):  # noqa: ARG002
+            assert flow_id == "review123"
+            assert item_id == "castle"
+            assert candidate_index == 0
+            return ImageReviewFlowState(
+                flow_id="review123",
+                editor_user_id=42,
+                content_pack=flow.content_pack,
+                items=flow.items,
+                current_index=1,
+            )
+
+    context = SimpleNamespace(
+        bot=fake_bot,
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": _FakeContentStore(flow.content_pack),
+                "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(flow),
+                "image_review_select_use_case": _PublishedPickUseCase(),
+                "image_review_publish_use_case": publish_use_case,
+                "telegram_flow_message_repository": registry,
+            }
+        ),
+    )
+
+    await image_review_pick_handler(update, context)  # type: ignore[arg-type]
+
+    assert publish_use_case.called_user_id == 42
+    assert publish_use_case.called_flow_id == "review123"
+    assert fake_bot.deleted_messages == [(1, 888)]
+    assert query.edits[-1] == "Image selected.\nChoose another word to edit."
+    assert registry.list(flow_id="review123") == []
+
+
+@pytest.mark.anyio
+async def test_published_image_pick_persists_image_ref_for_next_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("englishbot.bot.build_training_service", lambda db_path=None: "training-service")
+    selected_image_ref = "assets/fairy-tales/review/castle--pixabay-1.jpg"
+    preview_path = tmp_path / "castle--pixabay-1.jpg"
+    _write_test_image(preview_path)
+    monkeypatch.setattr(
+        "englishbot.bot.resolve_existing_image_path",
+        lambda image_ref: preview_path if image_ref == selected_image_ref else None,
+    )
+
+    mutable_content_pack: dict[str, object] = {
+        "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+        "metadata": {"image_review_origin": "published_word_edit"},
+        "vocabulary_items": [
+            {
+                "id": "castle",
+                "english_word": "Castle",
+                "translation": "замок",
+                "image_ref": "assets/fairy-tales/castle-old.png",
+            }
+        ],
+    }
+    active_flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack=mutable_content_pack,
+        items=[
+            ImageReviewItem(
+                item_id="castle",
+                english_word="Castle",
+                translation="замок",
+                prompt="Prompt for Castle",
+                candidates=[
+                    ImageCandidate(
+                        model_name="pixabay",
+                        image_ref=selected_image_ref,
+                        output_path=preview_path,
+                        prompt="Prompt for Castle",
+                        source_type="pixabay",
+                    )
+                ],
+            )
+        ],
+    )
+
+    class _MutableContentStore:
+        db_path = Path("data/test.db")
+
+        def get_content_pack(self, topic_id: str) -> dict[str, object]:
+            assert topic_id == "fairy-tales"
+            return mutable_content_pack
+
+    class _SelectUseCase:
+        def execute(self, *, user_id: int, flow_id: str, item_id: str, candidate_index: int):  # noqa: ARG002
+            assert flow_id == "review123"
+            assert item_id == "castle"
+            assert candidate_index == 0
+            updated_pack = {
+                **mutable_content_pack,
+                "vocabulary_items": [
+                    {
+                        **mutable_content_pack["vocabulary_items"][0],  # type: ignore[index]
+                        "image_ref": selected_image_ref,
+                    }
+                ],
+            }
+            return ImageReviewFlowState(
+                flow_id="review123",
+                editor_user_id=42,
+                content_pack=updated_pack,
+                items=active_flow.items,
+                current_index=1,
+            )
+
+    class _PublishUseCase:
+        def execute(self, *, user_id: int, flow_id: str, output_path=None):  # noqa: ARG002
+            assert flow_id == "review123"
+            mutable_content_pack["vocabulary_items"][0]["image_ref"] = selected_image_ref  # type: ignore[index]
+            return output_path
+
+    class _StartPublishedUseCase:
+        def execute(self, *, user_id: int, topic_id: str, item_id: str):  # noqa: ARG002
+            assert topic_id == "fairy-tales"
+            assert item_id == "castle"
+            return ImageReviewFlowState(
+                flow_id="review-reopen",
+                editor_user_id=42,
+                content_pack=mutable_content_pack,
+                items=[
+                    ImageReviewItem(
+                        item_id="castle",
+                        english_word="Castle",
+                        translation="замок",
+                        prompt="Prompt for Castle",
+                        candidates=[],
+                    )
+                ],
+            )
+
+    registry = _FakeTelegramFlowMessageRepository()
+    fake_bot = _FakeBot()
+    context = SimpleNamespace(
+        bot=fake_bot,
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": _MutableContentStore(),
+                "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(active_flow),
+                "image_review_select_use_case": _SelectUseCase(),
+                "image_review_publish_use_case": _PublishUseCase(),
+                "image_review_start_published_word_use_case": _StartPublishedUseCase(),
+                "telegram_flow_message_repository": registry,
+            }
+        ),
+    )
+
+    pick_query_message = _FakeCallbackMessage(tmp_path)
+    pick_query = _FakeQuery("words:image_pick:review123:0", pick_query_message)
+    pick_update = SimpleNamespace(callback_query=pick_query, effective_user=SimpleNamespace(id=42))
+    await image_review_pick_handler(pick_update, context)  # type: ignore[arg-type]
+
+    reopen_query_message = _FakeCallbackMessage(tmp_path)
+    reopen_query = _FakeQuery("words:published_image_item:fairy-tales:0", reopen_query_message)
+    reopen_update = SimpleNamespace(callback_query=reopen_query, effective_user=SimpleNamespace(id=42))
+    await published_image_item_handler(reopen_update, context)  # type: ignore[arg-type]
+
+    assert mutable_content_pack["vocabulary_items"][0]["image_ref"] == selected_image_ref  # type: ignore[index]
+    assert reopen_query_message.reply_photo_captions
+    assert "Current image." in reopen_query_message.reply_photo_captions[0]
 
 
 @pytest.mark.anyio
