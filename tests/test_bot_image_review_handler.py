@@ -346,8 +346,12 @@ class _FakeAttachUploadedImageUseCase:
 class _FakePublishImageReviewUseCase:
     def __init__(self) -> None:
         self.output_path: Path | None = None
+        self.called_flow_id: str | None = None
+        self.called_user_id: int | None = None
 
     def execute(self, *, user_id: int, flow_id: str, output_path: Path | None = None):  # noqa: ARG002
+        self.called_user_id = user_id
+        self.called_flow_id = flow_id
         self.output_path = output_path
         return output_path
 
@@ -1427,6 +1431,92 @@ async def test_image_review_pick_completion_keeps_callback_message_for_final_edi
 
     assert fake_bot.deleted_messages == [(1, 1001), (1, 888)]
     assert "Image review completed and content pack published." in query.edits[-1]
+    assert registry.list(flow_id="review123") == []
+
+
+@pytest.mark.anyio
+async def test_published_image_pick_returns_to_word_list_with_success_message(
+    tmp_path: Path,
+) -> None:
+    flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "metadata": {"image_review_origin": "published_word_edit"},
+            "vocabulary_items": [
+                {
+                    "id": "castle",
+                    "english_word": "Castle",
+                    "translation": "замок",
+                    "image_ref": "assets/fairy-tales/castle.png",
+                },
+                {
+                    "id": "prince",
+                    "english_word": "Prince",
+                    "translation": "принц",
+                },
+            ],
+        },
+        items=[
+            ImageReviewItem(
+                item_id="castle",
+                english_word="Castle",
+                translation="замок",
+                prompt="Prompt for Castle",
+                candidates=[
+                    ImageCandidate(
+                        model_name="pixabay",
+                        image_ref="assets/fairy-tales/review/castle--pixabay-1.jpg",
+                        output_path=tmp_path / "castle-a.png",
+                        prompt="Prompt for Castle",
+                        source_type="pixabay",
+                    )
+                ],
+            )
+        ],
+    )
+    publish_use_case = _FakePublishImageReviewUseCase()
+    registry = _FakeTelegramFlowMessageRepository()
+    registry.track(flow_id="review123", chat_id=1, message_id=999, tag="image_review_step")
+    registry.track(flow_id="review123", chat_id=1, message_id=888, tag="image_review_context")
+    fake_bot = _FakeBot()
+    query_message = _FakeCallbackMessage(tmp_path)
+    query = _FakeQuery("words:image_pick:review123:0", query_message)
+    update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=42))
+
+    class _PublishedPickUseCase:
+        def execute(self, *, user_id: int, flow_id: str, item_id: str, candidate_index: int):  # noqa: ARG002
+            assert flow_id == "review123"
+            assert item_id == "castle"
+            assert candidate_index == 0
+            return ImageReviewFlowState(
+                flow_id="review123",
+                editor_user_id=42,
+                content_pack=flow.content_pack,
+                items=flow.items,
+                current_index=1,
+            )
+
+    context = SimpleNamespace(
+        bot=fake_bot,
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": _FakeContentStore(flow.content_pack),
+                "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(flow),
+                "image_review_select_use_case": _PublishedPickUseCase(),
+                "image_review_publish_use_case": publish_use_case,
+                "telegram_flow_message_repository": registry,
+            }
+        ),
+    )
+
+    await image_review_pick_handler(update, context)  # type: ignore[arg-type]
+
+    assert publish_use_case.called_user_id == 42
+    assert publish_use_case.called_flow_id == "review123"
+    assert fake_bot.deleted_messages == [(1, 888)]
+    assert query.edits[-1] == "Image selected.\nChoose another word to edit."
     assert registry.list(flow_id="review123") == []
 
 

@@ -2490,12 +2490,23 @@ async def image_review_pick_handler(
                     message=query.message,
                 ),
             )
-            _cancel_image_review(context).execute(user_id=user.id)
+            await asyncio.to_thread(
+                _publish_image_review(context).execute,
+                user_id=user.id,
+                flow_id=flow_id,
+                output_path=None,
+            )
+            _reload_training_service(context)
             topic = updated_flow.content_pack.get("topic", {})
             topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
             raw_items = updated_flow.content_pack.get("vocabulary_items", [])
             await query.edit_message_text(
-                _tg("no_changes_choose_another_word", context=context, user=user),
+                "\n".join(
+                    (
+                        _tg("image_selected", context=context, user=user),
+                        _tg("choose_another_word_to_edit", context=context, user=user),
+                    )
+                ),
                 reply_markup=_published_image_items_keyboard(
                     topic_id=topic_id,
                     raw_items=raw_items if isinstance(raw_items, list) else [],
