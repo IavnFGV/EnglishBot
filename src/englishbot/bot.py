@@ -151,6 +151,7 @@ _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
 _IMAGE_REVIEW_STEP_TAG = "image_review_step"
 _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
+_TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _HELP_COMMAND_TEXT: dict[str, str] = {
     "start": "choose a topic and start training",
     "help": "show commands",
@@ -168,29 +169,45 @@ def _draft_checkpoint_text(flow) -> str:
 
 
 def _normalize_telegram_ui_language(language: str | None) -> str:
-    normalized = (language or "").strip().lower()
-    if not normalized:
-        return DEFAULT_TELEGRAM_UI_LANGUAGE
-    primary = normalized.split("-", maxsplit=1)[0]
-    if primary == "ua":
-        primary = "uk"
-    if primary in supported_telegram_ui_languages():
+    primary = _supported_telegram_ui_language_or_none(language)
+    if primary is not None:
         return primary
     return DEFAULT_TELEGRAM_UI_LANGUAGE
 
 
+def _supported_telegram_ui_language_or_none(language: str | None) -> str | None:
+    normalized = (language or "").strip().lower()
+    if not normalized:
+        return None
+    primary = normalized.replace("_", "-").split("-", maxsplit=1)[0]
+    if primary == "ua":
+        primary = "uk"
+    if primary in supported_telegram_ui_languages():
+        return primary
+    return None
+
+
 def _telegram_ui_language(context: ContextTypes.DEFAULT_TYPE | None, user=None) -> str:
     configured = DEFAULT_TELEGRAM_UI_LANGUAGE
+    user_data = None
     if context is not None:
         configured = _normalize_telegram_ui_language(
             context.application.bot_data.get("telegram_ui_language")
         )
+        maybe_user_data = getattr(context, "user_data", None)
+        if isinstance(maybe_user_data, dict):
+            user_data = maybe_user_data
+            stored_language = _supported_telegram_ui_language_or_none(
+                user_data.get(_TELEGRAM_UI_LANGUAGE_KEY)
+            )
+            if stored_language is not None:
+                configured = stored_language
     if user is not None:
         user_language_code = getattr(user, "language_code", None)
-        user_primary = (user_language_code or "").strip().lower().split("-", maxsplit=1)[0]
-        if user_primary == "ua":
-            user_primary = "uk"
-        if user_primary in supported_telegram_ui_languages():
+        user_primary = _supported_telegram_ui_language_or_none(user_language_code)
+        if user_primary is not None:
+            if user_data is not None:
+                user_data[_TELEGRAM_UI_LANGUAGE_KEY] = user_primary
             return user_primary
     return configured
 
