@@ -70,7 +70,7 @@ Birthday boy / Birthday girl - именинник / именинница
     topics = store.list_topics()
     assert [topic.id for topic in topics] == ["birthday"]
     words = store.list_editable_words("birthday")
-    assert [(english_word, translation) for _, english_word, translation in words] == [
+    assert [(english_word, translation) for _, english_word, translation, _ in words] == [
         ("Birthday boy", "именинник"),
         ("Birthday girl", "именинница"),
     ]

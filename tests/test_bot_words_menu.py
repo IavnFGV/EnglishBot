@@ -6,6 +6,7 @@ from telegram.error import BadRequest
 from englishbot.bot import (
     _draft_review_markup,
     _draft_review_keyboard,
+    _editable_words_keyboard,
     _image_review_markup,
     _image_review_keyboard,
     _published_image_topics_keyboard,
@@ -191,6 +192,49 @@ def test_published_image_items_keyboard_uses_short_index_based_callback_data() -
     button = keyboard.inline_keyboard[0][0]
     assert button.callback_data == "words:edit_published_image:school-subjects:0"
     assert len(button.callback_data) < 64
+
+
+def test_published_image_items_keyboard_marks_items_with_attached_image() -> None:
+    keyboard = _published_image_items_keyboard(
+        topic_id="school-subjects",
+        raw_items=[
+            {
+                "id": "school-subjects-maths",
+                "english_word": "Mathematics",
+                "translation": "математика",
+                "image_ref": "assets/school-subjects/school-subjects-maths.png",
+            },
+            {
+                "id": "school-subjects-science",
+                "english_word": "Science",
+                "translation": "естественные науки",
+            },
+        ],
+    )
+
+    assert keyboard.inline_keyboard[0][0].text == "* Mathematics — математика"
+    assert keyboard.inline_keyboard[1][0].text == "Science — естественные науки"
+
+
+def test_editable_words_keyboard_marks_items_with_attached_image() -> None:
+    keyboard = _editable_words_keyboard(
+        topic_id="school-subjects",
+        words=[
+            SimpleNamespace(
+                english_word="Mathematics",
+                translation="математика",
+                has_image=True,
+            ),
+            SimpleNamespace(
+                english_word="Science",
+                translation="естественные науки",
+                has_image=False,
+            ),
+        ],
+    )
+
+    assert keyboard.inline_keyboard[0][0].text == "* Mathematics — математика"
+    assert keyboard.inline_keyboard[1][0].text == "Science — естественные науки"
 
 
 def test_image_review_keyboard_uses_short_callback_data_for_long_item_id() -> None:

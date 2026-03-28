@@ -49,9 +49,9 @@ def test_published_content_use_cases_list_topics_words_and_update_word(tmp_path:
     ]
 
     words = ListEditableWordsUseCase(db_path=db_path).execute(topic_id="school-subjects")
-    assert [(item.id, item.english_word, item.translation) for item in words] == [
-        ("school-subjects-maths", "Mathematics", "математика"),
-        ("school-subjects-science", "Science", "естественные науки"),
+    assert [(item.id, item.english_word, item.translation, item.has_image) for item in words] == [
+        ("school-subjects-maths", "Mathematics", "математика", True),
+        ("school-subjects-science", "Science", "естественные науки", False),
     ]
 
     updated = UpdateEditableWordUseCase(db_path=db_path).execute(

@@ -3879,7 +3879,12 @@ def _published_image_items_keyboard(
         translation = str(raw_item.get("translation", "")).strip()
         if not item_id or not english_word:
             continue
-        label = f"{english_word} — {translation}" if translation else english_word
+        has_image = bool(str(raw_item.get("image_ref", "")).strip())
+        label = _editable_word_button_label(
+            english_word=english_word,
+            translation=translation,
+            has_image=has_image,
+        )
         rows.append(
             [
                 InlineKeyboardButton(
@@ -3925,10 +3930,10 @@ def _editable_words_keyboard(
     rows = [
         [
             InlineKeyboardButton(
-                (
-                    f"{word.english_word} — {word.translation}"
-                    if word.translation
-                    else word.english_word
+                _editable_word_button_label(
+                    english_word=word.english_word,
+                    translation=word.translation,
+                    has_image=getattr(word, "has_image", False),
                 )[:64],
                 callback_data=f"words:edit_item:{topic_id}:{index}",
             )
@@ -3955,6 +3960,18 @@ def _published_word_edit_keyboard(
             ]
         ]
     )
+
+
+def _editable_word_button_label(
+    *,
+    english_word: str,
+    translation: str,
+    has_image: bool,
+) -> str:
+    marker = "* " if has_image else ""
+    if translation:
+        return f"{marker}{english_word} — {translation}"
+    return f"{marker}{english_word}"
 
 
 def _chat_menu_keyboard(*, command_rows: list[list[str]]) -> ReplyKeyboardMarkup:

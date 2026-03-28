@@ -590,12 +590,16 @@ class SQLiteContentStore:
             ).fetchone()
         return self._row_to_vocabulary_item(row) if row is not None else None
 
-    def list_editable_words(self, topic_id: str) -> list[tuple[str, str, str]]:
+    def list_editable_words(self, topic_id: str) -> list[tuple[str, str, str, bool]]:
         self.initialize()
         with _connect(self._db_path) as connection:
             rows = connection.execute(
                 """
-                SELECT li.id, li.display_word AS english_word, li.display_translation AS translation
+                SELECT
+                    li.id,
+                    li.display_word AS english_word,
+                    li.display_translation AS translation,
+                    li.image_ref AS image_ref
                 FROM topic_learning_items AS tli
                 JOIN learning_items AS li ON li.id = tli.learning_item_id
                 WHERE tli.topic_id = ?
@@ -603,7 +607,15 @@ class SQLiteContentStore:
                 """,
                 (topic_id,),
             ).fetchall()
-        return [(row["id"], row["english_word"], row["translation"]) for row in rows]
+        return [
+            (
+                row["id"],
+                row["english_word"],
+                row["translation"],
+                bool(str(row["image_ref"] or "").strip()),
+            )
+            for row in rows
+        ]
 
     def list_topic_ids_for_item(self, item_id: str) -> list[str]:
         self.initialize()

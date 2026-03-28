@@ -17,6 +17,7 @@ class EditableWord:
     id: str
     english_word: str
     translation: str
+    has_image: bool = False
 
 
 class ListEditableTopicsUseCase:
@@ -47,8 +48,15 @@ class ListEditableWordsUseCase:
     )
     def execute(self, *, topic_id: str) -> list[EditableWord]:
         return [
-            EditableWord(id=item_id, english_word=english_word, translation=translation)
-            for item_id, english_word, translation in self._store.list_editable_words(topic_id)
+            EditableWord(
+                id=item_id,
+                english_word=english_word,
+                translation=translation,
+                has_image=has_image,
+            )
+            for item_id, english_word, translation, has_image in self._store.list_editable_words(
+                topic_id
+            )
         ]
 
 

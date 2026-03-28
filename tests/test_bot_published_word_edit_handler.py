@@ -109,7 +109,8 @@ async def test_editor_can_edit_published_word_from_words_menu(
         '  "lessons": [],\n'
         '  "vocabulary_items": [\n'
         '    {"id": "school-subjects-maths", "english_word": "Mathematics", '
-        '"translation": "математика"},\n'
+        '"translation": "математика", '
+        '"image_ref": "assets/school-subjects/school-subjects-maths.png"},\n'
         '    {"id": "school-subjects-science", "english_word": "Science", '
         '"translation": "естественные науки"}\n'
         "  ]\n"
@@ -157,6 +158,8 @@ async def test_editor_can_edit_published_word_from_words_menu(
     await words_edit_topic_callback_handler(topic_update, context)  # type: ignore[arg-type]
 
     assert topic_query.edits[-1][0] == "Choose a word to edit."
+    assert topic_query.edits[-1][1].inline_keyboard[0][0].text == "* Mathematics — математика"
+    assert topic_query.edits[-1][1].inline_keyboard[1][0].text == "Science — естественные науки"
 
     item_query = _RecordingQuery("words:edit_item:school-subjects:0")
     item_update = SimpleNamespace(
