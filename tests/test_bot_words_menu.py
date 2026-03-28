@@ -208,11 +208,29 @@ def test_image_review_keyboard_uses_short_callback_data_for_long_item_id() -> No
 
 
 def test_words_menu_keyboard_uses_russian_labels_when_requested() -> None:
-    keyboard = _words_menu_keyboard(is_editor=True, language="ru")
+    keyboard = _words_menu_keyboard(
+        can_add_words=True,
+        can_edit_words=True,
+        can_edit_images=True,
+        language="ru",
+    )
 
     assert keyboard.inline_keyboard[0][0].text == "Темы тренировки"
     assert keyboard.inline_keyboard[1][0].text == "Добавить слова"
     assert keyboard.inline_keyboard[2][0].text == "Редактировать слова"
+
+
+def test_words_menu_keyboard_supports_granular_permissions() -> None:
+    keyboard = _words_menu_keyboard(
+        can_add_words=False,
+        can_edit_words=True,
+        can_edit_images=False,
+    )
+
+    assert [row[0].callback_data for row in keyboard.inline_keyboard] == [
+        "words:topics",
+        "words:edit_words",
+    ]
 
 
 def test_image_review_keyboard_uses_russian_labels_when_requested() -> None:
