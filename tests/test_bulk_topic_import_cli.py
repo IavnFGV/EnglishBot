@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 from typer.testing import CliRunner
 
@@ -91,4 +92,5 @@ Dog - собака
     )
 
     assert result.exit_code != 0
-    assert "Use --output-dir when --no-db-import is set." in result.output
+    clean_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "Use --output-dir when --no-db-import is set." in clean_output

@@ -1,0 +1,191 @@
+Adjectives
+Good - хороший
+Happy - счастливый
+Beautiful - красивый
+Bad - плохой
+Sad - грустный
+Ugly - уродливый
+Little - маленький
+Short - короткий
+Slow - медленный
+Big - большой
+Long - длинный
+Fast - быстрый
+Narrow - узкий
+Kind - добрый
+Round - круглый
+Wide - широкий
+Evil - злой
+Square - квадратный
+Light - лёгкий
+Weak - слабый
+Heavy - тяжёлый
+Tall - высокий
+Strong - сильный
+
+Colors
+Red - красный
+Orange - оранжевый
+Yellow - жёлтый
+Green - зелёный
+Light blue - голубой
+Blue - синий
+Purple - фиолетовый
+Pink - розовый
+Brown - коричневый
+
+Fruit and Berries
+Pear - груша
+Apple - яблоко
+Orange - апельсин
+Apricot - абрикос
+Pineapple - ананас
+Strawberry - клубника
+Banana - банан
+Grapes - виноград
+Cherry - вишня
+Plum - слива
+
+Clothes
+Cap - кепка
+Skirt - юбка
+Dress - платье
+T-shirt - футболка
+Trousers - брюки
+Mitten - варежка
+Shorts - шорты
+Socks - носки
+Shirt - рубашка
+Belt - ремень
+
+Meals
+Milk - молоко
+Cake - торт
+Cheese - сыр
+Chocolate - шоколад
+Ice cream - мороженое
+Sandwich - бутерброд
+Yogurt - йогурт
+Bread - хлеб
+Pizza - пицца
+Meat - мясо
+
+Drinks
+Hot chocolate - горячий шоколад
+Water - вода
+Lemonade - лимонад
+Tea - чай
+Milk - молоко
+Orange juice - апельсиновый сок
+Cola - кола
+Juice - сок
+Coffee - кофе
+Champagne - шампанское
+
+Flowers
+Tulip - тюльпан
+Dandelion - одуванчик
+Lily - лилия
+Chamomile - ромашка
+Peony - пион
+Snowdrop - подснежник
+Sunflower - подсолнух
+Rose - роза
+Iris - ирис
+Poppy - мак
+Carnation - гвоздика
+Orchid - орхидея
+Bluebell - колокольчик
+Narcissus - нарцисс
+
+Months
+January - январь
+February - февраль
+March - март
+April - апрель
+May - май
+June - июнь
+July - июль
+August - август
+September - сентябрь
+October - октябрь
+November - ноябрь
+December - декабрь
+
+Seasons
+Spring - весна
+Summer - лето
+Autumn - осень
+Winter - зима
+
+Confectionery
+Chocolate - шоколад
+Chocolate bar - шоколадный батончик
+Candies - конфеты
+Lollipop - леденец
+Toffee - ириска
+Nougat - нуга
+Marshmallow - маршмеллоу
+Mint - мята
+Jellybean - драже
+Jelly candy - желейная конфета
+Liquorice - лакрица
+
+Cake Flavours
+Fudge - помадка
+Vanilla - ваниль
+Strawberry - клубника
+Red velvet - красный бархат
+Carrot - морковь
+Brownie - брауни
+Black and caramel - чёрный с карамелью
+Chocolate mousse - шоколадный мусс
+
+Christmas Food
+Chocolates - шоколадные конфеты
+Turkey - индейка
+Cranberry sauce - клюквенный соус
+Christmas pudding - рождественский пудинг
+Bread sauce - хлебный соус
+Mince pies - пирожки с фруктовой начинкой
+Trifle - трайфл
+Yule log - рождественское полено
+Christmas cake - рождественский кекс
+
+Russian New Year Table
+Olivier - оливье
+Vinaigrette - винегрет
+Tangerines - мандарины
+Dressed herring - селёдка под шубой
+Caviar - икра
+Meat jelly - холодец
+
+Toys
+Doll - кукла
+Robot - робот
+Action figure - фигурка
+Teddy bear - плюшевый медведь
+Puppet - кукла
+Monster - монстр
+Panda - панда
+Gorilla - горилла
+Train - поезд
+Car - машина
+Rocket - ракета
+Book - книга
+Comic book - комикс
+Board game - настольная игра
+Computer game - компьютерная игра
+Puzzle - пазл
+Skateboard - скейтборд
+Yo-yo - йо-йо
+
+Frequency
+Always - всегда
+Often - часто
+Usually - обычно
+Sometimes - иногда
+Hardly ever - почти никогда
+Never - никогда
+Every day - каждый день
+Rarely - редко
