@@ -1,4 +1,5 @@
 from englishbot.presentation.telegram_menu_access import (
+    DEFAULT_TELEGRAM_COMMAND_SPECS,
     PERMISSION_WORDS_ADD,
     PERMISSION_WORDS_EDIT,
     TelegramMenuAccessPolicy,
@@ -35,3 +36,13 @@ def test_access_policy_can_be_extended_with_custom_roles() -> None:
 
     assert policy.has_permission(33, PERMISSION_WORDS_EDIT) is True
     assert policy.has_permission(33, PERMISSION_WORDS_ADD) is False
+
+
+def test_visible_commands_follow_permissions() -> None:
+    policy = TelegramMenuAccessPolicy.from_bot_data({"editor_user_ids": {101}})
+
+    regular_commands = [spec.command for spec in policy.visible_commands(user_id=999)]
+    editor_commands = [spec.command for spec in policy.visible_commands(user_id=101)]
+
+    assert regular_commands == ["start", "help", "version", "words"]
+    assert editor_commands == [spec.command for spec in DEFAULT_TELEGRAM_COMMAND_SPECS]

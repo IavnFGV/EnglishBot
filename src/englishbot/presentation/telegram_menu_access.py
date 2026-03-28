@@ -9,6 +9,32 @@ PERMISSION_WORD_IMAGES_EDIT = "words.images.edit"
 
 
 @dataclass(frozen=True)
+class TelegramCommandSpec:
+    command: str
+    description: str
+    required_permission: str | None = None
+    show_in_chat_menu: bool = True
+
+
+DEFAULT_TELEGRAM_COMMAND_SPECS: tuple[TelegramCommandSpec, ...] = (
+    TelegramCommandSpec("start", "Start training"),
+    TelegramCommandSpec("help", "Show commands"),
+    TelegramCommandSpec("version", "Show bot version"),
+    TelegramCommandSpec("words", "Open words menu"),
+    TelegramCommandSpec(
+        "add_words",
+        "Add words from raw text",
+        required_permission=PERMISSION_WORDS_ADD,
+    ),
+    TelegramCommandSpec(
+        "cancel",
+        "Cancel current add-words flow",
+        required_permission=PERMISSION_WORDS_ADD,
+    ),
+)
+
+
+@dataclass(frozen=True)
 class TelegramMenuAccessPolicy:
     """Centralized Telegram adapter access policy.
 
@@ -62,6 +88,22 @@ class TelegramMenuAccessPolicy:
             if "*" in role_perms or permission in role_perms:
                 return True
         return False
+
+    def visible_commands(
+        self,
+        user_id: int | None,
+        *,
+        command_specs: tuple[TelegramCommandSpec, ...] = DEFAULT_TELEGRAM_COMMAND_SPECS,
+        only_chat_menu: bool = False,
+    ) -> tuple[TelegramCommandSpec, ...]:
+        visible: list[TelegramCommandSpec] = []
+        for spec in command_specs:
+            if only_chat_menu and not spec.show_in_chat_menu:
+                continue
+            if spec.required_permission and not self.has_permission(user_id, spec.required_permission):
+                continue
+            visible.append(spec)
+        return tuple(visible)
 
 
 def _to_int_set(value: object) -> set[int]:

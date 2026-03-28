@@ -8,6 +8,7 @@ from pathlib import Path
 
 from telegram import (
     BotCommand,
+    BotCommandScopeChat,
     ForceReply,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -130,9 +131,11 @@ from englishbot.presentation.telegram_ui_text import (
     telegram_ui_text,
 )
 from englishbot.presentation.telegram_menu_access import (
+    DEFAULT_TELEGRAM_COMMAND_SPECS,
     PERMISSION_WORD_IMAGES_EDIT,
     PERMISSION_WORDS_ADD,
     PERMISSION_WORDS_EDIT,
+    TelegramCommandSpec,
     TelegramMenuAccessPolicy,
 )
 from englishbot.runtime_version import RuntimeVersionInfo, get_runtime_version_info
@@ -148,6 +151,14 @@ _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
 _IMAGE_REVIEW_STEP_TAG = "image_review_step"
 _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
+_HELP_COMMAND_TEXT: dict[str, str] = {
+    "start": "choose a topic and start training",
+    "help": "show commands",
+    "version": "show the current bot version",
+    "words": "open the words menu",
+    "add_words": "send raw lesson text for draft extraction",
+    "cancel": "cancel the current add-words flow",
+}
 
 
 def _draft_checkpoint_text(flow) -> str:
@@ -764,6 +775,34 @@ def _is_editor(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     )
 
 
+def _visible_command_specs(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int | None,
+    only_chat_menu: bool = False,
+) -> tuple[TelegramCommandSpec, ...]:
+    return _menu_access_policy(context).visible_commands(
+        user_id,
+        command_specs=DEFAULT_TELEGRAM_COMMAND_SPECS,
+        only_chat_menu=only_chat_menu,
+    )
+
+
+def _visible_command_rows(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int | None,
+) -> list[list[str]]:
+    commands = {spec.command for spec in _visible_command_specs(context, user_id=user_id, only_chat_menu=True)}
+    rows = [
+        ["/start", "/help"],
+        ["/version", "/words"],
+    ]
+    if "add_words" in commands:
+        rows.append(["/add_words", "/cancel"])
+    return rows
+
+
 def _preview_message_ids(context: ContextTypes.DEFAULT_TYPE) -> dict[int, int]:
     return context.application.bot_data["word_import_preview_message_ids"]
 
@@ -934,13 +973,9 @@ def _quick_actions_view(
     return build_quick_actions_view(
         text=_tg("quick_actions_title", context=context, user=user),
         reply_markup=_chat_menu_keyboard(
-            can_add_words=bool(
-                user
-                and _has_menu_permission(
-                    context,
-                    user_id=user.id,
-                    permission=PERMISSION_WORDS_ADD,
-                )
+            command_rows=_visible_command_rows(
+                context,
+                user_id=(user.id if user is not None else None),
             )
         ),
     )
@@ -1050,13 +1085,9 @@ def _help_view(
     return build_help_view(
         text=text,
         reply_markup=_chat_menu_keyboard(
-            can_add_words=bool(
-                user
-                and _has_menu_permission(
-                    context,
-                    user_id=user.id,
-                    permission=PERMISSION_WORDS_ADD,
-                )
+            command_rows=_visible_command_rows(
+                context,
+                user_id=(user.id if user is not None else None),
             )
         ),
     )
@@ -1194,23 +1225,14 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user = update.effective_user
     if message is None:
         return
-    commands = [
-        "/start - choose a topic and start training",
-        "/help - show commands",
-        "/version - show the current bot version",
-        "/words - open the words menu",
-    ]
-    if user is not None and _has_menu_permission(
+    visible_commands = _visible_command_specs(
         context,
-        user_id=user.id,
-        permission=PERMISSION_WORDS_ADD,
-    ):
-        commands.extend(
-            [
-                "/add_words - send raw lesson text for draft extraction",
-                "/cancel - cancel the current add-words flow",
-            ]
-        )
+        user_id=(user.id if user is not None else None),
+    )
+    commands = [
+        f"/{spec.command} - {_HELP_COMMAND_TEXT.get(spec.command, spec.description.lower())}"
+        for spec in visible_commands
+    ]
     await send_telegram_view(
         message,
         _help_view(
@@ -1526,7 +1548,9 @@ async def add_words_start_handler(update: Update, context: ContextTypes.DEFAULT_
     context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
     await message.reply_text(
         _tg("send_raw_lesson_text_with_menu", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(can_add_words=True),
+        reply_markup=_chat_menu_keyboard(
+            command_rows=_visible_command_rows(context, user_id=user.id)
+        ),
     )
 
 
@@ -1540,11 +1564,7 @@ async def add_words_cancel_handler(update: Update, context: ContextTypes.DEFAULT
     await message.reply_text(
         _tg("add_words_flow_cancelled", context=context, user=user),
         reply_markup=_chat_menu_keyboard(
-            can_add_words=_has_menu_permission(
-                context,
-                user_id=user.id,
-                permission=PERMISSION_WORDS_ADD,
-            )
+            command_rows=_visible_command_rows(context, user_id=user.id)
         ),
     )
 
@@ -1569,11 +1589,7 @@ async def add_words_cancel_callback_handler(
     await query.message.reply_text(
         _tg("quick_actions_title", context=context, user=user),
         reply_markup=_chat_menu_keyboard(
-            can_add_words=_has_menu_permission(
-                context,
-                user_id=user.id,
-                permission=PERMISSION_WORDS_ADD,
-            )
+            command_rows=_visible_command_rows(context, user_id=user.id)
         ),
     )
 
@@ -2024,11 +2040,7 @@ async def add_words_publish_without_images_handler(
     await query.message.reply_text(
         _tg("quick_actions_title", context=context, user=user),
         reply_markup=_chat_menu_keyboard(
-            can_add_words=_has_menu_permission(
-                context,
-                user_id=user.id,
-                permission=PERMISSION_WORDS_ADD,
-            )
+            command_rows=_visible_command_rows(context, user_id=user.id)
         ),
     )
 
@@ -3231,16 +3243,26 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def _post_init(app: Application) -> None:
-    await app.bot.set_my_commands(
-        [
-            BotCommand("start", "Start training"),
-            BotCommand("help", "Show commands"),
-            BotCommand("version", "Show bot version"),
-            BotCommand("words", "Open words menu"),
-            BotCommand("add_words", "Add words from raw text"),
-            BotCommand("cancel", "Cancel current add-words flow"),
+    policy = TelegramMenuAccessPolicy.from_bot_data(app.bot_data)
+    public_commands = [
+        BotCommand(spec.command, spec.description)
+        for spec in policy.visible_commands(user_id=None)
+    ]
+    await app.bot.set_my_commands(public_commands)
+
+    elevated_user_ids: set[int] = set()
+    for role_name, user_ids in policy.role_memberships.items():
+        if role_name == "user":
+            continue
+        role_permissions = policy.role_permissions.get(role_name, frozenset())
+        if "*" in role_permissions or PERMISSION_WORDS_ADD in role_permissions:
+            elevated_user_ids.update(user_ids)
+    for user_id in sorted(elevated_user_ids):
+        scoped_commands = [
+            BotCommand(spec.command, spec.description)
+            for spec in policy.visible_commands(user_id=user_id)
         ]
-    )
+        await app.bot.set_my_commands(scoped_commands, scope=BotCommandScopeChat(chat_id=user_id))
 
 
 async def _run_status_heartbeat(
@@ -3878,13 +3900,8 @@ def _published_word_edit_keyboard(
     )
 
 
-def _chat_menu_keyboard(*, can_add_words: bool) -> ReplyKeyboardMarkup:
-    rows = [
-        [KeyboardButton("/start"), KeyboardButton("/help")],
-        [KeyboardButton("/words")],
-    ]
-    if can_add_words:
-        rows.append([KeyboardButton("/add_words"), KeyboardButton("/cancel")])
+def _chat_menu_keyboard(*, command_rows: list[list[str]]) -> ReplyKeyboardMarkup:
+    rows = [[KeyboardButton(command) for command in row] for row in command_rows]
     return ReplyKeyboardMarkup(
         rows,
         resize_keyboard=True,
