@@ -3789,7 +3789,8 @@ def _chat_menu_keyboard(*, is_editor: bool) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         rows,
         resize_keyboard=True,
-        is_persistent=True,
+        one_time_keyboard=True,
+        is_persistent=False,
     )
 
 
