@@ -218,6 +218,15 @@ def test_build_current_image_preview_view_returns_text_when_image_missing() -> N
 
 
 def test_build_image_review_step_view_includes_source_and_generation_messages() -> None:
+    translations = {
+        "pixabay_search_query": "Pixabay search query: {query}",
+        "image_review_no_candidates_loaded": "No candidates loaded yet.",
+        "pixabay_candidates_page": "Pixabay candidates page {page}",
+        "image_review_local_ai_candidates": "Local AI candidates.",
+        "image_review_progress": "Reviewing images {current}/{total}",
+        "image_review_prompt_line": "Prompt: {prompt}",
+        "image_review_prompt_usage_note": "Prompt is used for local AI generation.",
+    }
     view = build_image_review_step_view(
         current_position=2,
         total_items=5,
@@ -228,6 +237,7 @@ def test_build_image_review_step_view_includes_source_and_generation_messages() 
         search_query="dragon toy",
         search_page=3,
         generation_status_messages=["Fallback images used."],
+        translate=lambda key, **kwargs: translations[key].format(**kwargs),
     )
 
     assert "Reviewing images 2/5" in view.text
@@ -237,6 +247,15 @@ def test_build_image_review_step_view_includes_source_and_generation_messages() 
 
 
 def test_build_image_review_step_view_uses_english_word_as_default_pixabay_query() -> None:
+    translations = {
+        "pixabay_search_query": "Pixabay search query: {query}",
+        "image_review_no_candidates_loaded": "No candidates loaded yet.",
+        "pixabay_candidates_page": "Pixabay candidates page {page}",
+        "image_review_local_ai_candidates": "Local AI candidates.",
+        "image_review_progress": "Reviewing images {current}/{total}",
+        "image_review_prompt_line": "Prompt: {prompt}",
+        "image_review_prompt_usage_note": "Prompt is used for local AI generation.",
+    }
     view = build_image_review_step_view(
         current_position=1,
         total_items=1,
@@ -247,6 +266,7 @@ def test_build_image_review_step_view_uses_english_word_as_default_pixabay_query
         search_query=None,
         search_page=1,
         generation_status_messages=None,
+        translate=lambda key, **kwargs: translations[key].format(**kwargs),
     )
 
     assert "Pixabay search query: Presents" in view.text

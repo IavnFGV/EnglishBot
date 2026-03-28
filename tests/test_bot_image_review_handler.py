@@ -817,6 +817,90 @@ async def test_image_review_step_shows_fallback_generation_notice(
 
 
 @pytest.mark.anyio
+async def test_send_current_image_preview_uses_context_language_for_text(tmp_path: Path) -> None:
+    review_flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "vocabulary_items": [],
+        },
+        items=[
+            ImageReviewItem(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                prompt="Prompt for Dragon",
+                candidates=[],
+            )
+        ],
+    )
+    message = _FakeCallbackMessage(tmp_path)
+    message.from_user = SimpleNamespace(language_code=None)
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "telegram_flow_message_repository": _FakeTelegramFlowMessageRepository(),
+                "telegram_ui_language": "ru",
+            }
+        )
+    )
+    from englishbot.bot import _send_current_published_image_preview
+
+    await _send_current_published_image_preview(message, context, review_flow)  # type: ignore[arg-type]
+
+    assert message.reply_text_calls[0].startswith("Для этого слова пока нет сохранённого изображения.")
+
+
+@pytest.mark.anyio
+async def test_prepare_image_review_step_uses_context_language_for_completed_message(
+    tmp_path: Path,
+) -> None:
+    review_flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={"topic": {"id": "fairy-tales", "title": "Fairy Tales"}},
+        items=[],
+    )
+    message = _FakeCallbackMessage(tmp_path)
+    message.from_user = SimpleNamespace(language_code=None)
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={"telegram_ui_language": "ru"},
+        )
+    )
+    from englishbot.bot import _prepare_and_send_image_review_step
+
+    await _prepare_and_send_image_review_step(message, context, 42, review_flow)  # type: ignore[arg-type]
+
+    assert message.reply_text_calls == ["Проверка изображений завершена."]
+
+
+@pytest.mark.anyio
+async def test_send_image_review_step_uses_context_language_for_completed_message(
+    tmp_path: Path,
+) -> None:
+    review_flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={"topic": {"id": "fairy-tales", "title": "Fairy Tales"}},
+        items=[],
+    )
+    message = _FakeCallbackMessage(tmp_path)
+    message.from_user = SimpleNamespace(language_code=None)
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={"telegram_ui_language": "ru"},
+        )
+    )
+    from englishbot.bot import _send_image_review_step
+
+    await _send_image_review_step(message, context, review_flow)  # type: ignore[arg-type]
+
+    assert message.reply_text_calls == ["Проверка изображений завершена."]
+
+
+@pytest.mark.anyio
 async def test_image_review_generate_handler_reports_unavailable_when_button_is_stale(
     tmp_path: Path,
 ) -> None:

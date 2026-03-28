@@ -3411,13 +3411,20 @@ async def _prepare_and_send_image_review_step(
 ) -> None:
     current_item = flow.current_item
     if current_item is None:
-        await message.reply_text(_tg("image_review_completed", user=getattr(message, "from_user", None)))
+        await message.reply_text(
+            _tg(
+                "image_review_completed",
+                context=context,
+                user=getattr(message, "from_user", None),
+            )
+        )
         return
     total_items = len(flow.items)
     current_position = flow.current_index + 1
     status_message = await message.reply_text(
         _tg(
             "local_candidates_generating",
+            context=context,
             user=getattr(message, "from_user", None),
             current=current_position,
             total=total_items,
@@ -3444,6 +3451,7 @@ async def _prepare_and_send_image_review_step(
         _status_view(
             text=_tg(
                 "local_candidates_ready",
+                context=context,
                 user=getattr(message, "from_user", None),
                 current=current_position,
                 total=total_items,
@@ -3487,8 +3495,16 @@ async def _send_current_published_image_preview(
     image_path = resolve_existing_image_path(image_ref)
     preview_view = build_current_image_preview_view(
         image_path=image_path,
-        current_image_intro=_tg("current_image_intro", user=getattr(message, "from_user", None)),
-        no_current_image_intro=_tg("no_current_image_intro", user=getattr(message, "from_user", None)),
+        current_image_intro=_tg(
+            "current_image_intro",
+            context=context,
+            user=getattr(message, "from_user", None),
+        ),
+        no_current_image_intro=_tg(
+            "no_current_image_intro",
+            context=context,
+            user=getattr(message, "from_user", None),
+        ),
     )
     preview_message = await send_telegram_view(message, preview_view)
     _track_flow_message(
@@ -3503,7 +3519,13 @@ async def _send_current_published_image_preview(
 async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, flow) -> None:
     current_item = flow.current_item
     if current_item is None:
-        await message.reply_text("Image review completed.")
+        await message.reply_text(
+            _tg(
+                "image_review_completed",
+                context=context,
+                user=getattr(message, "from_user", None),
+            )
+        )
         return
     registry = _telegram_flow_messages(context)
     tracked_before = (

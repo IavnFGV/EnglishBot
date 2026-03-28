@@ -241,11 +241,10 @@ def build_image_review_step_view(
     search_query: str | None,
     search_page: int,
     generation_status_messages: list[str] | None,
+    translate: Callable[..., str],
     reply_markup: TelegramReplyMarkup | None = None,
-    translate: Callable[..., str] | None = None,
     user=None,
 ) -> TelegramTextView:
-    translate = translate or (lambda key, **kwargs: _default_image_review_text(key, **kwargs))
     resolved_search_query = search_query or english_word
     search_line = translate("pixabay_search_query", user=user, query=resolved_search_query)
     source_line = translate("image_review_no_candidates_loaded", user=user)
@@ -279,19 +278,6 @@ def build_image_review_step_view(
         text=text,
         reply_markup=reply_markup,
     )
-
-
-def _default_image_review_text(key: str, **kwargs: object) -> str:
-    defaults = {
-        "pixabay_search_query": "Pixabay search query: {query}",
-        "image_review_no_candidates_loaded": "No candidates loaded yet.",
-        "pixabay_candidates_page": "Pixabay candidates page {page}",
-        "image_review_local_ai_candidates": "Local AI candidates.",
-        "image_review_progress": "Reviewing images {current}/{total}",
-        "image_review_prompt_line": "Prompt: {prompt}",
-        "image_review_prompt_usage_note": "Prompt is used for local AI generation.",
-    }
-    return defaults[key].format(**kwargs)
 
 
 async def send_telegram_view(message, view: TelegramView):
