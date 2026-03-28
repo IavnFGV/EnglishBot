@@ -901,6 +901,36 @@ async def test_send_image_review_step_uses_context_language_for_completed_messag
 
 
 @pytest.mark.anyio
+async def test_send_image_review_step_prefers_explicit_user_language_over_callback_message_author(
+    tmp_path: Path,
+) -> None:
+    review_flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={"topic": {"id": "fairy-tales", "title": "Fairy Tales"}},
+        items=[
+            ImageReviewItem(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                prompt="Prompt for Dragon",
+                candidates=[],
+            )
+        ],
+    )
+    message = _FakeCallbackMessage(tmp_path)
+    message.from_user = SimpleNamespace(language_code="en")
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={}))
+    user = SimpleNamespace(language_code="ru")
+    from englishbot.bot import _send_image_review_step
+
+    await _send_image_review_step(message, context, review_flow, user=user)  # type: ignore[arg-type]
+
+    assert any("Проверка изображений 1/1" in text for text in message.reply_text_calls)
+    assert any("Поиск в Pixabay: Dragon" in text for text in message.reply_text_calls)
+
+
+@pytest.mark.anyio
 async def test_image_review_generate_handler_reports_unavailable_when_button_is_stale(
     tmp_path: Path,
 ) -> None:

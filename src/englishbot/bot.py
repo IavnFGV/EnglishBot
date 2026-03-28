@@ -2155,7 +2155,7 @@ async def add_words_approve_draft_handler(
             )
         ),
     )
-    await _send_image_review_step(query.message, context, image_review_flow)
+    await _send_image_review_step(query.message, context, image_review_flow, user=user)
 
 
 async def add_words_approve_auto_images_handler(
@@ -2394,8 +2394,8 @@ async def published_image_item_handler(
         topic_id=topic_id,
         item_id=item_id,
     )
-    await _send_current_published_image_preview(query.message, context, review_flow)
-    await _send_image_review_step(query.message, context, review_flow)
+    await _send_current_published_image_preview(query.message, context, review_flow, user=user)
+    await _send_image_review_step(query.message, context, review_flow, user=user)
     await _delete_message_if_possible(context, message=query.message)
 
 
@@ -2422,7 +2422,7 @@ async def image_review_generate_handler(
         query,
         _status_view(text=_tg("start_image_generation", context=context, user=user)),
     )
-    await _prepare_and_send_image_review_step(query.message, context, user.id, flow)
+    await _prepare_and_send_image_review_step(query.message, context, user.id, flow, user=user)
 
 
 async def image_review_search_handler(
@@ -2475,7 +2475,7 @@ async def image_review_search_handler(
             )
         ),
     )
-    await _send_image_review_step(query.message, context, updated_flow)
+    await _send_image_review_step(query.message, context, updated_flow, user=user)
 
 
 async def image_review_next_handler(
@@ -2527,7 +2527,7 @@ async def image_review_next_handler(
             )
         ),
     )
-    await _send_image_review_step(query.message, context, updated_flow)
+    await _send_image_review_step(query.message, context, updated_flow, user=user)
 
 
 async def image_review_previous_handler(
@@ -2579,7 +2579,7 @@ async def image_review_previous_handler(
             )
         ),
     )
-    await _send_image_review_step(query.message, context, updated_flow)
+    await _send_image_review_step(query.message, context, updated_flow, user=user)
 
 
 async def image_review_pick_handler(
@@ -2672,7 +2672,7 @@ async def image_review_pick_handler(
             registry.clear(flow_id=flow_id)
         return
     await query.edit_message_text(_tg("image_selected", context=context, user=user))
-    await _send_image_review_step(query.message, context, updated_flow)
+    await _send_image_review_step(query.message, context, updated_flow, user=user)
 
 
 async def image_review_skip_handler(
@@ -2753,7 +2753,7 @@ async def image_review_skip_handler(
             registry.clear(flow_id=flow_id)
         return
     await query.edit_message_text(_tg("image_skipped", context=context, user=user))
-    await _send_image_review_step(query.message, context, updated_flow)
+    await _send_image_review_step(query.message, context, updated_flow, user=user)
 
 
 async def image_review_edit_prompt_handler(
@@ -3408,14 +3408,17 @@ async def _prepare_and_send_image_review_step(
     context: ContextTypes.DEFAULT_TYPE,
     user_id: int,
     flow,
+    *,
+    user=None,
 ) -> None:
+    resolved_user = user or getattr(message, "from_user", None)
     current_item = flow.current_item
     if current_item is None:
         await message.reply_text(
             _tg(
                 "image_review_completed",
                 context=context,
-                user=getattr(message, "from_user", None),
+                user=resolved_user,
             )
         )
         return
@@ -3425,7 +3428,7 @@ async def _prepare_and_send_image_review_step(
         _tg(
             "local_candidates_generating",
             context=context,
-            user=getattr(message, "from_user", None),
+            user=resolved_user,
             current=current_position,
             total=total_items,
         )
@@ -3452,19 +3455,26 @@ async def _prepare_and_send_image_review_step(
             text=_tg(
                 "local_candidates_ready",
                 context=context,
-                user=getattr(message, "from_user", None),
+                user=resolved_user,
                 current=current_position,
                 total=total_items,
             )
         ).text
     )
-    await _send_image_review_step(message, context, prepared_flow)
+    await _send_image_review_step(
+        message,
+        context,
+        prepared_flow,
+        user=resolved_user,
+    )
 
 
 async def _send_current_published_image_preview(
     message,
     context: ContextTypes.DEFAULT_TYPE,
     flow,
+    *,
+    user=None,
 ) -> None:
     current_item = flow.current_item
     if current_item is None:
@@ -3492,18 +3502,19 @@ async def _send_current_published_image_preview(
         if isinstance(raw_image_ref, str) and raw_image_ref.strip():
             image_ref = raw_image_ref
         break
+    resolved_user = user or getattr(message, "from_user", None)
     image_path = resolve_existing_image_path(image_ref)
     preview_view = build_current_image_preview_view(
         image_path=image_path,
         current_image_intro=_tg(
             "current_image_intro",
             context=context,
-            user=getattr(message, "from_user", None),
+            user=resolved_user,
         ),
         no_current_image_intro=_tg(
             "no_current_image_intro",
             context=context,
-            user=getattr(message, "from_user", None),
+            user=resolved_user,
         ),
     )
     preview_message = await send_telegram_view(message, preview_view)
@@ -3516,14 +3527,21 @@ async def _send_current_published_image_preview(
     )
 
 
-async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, flow) -> None:
+async def _send_image_review_step(
+    message,
+    context: ContextTypes.DEFAULT_TYPE,
+    flow,
+    *,
+    user=None,
+) -> None:
+    resolved_user = user or getattr(message, "from_user", None)
     current_item = flow.current_item
     if current_item is None:
         await message.reply_text(
             _tg(
                 "image_review_completed",
                 context=context,
-                user=getattr(message, "from_user", None),
+                user=resolved_user,
             )
         )
         return
@@ -3554,10 +3572,10 @@ async def _send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, f
             flow_id=flow.flow_id,
             current_item=current_item,
             context=context,
-            user=getattr(message, "from_user", None),
+            user=resolved_user,
         ),
         translate=_tg,
-        user=getattr(message, "from_user", None),
+        user=resolved_user,
     )
     summary_message = await send_telegram_view(message, summary_view)
     _track_flow_message(
