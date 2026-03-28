@@ -18,6 +18,12 @@ logger = logging.getLogger(__name__)
 _LATIN_RE = re.compile(r"[A-Za-z]")
 _CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 _TRAILING_PUNCTUATION_RE = re.compile(r"[.!?]+$")
+_LEADING_LIST_MARKER_RE = re.compile(r"^\s*\d+[\.\)]\s*")
+_PARENTHESES_PAIR_RE = re.compile(
+    r"(?P<english>[A-Za-z][A-Za-z0-9'’/\\ -]*[A-Za-z0-9'’/\\-]|[A-Za-z])\s*"
+    r"\((?P<translation>[^()]+)\)"
+)
+_PARENTHESES_LINE_REMAINDER_RE = re.compile(r"^[\s,;:.!?-]*$")
 
 
 class FallbackLessonParser(Protocol):
@@ -84,6 +90,9 @@ def _parse_simple_line(line: str) -> list[ExtractedVocabularyItemDraft]:
     stripped = line.strip()
     if not stripped:
         return []
+    parsed_parentheses_items = _parse_parentheses_pair_line(stripped)
+    if parsed_parentheses_items:
+        return parsed_parentheses_items
     for separator in ("—", " – ", " - ", ":", "|"):
         if separator not in stripped:
             continue
@@ -101,27 +110,67 @@ def _parse_simple_line(line: str) -> list[ExtractedVocabularyItemDraft]:
                 source_fragment=stripped,
             )
         )
-        split_items = split_paired_item(repaired)
-        expanded_items: list[ExtractedVocabularyItemDraft] = []
-        for item in split_items:
-            english_variants, translation_variants = expand_aligned_slash_variants(
-                english_word=item.english_word,
-                translation=item.translation,
-            )
-            for variant, resolved_translation in zip(
-                english_variants,
-                translation_variants,
-                strict=False,
-            ):
-                expanded_items.append(
-                    ExtractedVocabularyItemDraft(
-                        english_word=variant,
-                        translation=resolved_translation,
-                        source_fragment=f"{variant} — {resolved_translation}",
-                    )
-                )
-        return expanded_items
+        return _expand_fallback_item_variants(repaired)
     return []
+
+
+def _parse_parentheses_pair_line(line: str) -> list[ExtractedVocabularyItemDraft]:
+    matches = list(_PARENTHESES_PAIR_RE.finditer(line))
+    if not matches:
+        return []
+
+    remainder_parts: list[str] = []
+    previous_end = 0
+    for match in matches:
+        remainder_parts.append(line[previous_end : match.start()])
+        previous_end = match.end()
+    remainder_parts.append(line[previous_end:])
+    remainder = "".join(remainder_parts)
+    if not _PARENTHESES_LINE_REMAINDER_RE.fullmatch(remainder):
+        return []
+
+    parsed_items: list[ExtractedVocabularyItemDraft] = []
+    for match in matches:
+        english_word = _normalize_fallback_token(
+            _LEADING_LIST_MARKER_RE.sub("", match.group("english")).strip()
+        )
+        translation = _normalize_fallback_token(match.group("translation"))
+        if not english_word or not translation:
+            return []
+        if not _looks_like_supported_pair(english_word=english_word, translation=translation):
+            return []
+        repaired = repair_item_from_source(
+            ExtractedVocabularyItemDraft(
+                english_word=english_word,
+                translation=translation,
+                source_fragment=f"{english_word} — {translation}",
+            )
+        )
+        parsed_items.extend(_expand_fallback_item_variants(repaired))
+    return parsed_items
+
+
+def _expand_fallback_item_variants(item: ExtractedVocabularyItemDraft) -> list[ExtractedVocabularyItemDraft]:
+    split_items = split_paired_item(item)
+    expanded_items: list[ExtractedVocabularyItemDraft] = []
+    for split_item in split_items:
+        english_variants, translation_variants = expand_aligned_slash_variants(
+            english_word=split_item.english_word,
+            translation=split_item.translation,
+        )
+        for variant, resolved_translation in zip(
+            english_variants,
+            translation_variants,
+            strict=False,
+        ):
+            expanded_items.append(
+                ExtractedVocabularyItemDraft(
+                    english_word=variant,
+                    translation=resolved_translation,
+                    source_fragment=f"{variant} — {resolved_translation}",
+                )
+            )
+    return expanded_items
 
 
 def _looks_like_supported_pair(*, english_word: str, translation: str) -> bool:

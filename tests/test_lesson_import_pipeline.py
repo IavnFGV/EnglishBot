@@ -313,6 +313,75 @@ def test_ai_unavailable_fallback_splits_aligned_slash_pairs_in_preview_draft() -
     ]
 
 
+def test_ai_unavailable_fallback_parses_parentheses_style_teacher_dictionary_lines() -> None:
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="health check failed")),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(
+        raw_text=(
+            "Character Traits\n\n"
+            "kind (добрый),\n"
+            "shy (застенчивый),\n"
+            "friendly (дружелюбный),\n"
+            "lazy (ленивый),\n"
+            "smart (умный),\n"
+            "funny (смешной),\n"
+            "honest (честный)."
+        )
+    )
+
+    assert result.validation.is_valid is True
+    assert [item.english_word for item in result.draft.vocabulary_items] == [
+        "kind",
+        "shy",
+        "friendly",
+        "lazy",
+        "smart",
+        "funny",
+        "honest",
+    ]
+    assert [item.translation for item in result.draft.vocabulary_items] == [
+        "добрый",
+        "застенчивый",
+        "дружелюбный",
+        "ленивый",
+        "умный",
+        "смешной",
+        "честный",
+    ]
+
+
+def test_ai_unavailable_fallback_parses_multiple_parentheses_pairs_in_one_line() -> None:
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="health check failed")),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(
+        raw_text="Character Traits\n\nkind (добрый), shy (застенчивый), friendly (дружелюбный)."
+    )
+
+    assert result.validation.is_valid is True
+    assert [item.english_word for item in result.draft.vocabulary_items] == [
+        "kind",
+        "shy",
+        "friendly",
+    ]
+    assert [item.translation for item in result.draft.vocabulary_items] == [
+        "добрый",
+        "застенчивый",
+        "дружелюбный",
+    ]
+
+
 def test_ai_timeout_falls_back_and_marks_partial_result() -> None:
     pipeline = LessonImportPipeline(
         smart_parser=_FakeSmartParser(SmartParseTimeout(detail="read timeout")),

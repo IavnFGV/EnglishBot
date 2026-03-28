@@ -261,6 +261,43 @@ def test_start_add_words_fallback_preview_splits_slash_synonyms_when_ai_is_unava
     ]
 
 
+def test_start_add_words_fallback_preview_parses_parentheses_style_teacher_dictionary() -> None:
+    repository = InMemoryAddWordsFlowRepository()
+    harness = AddWordsFlowHarness(
+        pipeline=LessonImportPipeline(
+            smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="offline")),
+            fallback_parser=TemplateLessonFallbackParser(),
+            validator=LessonExtractionValidator(),
+            canonicalizer=DraftToContentPackCanonicalizer(),
+            writer=JsonContentPackWriter(),
+        ),
+        validator=LessonExtractionValidator(),
+        writer=JsonContentPackWriter(),
+    )
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+
+    flow = start.execute(
+        user_id=7,
+        raw_text=(
+            "Character Traits\n\n"
+            "kind (добрый), shy (застенчивый), friendly (дружелюбный), honest (честный)."
+        ),
+    )
+
+    assert [item.english_word for item in flow.draft_result.draft.vocabulary_items] == [
+        "kind",
+        "shy",
+        "friendly",
+        "honest",
+    ]
+    assert [item.translation for item in flow.draft_result.draft.vocabulary_items] == [
+        "добрый",
+        "застенчивый",
+        "дружелюбный",
+        "честный",
+    ]
+
+
 def test_start_add_words_keeps_partial_fallback_result_after_timeout() -> None:
     repository = InMemoryAddWordsFlowRepository()
     harness = AddWordsFlowHarness(
