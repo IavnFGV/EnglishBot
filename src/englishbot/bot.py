@@ -129,6 +129,12 @@ from englishbot.presentation.telegram_ui_text import (
     supported_telegram_ui_languages,
     telegram_ui_text,
 )
+from englishbot.presentation.telegram_menu_access import (
+    PERMISSION_WORD_IMAGES_EDIT,
+    PERMISSION_WORDS_ADD,
+    PERMISSION_WORDS_EDIT,
+    TelegramMenuAccessPolicy,
+)
 from englishbot.runtime_version import RuntimeVersionInfo, get_runtime_version_info
 
 logger = logging.getLogger(__name__)
@@ -291,6 +297,9 @@ def build_application(
     )
     app.bot_data["lesson_import_pipeline"] = lesson_import_pipeline
     app.bot_data["editor_user_ids"] = set(settings.editor_user_ids)
+    app.bot_data["telegram_menu_access_policy"] = TelegramMenuAccessPolicy.from_bot_data(
+        app.bot_data
+    )
     app.bot_data["telegram_ui_language"] = _normalize_telegram_ui_language(
         settings.telegram_ui_language
     )
@@ -728,8 +737,31 @@ def _telegram_flow_messages(context: ContextTypes.DEFAULT_TYPE):
     return context.application.bot_data.get("telegram_flow_message_repository")
 
 
+def _menu_access_policy(context: ContextTypes.DEFAULT_TYPE) -> TelegramMenuAccessPolicy:
+    configured_policy = context.application.bot_data.get("telegram_menu_access_policy")
+    if isinstance(configured_policy, TelegramMenuAccessPolicy):
+        return configured_policy
+    return TelegramMenuAccessPolicy.from_bot_data(context.application.bot_data)
+
+
+def _has_menu_permission(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int | None,
+    permission: str,
+) -> bool:
+    return _menu_access_policy(context).has_permission(user_id, permission)
+
+
 def _is_editor(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    return user_id in context.application.bot_data.get("editor_user_ids", set())
+    return any(
+        _has_menu_permission(context, user_id=user_id, permission=permission)
+        for permission in (
+            PERMISSION_WORDS_ADD,
+            PERMISSION_WORDS_EDIT,
+            PERMISSION_WORD_IMAGES_EDIT,
+        )
+    )
 
 
 def _preview_message_ids(context: ContextTypes.DEFAULT_TYPE) -> dict[int, int]:
@@ -902,7 +934,14 @@ def _quick_actions_view(
     return build_quick_actions_view(
         text=_tg("quick_actions_title", context=context, user=user),
         reply_markup=_chat_menu_keyboard(
-            is_editor=bool(user and _is_editor(user.id, context))
+            can_add_words=bool(
+                user
+                and _has_menu_permission(
+                    context,
+                    user_id=user.id,
+                    permission=PERMISSION_WORDS_ADD,
+                )
+            )
         ),
     )
 
@@ -973,7 +1012,30 @@ def _words_menu_view(
     return build_words_menu_view(
         text=text,
         reply_markup=_words_menu_keyboard(
-            is_editor=bool(user and _is_editor(user.id, context)),
+            can_add_words=bool(
+                user
+                and _has_menu_permission(
+                    context,
+                    user_id=user.id,
+                    permission=PERMISSION_WORDS_ADD,
+                )
+            ),
+            can_edit_words=bool(
+                user
+                and _has_menu_permission(
+                    context,
+                    user_id=user.id,
+                    permission=PERMISSION_WORDS_EDIT,
+                )
+            ),
+            can_edit_images=bool(
+                user
+                and _has_menu_permission(
+                    context,
+                    user_id=user.id,
+                    permission=PERMISSION_WORD_IMAGES_EDIT,
+                )
+            ),
             language=_telegram_ui_language(context, user),
         ),
     )
@@ -988,7 +1050,14 @@ def _help_view(
     return build_help_view(
         text=text,
         reply_markup=_chat_menu_keyboard(
-            is_editor=bool(user and _is_editor(user.id, context))
+            can_add_words=bool(
+                user
+                and _has_menu_permission(
+                    context,
+                    user_id=user.id,
+                    permission=PERMISSION_WORDS_ADD,
+                )
+            )
         ),
     )
 
@@ -1131,7 +1200,11 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/version - show the current bot version",
         "/words - open the words menu",
     ]
-    if user is not None and _is_editor(user.id, context):
+    if user is not None and _has_menu_permission(
+        context,
+        user_id=user.id,
+        permission=PERMISSION_WORDS_ADD,
+    ):
         commands.extend(
             [
                 "/add_words - send raw lesson text for draft extraction",
@@ -1260,7 +1333,7 @@ async def words_add_words_callback_handler(
     if query is None or user is None:
         return
     await query.answer()
-    if not _is_editor(user.id, context):
+    if not _has_menu_permission(context, user_id=user.id, permission=PERMISSION_WORDS_ADD):
         await query.edit_message_text(_tg("only_editors_add_words", context=context, user=user))
         return
     context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
@@ -1278,7 +1351,7 @@ async def words_edit_words_callback_handler(
     if query is None or user is None:
         return
     await query.answer()
-    if not _is_editor(user.id, context):
+    if not _has_menu_permission(context, user_id=user.id, permission=PERMISSION_WORDS_EDIT):
         await query.edit_message_text(_tg("only_editors_edit_words", context=context, user=user))
         return
     topics = _list_editable_topics(context).execute()
@@ -1300,7 +1373,11 @@ async def words_edit_images_callback_handler(
     if query is None or user is None:
         return
     await query.answer()
-    if not _is_editor(user.id, context):
+    if not _has_menu_permission(
+        context,
+        user_id=user.id,
+        permission=PERMISSION_WORD_IMAGES_EDIT,
+    ):
         await query.edit_message_text(_tg("only_editors_edit_images", context=context, user=user))
         return
     topics = _list_editable_topics(context).execute()
@@ -1436,7 +1513,7 @@ async def add_words_start_handler(update: Update, context: ContextTypes.DEFAULT_
     user = update.effective_user
     if message is None or user is None:
         return
-    if not _is_editor(user.id, context):
+    if not _has_menu_permission(context, user_id=user.id, permission=PERMISSION_WORDS_ADD):
         await message.reply_text(_tg("no_permission_add_words", context=context, user=user))
         return
     existing_flow = _active_word_flow_for_user(user.id, context)
@@ -1449,7 +1526,7 @@ async def add_words_start_handler(update: Update, context: ContextTypes.DEFAULT_
     context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
     await message.reply_text(
         _tg("send_raw_lesson_text_with_menu", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(is_editor=True),
+        reply_markup=_chat_menu_keyboard(can_add_words=True),
     )
 
 
@@ -1462,7 +1539,13 @@ async def add_words_cancel_handler(update: Update, context: ContextTypes.DEFAULT
     context.user_data.pop("words_flow_mode", None)
     await message.reply_text(
         _tg("add_words_flow_cancelled", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(is_editor=_is_editor(user.id, context)),
+        reply_markup=_chat_menu_keyboard(
+            can_add_words=_has_menu_permission(
+                context,
+                user_id=user.id,
+                permission=PERMISSION_WORDS_ADD,
+            )
+        ),
     )
 
 
@@ -1485,7 +1568,13 @@ async def add_words_cancel_callback_handler(
     await query.edit_message_text(_tg("add_words_flow_cancelled", context=context, user=user))
     await query.message.reply_text(
         _tg("quick_actions_title", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(is_editor=_is_editor(user.id, context)),
+        reply_markup=_chat_menu_keyboard(
+            can_add_words=_has_menu_permission(
+                context,
+                user_id=user.id,
+                permission=PERMISSION_WORDS_ADD,
+            )
+        ),
     )
 
 
@@ -1504,7 +1593,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
     user = update.effective_user
     if message is None or message.text is None or user is None:
         return
-    if not _is_editor(user.id, context):
+    if not _has_menu_permission(context, user_id=user.id, permission=PERMISSION_WORDS_ADD):
         context.user_data.pop("words_flow_mode", None)
         return
     if words_flow_mode == _PUBLISHED_WORD_AWAITING_EDIT_TEXT:
@@ -1934,7 +2023,13 @@ async def add_words_publish_without_images_handler(
     )
     await query.message.reply_text(
         _tg("quick_actions_title", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(is_editor=_is_editor(user.id, context)),
+        reply_markup=_chat_menu_keyboard(
+            can_add_words=_has_menu_permission(
+                context,
+                user_id=user.id,
+                permission=PERMISSION_WORDS_ADD,
+            )
+        ),
     )
 
 
@@ -3635,13 +3730,17 @@ def _image_review_keyboard(
 
 def _words_menu_keyboard(
     *,
-    is_editor: bool,
+    can_add_words: bool,
+    can_edit_words: bool,
+    can_edit_images: bool,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(_tg("training_topics", language=language), callback_data="words:topics")]]
-    if is_editor:
+    if can_add_words:
         rows.append([InlineKeyboardButton(_tg("add_words", language=language), callback_data="words:add_words")])
+    if can_edit_words:
         rows.append([InlineKeyboardButton(_tg("edit_words", language=language), callback_data="words:edit_words")])
+    if can_edit_images:
         rows.append([InlineKeyboardButton(_tg("edit_word_image", language=language), callback_data="words:edit_images")])
     return InlineKeyboardMarkup(rows)
 
@@ -3779,12 +3878,12 @@ def _published_word_edit_keyboard(
     )
 
 
-def _chat_menu_keyboard(*, is_editor: bool) -> ReplyKeyboardMarkup:
+def _chat_menu_keyboard(*, can_add_words: bool) -> ReplyKeyboardMarkup:
     rows = [
         [KeyboardButton("/start"), KeyboardButton("/help")],
         [KeyboardButton("/words")],
     ]
-    if is_editor:
+    if can_add_words:
         rows.append([KeyboardButton("/add_words"), KeyboardButton("/cancel")])
     return ReplyKeyboardMarkup(
         rows,

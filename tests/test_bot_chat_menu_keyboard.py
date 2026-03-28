@@ -2,7 +2,7 @@ from englishbot.bot import _chat_menu_keyboard
 
 
 def test_chat_menu_keyboard_is_temporary_for_regular_users() -> None:
-    keyboard = _chat_menu_keyboard(is_editor=False)
+    keyboard = _chat_menu_keyboard(can_add_words=False)
 
     assert keyboard.one_time_keyboard is True
     assert keyboard.is_persistent is False
@@ -13,7 +13,7 @@ def test_chat_menu_keyboard_is_temporary_for_regular_users() -> None:
 
 
 def test_chat_menu_keyboard_includes_editor_commands() -> None:
-    keyboard = _chat_menu_keyboard(is_editor=True)
+    keyboard = _chat_menu_keyboard(can_add_words=True)
 
     assert [[button.text for button in row] for row in keyboard.keyboard] == [
         ["/start", "/help"],
