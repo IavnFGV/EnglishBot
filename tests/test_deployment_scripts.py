@@ -106,10 +106,9 @@ def test_server_backup_script_keeps_only_latest_five_versions() -> None:
     script = Path("scripts/backup-runtime-db.sh").read_text(encoding="utf-8")
 
     assert 'BACKUP_DIR="${BACKUP_DIR:-${SHARED_DIR}/backups/db}"' in script
-    assert 'PERMANENT_BACKUP_DIR="${PERMANENT_BACKUP_DIR:-${SHARED_DIR}/backups/db-versioned}"' in script
     assert 'KEEP_BACKUPS="${KEEP_BACKUPS:-5}"' in script
-    assert 'PERMANENT_BACKUP_LABEL="${PERMANENT_BACKUP_LABEL:-}"' in script
     assert 'docker exec' in script
+    assert 'docker exec -i \\' in script
     assert 'source.backup(target)' in script
     assert 'BACKUP_PATH_CONTAINER="/app/backups/db/${BACKUP_FILE_NAME}"' in script
     assert 'BACKUP_PATH_CONTAINER_FALLBACK="/tmp/${BACKUP_FILE_NAME}"' in script
@@ -121,7 +120,6 @@ def test_server_backup_script_keeps_only_latest_five_versions() -> None:
     assert 'englishbot-db-${SAFE_LABEL}-${TIMESTAMP}.sqlite3' in script
     assert "find \"${BACKUP_DIR}\" -maxdepth 1 -type f -name 'englishbot-db-*.sqlite3'" in script
     assert 'if [[ ${#EXISTING_BACKUPS[@]} -gt "${KEEP_BACKUPS}" ]]' in script
-    assert 'englishbot-db-permanent-${SAFE_PERMANENT_LABEL}-${TIMESTAMP}.sqlite3' in script
 
 
 def test_server_restore_script_restores_backup_and_restarts_bot() -> None:

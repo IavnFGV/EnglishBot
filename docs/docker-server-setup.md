@@ -68,6 +68,7 @@ Backup behavior detail:
   - `shared/backups/db -> /app/backups/db`
   - `shared/backups/db-versioned -> /app/backups/db-versioned`
 - `scripts/backup-runtime-db.sh` writes the live SQLite backup directly to `/app/backups/db/...` inside the running container, so the file appears immediately in `shared/backups/db/...` on the host.
+- The backup script uses `docker exec -i ... python - <<'PY'` for inline Python snippets; `-i` is required so the heredoc reaches Python via STDIN and the backup file is actually created.
 - If the currently running container was started before backup mounts were added, the script falls back to `docker cp` from the container filesystem, so deploy does not fail only because of a stale container mount configuration.
 - This keeps rolling SQLite backups on host storage and avoids relying on implicit parent-directory mounts.
 
