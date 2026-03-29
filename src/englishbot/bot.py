@@ -63,6 +63,7 @@ from englishbot.application.image_review_use_cases import (
     StartPublishedWordImageEditUseCase,
     UpdateImageReviewPromptUseCase,
 )
+from englishbot.application.homework_progress_use_cases import HomeworkProgressUseCase
 from englishbot.application.published_content_use_cases import (
     ListEditableTopicsUseCase,
     ListEditableWordsUseCase,
@@ -76,7 +77,7 @@ from englishbot.application.services import (
 )
 from englishbot.bootstrap import build_lesson_import_pipeline, build_training_service
 from englishbot.config import RuntimeConfigService, Settings
-from englishbot.domain.models import Topic, TrainingMode, TrainingQuestion
+from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType, Topic, TrainingMode, TrainingQuestion
 from englishbot.image_generation.clients import ComfyUIImageGenerationClient
 from englishbot.image_generation.clients import LocalPlaceholderImageGenerationClient
 from englishbot.image_generation.pixabay import PixabayImageSearchClient, RemoteImageDownloader
@@ -150,6 +151,7 @@ _IMAGE_REVIEW_AWAITING_PROMPT_TEXT = "awaiting_image_review_prompt_text"
 _IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT = "awaiting_image_review_search_query_text"
 _IMAGE_REVIEW_AWAITING_PHOTO = "awaiting_image_review_photo"
 _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
+_GOAL_AWAITING_TARGET_TEXT = "awaiting_goal_target_text"
 _IMAGE_REVIEW_STEP_TAG = "image_review_step"
 _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
@@ -443,6 +445,7 @@ def build_application(
     app.bot_data["update_editable_word_use_case"] = UpdateEditableWordUseCase(
         db_path=settings.content_db_path
     )
+    app.bot_data["homework_progress_use_case"] = HomeworkProgressUseCase(store=content_store)
 
     app.add_handler(TypeHandler(Update, raw_update_logger_handler), group=-1)
     app.add_handler(CommandHandler("start", start_handler))
@@ -463,6 +466,14 @@ def build_application(
     app.add_handler(CallbackQueryHandler(mode_selected_handler, pattern=r"^mode:"))
     app.add_handler(CallbackQueryHandler(choice_answer_handler, pattern=r"^answer:"))
     app.add_handler(CallbackQueryHandler(words_menu_callback_handler, pattern=r"^words:menu$"))
+    app.add_handler(CallbackQueryHandler(words_goals_callback_handler, pattern=r"^words:goals$"))
+    app.add_handler(CallbackQueryHandler(words_progress_callback_handler, pattern=r"^words:progress$"))
+    app.add_handler(CallbackQueryHandler(goal_setup_start_callback_handler, pattern=r"^words:goal_setup$"))
+    app.add_handler(CallbackQueryHandler(goal_period_callback_handler, pattern=r"^words:goal_period:"))
+    app.add_handler(CallbackQueryHandler(goal_type_callback_handler, pattern=r"^words:goal_type:"))
+    app.add_handler(CallbackQueryHandler(goal_target_preset_callback_handler, pattern=r"^words:goal_target:"))
+    app.add_handler(CallbackQueryHandler(goal_source_callback_handler, pattern=r"^words:goal_source:"))
+    app.add_handler(CallbackQueryHandler(goal_reset_callback_handler, pattern=r"^words:goal_reset:"))
     app.add_handler(
         CallbackQueryHandler(words_topics_callback_handler, pattern=r"^words:topics$")
     )
@@ -599,6 +610,10 @@ def build_application(
         group=0,
     )
     app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, goal_text_handler),
+        group=0,
+    )
+    app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, add_words_text_handler),
         group=0,
     )
@@ -682,6 +697,10 @@ def _cancel_add_words_flow(context: ContextTypes.DEFAULT_TYPE) -> CancelAddWords
 
 def _start_image_review(context: ContextTypes.DEFAULT_TYPE) -> StartImageReviewUseCase:
     return context.application.bot_data["image_review_start_use_case"]
+
+
+def _homework_progress_use_case(context: ContextTypes.DEFAULT_TYPE) -> HomeworkProgressUseCase:
+    return context.application.bot_data["homework_progress_use_case"]
 
 
 def _start_published_word_image_review(
@@ -1372,6 +1391,183 @@ async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFA
         raise
 
 
+def _goal_setup_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(_tg("goal_period_daily", language=language), callback_data="words:goal_period:daily")],
+            [InlineKeyboardButton(_tg("goal_period_weekly", language=language), callback_data="words:goal_period:weekly")],
+            [InlineKeyboardButton(_tg("goal_period_homework", language=language), callback_data="words:goal_period:homework")],
+            [InlineKeyboardButton(_tg("menu", language=language), callback_data="words:menu")],
+        ]
+    )
+
+
+def _goal_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("5", callback_data="words:goal_target:5"),
+                InlineKeyboardButton("10", callback_data="words:goal_target:10"),
+                InlineKeyboardButton("20", callback_data="words:goal_target:20"),
+            ],
+            [InlineKeyboardButton(_tg("goal_target_custom", language=language), callback_data="words:goal_target:custom")],
+        ]
+    )
+
+
+def _goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(_tg("goal_source_recent", language=language), callback_data="words:goal_source:recent")]]
+    )
+
+
+def _goal_list_keyboard(*, goals, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(_tg("goal_setup_button", language=language), callback_data="words:goal_setup")],
+        [InlineKeyboardButton(_tg("progress_button", language=language), callback_data="words:progress")],
+    ]
+    for goal in goals:
+        rows.append([InlineKeyboardButton(_tg("goal_reset_button", language=language), callback_data=f"words:goal_reset:{goal.goal.id}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _render_progress_text(*, context: ContextTypes.DEFAULT_TYPE, user) -> str:
+    summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
+    lines = [
+        _tg("progress_summary_title", context=context, user=user),
+        _tg(
+            "progress_summary_stats",
+            context=context,
+            user=user,
+            correct=summary.correct_answers,
+            incorrect=summary.incorrect_answers,
+            streak=summary.game_streak_days,
+            weekly_points=summary.weekly_points,
+        ),
+    ]
+    if summary.active_goals:
+        lines.append(_tg("progress_active_goals", context=context, user=user))
+        for goal in summary.active_goals:
+            lines.append(
+                _tg(
+                    "progress_goal_line",
+                    context=context,
+                    user=user,
+                    period=goal.goal.goal_period.value,
+                    goal_type=goal.goal.goal_type.value,
+                    progress=goal.goal.progress_count,
+                    target=goal.goal.target_count,
+                    percent=goal.progress_percent,
+                )
+            )
+    else:
+        lines.append(_tg("progress_no_goals", context=context, user=user))
+    return "\n".join(lines)
+
+
+async def words_goals_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
+    await query.edit_message_text(
+        _render_progress_text(context=context, user=user),
+        reply_markup=_goal_list_keyboard(goals=summary.active_goals, language=_telegram_ui_language(context, user)),
+    )
+
+
+async def words_progress_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await words_goals_callback_handler(update, context)
+
+
+async def goal_setup_start_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    await query.edit_message_text(
+        _tg("goal_setup_intro", context=context, user=user),
+        reply_markup=_goal_setup_keyboard(language=_telegram_ui_language(context, user)),
+    )
+
+
+async def goal_period_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or query.data is None:
+        return
+    await query.answer()
+    raw_period = query.data.split(":")[-1]
+    context.user_data["goal_period"] = raw_period
+    context.user_data["goal_type"] = (
+        GoalType.WORD_LEVEL_HOMEWORK.value if raw_period == GoalPeriod.HOMEWORK.value else GoalType.NEW_WORDS.value
+    )
+    await query.edit_message_text(
+        _tg("goal_target_prompt", context=context, user=user),
+        reply_markup=_goal_target_keyboard(language=_telegram_ui_language(context, user)),
+    )
+
+
+async def goal_type_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    return
+
+
+async def goal_target_preset_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or query.data is None:
+        return
+    await query.answer()
+    target = query.data.split(":")[-1]
+    if target == "custom":
+        context.user_data["words_flow_mode"] = _GOAL_AWAITING_TARGET_TEXT
+        await query.edit_message_text(_tg("goal_target_custom_prompt", context=context, user=user))
+        return
+    context.user_data["goal_target_count"] = int(target)
+    await query.edit_message_text(
+        _tg("goal_source_prompt", context=context, user=user),
+        reply_markup=_goal_source_keyboard(language=_telegram_ui_language(context, user)),
+    )
+
+
+async def goal_source_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    try:
+        goal = _homework_progress_use_case(context).create_goal(
+            user_id=user.id,
+            goal_period=GoalPeriod(context.user_data["goal_period"]),
+            goal_type=GoalType(context.user_data["goal_type"]),
+            target_count=int(context.user_data["goal_target_count"]),
+        )
+    except ValueError:
+        await query.edit_message_text(_tg("goal_creation_failed", context=context, user=user))
+        return
+    context.user_data.pop("goal_period", None)
+    context.user_data.pop("goal_type", None)
+    context.user_data.pop("goal_target_count", None)
+    await query.edit_message_text(
+        _tg("goal_created", context=context, user=user, period=goal.goal_period.value, goal_type=goal.goal_type.value, target=goal.target_count),
+    )
+
+
+async def goal_reset_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or query.data is None:
+        return
+    await query.answer()
+    goal_id = query.data.split(":")[-1]
+    reset = _homework_progress_use_case(context).reset_goal(user_id=user.id, goal_id=goal_id)
+    await query.edit_message_text(_tg("goal_reset_done" if reset else "goal_reset_not_found", context=context, user=user))
+
+
 async def words_topics_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1914,6 +2110,29 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
     )
     preview_message = await send_telegram_view(message, preview_view)
     _set_preview_message_id(user.id, preview_message.message_id, context)
+
+
+async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get("words_flow_mode") != _GOAL_AWAITING_TARGET_TEXT:
+        return
+    message = update.effective_message
+    user = update.effective_user
+    if message is None or message.text is None or user is None:
+        return
+    try:
+        target_count = int(message.text.strip())
+    except ValueError:
+        await message.reply_text(_tg("goal_target_custom_prompt", context=context, user=user))
+        return
+    if target_count <= 0:
+        await message.reply_text(_tg("goal_target_custom_prompt", context=context, user=user))
+        return
+    context.user_data["goal_target_count"] = target_count
+    context.user_data.pop("words_flow_mode", None)
+    await message.reply_text(
+        _tg("goal_source_prompt", context=context, user=user),
+        reply_markup=_goal_source_keyboard(language=_telegram_ui_language(context, user)),
+    )
 
 
 async def add_words_edit_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4051,6 +4270,8 @@ def _words_menu_keyboard(
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(_tg("training_topics", language=language), callback_data="words:topics")]]
+    rows.append([InlineKeyboardButton(_tg("goal_setup_button", language=language), callback_data="words:goals")])
+    rows.append([InlineKeyboardButton(_tg("progress_button", language=language), callback_data="words:progress")])
     if can_add_words:
         rows.append([InlineKeyboardButton(_tg("add_words", language=language), callback_data="words:add_words")])
     if can_edit_words:

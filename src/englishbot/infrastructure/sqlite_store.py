@@ -49,6 +49,14 @@ class TrackedTelegramMessage:
     tag: str
 
 
+@dataclass(slots=True, frozen=True)
+class UserGameProfile:
+    user_id: int
+    total_stars: int
+    current_streak_days: int
+    last_played_on: str | None
+
+
 def _optional_json_str(value: object) -> str | None:
     if value is None:
         return None
@@ -1174,6 +1182,62 @@ class SQLiteContentStore:
             target_topic_id=target_topic_id,
         )
 
+    def list_user_goals(
+        self,
+        *,
+        user_id: int,
+        statuses: tuple[GoalStatus, ...] = (GoalStatus.ACTIVE,),
+    ) -> list[Goal]:
+        self.initialize()
+        status_values = tuple(status.value for status in statuses)
+        placeholders = ",".join("?" for _ in status_values)
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM user_goals
+                WHERE user_id = ? AND status IN ({placeholders})
+                ORDER BY created_at DESC
+                """,
+                (user_id, *status_values),
+            ).fetchall()
+        return [
+            Goal(
+                id=str(row["id"]),
+                user_id=int(row["user_id"]),
+                goal_period=GoalPeriod(row["goal_period"]),
+                goal_type=GoalType(row["goal_type"]),
+                target_count=int(row["target_count"]),
+                progress_count=int(row["progress_count"]),
+                status=GoalStatus(row["status"]),
+                deadline_date=row["deadline_date"],
+                reward_points=row["reward_points"],
+                required_level=row["required_level"],
+                target_topic_id=row["target_topic_id"],
+                created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
+            )
+            for row in rows
+        ]
+
+    def update_goal_status(
+        self,
+        *,
+        user_id: int,
+        goal_id: str,
+        status: GoalStatus,
+    ) -> bool:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            result = connection.execute(
+                """
+                UPDATE user_goals
+                SET status = ?
+                WHERE id = ? AND user_id = ? AND status = ?
+                """,
+                (status.value, goal_id, user_id, GoalStatus.ACTIVE.value),
+            )
+        return bool(result.rowcount)
+
     def list_active_homework_words(self, *, user_id: int) -> dict[str, int]:
         self.initialize()
         with _connect(self._db_path) as connection:
@@ -1438,6 +1502,46 @@ class SQLiteContentStore:
                     """,
                     (progress_count, status, goal["id"]),
                 )
+
+    def get_weekly_points(self, *, user_id: int, now: datetime | None = None) -> int:
+        self.initialize()
+        current = now or datetime.now(UTC)
+        week_start_date = week_start(current).date().isoformat()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT points
+                FROM user_weekly_points
+                WHERE user_id = ? AND week_start_date = ?
+                """,
+                (user_id, week_start_date),
+            ).fetchone()
+        return int(row["points"]) if row else 0
+
+    def get_game_profile(self, *, user_id: int) -> UserGameProfile:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT user_id, total_stars, current_streak_days, last_played_on
+                FROM user_game_profile
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+        if row is None:
+            return UserGameProfile(
+                user_id=user_id,
+                total_stars=0,
+                current_streak_days=0,
+                last_played_on=None,
+            )
+        return UserGameProfile(
+            user_id=int(row["user_id"]),
+            total_stars=int(row["total_stars"]),
+            current_streak_days=int(row["current_streak_days"]),
+            last_played_on=row["last_played_on"],
+        )
 
     def add_game_stars(self, *, user_id: int, stars: int) -> int:
         self.initialize()

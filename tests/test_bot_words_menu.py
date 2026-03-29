@@ -15,6 +15,9 @@ from englishbot.bot import (
     _words_menu_keyboard,
     _editable_topics_keyboard,
     words_add_words_callback_handler,
+    words_goals_callback_handler,
+    goal_target_preset_callback_handler,
+    goal_text_handler,
     words_edit_images_callback_handler,
     words_menu_callback_handler,
     words_topics_callback_handler,
@@ -153,6 +156,61 @@ async def test_words_edit_images_callback_handler_opens_topic_list() -> None:
     assert query.edits[-1][1].inline_keyboard[1][0].text == "Fairy Tales (4)"
 
 
+@pytest.mark.anyio
+async def test_words_goals_callback_handler_shows_progress_summary() -> None:
+    query = _RecordingQuery()
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "homework_progress_use_case": SimpleNamespace(
+                    get_summary=lambda user_id: SimpleNamespace(
+                        correct_answers=7,
+                        incorrect_answers=2,
+                        game_streak_days=3,
+                        weekly_points=18,
+                        active_goals=[],
+                    )
+                ),
+            }
+        ),
+        user_data={},
+    )
+
+    await words_goals_callback_handler(update, context)  # type: ignore[arg-type]
+
+    assert "Correct: 7" in query.edits[-1][0]
+
+
+@pytest.mark.anyio
+async def test_goal_target_custom_text_flow_accepts_manual_target() -> None:
+    query = _RecordingQuery()
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={}))
+
+    await goal_target_preset_callback_handler(
+        SimpleNamespace(callback_query=SimpleNamespace(answer=query.answer, edit_message_text=query.edit_message_text, data="words:goal_target:custom"), effective_user=SimpleNamespace(id=123)),
+        context,  # type: ignore[arg-type]
+    )
+    assert context.user_data["words_flow_mode"] == "awaiting_goal_target_text"
+
+    class _Message:
+        async def reply_text(self, *args, **kwargs) -> None:  # noqa: ARG002
+            return None
+
+    message = SimpleNamespace(
+        text="12",
+        reply_text=_Message().reply_text,
+    )
+    await goal_text_handler(
+        SimpleNamespace(effective_message=message, effective_user=SimpleNamespace(id=123)),
+        context,  # type: ignore[arg-type]
+    )
+    assert context.user_data["goal_target_count"] == 12
+
+
 def test_topic_keyboards_show_item_counts_when_provided() -> None:
     topics = [
         SimpleNamespace(id="weather", title="Weather"),
@@ -260,8 +318,9 @@ def test_words_menu_keyboard_uses_russian_labels_when_requested() -> None:
     )
 
     assert keyboard.inline_keyboard[0][0].text == "Темы тренировки"
-    assert keyboard.inline_keyboard[1][0].text == "Добавить слова"
-    assert keyboard.inline_keyboard[2][0].text == "Редактировать слова"
+    assert keyboard.inline_keyboard[1][0].text == "🎯 Цели"
+    assert keyboard.inline_keyboard[2][0].text == "📊 Прогресс"
+    assert keyboard.inline_keyboard[3][0].text == "Добавить слова"
 
 
 def test_words_menu_keyboard_supports_granular_permissions() -> None:
@@ -273,6 +332,8 @@ def test_words_menu_keyboard_supports_granular_permissions() -> None:
 
     assert [row[0].callback_data for row in keyboard.inline_keyboard] == [
         "words:topics",
+        "words:goals",
+        "words:progress",
         "words:edit_words",
     ]
 
