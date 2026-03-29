@@ -61,7 +61,6 @@ It runs on every push to `main` and does:
 4. Rebuild and restart the Docker container with `docker compose up -d --build`
 5. Create a git tag for the successful deploy, for example `deploy-v0.1.0-b3`
 6. Keep the latest 5 rolling SQLite backups in `shared/backups/db/`
-7. When app version changes, save an additional permanent backup in `shared/backups/db-versioned/`
 
 Backup behavior detail:
 
@@ -70,7 +69,7 @@ Backup behavior detail:
   - `shared/backups/db-versioned -> /app/backups/db-versioned`
 - `scripts/backup-runtime-db.sh` writes the live SQLite backup directly to `/app/backups/db/...` inside the running container, so the file appears immediately in `shared/backups/db/...` on the host.
 - If the currently running container was started before backup mounts were added, the script falls back to `docker cp` from the container filesystem, so deploy does not fail only because of a stale container mount configuration.
-- This keeps rolling and permanent SQLite backups on host storage and avoids relying on implicit parent-directory mounts.
+- This keeps rolling SQLite backups on host storage and avoids relying on implicit parent-directory mounts.
 
 ### Required GitHub repository secrets
 
@@ -138,6 +137,5 @@ bash scripts/restore-runtime-db.sh /srv/englishbot/shared/backups/db/<backup-fil
 - `data/` keeps SQLite runtime state
 - `assets/` keeps generated and downloaded images
 - `backups/db/` keeps the latest 5 rolling SQLite backup copies
-- `backups/db-versioned/` keeps permanent backups created on app version changes (kept until manual cleanup)
 - `logs/` keeps rotating log files
 - `content/custom/` keeps editor-created content packs

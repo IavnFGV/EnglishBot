@@ -6,7 +6,6 @@ SHARED_DIR="${SHARED_DIR:-/srv/englishbot/shared}"
 BUILD_COUNTER_FILE="${BUILD_COUNTER_FILE:-${SHARED_DIR}/deploy/build-counter.env}"
 CURRENT_RELEASE_FILE="${CURRENT_RELEASE_FILE:-${SHARED_DIR}/deploy/current-release.env}"
 DB_BACKUP_FILE="${DB_BACKUP_FILE:-${SHARED_DIR}/deploy/last-db-backup.env}"
-VERSION_CHANGE_DB_BACKUP_FILE="${VERSION_CHANGE_DB_BACKUP_FILE:-${SHARED_DIR}/deploy/last-version-change-db-backup.env}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 
 if [[ ! -d "${APP_DIR}" ]]; then
@@ -61,23 +60,7 @@ ENGLISHBOT_GIT_SHA="$(git rev-parse --short HEAD)"
 ENGLISHBOT_GIT_BRANCH="${DEPLOY_BRANCH}"
 ENGLISHBOT_DEPLOY_TAG="deploy-v${APP_VERSION}-b${ENGLISHBOT_BUILD_NUMBER}"
 
-PERMANENT_BACKUP_LABEL=""
-if [[ -n "${PREVIOUS_BUILD_VERSION}" ]] && [[ "${PREVIOUS_BUILD_VERSION}" != "${APP_VERSION}" ]]; then
-  PERMANENT_BACKUP_LABEL="version-change-${PREVIOUS_BUILD_VERSION}-to-${APP_VERSION}"
-fi
-
-if [[ -n "${PERMANENT_BACKUP_LABEL}" ]]; then
-  DB_BACKUP_PATH="$(
-    PERMANENT_BACKUP_LABEL="${PERMANENT_BACKUP_LABEL}" \
-    bash scripts/backup-runtime-db.sh "${ENGLISHBOT_DEPLOY_TAG}"
-  )"
-  cat > "${VERSION_CHANGE_DB_BACKUP_FILE}" <<EOF
-ENGLISHBOT_DB_VERSION_CHANGE_BACKUP_LABEL=${PERMANENT_BACKUP_LABEL}
-ENGLISHBOT_DB_VERSION_CHANGE_TRIGGER=${ENGLISHBOT_DEPLOY_TAG}
-EOF
-else
-  DB_BACKUP_PATH="$(bash scripts/backup-runtime-db.sh "${ENGLISHBOT_DEPLOY_TAG}")"
-fi
+DB_BACKUP_PATH="$(bash scripts/backup-runtime-db.sh "${ENGLISHBOT_DEPLOY_TAG}")"
 
 mkdir -p "$(dirname "${BUILD_COUNTER_FILE}")"
 cat > "${BUILD_COUNTER_FILE}" <<EOF

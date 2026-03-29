@@ -86,15 +86,12 @@ def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
     assert 'BUILD_COUNTER_FILE="${BUILD_COUNTER_FILE:-${SHARED_DIR}/deploy/build-counter.env}"' in script
     assert 'CURRENT_RELEASE_FILE="${CURRENT_RELEASE_FILE:-${SHARED_DIR}/deploy/current-release.env}"' in script
     assert 'DB_BACKUP_FILE="${DB_BACKUP_FILE:-${SHARED_DIR}/deploy/last-db-backup.env}"' in script
-    assert 'VERSION_CHANGE_DB_BACKUP_FILE="${VERSION_CHANGE_DB_BACKUP_FILE:-${SHARED_DIR}/deploy/last-version-change-db-backup.env}"' in script
     assert "awk -F'\"' " in script
     assert 'Could not read project.version from pyproject.toml' in script
     assert 'ENGLISHBOT_BUILD_NUMBER="$((PREVIOUS_BUILD_NUMBER + 1))"' in script
     assert 'ENGLISHBOT_BUILD_NUMBER="1"' in script
     assert 'ENGLISHBOT_DEPLOY_TAG="deploy-v${APP_VERSION}-b${ENGLISHBOT_BUILD_NUMBER}"' in script
     assert 'DB_BACKUP_PATH="$(bash scripts/backup-runtime-db.sh "${ENGLISHBOT_DEPLOY_TAG}")"' in script
-    assert 'PERMANENT_BACKUP_LABEL="version-change-${PREVIOUS_BUILD_VERSION}-to-${APP_VERSION}"' in script
-    assert 'PERMANENT_BACKUP_LABEL="${PERMANENT_BACKUP_LABEL}" \\' in script
     assert 'ENGLISHBOT_DB_BACKUP_PATH=${DB_BACKUP_PATH}' in script
     assert 'ENGLISHBOT_BUILD_VERSION=${APP_VERSION}' in script
     assert 'ENGLISHBOT_BUILD_NUMBER=${ENGLISHBOT_BUILD_NUMBER}' in script
