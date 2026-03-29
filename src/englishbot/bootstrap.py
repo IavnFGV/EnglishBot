@@ -94,6 +94,7 @@ def build_training_service(
         lesson_repository = InMemoryLessonRepository(all_lessons)
         vocabulary_repository = InMemoryVocabularyRepository(all_vocabulary_items)
     question_factory = QuestionFactory(rng)
+    selector = UnseenFirstWordSelector(rng, context_provider=store) if store is not None else UnseenFirstWordSelector(rng)
 
     list_topics = ListTopicsUseCase(topic_repository)
     get_current_question = GetCurrentQuestionUseCase(
@@ -107,7 +108,7 @@ def build_training_service(
         progress_repository=progress_repository,
         session_repository=session_repository,
         validate_topic_lesson=ValidateTopicLessonUseCase(lesson_repository),
-        word_selector=UnseenFirstWordSelector(rng),
+        word_selector=selector,
         question_factory=question_factory,
     )
     submit_answer = SubmitAnswerUseCase(

@@ -549,3 +549,166 @@ def test_sqlite_telegram_flow_message_repository_tracks_and_clears_by_tag(tmp_pa
     repository.clear(flow_id="flow123", tag="image_review_step")
     assert repository.list(flow_id="flow123", tag="image_review_step") == []
     assert [(item.chat_id, item.message_id) for item in repository.list(flow_id="flow123")] == [(1, 12)]
+
+
+def test_sqlite_content_store_word_stats_weekly_points_and_homework_goals(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    from englishbot.domain.models import GoalPeriod, GoalType, TrainingMode, WordStats
+
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+                {"id": "dog", "english_word": "Dog", "translation": "собака"},
+            ],
+        }
+    )
+
+    stats = WordStats(user_id=1, word_id="cat", success_easy=2, current_level=1)
+    store.save_word_stats(stats)
+    loaded = store.get_word_stats(1, "cat")
+    assert loaded is not None
+    assert loaded.current_level == 1
+    assert loaded.review_interval_days == 0
+
+    score_after_first = store.award_weekly_points(
+        user_id=1,
+        word_id="cat",
+        mode=TrainingMode.MEDIUM,
+        level_up_delta=1,
+        awarded_at=datetime(2026, 3, 24, tzinfo=UTC),
+    )
+    score_after_repeat = store.award_weekly_points(
+        user_id=1,
+        word_id="cat",
+        mode=TrainingMode.HARD,
+        level_up_delta=0,
+        awarded_at=datetime(2026, 3, 25, tzinfo=UTC),
+    )
+    assert score_after_first == 16
+    assert score_after_repeat == 18
+
+    store.assign_goal(
+        user_id=1,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=2,
+        required_level=2,
+        target_word_ids=["cat"],
+    )
+    assert store.required_homework_level(user_id=1, item_id="cat") == 2
+    assert store.list_active_homework_words(user_id=1) == {"cat": 2}
+
+
+def test_sqlite_store_homework_stage_progression_and_autoskip(tmp_path: Path) -> None:
+    from englishbot.domain.models import GoalPeriod, GoalType
+
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+                {"id": "dog", "english_word": "Dog", "translation": "собака"},
+            ],
+        }
+    )
+    store.assign_goal(
+        user_id=5,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=2,
+        required_level=2,
+        target_word_ids=["cat", "dog"],
+    )
+    assert store.get_homework_stage_mode(user_id=5, item_id="cat") is TrainingMode.EASY
+    store.update_homework_word_progress(
+        user_id=5,
+        word_id="cat",
+        mode=TrainingMode.EASY,
+        is_correct=True,
+        current_level=0,
+    )
+    store.update_homework_word_progress(
+        user_id=5,
+        word_id="cat",
+        mode=TrainingMode.EASY,
+        is_correct=True,
+        current_level=0,
+    )
+    assert store.get_homework_stage_mode(user_id=5, item_id="cat") is TrainingMode.MEDIUM
+    store.update_homework_word_progress(
+        user_id=5,
+        word_id="cat",
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=2,
+    )
+    assert store.get_homework_stage_mode(user_id=5, item_id="cat") is TrainingMode.HARD
+    store.update_homework_word_progress(
+        user_id=5,
+        word_id="cat",
+        mode=TrainingMode.HARD,
+        is_correct=False,
+        current_level=2,
+    )
+    store.update_homework_word_progress(
+        user_id=5,
+        word_id="cat",
+        mode=TrainingMode.HARD,
+        is_correct=False,
+        current_level=2,
+    )
+    assert store.get_homework_stage_mode(user_id=5, item_id="cat") is TrainingMode.MEDIUM
+
+
+def test_sqlite_store_tracks_recent_session_words(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+                {"id": "dog", "english_word": "Dog", "translation": "собака"},
+                {"id": "sun", "english_word": "Sun", "translation": "солнце"},
+            ],
+        }
+    )
+
+    from englishbot.domain.models import SessionItem, TrainingMode, TrainingSession
+
+    store.save_session(
+        TrainingSession(
+            id="s1",
+            user_id=1,
+            topic_id="animals",
+            mode=TrainingMode.EASY,
+            items=[SessionItem(order=0, vocabulary_item_id="cat")],
+        )
+    )
+    store.save_session(
+        TrainingSession(
+            id="s2",
+            user_id=1,
+            topic_id="animals",
+            mode=TrainingMode.EASY,
+            items=[SessionItem(order=0, vocabulary_item_id="dog")],
+        )
+    )
+    store.save_session(
+        TrainingSession(
+            id="s3",
+            user_id=1,
+            topic_id="animals",
+            mode=TrainingMode.EASY,
+            items=[SessionItem(order=0, vocabulary_item_id="sun")],
+        )
+    )
+
+    assert store.list_recent_session_words(user_id=1, limit_sessions=2) == {"dog", "sun"}

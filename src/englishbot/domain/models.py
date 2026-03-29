@@ -11,6 +11,26 @@ class TrainingMode(StrEnum):
     HARD = "hard"
 
 
+class GoalPeriod(StrEnum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    HOMEWORK = "homework"
+
+
+class GoalType(StrEnum):
+    NEW_WORDS = "new_words"
+    ROUNDS = "rounds"
+    TOPICS = "topics"
+    ACTIVE_DAYS = "active_days"
+    WORD_LEVEL_HOMEWORK = "word_level_homework"
+
+
+class GoalStatus(StrEnum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    EXPIRED = "expired"
+
+
 @dataclass(slots=True, frozen=True)
 class Topic:
     id: str
@@ -73,6 +93,7 @@ class UserProgress:
 class SessionItem:
     order: int
     vocabulary_item_id: str
+    mode: TrainingMode | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -150,3 +171,59 @@ class SessionSummary:
     @property
     def incorrect_answers(self) -> int:
         return self.total_questions - self.correct_answers
+
+
+@dataclass(slots=True)
+class WordStats:
+    user_id: int
+    word_id: str
+    attempt_easy: int = 0
+    attempt_medium: int = 0
+    attempt_hard: int = 0
+    success_easy: int = 0
+    success_medium: int = 0
+    success_hard: int = 0
+    last_seen_at: datetime | None = None
+    last_correct_at: datetime | None = None
+    current_level: int = 0
+    current_streak_success: int = 0
+    current_streak_fail: int = 0
+    review_interval_days: int = 0
+    next_review_at: datetime | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class Goal:
+    id: str
+    user_id: int
+    goal_period: GoalPeriod
+    goal_type: GoalType
+    target_count: int
+    progress_count: int
+    status: GoalStatus
+    deadline_date: str | None = None
+    reward_points: int | None = None
+    required_level: int | None = None
+    target_topic_id: str | None = None
+    created_at: datetime | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class GoalWordTarget:
+    goal_id: str
+    word_id: str
+
+
+@dataclass(slots=True)
+class HomeworkWordProgress:
+    goal_id: str
+    user_id: int
+    word_id: str
+    easy_success_count: int = 0
+    medium_success_count: int = 0
+    hard_success_count: int = 0
+    easy_mastered: bool = False
+    medium_mastered: bool = False
+    hard_mastered: bool = False
+    hard_skipped: bool = False
+    hard_failed_streak: int = 0

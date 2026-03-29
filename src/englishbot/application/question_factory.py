@@ -36,12 +36,17 @@ class QuestionFactory:
         item: VocabularyItem,
         all_topic_items: list[VocabularyItem],
     ) -> TrainingQuestion:
+        question_mode = session.mode
+        for session_item in session.items:
+            if session_item.vocabulary_item_id == item.id and session_item.mode is not None:
+                question_mode = session_item.mode
+                break
         image_line = (
             "Image is shown above."
             if item.image_ref
             else "No image yet. Use the translation clue."
         )
-        if session.mode is TrainingMode.EASY:
+        if question_mode is TrainingMode.EASY:
             options = self._build_choice_options(item, all_topic_items)
             prompt = (
                 f"Translation: {item.translation}\n"
@@ -51,13 +56,13 @@ class QuestionFactory:
             return TrainingQuestion(
                 session_id=session.id,
                 item_id=item.id,
-                mode=session.mode,
+                mode=question_mode,
                 prompt=prompt,
                 image_ref=item.image_ref,
                 correct_answer=item.english_word,
                 options=options,
             )
-        if session.mode is TrainingMode.MEDIUM:
+        if question_mode is TrainingMode.MEDIUM:
             scrambled = self._scramble_word(item.english_word)
             prompt = (
                 f"Translation: {item.translation}\n"
@@ -68,7 +73,7 @@ class QuestionFactory:
             return TrainingQuestion(
                 session_id=session.id,
                 item_id=item.id,
-                mode=session.mode,
+                mode=question_mode,
                 prompt=prompt,
                 image_ref=item.image_ref,
                 correct_answer=item.english_word,
@@ -83,7 +88,7 @@ class QuestionFactory:
         return TrainingQuestion(
             session_id=session.id,
             item_id=item.id,
-            mode=session.mode,
+            mode=question_mode,
             prompt=prompt,
             image_ref=item.image_ref,
             correct_answer=item.english_word,

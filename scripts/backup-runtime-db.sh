@@ -5,9 +5,11 @@ APP_DIR="${APP_DIR:-/srv/englishbot/app}"
 SHARED_DIR="${SHARED_DIR:-/srv/englishbot/shared}"
 ENV_FILE="${ENV_FILE:-${SHARED_DIR}/.env}"
 BACKUP_DIR="${BACKUP_DIR:-${SHARED_DIR}/backups/db}"
+PERMANENT_BACKUP_DIR="${PERMANENT_BACKUP_DIR:-${SHARED_DIR}/backups/db-versioned}"
 CONTAINER_NAME="${CONTAINER_NAME:-englishbot}"
 KEEP_BACKUPS="${KEEP_BACKUPS:-5}"
 DEPLOY_LABEL="${1:-manual}"
+PERMANENT_BACKUP_LABEL="${PERMANENT_BACKUP_LABEL:-}"
 
 if [[ ! -d "${APP_DIR}" ]]; then
   echo "App directory does not exist: ${APP_DIR}" >&2
@@ -63,6 +65,15 @@ else
   fi
   echo "==> Backing up SQLite database from host file ${DB_PATH_HOST}" >&2
   cp "${DB_PATH_HOST}" "${BACKUP_PATH_HOST}"
+fi
+
+if [[ -n "${PERMANENT_BACKUP_LABEL}" ]]; then
+  SAFE_PERMANENT_LABEL="$(printf '%s' "${PERMANENT_BACKUP_LABEL}" | tr '/: ' '---')"
+  PERMANENT_FILE_NAME="englishbot-db-permanent-${SAFE_PERMANENT_LABEL}-${TIMESTAMP}.sqlite3"
+  PERMANENT_PATH_HOST="${PERMANENT_BACKUP_DIR}/${PERMANENT_FILE_NAME}"
+  mkdir -p "${PERMANENT_BACKUP_DIR}"
+  cp "${BACKUP_PATH_HOST}" "${PERMANENT_PATH_HOST}"
+  echo "==> Permanent DB backup saved to ${PERMANENT_PATH_HOST}" >&2
 fi
 
 mapfile -t EXISTING_BACKUPS < <(find "${BACKUP_DIR}" -maxdepth 1 -type f -name 'englishbot-db-*.sqlite3' -printf '%T@ %p\n' | sort -rn | awk '{print $2}')
