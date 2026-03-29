@@ -53,10 +53,16 @@ class TelegramMenuAccessPolicy:
 
         role_memberships = _normalize_memberships(memberships_raw)
         if role_memberships is None:
-            role_memberships = {
-                "admin": frozenset(_to_int_set(bot_data.get("admin_user_ids"))),
-                "editor": frozenset(_to_int_set(bot_data.get("editor_user_ids"))),
-            }
+            repository_memberships = _memberships_from_role_repository(
+                bot_data.get("telegram_user_role_repository")
+            )
+            if repository_memberships is not None:
+                role_memberships = repository_memberships
+            else:
+                role_memberships = {
+                    "admin": frozenset(_to_int_set(bot_data.get("admin_user_ids"))),
+                    "editor": frozenset(_to_int_set(bot_data.get("editor_user_ids"))),
+                }
 
         role_permissions = _normalize_permissions(permissions_raw)
         if role_permissions is None:
@@ -149,3 +155,14 @@ def _normalize_permissions(value: object) -> dict[str, frozenset[str]] | None:
     if "user" not in permissions:
         permissions["user"] = frozenset()
     return permissions
+
+
+def _memberships_from_role_repository(value: object) -> dict[str, frozenset[int]] | None:
+    list_memberships = getattr(value, "list_memberships", None)
+    if not callable(list_memberships):
+        return None
+    try:
+        memberships = list_memberships()
+    except Exception:  # noqa: BLE001
+        return None
+    return _normalize_memberships(memberships)

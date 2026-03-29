@@ -13,6 +13,21 @@ def test_access_policy_uses_legacy_editor_ids_from_bot_data() -> None:
     assert policy.has_permission(999, PERMISSION_WORDS_ADD) is False
 
 
+def test_access_policy_uses_role_repository_memberships_when_present() -> None:
+    repository = type(
+        "_RoleRepo",
+        (),
+        {"list_memberships": lambda self: {"user": set(), "editor": {101}, "admin": {7}}},
+    )()
+
+    policy = TelegramMenuAccessPolicy.from_bot_data(
+        {"telegram_user_role_repository": repository}
+    )
+
+    assert policy.roles_for_user(101) == ("user", "editor")
+    assert policy.has_permission(7, "future.permission") is True
+
+
 def test_access_policy_admin_role_has_wildcard_permissions() -> None:
     policy = TelegramMenuAccessPolicy.from_bot_data({"admin_user_ids": {7}})
 

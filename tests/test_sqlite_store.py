@@ -34,6 +34,7 @@ from englishbot.infrastructure.sqlite_store import (
     SQLiteImageReviewFlowRepository,
     SQLiteTelegramFlowMessageRepository,
     SQLiteTelegramUserLoginRepository,
+    SQLiteTelegramUserRoleRepository,
 )
 
 
@@ -142,6 +143,25 @@ def test_sqlite_telegram_user_logins_store_last_seen_username(tmp_path: Path) ->
     assert second_snapshot[0].username == "renamed_user"
     assert second_snapshot[0].first_seen_at == first_snapshot[0].first_seen_at
     assert second_snapshot[0].last_seen_at >= first_snapshot[0].last_seen_at
+
+
+def test_sqlite_telegram_user_roles_are_persisted_and_grouped(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    repository = SQLiteTelegramUserRoleRepository(store)
+
+    repository.grant(user_id=7, role="admin")
+    repository.grant(user_id=8, role="editor")
+    repository.grant(user_id=7, role="admin")
+
+    assignments = repository.list_assignments()
+    memberships = repository.list_memberships()
+
+    assert [(item.user_id, item.role) for item in assignments] == [(7, "admin"), (8, "editor")]
+    assert memberships == {
+        "user": frozenset(),
+        "admin": frozenset({7}),
+        "editor": frozenset({8}),
+    }
 
 
 def test_sqlite_content_store_reuses_lexeme_across_multiple_learning_items(tmp_path: Path) -> None:

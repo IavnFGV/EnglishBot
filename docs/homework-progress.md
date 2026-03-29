@@ -31,6 +31,12 @@ All users can open it and see:
 
 The user list also shows compact role and progress data.
 
+Role resolution now comes from the SQLite runtime table `telegram_user_roles`.
+
+- `ADMIN_USER_IDS` and `EDITOR_USER_IDS` are kept only as bootstrap inputs
+- on startup, those bootstrap ids are written into the role table if missing
+- after that, Telegram access checks read effective roles from the database-backed memberships
+
 ## `/start`
 
 `/start` is now a personal launch screen instead of a direct topic picker.
@@ -84,7 +90,7 @@ Admins can now inspect assignments in depth:
 
 ## Admin assignment flow
 
-Admins are resolved through `ADMIN_USER_IDS` (runtime config).
+Admins are resolved through the runtime role table, with `ADMIN_USER_IDS` only used to bootstrap the first elevated users into that table.
 
 In `/assign`, admins also see:
 

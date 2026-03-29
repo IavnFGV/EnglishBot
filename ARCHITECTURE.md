@@ -24,6 +24,18 @@ Behavioral rule:
 - runtime adapters and external clients should receive the shared config service through dependency injection
 - ordinary tests should inject a prepared config service instead of mutating `os.environ`
 - env/file precedence should be tested primarily in config-service tests
+- environment ids such as `ADMIN_USER_IDS` and `EDITOR_USER_IDS` are bootstrap inputs, not the long-term source of truth for access control
+
+## Telegram roles
+
+Telegram roles are runtime data, not just deployment config.
+
+Behavioral rule:
+
+- effective Telegram roles should live in SQLite in `telegram_user_roles`
+- `.env` may still provide bootstrap ids for the first admins/editors on a fresh database
+- startup may sync bootstrap ids into the role table, but normal permission checks should read from the database-backed memberships
+- Telegram menu visibility, editor access, and assignment admin access should all resolve through the same centralized access policy
 
 ## Main entities
 

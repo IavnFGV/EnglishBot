@@ -65,6 +65,13 @@ class TelegramUserLogin:
     last_seen_at: str
 
 
+@dataclass(slots=True, frozen=True)
+class TelegramUserRoleAssignment:
+    user_id: int
+    role: str
+    assigned_at: str
+
+
 def _optional_json_str(value: object) -> str | None:
     if value is None:
         return None
@@ -323,6 +330,13 @@ class SQLiteContentStore:
                     username TEXT,
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS telegram_user_roles (
+                    user_id INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    assigned_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, role)
                 );
 
                 CREATE TABLE IF NOT EXISTS user_game_profile (
@@ -2185,6 +2199,51 @@ class SQLiteContentStore:
             for row in rows
         ]
 
+    def grant_telegram_user_role(self, *, user_id: int, role: str) -> None:
+        self.initialize()
+        normalized_role = str(role).strip().lower()
+        if not normalized_role:
+            raise ValueError("Telegram role is required.")
+        timestamp = datetime.now(UTC).isoformat()
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO telegram_user_roles (user_id, role, assigned_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, role) DO NOTHING
+                """,
+                (user_id, normalized_role, timestamp),
+            )
+
+    def list_telegram_user_role_assignments(self) -> list[TelegramUserRoleAssignment]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT user_id, role, assigned_at
+                FROM telegram_user_roles
+                ORDER BY role, user_id
+                """
+            ).fetchall()
+        return [
+            TelegramUserRoleAssignment(
+                user_id=int(row["user_id"]),
+                role=str(row["role"]),
+                assigned_at=str(row["assigned_at"]),
+            )
+            for row in rows
+        ]
+
+    def list_telegram_user_role_memberships(self) -> dict[str, frozenset[int]]:
+        assignments = self.list_telegram_user_role_assignments()
+        memberships: dict[str, set[int]] = {"user": set()}
+        for assignment in assignments:
+            memberships.setdefault(assignment.role, set()).add(assignment.user_id)
+        return {
+            role_name: frozenset(sorted(user_ids))
+            for role_name, user_ids in memberships.items()
+        }
+
     def _upsert_lexeme(self, connection: sqlite3.Connection, *, headword: str) -> str:
         normalized_headword = _normalize_headword(headword)
         if not normalized_headword:
@@ -2575,3 +2634,17 @@ class SQLiteTelegramUserLoginRepository:
 
     def list(self) -> list[TelegramUserLogin]:
         return self._store.list_telegram_user_logins()
+
+
+class SQLiteTelegramUserRoleRepository:
+    def __init__(self, store: SQLiteContentStore) -> None:
+        self._store = store
+
+    def grant(self, *, user_id: int, role: str) -> None:
+        self._store.grant_telegram_user_role(user_id=user_id, role=role)
+
+    def list_assignments(self) -> list[TelegramUserRoleAssignment]:
+        return self._store.list_telegram_user_role_assignments()
+
+    def list_memberships(self) -> dict[str, frozenset[int]]:
+        return self._store.list_telegram_user_role_memberships()

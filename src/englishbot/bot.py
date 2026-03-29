@@ -116,6 +116,7 @@ from englishbot.infrastructure.sqlite_store import (
     SQLiteSessionRepository,
     SQLiteTelegramFlowMessageRepository,
     SQLiteTelegramUserLoginRepository,
+    SQLiteTelegramUserRoleRepository,
     SQLiteUserProgressRepository,
     SQLiteVocabularyRepository,
 )
@@ -339,6 +340,7 @@ def build_application(
     image_review_repository = SQLiteImageReviewFlowRepository(content_store)
     telegram_flow_message_repository = SQLiteTelegramFlowMessageRepository(content_store)
     telegram_user_login_repository = SQLiteTelegramUserLoginRepository(content_store)
+    telegram_user_role_repository = SQLiteTelegramUserRoleRepository(content_store)
     image_review_harness = ImageReviewFlowHarness(
         canonicalizer=DraftToContentPackCanonicalizer(),
         writer=JsonContentPackWriter(),
@@ -371,9 +373,11 @@ def build_application(
     app.bot_data["lesson_import_pipeline"] = lesson_import_pipeline
     app.bot_data["admin_user_ids"] = set(settings.admin_user_ids)
     app.bot_data["editor_user_ids"] = set(settings.editor_user_ids)
-    app.bot_data["telegram_menu_access_policy"] = TelegramMenuAccessPolicy.from_bot_data(
-        app.bot_data
-    )
+    app.bot_data["telegram_user_role_repository"] = telegram_user_role_repository
+    for user_id in settings.admin_user_ids:
+        telegram_user_role_repository.grant(user_id=user_id, role="admin")
+    for user_id in settings.editor_user_ids:
+        telegram_user_role_repository.grant(user_id=user_id, role="editor")
     app.bot_data["telegram_ui_language"] = _normalize_telegram_ui_language(
         settings.telegram_ui_language
     )
