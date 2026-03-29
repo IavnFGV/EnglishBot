@@ -39,6 +39,7 @@ _SETTING_DEFINITIONS: dict[str, RuntimeSettingDefinition] = {
         "int",
     ),
     "log_backup_count": RuntimeSettingDefinition("log_backup_count", ("LOG_BACKUP_COUNT",), 5, "int"),
+    "admin_user_ids": RuntimeSettingDefinition("admin_user_ids", ("ADMIN_USER_IDS",), (), "csv_int"),
     "editor_user_ids": RuntimeSettingDefinition("editor_user_ids", ("EDITOR_USER_IDS",), (), "csv_int"),
     "content_db_path": RuntimeSettingDefinition(
         "content_db_path",
@@ -293,6 +294,7 @@ class Settings:
     log_file_path: Path | None = None
     log_max_bytes: int = 10 * 1024 * 1024
     log_backup_count: int = 5
+    admin_user_ids: tuple[int, ...] = ()
     editor_user_ids: tuple[int, ...] = ()
     content_db_path: Path = Path("data/englishbot.db")
     pixabay_api_key: str = ""
@@ -321,6 +323,7 @@ class Settings:
             log_file_path=service.get_path("log_file_path"),
             log_max_bytes=service.get_int("log_max_bytes"),
             log_backup_count=service.get_int("log_backup_count"),
+            admin_user_ids=tuple(service.get("admin_user_ids")),
             editor_user_ids=tuple(service.get("editor_user_ids")),
             content_db_path=service.get_path("content_db_path") or Path("data/englishbot.db"),
             pixabay_api_key=service.get_str("pixabay_api_key"),

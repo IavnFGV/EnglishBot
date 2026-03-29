@@ -18,6 +18,7 @@ from englishbot.bot import (
     words_goals_callback_handler,
     goal_target_preset_callback_handler,
     goal_text_handler,
+    admin_users_progress_callback_handler,
     words_edit_images_callback_handler,
     words_menu_callback_handler,
     words_topics_callback_handler,
@@ -314,12 +315,13 @@ def test_words_menu_keyboard_uses_russian_labels_when_requested() -> None:
         can_add_words=True,
         can_edit_words=True,
         can_edit_images=True,
+        is_admin=False,
         language="ru",
     )
 
     assert keyboard.inline_keyboard[0][0].text == "Темы тренировки"
-    assert keyboard.inline_keyboard[1][0].text == "🎯 Цели"
-    assert keyboard.inline_keyboard[2][0].text == "📊 Прогресс"
+    assert keyboard.inline_keyboard[1][0].text == "🎯 Мои ДЗ"
+    assert keyboard.inline_keyboard[2][0].text == "📈 Мой прогресс"
     assert keyboard.inline_keyboard[3][0].text == "Добавить слова"
 
 
@@ -328,6 +330,7 @@ def test_words_menu_keyboard_supports_granular_permissions() -> None:
         can_add_words=False,
         can_edit_words=True,
         can_edit_images=False,
+        is_admin=False,
     )
 
     assert [row[0].callback_data for row in keyboard.inline_keyboard] == [
@@ -336,6 +339,44 @@ def test_words_menu_keyboard_supports_granular_permissions() -> None:
         "words:progress",
         "words:edit_words",
     ]
+
+
+def test_words_menu_keyboard_shows_admin_buttons() -> None:
+    keyboard = _words_menu_keyboard(
+        can_add_words=False,
+        can_edit_words=False,
+        can_edit_images=False,
+        is_admin=True,
+    )
+
+    assert [row[0].callback_data for row in keyboard.inline_keyboard] == [
+        "words:topics",
+        "words:goals",
+        "words:progress",
+        "words:admin_assign_goal",
+        "words:admin_users_progress",
+    ]
+
+
+@pytest.mark.anyio
+async def test_admin_users_progress_callback_handler_rejects_non_admin() -> None:
+    query = _RecordingQuery()
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "telegram_menu_access_policy": SimpleNamespace(roles_for_user=lambda user_id: ("user",)),
+            }
+        ),
+        user_data={},
+    )
+
+    await admin_users_progress_callback_handler(update, context)  # type: ignore[arg-type]
+
+    assert "only" in query.edits[-1][0].lower()
 
 
 def test_image_review_keyboard_uses_russian_labels_when_requested() -> None:

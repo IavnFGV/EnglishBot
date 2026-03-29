@@ -1238,6 +1238,45 @@ class SQLiteContentStore:
             )
         return bool(result.rowcount)
 
+    def list_users_goal_overview(self) -> list[dict[str, object]]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    g.user_id AS user_id,
+                    SUM(CASE WHEN g.status = ? THEN 1 ELSE 0 END) AS active_goals_count,
+                    SUM(CASE WHEN g.status = ? THEN 1 ELSE 0 END) AS completed_goals_count,
+                    COALESCE(SUM(g.progress_count), 0) AS progress_total,
+                    COALESCE(SUM(g.target_count), 0) AS target_total,
+                    MAX(p.last_seen_at) AS last_activity_at
+                FROM user_goals g
+                LEFT JOIN user_progress p ON p.user_id = g.user_id
+                GROUP BY g.user_id
+                ORDER BY g.user_id ASC
+                """,
+                (GoalStatus.ACTIVE.value, GoalStatus.COMPLETED.value),
+            ).fetchall()
+        result: list[dict[str, object]] = []
+        for row in rows:
+            target_total = int(row["target_total"])
+            progress_total = int(row["progress_total"])
+            aggregate_percent = min(100, int((progress_total / target_total) * 100)) if target_total > 0 else 0
+            result.append(
+                {
+                    "user_id": int(row["user_id"]),
+                    "active_goals_count": int(row["active_goals_count"]),
+                    "completed_goals_count": int(row["completed_goals_count"]),
+                    "aggregate_percent": aggregate_percent,
+                    "last_activity_at": (
+                        datetime.fromisoformat(str(row["last_activity_at"]))
+                        if row["last_activity_at"]
+                        else None
+                    ),
+                }
+            )
+        return result
+
     def list_active_homework_words(self, *, user_id: int) -> dict[str, int]:
         self.initialize()
         with _connect(self._db_path) as connection:
