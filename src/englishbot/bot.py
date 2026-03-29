@@ -4763,10 +4763,11 @@ async def _process_answer(
     except ApplicationError as error:
         await message.reply_text(str(error))
         return
-    if active_session_before_submit is not None:
+    active_session_id = getattr(active_session_before_submit, "session_id", None)
+    if isinstance(active_session_id, str):
         await _delete_tracked_flow_messages(
             context,
-            flow_id=active_session_before_submit.session_id,
+            flow_id=active_session_id,
             tag=_TRAINING_QUESTION_TAG,
         )
     game_state = context.user_data.get(_GAME_STATE_KEY)

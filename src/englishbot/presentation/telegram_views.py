@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -15,6 +16,29 @@ if TYPE_CHECKING:
     from englishbot.application.services import AnswerOutcome
 
 TelegramReplyMarkup = InlineKeyboardMarkup | ReplyKeyboardMarkup
+_CORRECT_FEEDBACK_EMOJIS: tuple[str, ...] = (
+    "😊",
+    "😄",
+    "🙂",
+    "😉",
+    "😎",
+    "🤓",
+    "🥳",
+    "🌟",
+    "✨",
+    "💫",
+    "🎉",
+    "🎈",
+    "🍀",
+    "🧩",
+    "🚀",
+    "🔥",
+    "🌈",
+    "🦋",
+    "🍓",
+    "🍉",
+)
+_INCORRECT_FEEDBACK_EMOJI = "🙂"
 
 
 @dataclass(frozen=True)
@@ -63,12 +87,15 @@ def build_answer_feedback_view(
     user=None,
 ) -> TelegramTextView:
     if outcome.result.is_correct:
-        text = translate("correct", user=user)
+        text = f"{random.choice(_CORRECT_FEEDBACK_EMOJIS)} {translate('correct', user=user)}"
     else:
-        text = translate(
-            "not_quite",
-            user=user,
-            expected_answer=outcome.result.expected_answer,
+        text = (
+            f"{_INCORRECT_FEEDBACK_EMOJI} "
+            + translate(
+                "not_quite",
+                user=user,
+                expected_answer=outcome.result.expected_answer,
+            )
         )
     if outcome.summary is not None:
         text += translate(

@@ -111,7 +111,24 @@ def test_build_answer_feedback_view_renders_incorrect_answer_with_summary() -> N
         ),
     )
 
-    assert view.text == "Wrong: dragon. Done 3/5."
+    assert view.text == "🙂 Wrong: dragon. Done 3/5."
+
+
+def test_build_answer_feedback_view_renders_correct_answer_with_random_pleasant_emoji(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("englishbot.presentation.telegram_views.random.choice", lambda values: "✨")
+    outcome = SimpleNamespace(
+        result=SimpleNamespace(is_correct=True, expected_answer="dragon"),
+        summary=None,
+    )
+
+    view = build_answer_feedback_view(
+        outcome,
+        translate=lambda key, **kwargs: "Correct." if key == "correct" else "",
+    )
+
+    assert view.text == "✨ Correct."
 
 
 def test_build_draft_preview_view_formats_user_visible_preview() -> None:
