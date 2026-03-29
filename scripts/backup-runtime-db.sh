@@ -28,7 +28,7 @@ TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 SAFE_LABEL="$(printf '%s' "${DEPLOY_LABEL}" | tr '/: ' '---')"
 BACKUP_FILE_NAME="englishbot-db-${SAFE_LABEL}-${TIMESTAMP}.sqlite3"
 BACKUP_PATH_HOST="${BACKUP_DIR}/${BACKUP_FILE_NAME}"
-BACKUP_PATH_CONTAINER="/app/backups/db/${BACKUP_FILE_NAME}"
+BACKUP_PATH_CONTAINER="/tmp/${BACKUP_FILE_NAME}"
 
 mkdir -p "${BACKUP_DIR}"
 
@@ -57,6 +57,8 @@ finally:
     target.close()
     source.close()
 PY
+  docker cp "${CONTAINER_NAME}:${BACKUP_PATH_CONTAINER}" "${BACKUP_PATH_HOST}"
+  docker exec "${CONTAINER_NAME}" rm -f "${BACKUP_PATH_CONTAINER}"
 else
   DB_PATH_HOST="${SHARED_DIR}/${CONTENT_DB_PATH}"
   if [[ ! -f "${DB_PATH_HOST}" ]]; then

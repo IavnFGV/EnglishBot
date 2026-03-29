@@ -62,7 +62,8 @@ def test_docker_compose_mounts_persistent_runtime_directories() -> None:
     assert "/srv/englishbot/shared/.env:/app/.env:ro" in compose
     assert "/srv/englishbot/shared/data:/app/data" in compose
     assert "/srv/englishbot/shared/assets:/app/assets" in compose
-    assert "/srv/englishbot/shared/backups:/app/backups" in compose
+    assert "/srv/englishbot/shared/backups/db:/app/backups/db" in compose
+    assert "/srv/englishbot/shared/backups/db-versioned:/app/backups/db-versioned" in compose
     assert "/srv/englishbot/shared/logs:/app/logs" in compose
     assert "/srv/englishbot/shared/content/custom:/app/content/custom" in compose
 
@@ -113,6 +114,9 @@ def test_server_backup_script_keeps_only_latest_five_versions() -> None:
     assert 'PERMANENT_BACKUP_LABEL="${PERMANENT_BACKUP_LABEL:-}"' in script
     assert 'docker exec' in script
     assert 'source.backup(target)' in script
+    assert 'BACKUP_PATH_CONTAINER="/tmp/${BACKUP_FILE_NAME}"' in script
+    assert 'docker cp "${CONTAINER_NAME}:${BACKUP_PATH_CONTAINER}" "${BACKUP_PATH_HOST}"' in script
+    assert 'docker exec "${CONTAINER_NAME}" rm -f "${BACKUP_PATH_CONTAINER}"' in script
     assert 'englishbot-db-${SAFE_LABEL}-${TIMESTAMP}.sqlite3' in script
     assert "find \"${BACKUP_DIR}\" -maxdepth 1 -type f -name 'englishbot-db-*.sqlite3'" in script
     assert 'if [[ ${#EXISTING_BACKUPS[@]} -gt "${KEEP_BACKUPS}" ]]' in script

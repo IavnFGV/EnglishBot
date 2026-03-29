@@ -63,6 +63,11 @@ It runs on every push to `main` and does:
 6. Keep the latest 5 rolling SQLite backups in `shared/backups/db/`
 7. When app version changes, save an additional permanent backup in `shared/backups/db-versioned/`
 
+Backup behavior detail:
+
+- During deploy backup, if container `englishbot` is running, the script creates SQLite backup in container temp path (`/tmp/...`) and then copies it to host `shared/backups/db/` via `docker cp`.
+- This does not depend on whether `/app/backups` is mounted in the currently running container (important for old containers created before mount changes).
+
 ### Required GitHub repository secrets
 
 - `DEPLOY_HOST`: Hetzner server IP or hostname
