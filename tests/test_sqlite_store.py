@@ -712,3 +712,43 @@ def test_sqlite_store_tracks_recent_session_words(tmp_path: Path) -> None:
     )
 
     assert store.list_recent_session_words(user_id=1, limit_sessions=2) == {"dog", "sun"}
+
+
+def test_sqlite_store_lists_goals_and_user_metrics(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType, TrainingMode
+
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+            ],
+        }
+    )
+    goal = store.assign_goal(
+        user_id=1,
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=1,
+        target_word_ids=["cat"],
+    )
+    store.award_weekly_points(
+        user_id=1,
+        word_id="cat",
+        mode=TrainingMode.EASY,
+        level_up_delta=0,
+        awarded_at=datetime(2026, 3, 24, tzinfo=UTC),
+    )
+    store.update_game_streak(user_id=1, played_at=datetime(2026, 3, 24, tzinfo=UTC))
+
+    goals = store.list_user_goals(user_id=1, statuses=(GoalStatus.ACTIVE,))
+    profile = store.get_game_profile(user_id=1)
+    weekly_points = store.get_weekly_points(user_id=1, now=datetime(2026, 3, 24, tzinfo=UTC))
+
+    assert goals[0].id == goal.id
+    assert profile.current_streak_days == 1
+    assert weekly_points == 10

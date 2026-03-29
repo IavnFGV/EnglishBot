@@ -149,6 +149,32 @@ Current editor flow:
    - `Publish Without Images`
 7. optionally edit published words and published images later
 
+## Learner Goals + Progress (Telegram UI)
+
+Learners now have a dedicated flow in `/words`:
+
+1. open `/words`
+2. tap `🎯 Goals` to view active goals and create a new one
+3. choose period (`daily`, `weekly`, `homework`)
+4. choose `target_count` (preset or manual number)
+5. pick `Recent words` as source and save
+6. tap `📊 Progress` to see:
+   - total correct / incorrect answers
+   - current game streak
+   - weekly points
+   - active goals with completion percent
+7. use `Reset goal` from the goals screen to stop an active goal
+
+Supported callback routes:
+
+- `words:goals`
+- `words:progress`
+- `words:goal_setup`
+- `words:goal_period:<daily|weekly|homework>`
+- `words:goal_target:<n|custom>`
+- `words:goal_source:recent`
+- `words:goal_reset:<goal_id>`
+
 For published content, the editor can also:
 
 - edit a word after publication
