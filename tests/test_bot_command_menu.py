@@ -48,7 +48,7 @@ async def test_post_init_sets_public_and_scoped_commands() -> None:
     await _post_init(app)  # type: ignore[arg-type]
 
     assert bot.calls[0][0] == [
-        ("start", "Start training"),
+        ("start", "Open personal start menu"),
         ("help", "Show commands"),
         ("version", "Show bot version"),
         ("words", "Open words menu"),

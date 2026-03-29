@@ -54,6 +54,7 @@ class ActiveSessionInfo:
     session_id: str
     topic_id: str
     lesson_id: str | None
+    source_tag: str | None
     mode: TrainingMode
     current_position: int
     total_items: int
@@ -211,7 +212,7 @@ class GetCurrentQuestionUseCase:
         item = self._vocabulary_repository.get_by_id(item_id)
         if item is None:
             raise InvalidSessionStateError("Session references a missing vocabulary item.")
-        topic_items = self._vocabulary_repository.list_by_topic(session.topic_id, session.lesson_id)
+        topic_items = self._resolve_question_pool(session)
         return self._question_factory.create_question(
             session=session,
             item=item,
@@ -223,6 +224,16 @@ class GetCurrentQuestionUseCase:
         if session is None:
             raise InvalidSessionStateError("The user has no active training session.")
         return session
+
+    def _resolve_question_pool(self, session: TrainingSession) -> list[VocabularyItem]:
+        if session.source_tag is not None and session.source_tag.startswith("assignment:"):
+            items: list[VocabularyItem] = []
+            for session_item in session.items:
+                item = self._vocabulary_repository.get_by_id(session_item.vocabulary_item_id)
+                if item is not None:
+                    items.append(item)
+            return items
+        return self._vocabulary_repository.list_by_topic(session.topic_id, session.lesson_id)
 
 
 class SubmitAnswerUseCase:
@@ -345,6 +356,7 @@ class GetActiveSessionUseCase:
             session_id=session.id,
             topic_id=session.topic_id,
             lesson_id=session.lesson_id,
+            source_tag=session.source_tag,
             mode=session.mode,
             current_position=session.current_index + 1,
             total_items=session.total_items,

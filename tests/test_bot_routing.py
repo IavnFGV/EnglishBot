@@ -4,6 +4,7 @@ from englishbot.bot import (
     add_words_text_handler,
     build_application,
     chat_member_logger_handler,
+    game_mode_placeholder_callback_handler,
     group_text_observer_handler,
     image_review_edit_search_query_handler,
     image_review_next_handler,
@@ -59,6 +60,7 @@ def test_text_answer_handler_is_registered_after_add_words_handler() -> None:
     assert any(handler.callback is add_words_text_handler for handler in app.handlers[0])
     assert any(handler.callback is version_handler for handler in app.handlers[0])
     assert any(handler.callback is chat_member_logger_handler for handler in app.handlers[0])
+    assert any(handler.callback is game_mode_placeholder_callback_handler for handler in app.handlers[0])
     assert any(handler.callback is image_review_search_handler for handler in app.handlers[0])
     assert any(handler.callback is image_review_next_handler for handler in app.handlers[0])
     assert any(handler.callback is image_review_previous_handler for handler in app.handlers[0])

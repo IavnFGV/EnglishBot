@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import random
+import uuid
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from math import ceil
 
-from englishbot.domain.models import Goal, GoalPeriod, GoalStatus, GoalType, TrainingMode
-from englishbot.infrastructure.sqlite_store import SQLiteContentStore
+from englishbot.application.learning_progress import choose_word_mode
+from englishbot.application.question_factory import QuestionFactory
+from englishbot.domain.models import Goal, GoalPeriod, GoalStatus, GoalType, SessionItem, TrainingMode
+from englishbot.domain.models import TrainingQuestion, TrainingSession, VocabularyItem
+from englishbot.infrastructure.sqlite_store import (
+    SQLiteContentStore,
+    SQLiteSessionRepository,
+    SQLiteUserProgressRepository,
+    SQLiteVocabularyRepository,
+)
 from englishbot.logging_utils import logged_service_call
 
 
@@ -50,6 +62,29 @@ class AdminGoalDetailView:
     goal: Goal
     progress_percent: int
     words: list[GoalWordDetailView]
+
+
+class AssignmentSessionKind(StrEnum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    HOMEWORK = "homework"
+    ALL = "all"
+
+
+@dataclass(slots=True, frozen=True)
+class AssignmentLaunchView:
+    kind: AssignmentSessionKind
+    available: bool
+    remaining_word_count: int
+    estimated_round_count: int
+
+
+@dataclass(slots=True, frozen=True)
+class AssignmentWordView:
+    word_id: str
+    english_word: str
+    translation: str
+    required_level: int | None = None
 
 
 class GoalWordSource(StrEnum):
@@ -331,3 +366,178 @@ class HomeworkProgressUseCase:
             goal_id=goal_id,
             status=GoalStatus.EXPIRED,
         )
+
+
+class GetLearnerAssignmentLaunchSummaryUseCase:
+    def __init__(self, *, store: SQLiteContentStore, batch_size: int = 5) -> None:
+        self._store = store
+        self._batch_size = batch_size
+
+    @logged_service_call(
+        "GetLearnerAssignmentLaunchSummaryUseCase.execute",
+        include=("user_id",),
+        result=lambda value: {"option_count": len(value)},
+    )
+    def execute(self, *, user_id: int) -> list[AssignmentLaunchView]:
+        return [
+            self._build_launch_view(user_id=user_id, kind=kind)
+            for kind in (
+                AssignmentSessionKind.DAILY,
+                AssignmentSessionKind.WEEKLY,
+                AssignmentSessionKind.HOMEWORK,
+                AssignmentSessionKind.ALL,
+            )
+        ]
+
+    def _build_launch_view(self, *, user_id: int, kind: AssignmentSessionKind) -> AssignmentLaunchView:
+        remaining_words = _remaining_assignment_words(store=self._store, user_id=user_id, kind=kind)
+        remaining_count = len(remaining_words)
+        return AssignmentLaunchView(
+            kind=kind,
+            available=remaining_count > 0,
+            remaining_word_count=remaining_count,
+            estimated_round_count=(ceil(remaining_count / self._batch_size) if remaining_count > 0 else 0),
+        )
+
+
+class StartAssignmentRoundUseCase:
+    def __init__(
+        self,
+        *,
+        store: SQLiteContentStore,
+        vocabulary_repository: SQLiteVocabularyRepository,
+        progress_repository: SQLiteUserProgressRepository,
+        session_repository: SQLiteSessionRepository,
+        question_factory: QuestionFactory,
+        batch_size: int = 5,
+    ) -> None:
+        self._store = store
+        self._vocabulary_repository = vocabulary_repository
+        self._progress_repository = progress_repository
+        self._session_repository = session_repository
+        self._question_factory = question_factory
+        self._batch_size = batch_size
+
+    @logged_service_call(
+        "StartAssignmentRoundUseCase.execute",
+        include=("user_id",),
+        transforms={"kind": lambda value: {"kind": value.value}},
+        result=lambda value: {"session_id": value.session_id, "item_id": value.item_id},
+    )
+    def execute(self, *, user_id: int, kind: AssignmentSessionKind) -> TrainingQuestion:
+        remaining_words = _remaining_assignment_words(store=self._store, user_id=user_id, kind=kind)
+        selected_words = remaining_words[: self._batch_size]
+        if not selected_words:
+            raise ValueError("No active assignments available for this section.")
+        items = self._resolve_items(selected_words)
+        item_modes = self._build_item_modes(user_id=user_id, selected_words=selected_words, items=items)
+        session = TrainingSession(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            topic_id=self._resolve_session_topic_id(items),
+            mode=TrainingMode.MEDIUM,
+            source_tag=f"assignment:{kind.value}",
+            items=[
+                SessionItem(order=index, vocabulary_item_id=item.id, mode=item_modes[item.id])
+                for index, item in enumerate(items)
+            ],
+        )
+        self._session_repository.save(session)
+        return self._question_factory.create_question(
+            session=session,
+            item=items[0],
+            all_topic_items=items,
+        )
+
+    def _resolve_items(self, selected_words: list[AssignmentWordView]) -> list[VocabularyItem]:
+        items: list[VocabularyItem] = []
+        for word in selected_words:
+            item = self._vocabulary_repository.get_by_id(word.word_id)
+            if item is not None:
+                items.append(item)
+        if not items:
+            raise ValueError("No assignment words are currently available.")
+        return items
+
+    def _resolve_session_topic_id(self, items: list[VocabularyItem]) -> str:
+        for item in items:
+            if item.topic_id:
+                return item.topic_id
+            topic_ids = self._store.list_topic_ids_for_item(item.id)
+            if topic_ids:
+                return topic_ids[0]
+        raise ValueError("Assignment words are missing topic bindings.")
+
+    def _build_item_modes(
+        self,
+        *,
+        user_id: int,
+        selected_words: list[AssignmentWordView],
+        items: list[VocabularyItem],
+    ) -> dict[str, TrainingMode]:
+        selected_word_map = {item.word_id: item for item in selected_words}
+        hard_limit = max(1, len(items) // 4) if items else 0
+        hard_selected = 0
+        item_modes: dict[str, TrainingMode] = {}
+        for item in items:
+            selected_word = selected_word_map[item.id]
+            mode = self._progress_repository.get_homework_stage_mode(user_id=user_id, item_id=item.id)
+            if mode is None:
+                word_stats = self._progress_repository.get_word_stats(user_id, item.id)
+                current_level = word_stats.current_level if word_stats is not None else 0
+                mode = choose_word_mode(
+                    current_level=current_level,
+                    rng=random.Random(f"assignment:{user_id}:{item.id}:{self._batch_size}"),
+                    min_required_level=selected_word.required_level,
+                )
+            if len(items) < 3 and mode is TrainingMode.EASY:
+                mode = TrainingMode.MEDIUM
+            if mode is TrainingMode.HARD and hard_selected >= hard_limit:
+                mode = TrainingMode.MEDIUM
+            if mode is TrainingMode.HARD:
+                hard_selected += 1
+            item_modes[item.id] = mode
+        return item_modes
+
+
+def _remaining_assignment_words(
+    *,
+    store: SQLiteContentStore,
+    user_id: int,
+    kind: AssignmentSessionKind,
+) -> list[AssignmentWordView]:
+    progress_map = {item.item_id: item for item in store.list_progress_by_user(user_id)}
+    goals = store.list_user_goals(user_id=user_id, statuses=(GoalStatus.ACTIVE,))
+    periods = _periods_for_kind(kind)
+    remaining: OrderedDict[str, AssignmentWordView] = OrderedDict()
+    for goal in goals:
+        if goal.goal_period not in periods:
+            continue
+        if goal.goal_type not in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}:
+            continue
+        for row in store.list_goal_word_details(goal_id=goal.id, user_id=user_id):
+            word_id = str(row["word_id"])
+            if word_id in remaining:
+                continue
+            if goal.goal_type is GoalType.WORD_LEVEL_HOMEWORK:
+                is_complete = bool(row.get("medium_mastered"))
+                required_level = int(goal.required_level or 2)
+            else:
+                progress = progress_map.get(word_id)
+                is_complete = bool(progress and progress.correct_answers > 0)
+                required_level = None
+            if is_complete:
+                continue
+            remaining[word_id] = AssignmentWordView(
+                word_id=word_id,
+                english_word=str(row["english_word"]),
+                translation=str(row["translation"]),
+                required_level=required_level,
+            )
+    return list(remaining.values())
+
+
+def _periods_for_kind(kind: AssignmentSessionKind) -> tuple[GoalPeriod, ...]:
+    if kind is AssignmentSessionKind.ALL:
+        return (GoalPeriod.DAILY, GoalPeriod.WEEKLY, GoalPeriod.HOMEWORK)
+    return (GoalPeriod(kind.value),)

@@ -28,6 +28,7 @@ from englishbot.presentation.telegram_views import (
     build_mode_selection_view,
     build_published_word_edit_prompt_view,
     build_quick_actions_view,
+    build_start_menu_view,
     build_status_view,
     build_topic_selection_view,
     build_training_question_view,
@@ -144,6 +145,7 @@ def test_menu_and_selection_builders_keep_user_visible_text_and_markup() -> None
     topic_view = build_topic_selection_view(text="Choose topic", reply_markup=markup)
     lesson_view = build_lesson_selection_view(text="Choose lesson", reply_markup=markup)
     mode_view = build_mode_selection_view(text="Choose mode", reply_markup=markup)
+    start_menu = build_start_menu_view(text="Start menu", reply_markup=markup)
     words_menu = build_words_menu_view(text="Words menu", reply_markup=markup)
     quick_actions = build_quick_actions_view(text="Quick actions", reply_markup=markup)
     help_view = build_help_view(text="Help", reply_markup=markup)
@@ -155,6 +157,7 @@ def test_menu_and_selection_builders_keep_user_visible_text_and_markup() -> None
     assert topic_view.reply_markup is markup
     assert lesson_view.text == "Choose lesson"
     assert mode_view.reply_markup is markup
+    assert start_menu.text == "Start menu"
     assert words_menu.text == "Words menu"
     assert quick_actions.reply_markup is markup
     assert help_view.text == "Help"

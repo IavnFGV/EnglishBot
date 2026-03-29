@@ -330,6 +330,36 @@ def test_get_current_question_rejects_completed_session(
         use_case.execute(user_id=1)
 
 
+def test_get_current_question_uses_session_item_pool_for_assignment_sessions(
+    vocabulary_items: list[VocabularyItem],
+) -> None:
+    session_repository = InMemorySessionRepository()
+    assignment_session = TrainingSession(
+        id="session-assignment",
+        user_id=1,
+        topic_id="seasons",
+        source_tag="assignment:all",
+        mode=TrainingMode.EASY,
+        items=[
+            SessionItem(order=0, vocabulary_item_id="5", mode=TrainingMode.EASY),
+            SessionItem(order=1, vocabulary_item_id="6", mode=TrainingMode.EASY),
+            SessionItem(order=2, vocabulary_item_id="7", mode=TrainingMode.EASY),
+        ],
+    )
+    session_repository._sessions[assignment_session.id] = assignment_session
+    session_repository._active_by_user[1] = assignment_session.id
+    use_case = GetCurrentQuestionUseCase(
+        vocabulary_repository=InMemoryVocabularyRepository(vocabulary_items),
+        session_repository=session_repository,
+        question_factory=QuestionFactory(random.Random(1)),
+    )
+
+    question = use_case.execute(user_id=1)
+
+    assert question.item_id == "5"
+    assert set(question.options or []) <= {"spring", "winter", "summer"}
+
+
 def test_submit_answer_refuses_extra_answer_after_completion(
     topics: list[Topic],
     lessons: list[Lesson],

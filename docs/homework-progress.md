@@ -31,6 +31,41 @@ All users can open it and see:
 
 The user list also shows compact role and progress data.
 
+## `/start`
+
+`/start` is now a personal launch screen instead of a direct topic picker.
+
+It shows:
+
+- **🎮 Start game** as a placeholder for future game mode
+- **📅 Daily**
+- **🗓️ Weekly**
+- **📘 Homework**
+- **🧩 All assignments**
+
+Behavior:
+
+- assignment buttons are enabled only when that section still has remaining words
+- disabled sections stay visible but do not start a round
+- `All assignments` deduplicates remaining words across daily, weekly, and homework goals
+- the status text on the screen shows how many words remain and the estimated number of rounds
+
+## Assignment rounds
+
+Assignment rounds are now independent from topics.
+
+That means:
+
+- a learner no longer has to open each topic manually to close a mixed assignment
+- pressing one of the assignment buttons starts a round from the remaining assigned words
+- round size is batched
+- after a round is completed, Telegram offers **Next round** when more assigned words remain
+
+The current implementation treats progress per word, not per topic:
+
+- `new_words` goals treat a word as remaining until the learner answers it correctly at least once
+- `word_level_homework` treats a word as remaining until the homework flow reaches its required mastered stage
+
 ### Admin drill-down
 
 Admins can now inspect assignments in depth:

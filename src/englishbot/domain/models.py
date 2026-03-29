@@ -111,6 +111,7 @@ class TrainingSession:
     mode: TrainingMode
     items: list[SessionItem]
     lesson_id: str | None = None
+    source_tag: str | None = None
     current_index: int = 0
     answer_history: list[SessionAnswer] = field(default_factory=list)
     completed: bool = False

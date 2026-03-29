@@ -3,9 +3,11 @@ from types import SimpleNamespace
 import pytest
 from telegram.error import BadRequest
 
+from englishbot.application.homework_progress_use_cases import AssignmentLaunchView, AssignmentSessionKind
 from englishbot.presentation.telegram_menu_access import TelegramMenuAccessPolicy
 from englishbot.bot import (
     _assign_menu_keyboard,
+    _assignment_round_complete_keyboard,
     _admin_goal_manual_keyboard,
     _admin_goal_recipients_keyboard,
     assign_goal_detail_callback_handler,
@@ -22,10 +24,15 @@ from englishbot.bot import (
     _image_review_markup,
     _image_review_keyboard,
     _published_image_topics_keyboard,
+    _mode_keyboard,
+    _start_menu_keyboard,
     _topic_keyboard,
     _published_image_items_keyboard,
     _words_menu_keyboard,
     _editable_topics_keyboard,
+    game_mode_placeholder_callback_handler,
+    start_assignment_round_callback_handler,
+    start_assignment_unavailable_callback_handler,
     words_add_words_callback_handler,
     words_goals_callback_handler,
     goal_target_preset_callback_handler,
@@ -37,6 +44,7 @@ from englishbot.bot import (
     words_menu_callback_handler,
     words_topics_callback_handler,
 )
+from englishbot.domain.models import TrainingMode
 
 
 class _FakeQuery:
@@ -198,6 +206,35 @@ async def test_words_goals_callback_handler_shows_progress_summary() -> None:
     await words_goals_callback_handler(update, context)  # type: ignore[arg-type]
 
     assert "Correct: 7" in query.edits[-1][0]
+
+
+@pytest.mark.anyio
+async def test_words_goals_callback_handler_ignores_message_not_modified() -> None:
+    query = _FakeQuery()
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "homework_progress_use_case": SimpleNamespace(
+                    get_summary=lambda user_id: SimpleNamespace(
+                        correct_answers=7,
+                        incorrect_answers=2,
+                        game_streak_days=3,
+                        weekly_points=18,
+                        active_goals=[],
+                    )
+                ),
+            }
+        ),
+        user_data={},
+    )
+
+    await words_goals_callback_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.answered is True
 
 
 @pytest.mark.anyio
@@ -433,6 +470,45 @@ def test_assign_menu_keyboard_shows_admin_buttons() -> None:
     ]
 
 
+def test_start_menu_keyboard_exposes_personal_launch_actions() -> None:
+    keyboard = _start_menu_keyboard(
+        summary=[
+            AssignmentLaunchView(
+                kind=AssignmentSessionKind.DAILY,
+                available=True,
+                remaining_word_count=4,
+                estimated_round_count=1,
+            ),
+            AssignmentLaunchView(
+                kind=AssignmentSessionKind.WEEKLY,
+                available=False,
+                remaining_word_count=0,
+                estimated_round_count=0,
+            ),
+            AssignmentLaunchView(
+                kind=AssignmentSessionKind.HOMEWORK,
+                available=True,
+                remaining_word_count=6,
+                estimated_round_count=2,
+            ),
+            AssignmentLaunchView(
+                kind=AssignmentSessionKind.ALL,
+                available=True,
+                remaining_word_count=10,
+                estimated_round_count=2,
+            ),
+        ]
+    )
+
+    assert [row[0].callback_data for row in keyboard.inline_keyboard] == [
+        "start:game",
+        "start:launch:daily",
+        "start:disabled:weekly",
+        "start:launch:homework",
+        "start:launch:all",
+    ]
+
+
 def test_goal_flow_keyboards_include_back_navigation() -> None:
     assert _goal_setup_keyboard().inline_keyboard[-1][0].callback_data == "assign:menu"
     assert _goal_target_keyboard().inline_keyboard[-1][0].callback_data == "assign:goal_setup"
@@ -493,6 +569,27 @@ def test_admin_goal_recipients_keyboard_shows_page_range_indicator() -> None:
     )
 
     assert any(button.text == "1-8 / 10" for row in keyboard.inline_keyboard for button in row)
+
+
+def test_mode_keyboard_no_longer_contains_game_mode_entry() -> None:
+    keyboard = _mode_keyboard("animals", None, language="en")
+
+    assert len(keyboard.inline_keyboard) == 1
+    assert [button.callback_data for button in keyboard.inline_keyboard[0]] == [
+        "mode:animals:all:easy",
+        "mode:animals:all:medium",
+        "mode:animals:all:hard",
+    ]
+
+
+def test_assignment_round_complete_keyboard_offers_next_round_when_available() -> None:
+    keyboard = _assignment_round_complete_keyboard(AssignmentSessionKind.ALL, has_more=True)
+
+    assert [row[0].callback_data for row in keyboard.inline_keyboard] == [
+        "start:launch:all",
+        "assign:menu",
+        "start:menu",
+    ]
 
 
 @pytest.mark.anyio
@@ -662,6 +759,90 @@ async def test_assign_goal_detail_callback_handler_shows_goal_words() -> None:
     assert "Words:" in query.edits[-1][0]
     assert "Cat" in query.edits[-1][0]
     assert query.edits[-1][1].inline_keyboard[0][0].callback_data == "assign:user:456"
+
+
+@pytest.mark.anyio
+async def test_start_assignment_round_callback_handler_starts_selected_round() -> None:
+    query = _RecordingQuery()
+    query.data = "start:launch:homework"
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "start_assignment_round_use_case": SimpleNamespace(
+                    execute=lambda user_id, kind: SimpleNamespace(
+                        session_id="s1",
+                        item_id="cat",
+                        mode=TrainingMode.MEDIUM,
+                        prompt="Translation: кот",
+                        image_ref=None,
+                        correct_answer="Cat",
+                        options=None,
+                        input_hint="Type it",
+                        letter_hint="a c t",
+                    )
+                )
+            }
+        ),
+        user_data={},
+    )
+
+    async def _fake_send_question(update, ctx, question):  # noqa: ANN001
+        query.edits.append((question.prompt, None))
+
+    import englishbot.bot as bot_module
+
+    original = bot_module._send_question
+    bot_module._send_question = _fake_send_question
+    try:
+        await start_assignment_round_callback_handler(
+            SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=123, language_code="en")),
+            context,  # type: ignore[arg-type]
+        )
+    finally:
+        bot_module._send_question = original
+
+    assert query.edits[0][0] == "📘 Homework round started."
+    assert query.edits[1][0] == "Translation: кот"
+
+
+@pytest.mark.anyio
+async def test_start_assignment_unavailable_callback_handler_shows_empty_message() -> None:
+    query = _RecordingQuery()
+
+    await start_assignment_unavailable_callback_handler(
+        SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=123, language_code="en")),
+        SimpleNamespace(application=SimpleNamespace(bot_data={}), user_data={}),  # type: ignore[arg-type]
+    )
+
+    assert query.edits[-1][0] == "No active assignments in this section right now."
+    assert query.edits[-1][1].inline_keyboard[0][0].callback_data == "start:menu"
+
+
+@pytest.mark.anyio
+async def test_game_mode_placeholder_callback_handler_shows_stub_message() -> None:
+    query = _RecordingQuery()
+
+    await game_mode_placeholder_callback_handler(
+        SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=123, language_code="en")),
+        SimpleNamespace(application=SimpleNamespace(bot_data={}), user_data={}),  # type: ignore[arg-type]
+    )
+
+    assert query.edits[-1][0] == "🎮 Game mode is coming soon."
+    assert query.edits[-1][1].inline_keyboard[0][0].callback_data == "start:menu"
+
+
+def test_start_menu_keyboard_marks_unavailable_assignments() -> None:
+    keyboard = _start_menu_keyboard(
+        summary=[
+            AssignmentLaunchView(AssignmentSessionKind.DAILY, True, 2, 1),
+            AssignmentLaunchView(AssignmentSessionKind.WEEKLY, False, 0, 0),
+            AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, False, 0, 0),
+            AssignmentLaunchView(AssignmentSessionKind.ALL, True, 4, 1),
+        ]
+    )
+
+    assert keyboard.inline_keyboard[2][0].text.startswith("🚫")
+    assert keyboard.inline_keyboard[2][0].callback_data == "start:disabled:weekly"
 
 
 def test_image_review_keyboard_uses_russian_labels_when_requested() -> None:

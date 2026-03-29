@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from englishbot.application.training_use_cases import AnswerOutcome
-from englishbot.bot import _mode_keyboard, _process_answer, game_mode_selected_handler
+from englishbot.bot import _mode_keyboard, _process_answer
 from englishbot.domain.models import CheckResult, SessionSummary, TrainingMode, TrainingQuestion
 
 
@@ -60,43 +60,6 @@ class _FakeMessage:
         self.replies.append((text, reply_markup))
 
 
-class _FakeQuery:
-    def __init__(self, data: str) -> None:
-        self.data = data
-        self.edits: list[tuple[str, object | None]] = []
-
-    async def answer(self) -> None:
-        return None
-
-    async def edit_message_text(self, text: str, reply_markup=None) -> None:
-        self.edits.append((text, reply_markup))
-
-
-@pytest.mark.anyio
-async def test_game_mode_selected_handler_starts_game_state() -> None:
-    query = _FakeQuery("gamemode:animals:all:easy")
-    user = SimpleNamespace(id=42, language_code="en")
-    context = SimpleNamespace(
-        user_data={},
-        application=SimpleNamespace(
-            bot_data={
-                "training_service": _FakeService(),
-                "content_store": _FakeStore(),
-                "telegram_ui_language": "en",
-            }
-        ),
-    )
-    update = SimpleNamespace(callback_query=query, effective_user=user, effective_message=_FakeMessage())
-
-    await game_mode_selected_handler(update, context)  # type: ignore[arg-type]
-
-    assert context.user_data["game_mode_state"]["active"] is True
-    assert context.user_data["game_mode_state"]["topic_id"] == "animals"
-    assert context.user_data["awaiting_text_answer"] is False
-    assert query.edits
-    assert "Game on" in query.edits[0][0]
-
-
 @pytest.mark.anyio
 async def test_process_answer_in_game_mode_sends_feedback_and_completion() -> None:
     message = _FakeMessage()
@@ -148,9 +111,11 @@ async def test_process_answer_in_game_mode_sends_feedback_and_completion() -> No
     assert any("Level complete" in text for text, _ in message.replies)
 
 
-def test_mode_keyboard_contains_game_mode_entry() -> None:
+def test_mode_keyboard_only_contains_training_modes() -> None:
     keyboard = _mode_keyboard("animals", None, language="en")
-    rows = keyboard.inline_keyboard
-
-    assert rows[1][0].callback_data == "gameentry:animals:all"
-    assert rows[1][0].text == "🎮 Game Mode"
+    assert len(keyboard.inline_keyboard) == 1
+    assert [button.callback_data for button in keyboard.inline_keyboard[0]] == [
+        "mode:animals:all:easy",
+        "mode:animals:all:medium",
+        "mode:animals:all:hard",
+    ]

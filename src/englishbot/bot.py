@@ -64,15 +64,19 @@ from englishbot.application.image_review_use_cases import (
     UpdateImageReviewPromptUseCase,
 )
 from englishbot.application.homework_progress_use_cases import (
+    AssignmentLaunchView,
+    AssignmentSessionKind,
     AssignGoalToUsersUseCase,
     GetAdminGoalDetailUseCase,
     GetAdminUserGoalsUseCase,
     GetAdminUsersProgressOverviewUseCase,
+    GetLearnerAssignmentLaunchSummaryUseCase,
     GetGoalWordCandidatesUseCase,
     GetUserProgressSummaryUseCase,
     GoalWordSource,
     HomeworkProgressUseCase,
     ListUserGoalsUseCase,
+    StartAssignmentRoundUseCase,
 )
 from englishbot.application.published_content_use_cases import (
     ListEditableTopicsUseCase,
@@ -83,6 +87,7 @@ from englishbot.application.services import (
     AnswerOutcome,
     ApplicationError,
     InvalidSessionStateError,
+    QuestionFactory,
     TrainingFacade,
 )
 from englishbot.bootstrap import build_lesson_import_pipeline, build_training_service
@@ -108,8 +113,11 @@ from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.infrastructure.sqlite_store import (
     SQLiteAddWordsFlowRepository,
     SQLiteImageReviewFlowRepository,
+    SQLiteSessionRepository,
     SQLiteTelegramFlowMessageRepository,
     SQLiteTelegramUserLoginRepository,
+    SQLiteUserProgressRepository,
+    SQLiteVocabularyRepository,
 )
 from englishbot.presentation.add_words_text import (
     format_draft_edit_text,
@@ -133,6 +141,7 @@ from englishbot.presentation.telegram_views import (
     build_mode_selection_view,
     build_published_word_edit_prompt_view,
     build_quick_actions_view,
+    build_start_menu_view,
     build_status_view,
     build_topic_selection_view,
     build_training_question_view,
@@ -169,12 +178,13 @@ _EXPECTED_USER_INPUT_STATE_KEY = "expected_user_input_state"
 _IMAGE_REVIEW_STEP_TAG = "image_review_step"
 _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
+_TRAINING_QUESTION_TAG = "training_question"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
 _GAME_STAR_REWARD_CORRECT = 10
 _GAME_CHEST_REWARDS: tuple[int, ...] = (30, 50, 50, 100)
 _HELP_COMMAND_TEXT: dict[str, str] = {
-    "start": "choose a topic and start training",
+    "start": "open your personal start menu",
     "help": "show commands",
     "version": "show the current bot version",
     "words": "open the words menu",
@@ -478,6 +488,16 @@ def build_application(
     app.bot_data["homework_progress_use_case"] = HomeworkProgressUseCase(store=content_store)
     app.bot_data["list_user_goals_use_case"] = ListUserGoalsUseCase(store=content_store)
     app.bot_data["get_user_progress_summary_use_case"] = GetUserProgressSummaryUseCase(store=content_store)
+    app.bot_data["learner_assignment_launch_summary_use_case"] = GetLearnerAssignmentLaunchSummaryUseCase(
+        store=content_store
+    )
+    app.bot_data["start_assignment_round_use_case"] = StartAssignmentRoundUseCase(
+        store=content_store,
+        vocabulary_repository=SQLiteVocabularyRepository(content_store),
+        progress_repository=SQLiteUserProgressRepository(content_store),
+        session_repository=SQLiteSessionRepository(content_store),
+        question_factory=QuestionFactory(random.Random(42)),
+    )
     app.bot_data["assign_goal_to_users_use_case"] = AssignGoalToUsersUseCase(store=content_store)
     app.bot_data["goal_word_candidates_use_case"] = GetGoalWordCandidatesUseCase(store=content_store)
     app.bot_data["admin_user_goals_use_case"] = GetAdminUserGoalsUseCase(store=content_store)
@@ -497,10 +517,14 @@ def build_application(
     app.add_handler(ChatMemberHandler(chat_member_logger_handler, ChatMemberHandler.ANY_CHAT_MEMBER))
     app.add_handler(CallbackQueryHandler(continue_session_handler, pattern=r"^session:continue$"))
     app.add_handler(CallbackQueryHandler(restart_session_handler, pattern=r"^session:restart$"))
+    app.add_handler(CallbackQueryHandler(start_menu_callback_handler, pattern=r"^start:menu$"))
+    app.add_handler(CallbackQueryHandler(start_assignment_round_callback_handler, pattern=r"^start:launch:"))
+    app.add_handler(CallbackQueryHandler(start_assignment_unavailable_callback_handler, pattern=r"^start:disabled:"))
+    app.add_handler(CallbackQueryHandler(game_mode_placeholder_callback_handler, pattern=r"^start:game$"))
     app.add_handler(CallbackQueryHandler(topic_selected_handler, pattern=r"^topic:"))
     app.add_handler(CallbackQueryHandler(lesson_selected_handler, pattern=r"^lesson:"))
-    app.add_handler(CallbackQueryHandler(game_mode_entry_handler, pattern=r"^gameentry:"))
-    app.add_handler(CallbackQueryHandler(game_mode_selected_handler, pattern=r"^gamemode:"))
+    app.add_handler(CallbackQueryHandler(game_mode_placeholder_callback_handler, pattern=r"^gameentry:"))
+    app.add_handler(CallbackQueryHandler(game_mode_placeholder_callback_handler, pattern=r"^gamemode:"))
     app.add_handler(CallbackQueryHandler(game_next_round_handler, pattern=r"^game:next_round$"))
     app.add_handler(CallbackQueryHandler(game_repeat_handler, pattern=r"^game:repeat$"))
     app.add_handler(CallbackQueryHandler(mode_selected_handler, pattern=r"^mode:"))
@@ -785,6 +809,18 @@ def _user_progress_summary_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetUs
     return context.application.bot_data["get_user_progress_summary_use_case"]
 
 
+def _learner_assignment_launch_summary_use_case(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> GetLearnerAssignmentLaunchSummaryUseCase:
+    return context.application.bot_data["learner_assignment_launch_summary_use_case"]
+
+
+def _start_assignment_round_use_case(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> StartAssignmentRoundUseCase:
+    return context.application.bot_data["start_assignment_round_use_case"]
+
+
 def _assign_goal_to_users_use_case(context: ContextTypes.DEFAULT_TYPE) -> AssignGoalToUsersUseCase:
     return context.application.bot_data["assign_goal_to_users_use_case"]
 
@@ -894,7 +930,11 @@ def _image_review_assets_dir(context: ContextTypes.DEFAULT_TYPE) -> Path:
 
 
 def _telegram_flow_messages(context: ContextTypes.DEFAULT_TYPE):
-    return context.application.bot_data.get("telegram_flow_message_repository")
+    application = getattr(context, "application", None)
+    bot_data = getattr(application, "bot_data", None)
+    if not isinstance(bot_data, dict):
+        return None
+    return bot_data.get("telegram_flow_message_repository")
 
 
 def _menu_access_policy(context: ContextTypes.DEFAULT_TYPE) -> TelegramMenuAccessPolicy:
@@ -1133,6 +1173,18 @@ def _quick_actions_view(
                 user_id=(user.id if user is not None else None),
             )
         ),
+    )
+
+
+def _start_menu_view(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    summary = _learner_assignment_launch_summary_use_case(context).execute(user_id=user.id)
+    return build_start_menu_view(
+        text=_render_start_menu_text(context=context, user=user, summary=summary),
+        reply_markup=_start_menu_keyboard(summary=summary, language=_telegram_ui_language(context, user)),
     )
 
 
@@ -1590,9 +1642,20 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                         "active_session_exists",
                         context=context,
                         user=user,
-                        topic_id=active_session.topic_id,
-                        lesson_id=active_session.lesson_id
-                        or _tg("all_topic_words", context=context, user=user),
+                        topic_id=_active_session_topic_label(
+                            context=context,
+                            user=user,
+                            topic_id=active_session.topic_id,
+                            source_tag=active_session.source_tag,
+                            lesson_id=active_session.lesson_id,
+                        ),
+                        lesson_id=_active_session_lesson_label(
+                            context=context,
+                            user=user,
+                            topic_id=active_session.topic_id,
+                            lesson_id=active_session.lesson_id,
+                            source_tag=active_session.source_tag,
+                        ),
                         mode=active_session.mode.value,
                         current_position=active_session.current_position,
                         total_items=active_session.total_items,
@@ -1604,15 +1667,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             )
             await send_telegram_view(message, _quick_actions_view(context=context, user=user))
             return
-    topics = _service(context).list_topics()
     await send_telegram_view(
         message,
-        _topic_selection_view(
-            text=_tg("choose_topic_start_training_help", context=context, user=user),
-            topics=topics,
-            context=context,
-            user=user,
-        ),
+        _start_menu_view(context=context, user=user),
     )
     await send_telegram_view(message, _quick_actions_view(context=context, user=user))
 
@@ -1901,6 +1958,105 @@ def _render_progress_text(*, context: ContextTypes.DEFAULT_TYPE, user) -> str:
     return "\n".join(lines)
 
 
+def _render_start_menu_text(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    summary: list[AssignmentLaunchView],
+) -> str:
+    summary_by_kind = {item.kind: item for item in summary}
+    lines = [_tg("start_menu_title", context=context, user=user), ""]
+    for kind in (
+        AssignmentSessionKind.DAILY,
+        AssignmentSessionKind.WEEKLY,
+        AssignmentSessionKind.HOMEWORK,
+        AssignmentSessionKind.ALL,
+    ):
+        item = summary_by_kind[kind]
+        lines.append(
+            _tg(
+                "start_menu_status_line",
+                context=context,
+                user=user,
+                label=_assignment_kind_label(kind, context=context, user=user),
+                words=item.remaining_word_count,
+                rounds=item.estimated_round_count,
+                status=(
+                    _tg("start_menu_status_ready", context=context, user=user)
+                    if item.available
+                    else _tg("start_menu_status_empty", context=context, user=user)
+                ),
+            )
+        )
+    return "\n".join(lines)
+
+
+def _assignment_kind_label(kind: AssignmentSessionKind, *, context: ContextTypes.DEFAULT_TYPE, user) -> str:
+    key_map = {
+        AssignmentSessionKind.DAILY: "start_daily_button",
+        AssignmentSessionKind.WEEKLY: "start_weekly_button",
+        AssignmentSessionKind.HOMEWORK: "start_homework_button",
+        AssignmentSessionKind.ALL: "start_all_assignments_button",
+    }
+    return _tg(key_map[kind], context=context, user=user)
+
+
+def _start_assignment_button_label(
+    kind: AssignmentSessionKind,
+    *,
+    available: bool,
+    language: str,
+) -> str:
+    key_map = {
+        AssignmentSessionKind.DAILY: "start_daily_button",
+        AssignmentSessionKind.WEEKLY: "start_weekly_button",
+        AssignmentSessionKind.HOMEWORK: "start_homework_button",
+        AssignmentSessionKind.ALL: "start_all_assignments_button",
+    }
+    prefix = "" if available else f"{_tg('start_disabled_prefix', language=language)} "
+    return f"{prefix}{_tg(key_map[kind], language=language)}"
+
+
+def _active_session_topic_label(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    topic_id: str,
+    source_tag: str | None = None,
+    lesson_id: str | None = None,
+) -> str:
+    if source_tag is not None and source_tag.startswith("assignment:"):
+        kind = AssignmentSessionKind(source_tag.split(":", 1)[1])
+        return _assignment_kind_label(kind, context=context, user=user)
+    if topic_id.startswith("assignment:"):
+        kind = AssignmentSessionKind(topic_id.split(":", 1)[1])
+        return _assignment_kind_label(kind, context=context, user=user)
+    return topic_id
+
+
+def _active_session_lesson_label(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    topic_id: str,
+    lesson_id: str | None,
+    source_tag: str | None = None,
+) -> str:
+    if isinstance(source_tag, str) and source_tag.startswith("assignment:"):
+        return _tg("assignment_round_session_label", context=context, user=user)
+    return lesson_id or _tg("all_topic_words", context=context, user=user)
+
+
+def _assignment_kind_from_session(active_session) -> AssignmentSessionKind | None:
+    source_tag = getattr(active_session, "source_tag", None)
+    if isinstance(source_tag, str) and source_tag.startswith("assignment:"):
+        return AssignmentSessionKind(source_tag.split(":", 1)[1])
+    topic_id = getattr(active_session, "topic_id", None)
+    if isinstance(topic_id, str) and topic_id.startswith("assignment:"):
+        return AssignmentSessionKind(topic_id.split(":", 1)[1])
+    return None
+
+
 async def words_goals_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -1908,10 +2064,14 @@ async def words_goals_callback_handler(update: Update, context: ContextTypes.DEF
         return
     await query.answer()
     summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
-    await query.edit_message_text(
-        _render_progress_text(context=context, user=user),
-        reply_markup=_goal_list_keyboard(goals=summary.active_goals, language=_telegram_ui_language(context, user)),
-    )
+    try:
+        await query.edit_message_text(
+            _render_progress_text(context=context, user=user),
+            reply_markup=_goal_list_keyboard(goals=summary.active_goals, language=_telegram_ui_language(context, user)),
+        )
+    except BadRequest as error:
+        if "Message is not modified" not in str(error):
+            raise
 
 
 async def words_progress_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4266,12 +4426,61 @@ async def restart_session_handler(update: Update, context: ContextTypes.DEFAULT_
     await query.edit_message_text(_tg("previous_session_discarded", context=context, user=user))
     await send_telegram_view(
         query.message,
-        _topic_selection_view(
-            text=_tg("choose_topic_start_training", context=context, user=user),
-            topics=_service(context).list_topics(),
+        _start_menu_view(context=context, user=user),
+    )
+
+
+async def start_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    await edit_telegram_text_view(query, _start_menu_view(context=context, user=user))
+
+
+async def start_assignment_round_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or query.data is None:
+        return
+    await query.answer()
+    kind = AssignmentSessionKind(query.data.rsplit(":", 1)[-1])
+    try:
+        question = _start_assignment_round_use_case(context).execute(user_id=user.id, kind=kind)
+    except ValueError:
+        await query.edit_message_text(
+            _tg("start_assignment_empty", context=context, user=user),
+            reply_markup=_start_submenu_keyboard(language=_telegram_ui_language(context, user)),
+        )
+        return
+    context.user_data["awaiting_text_answer"] = question.mode in {
+        TrainingMode.MEDIUM,
+        TrainingMode.HARD,
+    }
+    await query.edit_message_text(
+        _tg(
+            "assignment_round_started",
             context=context,
             user=user,
-        ),
+            label=_assignment_kind_label(kind, context=context, user=user),
+        )
+    )
+    await _send_question(update, context, question)
+
+
+async def start_assignment_unavailable_callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    await query.edit_message_text(
+        _tg("start_assignment_empty", context=context, user=user),
+        reply_markup=_start_submenu_keyboard(language=_telegram_ui_language(context, user)),
     )
 
 
@@ -4358,62 +4567,19 @@ async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TY
     await _send_question(update, context, question)
 
 
-async def game_mode_entry_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def game_mode_placeholder_callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
     query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    _, topic_id, lesson_id = query.data.split(":")
-    game_view = _game_mode_selection_view(
-        text=_tg("choose_game_mode", context=context, user=update.effective_user),
-        topic_id=topic_id,
-        lesson_id=(None if lesson_id == "all" else lesson_id),
-        context=context,
-        user=update.effective_user,
-    )
-    await query.edit_message_text(game_view.text, reply_markup=game_view.reply_markup)
-
-
-async def game_mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    _, topic_id, lesson_id, mode_value = query.data.split(":")
     user = update.effective_user
-    if user is None:
+    if query is None or user is None:
         return
-    service = _service(context)
-    selected_lesson_id = None if lesson_id == "all" else lesson_id
-    try:
-        question = service.start_session(
-            user_id=user.id,
-            topic_id=topic_id,
-            lesson_id=selected_lesson_id,
-            mode=TrainingMode(mode_value),
-            adaptive_per_word=True,
-        )
-    except ApplicationError as error:
-        await query.edit_message_text(str(error))
-        return
-    streak_days = _content_store(context).update_game_streak(user_id=user.id, played_at=datetime.now(UTC))
-    context.user_data[_GAME_STATE_KEY] = {
-        "active": True,
-        "topic_id": topic_id,
-        "lesson_id": selected_lesson_id,
-        "mode_value": mode_value,
-        "session_stars": 0,
-        "correct_answers": 0,
-        "streak_days": streak_days,
-    }
-    context.user_data["awaiting_text_answer"] = question.mode in {
-        TrainingMode.MEDIUM,
-        TrainingMode.HARD,
-    }
+    await query.answer()
     await query.edit_message_text(
-        _tg("game_session_started", context=context, user=user, streak_days=streak_days)
+        _tg("game_mode_coming_soon", context=context, user=user),
+        reply_markup=_start_submenu_keyboard(language=_telegram_ui_language(context, user)),
     )
-    await _send_question(update, context, question)
 
 
 async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4469,15 +4635,10 @@ async def game_repeat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     await query.answer()
     context.user_data.pop(_GAME_STATE_KEY, None)
-    await query.edit_message_text(_tg("choose_topic_start_training", context=context, user=user))
+    await query.edit_message_text(_tg("start_menu_title", context=context, user=user))
     await send_telegram_view(
         query.message,
-        _topic_selection_view(
-            text=_tg("choose_topic_start_training", context=context, user=user),
-            topics=_service(context).list_topics(),
-            context=context,
-            user=user,
-        ),
+        _start_menu_view(context=context, user=user),
     )
 
 
@@ -4592,6 +4753,7 @@ async def _process_answer(
     message = update.effective_message
     if user is None or message is None:
         return
+    active_session_before_submit = service.get_active_session(user_id=user.id)
     try:
         outcome = service.submit_answer(user_id=user.id, answer=answer)
     except InvalidSessionStateError:
@@ -4601,6 +4763,12 @@ async def _process_answer(
     except ApplicationError as error:
         await message.reply_text(str(error))
         return
+    if active_session_before_submit is not None:
+        await _delete_tracked_flow_messages(
+            context,
+            flow_id=active_session_before_submit.session_id,
+            tag=_TRAINING_QUESTION_TAG,
+        )
     game_state = context.user_data.get(_GAME_STATE_KEY)
     if isinstance(game_state, dict) and game_state.get("active"):
         await _send_game_feedback(message, outcome, context)
@@ -4618,18 +4786,43 @@ async def _process_answer(
         outcome.next_question is not None
         and outcome.next_question.mode in {TrainingMode.MEDIUM, TrainingMode.HARD}
     )
-    await _send_feedback(message, outcome)
+    await _send_feedback(
+        message,
+        outcome,
+        context=context,
+        active_session=active_session_before_submit,
+    )
     if outcome.next_question is not None:
         await _send_question(update, context, outcome.next_question)
 
 
-async def _send_feedback(message, outcome: AnswerOutcome) -> None:
+async def _send_feedback(
+    message,
+    outcome: AnswerOutcome,
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    active_session=None,
+) -> None:
     view = build_answer_feedback_view(
         outcome,
         translate=_tg,
         user=getattr(message, "from_user", None),
     )
-    await send_telegram_view(message, view)
+    reply_markup = None
+    assignment_kind = _assignment_kind_from_session(active_session) if active_session is not None else None
+    if outcome.summary is not None and assignment_kind is not None:
+        has_more = any(
+            item.kind is assignment_kind and item.available
+            for item in _learner_assignment_launch_summary_use_case(context).execute(
+                user_id=message.from_user.id
+            )
+        )
+        reply_markup = _assignment_round_complete_keyboard(
+            assignment_kind,
+            has_more=has_more,
+            language=_telegram_ui_language(context, getattr(message, "from_user", None)),
+        )
+    await message.reply_text(view.text, reply_markup=reply_markup, parse_mode=view.parse_mode)
 
 
 async def _send_game_feedback(
@@ -4706,12 +4899,17 @@ async def _finish_game_session(
 
 async def _send_question(
     update: Update,
-    context: ContextTypes.DEFAULT_TYPE,  # noqa: ARG001
+    context: ContextTypes.DEFAULT_TYPE,
     question: TrainingQuestion,
 ) -> None:
     message = update.effective_message
     if message is None:
         return
+    await _delete_tracked_flow_messages(
+        context,
+        flow_id=question.session_id,
+        tag=_TRAINING_QUESTION_TAG,
+    )
     reply_markup = None
     if question.options:
         reply_markup = InlineKeyboardMarkup(
@@ -4726,7 +4924,14 @@ async def _send_question(
         image_path=image_path,
         reply_markup=reply_markup,
     )
-    await send_telegram_view(message, view)
+    sent_message = await send_telegram_view(message, view)
+    _track_flow_message(
+        context,
+        flow_id=question.session_id,
+        tag=_TRAINING_QUESTION_TAG,
+        message=sent_message,
+        fallback_chat_id=_message_chat_id(message),
+    )
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4814,6 +5019,21 @@ async def _delete_tracked_messages(
             chat_id=tracked.chat_id,
             message_id=tracked.message_id,
         )
+
+
+async def _delete_tracked_flow_messages(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    flow_id: str,
+    tag: str,
+) -> None:
+    registry = _telegram_flow_messages(context)
+    if registry is None:
+        return
+    await _delete_tracked_messages(
+        context,
+        tracked_messages=registry.list(flow_id=flow_id, tag=tag),
+    )
 
 
 async def _delete_message_if_possible(
@@ -5298,6 +5518,100 @@ def _words_menu_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+def _start_menu_keyboard(
+    *,
+    summary: list[AssignmentLaunchView],
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    summary_by_kind = {item.kind: item for item in summary}
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(_tg("start_game_button", language=language), callback_data="start:game")],
+            [
+                InlineKeyboardButton(
+                    _start_assignment_button_label(
+                        AssignmentSessionKind.DAILY,
+                        available=summary_by_kind[AssignmentSessionKind.DAILY].available,
+                        language=language,
+                    ),
+                    callback_data=(
+                        "start:launch:daily"
+                        if summary_by_kind[AssignmentSessionKind.DAILY].available
+                        else "start:disabled:daily"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    _start_assignment_button_label(
+                        AssignmentSessionKind.WEEKLY,
+                        available=summary_by_kind[AssignmentSessionKind.WEEKLY].available,
+                        language=language,
+                    ),
+                    callback_data=(
+                        "start:launch:weekly"
+                        if summary_by_kind[AssignmentSessionKind.WEEKLY].available
+                        else "start:disabled:weekly"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    _start_assignment_button_label(
+                        AssignmentSessionKind.HOMEWORK,
+                        available=summary_by_kind[AssignmentSessionKind.HOMEWORK].available,
+                        language=language,
+                    ),
+                    callback_data=(
+                        "start:launch:homework"
+                        if summary_by_kind[AssignmentSessionKind.HOMEWORK].available
+                        else "start:disabled:homework"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    _start_assignment_button_label(
+                        AssignmentSessionKind.ALL,
+                        available=summary_by_kind[AssignmentSessionKind.ALL].available,
+                        language=language,
+                    ),
+                    callback_data=(
+                        "start:launch:all"
+                        if summary_by_kind[AssignmentSessionKind.ALL].available
+                        else "start:disabled:all"
+                    ),
+                )
+            ],
+        ]
+    )
+
+
+def _start_submenu_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(_tg("back", language=language), callback_data="start:menu")]]
+    )
+
+
+def _assignment_round_complete_keyboard(
+    kind: AssignmentSessionKind,
+    *,
+    has_more: bool,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            *(
+                [[InlineKeyboardButton(_tg("assignment_next_round_button", language=language), callback_data=f"start:launch:{kind.value}")]]
+                if has_more
+                else []
+            ),
+            [InlineKeyboardButton(_tg("goal_setup_button", language=language), callback_data="assign:menu")],
+            [InlineKeyboardButton(_tg("back", language=language), callback_data="start:menu")],
+        ]
+    )
+
+
 def _assign_menu_keyboard(
     *,
     is_admin: bool,
@@ -5569,12 +5883,6 @@ def _mode_keyboard(
                     _tg("hard", language=language),
                     callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.HARD.value}",
                 ),
-            ],
-            [
-                InlineKeyboardButton(
-                    _tg("game_mode", language=language),
-                    callback_data=f"gameentry:{topic_id}:{lesson_part}",
-                )
             ],
         ]
     )

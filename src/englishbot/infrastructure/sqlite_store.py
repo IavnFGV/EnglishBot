@@ -261,6 +261,7 @@ class SQLiteContentStore:
                     user_id INTEGER NOT NULL,
                     topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
                     lesson_id TEXT REFERENCES lessons(id) ON DELETE SET NULL,
+                    source_tag TEXT,
                     mode TEXT NOT NULL,
                     current_index INTEGER NOT NULL DEFAULT 0,
                     completed INTEGER NOT NULL DEFAULT 0
@@ -424,6 +425,11 @@ class SQLiteContentStore:
             }
             if "mode" not in item_columns:
                 connection.execute("ALTER TABLE training_session_items ADD COLUMN mode TEXT")
+            session_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(training_sessions)").fetchall()
+            }
+            if "source_tag" not in session_columns:
+                connection.execute("ALTER TABLE training_sessions ADD COLUMN source_tag TEXT")
 
     def has_runtime_content(self) -> bool:
         self.initialize()
@@ -1718,12 +1724,13 @@ class SQLiteContentStore:
             connection.execute(
                 """
                 INSERT INTO training_sessions (
-                    id, user_id, topic_id, lesson_id, mode, current_index, completed
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    id, user_id, topic_id, lesson_id, source_tag, mode, current_index, completed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     user_id=excluded.user_id,
                     topic_id=excluded.topic_id,
                     lesson_id=excluded.lesson_id,
+                    source_tag=excluded.source_tag,
                     mode=excluded.mode,
                     current_index=excluded.current_index,
                     completed=excluded.completed
@@ -1733,6 +1740,7 @@ class SQLiteContentStore:
                     session.user_id,
                     session.topic_id,
                     session.lesson_id,
+                    session.source_tag,
                     session.mode.value,
                     session.current_index,
                     1 if session.completed else 0,
@@ -1797,7 +1805,7 @@ class SQLiteContentStore:
         with _connect(self._db_path) as connection:
             session_row = connection.execute(
                 """
-                SELECT id, user_id, topic_id, lesson_id, mode, current_index, completed
+                SELECT id, user_id, topic_id, lesson_id, source_tag, mode, current_index, completed
                 FROM training_sessions
                 WHERE id = ?
                 """,
@@ -1828,6 +1836,7 @@ class SQLiteContentStore:
             user_id=session_row["user_id"],
             topic_id=session_row["topic_id"],
             lesson_id=session_row["lesson_id"],
+            source_tag=session_row["source_tag"],
             mode=TrainingMode(session_row["mode"]),
             current_index=session_row["current_index"],
             completed=bool(session_row["completed"]),

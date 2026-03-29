@@ -17,7 +17,7 @@ class TelegramCommandSpec:
 
 
 DEFAULT_TELEGRAM_COMMAND_SPECS: tuple[TelegramCommandSpec, ...] = (
-    TelegramCommandSpec("start", "Start training"),
+    TelegramCommandSpec("start", "Open personal start menu"),
     TelegramCommandSpec("help", "Show commands"),
     TelegramCommandSpec("version", "Show bot version"),
     TelegramCommandSpec("words", "Open words menu"),

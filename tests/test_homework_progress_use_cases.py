@@ -1,15 +1,25 @@
 from pathlib import Path
+import random
 
 from englishbot.application.homework_progress_use_cases import (
+    AssignmentSessionKind,
     AssignGoalToUsersUseCase,
     GetAdminGoalDetailUseCase,
     GetAdminUserGoalsUseCase,
     GetAdminUsersProgressOverviewUseCase,
+    GetLearnerAssignmentLaunchSummaryUseCase,
     GoalWordSource,
     HomeworkProgressUseCase,
+    StartAssignmentRoundUseCase,
 )
 from englishbot.domain.models import GoalPeriod, GoalType, TrainingMode, UserProgress
-from englishbot.infrastructure.sqlite_store import SQLiteContentStore
+from englishbot.application.question_factory import QuestionFactory
+from englishbot.infrastructure.sqlite_store import (
+    SQLiteContentStore,
+    SQLiteSessionRepository,
+    SQLiteUserProgressRepository,
+    SQLiteVocabularyRepository,
+)
 
 
 def _build_store(tmp_path: Path) -> SQLiteContentStore:
@@ -141,3 +151,57 @@ def test_admin_user_goals_returns_history(tmp_path: Path) -> None:
 
     assert len(goals) == 1
     assert goals[0].goal.status.value == "expired"
+
+
+def test_assignment_launch_summary_aggregates_daily_homework_and_all(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    use_case = HomeworkProgressUseCase(store=store)
+    use_case.create_goal(
+        user_id=9,
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=1,
+        target_word_ids=["cat"],
+    )
+    use_case.create_goal(
+        user_id=9,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["dog"],
+    )
+    store.save_progress(UserProgress(user_id=9, item_id="cat", times_seen=1, correct_answers=1))
+
+    summary = GetLearnerAssignmentLaunchSummaryUseCase(store=store, batch_size=1).execute(user_id=9)
+    summary_by_kind = {item.kind: item for item in summary}
+
+    assert summary_by_kind[AssignmentSessionKind.DAILY].available is False
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].remaining_word_count == 1
+    assert summary_by_kind[AssignmentSessionKind.ALL].remaining_word_count == 1
+
+
+def test_start_assignment_round_use_case_creates_assignment_session(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    HomeworkProgressUseCase(store=store).create_goal(
+        user_id=10,
+        goal_period=GoalPeriod.WEEKLY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=2,
+        target_word_ids=["cat", "dog"],
+    )
+    use_case = StartAssignmentRoundUseCase(
+        store=store,
+        vocabulary_repository=SQLiteVocabularyRepository(store),
+        progress_repository=SQLiteUserProgressRepository(store),
+        session_repository=SQLiteSessionRepository(store),
+        question_factory=QuestionFactory(random.Random(7)),
+        batch_size=2,
+    )
+
+    question = use_case.execute(user_id=10, kind=AssignmentSessionKind.WEEKLY)
+    session = SQLiteSessionRepository(store).get_active_by_user(10)
+
+    assert session is not None
+    assert question.session_id == session.id
+    assert session.source_tag == "assignment:weekly"
+    assert len(session.items) == 2

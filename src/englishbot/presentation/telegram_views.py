@@ -123,6 +123,14 @@ def build_mode_selection_view(
     return TelegramTextView(text=text, reply_markup=reply_markup)
 
 
+def build_start_menu_view(
+    *,
+    text: str,
+    reply_markup: TelegramReplyMarkup | None = None,
+) -> TelegramTextView:
+    return TelegramTextView(text=text, reply_markup=reply_markup)
+
+
 def build_words_menu_view(
     *,
     text: str,
