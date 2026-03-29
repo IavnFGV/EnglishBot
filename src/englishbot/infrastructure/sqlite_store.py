@@ -291,6 +291,13 @@ class SQLiteContentStore:
                     created_at TEXT NOT NULL,
                     PRIMARY KEY (flow_id, chat_id, message_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS user_game_profile (
+                    user_id INTEGER PRIMARY KEY,
+                    total_stars INTEGER NOT NULL DEFAULT 0,
+                    current_streak_days INTEGER NOT NULL DEFAULT 0,
+                    last_played_on TEXT
+                );
                 """
             )
 
@@ -858,6 +865,69 @@ class SQLiteContentStore:
                 (user_id,),
             ).fetchall()
         return [self._row_to_progress(row) for row in rows]
+
+    def add_game_stars(self, *, user_id: int, stars: int) -> int:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO user_game_profile (user_id, total_stars, current_streak_days, last_played_on)
+                VALUES (?, ?, 0, NULL)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    total_stars = user_game_profile.total_stars + excluded.total_stars
+                """,
+                (user_id, stars),
+            )
+            row = connection.execute(
+                "SELECT total_stars FROM user_game_profile WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        return int(row["total_stars"]) if row is not None else 0
+
+    def update_game_streak(self, *, user_id: int, played_at: datetime) -> int:
+        self.initialize()
+        played_on = played_at.date()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT current_streak_days, last_played_on
+                FROM user_game_profile
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                streak_days = 1
+                connection.execute(
+                    """
+                    INSERT INTO user_game_profile (user_id, total_stars, current_streak_days, last_played_on)
+                    VALUES (?, 0, ?, ?)
+                    """,
+                    (user_id, streak_days, played_on.isoformat()),
+                )
+                return streak_days
+            last_played_on_raw = row["last_played_on"]
+            current_streak_days = int(row["current_streak_days"] or 0)
+            if not last_played_on_raw:
+                streak_days = 1
+            else:
+                last_played_on = datetime.fromisoformat(str(last_played_on_raw)).date()
+                delta_days = (played_on - last_played_on).days
+                if delta_days <= 0:
+                    streak_days = current_streak_days or 1
+                elif delta_days == 1:
+                    streak_days = current_streak_days + 1
+                else:
+                    streak_days = 1
+            connection.execute(
+                """
+                UPDATE user_game_profile
+                SET current_streak_days = ?, last_played_on = ?
+                WHERE user_id = ?
+                """,
+                (streak_days, played_on.isoformat(), user_id),
+            )
+        return streak_days
 
     def save_session(self, session: TrainingSession) -> None:
         self.initialize()

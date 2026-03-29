@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from telegram import (
@@ -152,6 +154,9 @@ _IMAGE_REVIEW_STEP_TAG = "image_review_step"
 _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
+_GAME_STATE_KEY = "game_mode_state"
+_GAME_STAR_REWARD_CORRECT = 10
+_GAME_CHEST_REWARDS: tuple[int, ...] = (30, 50, 50, 100)
 _HELP_COMMAND_TEXT: dict[str, str] = {
     "start": "choose a topic and start training",
     "help": "show commands",
@@ -451,6 +456,10 @@ def build_application(
     app.add_handler(CallbackQueryHandler(restart_session_handler, pattern=r"^session:restart$"))
     app.add_handler(CallbackQueryHandler(topic_selected_handler, pattern=r"^topic:"))
     app.add_handler(CallbackQueryHandler(lesson_selected_handler, pattern=r"^lesson:"))
+    app.add_handler(CallbackQueryHandler(game_mode_entry_handler, pattern=r"^gameentry:"))
+    app.add_handler(CallbackQueryHandler(game_mode_selected_handler, pattern=r"^gamemode:"))
+    app.add_handler(CallbackQueryHandler(game_next_round_handler, pattern=r"^game:next_round$"))
+    app.add_handler(CallbackQueryHandler(game_repeat_handler, pattern=r"^game:repeat$"))
     app.add_handler(CallbackQueryHandler(mode_selected_handler, pattern=r"^mode:"))
     app.add_handler(CallbackQueryHandler(choice_answer_handler, pattern=r"^answer:"))
     app.add_handler(CallbackQueryHandler(words_menu_callback_handler, pattern=r"^words:menu$"))
@@ -1048,6 +1057,24 @@ def _mode_selection_view(
     return build_mode_selection_view(
         text=text,
         reply_markup=_mode_keyboard(
+            topic_id,
+            lesson_id,
+            language=_telegram_ui_language(context, user),
+        ),
+    )
+
+
+def _game_mode_selection_view(
+    *,
+    text: str,
+    topic_id: str,
+    lesson_id: str | None,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    return build_mode_selection_view(
+        text=text,
+        reply_markup=_game_mode_keyboard(
             topic_id,
             lesson_id,
             language=_telegram_ui_language(context, user),
@@ -3092,6 +3119,127 @@ async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TY
     await _send_question(update, context, question)
 
 
+async def game_mode_entry_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    _, topic_id, lesson_id = query.data.split(":")
+    game_view = _game_mode_selection_view(
+        text=_tg("choose_game_mode", context=context, user=update.effective_user),
+        topic_id=topic_id,
+        lesson_id=(None if lesson_id == "all" else lesson_id),
+        context=context,
+        user=update.effective_user,
+    )
+    await query.edit_message_text(game_view.text, reply_markup=game_view.reply_markup)
+
+
+async def game_mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    _, topic_id, lesson_id, mode_value = query.data.split(":")
+    user = update.effective_user
+    if user is None:
+        return
+    service = _service(context)
+    selected_lesson_id = None if lesson_id == "all" else lesson_id
+    try:
+        question = service.start_session(
+            user_id=user.id,
+            topic_id=topic_id,
+            lesson_id=selected_lesson_id,
+            mode=TrainingMode(mode_value),
+        )
+    except ApplicationError as error:
+        await query.edit_message_text(str(error))
+        return
+    streak_days = _content_store(context).update_game_streak(user_id=user.id, played_at=datetime.now(UTC))
+    context.user_data[_GAME_STATE_KEY] = {
+        "active": True,
+        "topic_id": topic_id,
+        "lesson_id": selected_lesson_id,
+        "mode_value": mode_value,
+        "session_stars": 0,
+        "correct_answers": 0,
+        "streak_days": streak_days,
+    }
+    context.user_data["awaiting_text_answer"] = question.mode in {
+        TrainingMode.MEDIUM,
+        TrainingMode.HARD,
+    }
+    await query.edit_message_text(
+        _tg("game_session_started", context=context, user=user, streak_days=streak_days)
+    )
+    await _send_question(update, context, question)
+
+
+async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    game_state = context.user_data.get(_GAME_STATE_KEY, {})
+    user = update.effective_user
+    if user is None:
+        return
+    topic_id = game_state.get("topic_id")
+    lesson_id = game_state.get("lesson_id")
+    mode_value = game_state.get("mode_value")
+    if not topic_id or not mode_value:
+        await query.edit_message_text(_tg("no_active_session_send_start", context=context, user=user))
+        return
+    try:
+        question = _service(context).start_session(
+            user_id=user.id,
+            topic_id=topic_id,
+            lesson_id=lesson_id,
+            mode=TrainingMode(str(mode_value)),
+        )
+    except (ApplicationError, ValueError) as error:
+        await query.edit_message_text(str(error))
+        return
+    streak_days = _content_store(context).update_game_streak(user_id=user.id, played_at=datetime.now(UTC))
+    context.user_data[_GAME_STATE_KEY] = {
+        "active": True,
+        "topic_id": topic_id,
+        "lesson_id": lesson_id,
+        "mode_value": mode_value,
+        "session_stars": 0,
+        "correct_answers": 0,
+        "streak_days": streak_days,
+    }
+    context.user_data["awaiting_text_answer"] = question.mode in {
+        TrainingMode.MEDIUM,
+        TrainingMode.HARD,
+    }
+    await query.edit_message_text(
+        _tg("game_round_started", context=context, user=user, streak_days=streak_days)
+    )
+    await _send_question(update, context, question)
+
+
+async def game_repeat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    context.user_data.pop(_GAME_STATE_KEY, None)
+    await query.edit_message_text(_tg("choose_topic_start_training", context=context, user=user))
+    await send_telegram_view(
+        query.message,
+        _topic_selection_view(
+            text=_tg("choose_topic_start_training", context=context, user=user),
+            topics=_service(context).list_topics(),
+            context=context,
+            user=user,
+        ),
+    )
+
+
 async def choice_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None:
@@ -3212,6 +3360,19 @@ async def _process_answer(
     except ApplicationError as error:
         await message.reply_text(str(error))
         return
+    game_state = context.user_data.get(_GAME_STATE_KEY)
+    if isinstance(game_state, dict) and game_state.get("active"):
+        await _send_game_feedback(message, outcome, context)
+        if outcome.next_question is not None:
+            context.user_data["awaiting_text_answer"] = outcome.next_question.mode in {
+                TrainingMode.MEDIUM,
+                TrainingMode.HARD,
+            }
+            await _send_question(update, context, outcome.next_question)
+        else:
+            context.user_data["awaiting_text_answer"] = False
+            await _finish_game_session(message, outcome, context)
+        return
     context.user_data["awaiting_text_answer"] = bool(
         outcome.next_question is not None
         and outcome.next_question.mode in {TrainingMode.MEDIUM, TrainingMode.HARD}
@@ -3228,6 +3389,78 @@ async def _send_feedback(message, outcome: AnswerOutcome) -> None:
         user=getattr(message, "from_user", None),
     )
     await send_telegram_view(message, view)
+
+
+async def _send_game_feedback(
+    message,
+    outcome: AnswerOutcome,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    game_state = context.user_data.get(_GAME_STATE_KEY, {})
+    if not isinstance(game_state, dict):
+        return
+    session_stars = int(game_state.get("session_stars", 0))
+    correct_answers = int(game_state.get("correct_answers", 0))
+    if outcome.result.is_correct:
+        session_stars += _GAME_STAR_REWARD_CORRECT
+        correct_answers += 1
+        feedback = _tg("game_correct", context=context, user=getattr(message, "from_user", None))
+    else:
+        feedback = _tg("game_almost", context=context, user=getattr(message, "from_user", None))
+    game_state["session_stars"] = session_stars
+    game_state["correct_answers"] = correct_answers
+    if outcome.summary is not None:
+        progress = outcome.summary.total_questions
+    else:
+        active_session = _service(context).get_active_session(user_id=message.from_user.id)
+        progress = 1 if active_session is None else max(1, active_session.current_position - 1)
+    text = _tg(
+        "game_feedback",
+        context=context,
+        user=getattr(message, "from_user", None),
+        feedback=feedback,
+        progress=progress,
+        total=5,
+        stars=session_stars,
+    )
+    await message.reply_text(text)
+
+
+async def _finish_game_session(
+    message,
+    outcome: AnswerOutcome,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    user = getattr(message, "from_user", None)
+    if user is None:
+        return
+    game_state = context.user_data.get(_GAME_STATE_KEY, {})
+    if not isinstance(game_state, dict):
+        return
+    session_stars = int(game_state.get("session_stars", 0))
+    chest_stars = random.choice(_GAME_CHEST_REWARDS)
+    total_earned = session_stars + chest_stars
+    total_stars = _content_store(context).add_game_stars(user_id=user.id, stars=total_earned)
+    streak_days = _content_store(context).update_game_streak(user_id=user.id, played_at=datetime.now(UTC))
+    await message.reply_text(
+        _tg(
+            "game_session_complete",
+            context=context,
+            user=user,
+            session_stars=session_stars,
+            chest_stars=chest_stars,
+            total_earned=total_earned,
+            total_stars=total_stars,
+            streak_days=streak_days,
+        ),
+        reply_markup=_game_result_keyboard(language=_telegram_ui_language(context, user)),
+    )
+    context.user_data[_GAME_STATE_KEY] = {
+        "active": False,
+        "topic_id": game_state.get("topic_id"),
+        "lesson_id": game_state.get("lesson_id"),
+        "mode_value": game_state.get("mode_value"),
+    }
 
 
 async def _send_question(
@@ -4077,6 +4310,49 @@ def _mode_keyboard(
                     _tg("hard", language=language),
                     callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.HARD.value}",
                 ),
+            ],
+            [
+                InlineKeyboardButton(
+                    _tg("game_mode", language=language),
+                    callback_data=f"gameentry:{topic_id}:{lesson_part}",
+                )
+            ],
+        ]
+    )
+
+
+def _game_mode_keyboard(
+    topic_id: str,
+    lesson_id: str | None,
+    *,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    lesson_part = lesson_id or "all"
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"🎯 {_tg('easy', language=language)}",
+                    callback_data=f"gamemode:{topic_id}:{lesson_part}:{TrainingMode.EASY.value}",
+                ),
+                InlineKeyboardButton(
+                    f"🧩 {_tg('medium', language=language)}",
+                    callback_data=f"gamemode:{topic_id}:{lesson_part}:{TrainingMode.MEDIUM.value}",
+                ),
+                InlineKeyboardButton(
+                    f"⚡ {_tg('hard', language=language)}",
+                    callback_data=f"gamemode:{topic_id}:{lesson_part}:{TrainingMode.HARD.value}",
+                ),
             ]
+        ]
+    )
+
+
+def _game_result_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(_tg("next_round", language=language), callback_data="game:next_round")],
+            [InlineKeyboardButton(_tg("repeat", language=language), callback_data="game:repeat")],
+            [InlineKeyboardButton(_tg("menu", language=language), callback_data="session:restart")],
         ]
     )
