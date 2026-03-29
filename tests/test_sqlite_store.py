@@ -229,6 +229,26 @@ def test_same_learning_item_can_belong_to_multiple_topics_and_lessons(tmp_path: 
     assert store.list_lesson_ids_for_item("board-surface") == ["classroom-1", "geometry-1"]
 
 
+def test_sqlite_content_store_tracks_game_stars_and_daily_streak(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+
+    first_streak = store.update_game_streak(user_id=7, played_at=datetime(2026, 3, 20, tzinfo=UTC))
+    second_streak = store.update_game_streak(user_id=7, played_at=datetime(2026, 3, 21, tzinfo=UTC))
+    same_day_streak = store.update_game_streak(user_id=7, played_at=datetime(2026, 3, 21, 12, tzinfo=UTC))
+    reset_streak = store.update_game_streak(user_id=7, played_at=datetime(2026, 3, 24, tzinfo=UTC))
+
+    total = store.add_game_stars(user_id=7, stars=10)
+    total = store.add_game_stars(user_id=7, stars=40)
+
+    assert first_streak == 1
+    assert second_streak == 2
+    assert same_day_streak == 2
+    assert reset_streak == 1
+    assert total == 50
+
+
 def test_initialize_drops_legacy_vocabulary_items_table_after_learning_items_exists(
     tmp_path: Path,
 ) -> None:
