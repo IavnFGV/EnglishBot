@@ -3107,6 +3107,7 @@ async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TY
             topic_id=topic_id,
             lesson_id=selected_lesson_id,
             mode=TrainingMode(mode_value),
+            adaptive_per_word=True,
         )
     except ApplicationError as error:
         await query.edit_message_text(str(error))
@@ -3152,6 +3153,7 @@ async def game_mode_selected_handler(update: Update, context: ContextTypes.DEFAU
             topic_id=topic_id,
             lesson_id=selected_lesson_id,
             mode=TrainingMode(mode_value),
+            adaptive_per_word=True,
         )
     except ApplicationError as error:
         await query.edit_message_text(str(error))
@@ -3197,6 +3199,7 @@ async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_
             topic_id=topic_id,
             lesson_id=lesson_id,
             mode=TrainingMode(str(mode_value)),
+            adaptive_per_word=True,
         )
     except (ApplicationError, ValueError) as error:
         await query.edit_message_text(str(error))
