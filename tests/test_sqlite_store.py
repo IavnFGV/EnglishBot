@@ -21,7 +21,7 @@ from englishbot.domain.image_review_models import (
     ImageReviewItem,
 )
 from englishbot.bootstrap import build_training_service
-from englishbot.domain.models import TrainingMode
+from englishbot.domain.models import GoalPeriod, GoalType, TrainingMode
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtractionDraft
 from englishbot.importing.pipeline import LessonImportPipeline
@@ -247,6 +247,32 @@ def test_sqlite_content_store_tracks_game_stars_and_daily_streak(tmp_path: Path)
     assert same_day_streak == 2
     assert reset_streak == 1
     assert total == 50
+
+
+def test_sqlite_content_store_lists_users_goal_overview(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+            ],
+        }
+    )
+    store.assign_goal(
+        user_id=101,
+        goal_period=GoalPeriod.WEEKLY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=1,
+        target_word_ids=["cat"],
+    )
+
+    overview = store.list_users_goal_overview()
+
+    assert len(overview) == 1
+    assert overview[0]["user_id"] == 101
+    assert overview[0]["active_goals_count"] == 1
 
 
 def test_initialize_drops_legacy_vocabulary_items_table_after_learning_items_exists(

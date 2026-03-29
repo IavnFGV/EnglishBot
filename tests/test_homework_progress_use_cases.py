@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from englishbot.application.homework_progress_use_cases import HomeworkProgressUseCase
+from englishbot.application.homework_progress_use_cases import (
+    AssignGoalToUsersUseCase,
+    GetAdminUsersProgressOverviewUseCase,
+    GoalWordSource,
+    HomeworkProgressUseCase,
+)
 from englishbot.domain.models import GoalPeriod, GoalType, TrainingMode, UserProgress
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 
@@ -65,3 +70,37 @@ def test_homework_progress_use_case_resets_goal(tmp_path: Path) -> None:
 
     assert reset is True
     assert summary.active_goals == []
+
+
+def test_assign_goal_to_multiple_users_with_topic_source(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    use_case = AssignGoalToUsersUseCase(store=store)
+
+    created = use_case.execute(
+        user_ids=[11, 12],
+        goal_period=GoalPeriod.WEEKLY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=1,
+        source=GoalWordSource.TOPIC,
+        topic_id="animals",
+    )
+
+    assert len(created) == 2
+    assert {goal.user_id for goal in created} == {11, 12}
+
+
+def test_admin_progress_overview_aggregates_users(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    assign = AssignGoalToUsersUseCase(store=store)
+    assign.execute(
+        user_ids=[20, 21],
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=1,
+        source=GoalWordSource.ALL,
+    )
+
+    overview = GetAdminUsersProgressOverviewUseCase(store=store).execute()
+
+    assert len(overview) == 2
+    assert overview[0].active_goals_count >= 1
