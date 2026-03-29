@@ -25,10 +25,11 @@ def test_visible_command_rows_include_only_accessible_commands() -> None:
     regular_rows = _visible_command_rows(context, user_id=7)
     editor_rows = _visible_command_rows(context, user_id=42)
 
-    assert regular_rows == [["/start", "/help"], ["/version", "/words"]]
+    assert regular_rows == [["/start", "/help"], ["/version", "/words"], ["/assign"]]
     assert editor_rows == [
         ["/start", "/help"],
         ["/version", "/words"],
+        ["/assign"],
         ["/add_words", "/cancel"],
     ]
 
@@ -51,6 +52,7 @@ async def test_post_init_sets_public_and_scoped_commands() -> None:
         ("help", "Show commands"),
         ("version", "Show bot version"),
         ("words", "Open words menu"),
+        ("assign", "Open assignments menu"),
     ]
     scoped_calls = bot.calls[1:]
     assert len(scoped_calls) == 2
@@ -59,6 +61,7 @@ async def test_post_init_sets_public_and_scoped_commands() -> None:
         "help",
         "version",
         "words",
+        "assign",
         "add_words",
         "cancel",
     ] for call in scoped_calls)

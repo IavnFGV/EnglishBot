@@ -1224,6 +1224,7 @@ async def test_image_review_edit_search_query_flow_runs_search_with_custom_text(
     )
     context = SimpleNamespace(
         user_data={},
+        bot=_FakeBot(),
         application=SimpleNamespace(
             bot_data={
                 "editor_user_ids": {42},
@@ -1238,12 +1239,15 @@ async def test_image_review_edit_search_query_flow_runs_search_with_custom_text(
     assert context.user_data["words_flow_mode"] == "awaiting_image_review_search_query_text"
     assert context.user_data["image_review_flow_id"] == "review123"
     assert context.user_data["image_review_item_id"] == "dragon"
+    assert context.user_data["expected_user_input_state"]["chat_id"] == 1
     assert "Current query:\nDragon" in prompt_message.reply_text_calls[-1]
 
     await add_words_text_handler(text_update, context)  # type: ignore[arg-type]
 
     assert context.user_data.get("words_flow_mode") is None
     assert search_use_case.query == "dragon scissors clipart"
+    assert context.user_data.get("expected_user_input_state") is None
+    assert context.bot.deleted_messages == [(1, 999)]
     assert any("Pixabay candidates updated." in edit for edit in text_message.replies[0].edits)
     assert any(
         "Pixabay search query: dragon scissors clipart" in text
@@ -1336,6 +1340,7 @@ async def test_image_review_edit_prompt_flow_accepts_new_prompt_without_auto_gen
     )
     context = SimpleNamespace(
         user_data={},
+        bot=_FakeBot(),
         application=SimpleNamespace(
             bot_data={
                 "editor_user_ids": {42},
@@ -1350,12 +1355,15 @@ async def test_image_review_edit_prompt_flow_accepts_new_prompt_without_auto_gen
     assert context.user_data["words_flow_mode"] == "awaiting_image_review_prompt_text"
     assert context.user_data["image_review_flow_id"] == "review123"
     assert context.user_data["image_review_item_id"] == "dragon"
+    assert context.user_data["expected_user_input_state"]["chat_id"] == 1
     assert "Current prompt:\nPrompt for Dragon" in prompt_message.reply_text_calls[-1]
 
     await add_words_text_handler(text_update, context)  # type: ignore[arg-type]
 
     assert context.user_data.get("words_flow_mode") is None
     assert update_prompt_use_case.updated_prompt == "new prompt"
+    assert context.user_data.get("expected_user_input_state") is None
+    assert context.bot.deleted_messages == [(1, 999)]
     assert any("Prompt updated." in edit for edit in text_message.replies[0].edits)
     assert any("Reviewing images 1/1" in text for text in text_message.reply_text_calls)
     assert not any("Generating local image candidates" in text for text in text_message.reply_text_calls)

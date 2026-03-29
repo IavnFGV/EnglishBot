@@ -65,6 +65,8 @@ from englishbot.application.image_review_use_cases import (
 )
 from englishbot.application.homework_progress_use_cases import (
     AssignGoalToUsersUseCase,
+    GetAdminGoalDetailUseCase,
+    GetAdminUserGoalsUseCase,
     GetAdminUsersProgressOverviewUseCase,
     GetGoalWordCandidatesUseCase,
     GetUserProgressSummaryUseCase,
@@ -116,6 +118,7 @@ from englishbot.presentation.add_words_text import (
 from englishbot.presentation.telegram_views import (
     TelegramTextView,
     build_active_session_exists_view,
+    build_assignment_menu_view,
     build_answer_feedback_view,
     build_current_image_preview_view,
     build_draft_preview_view,
@@ -161,8 +164,8 @@ _IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT = "awaiting_image_review_search_query_t
 _IMAGE_REVIEW_AWAITING_PHOTO = "awaiting_image_review_photo"
 _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
 _GOAL_AWAITING_TARGET_TEXT = "awaiting_goal_target_text"
-_ADMIN_GOAL_AWAITING_USER_IDS_TEXT = "awaiting_admin_goal_user_ids_text"
 _ADMIN_GOAL_AWAITING_TARGET_TEXT = "awaiting_admin_goal_target_text"
+_EXPECTED_USER_INPUT_STATE_KEY = "expected_user_input_state"
 _IMAGE_REVIEW_STEP_TAG = "image_review_step"
 _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
@@ -175,9 +178,22 @@ _HELP_COMMAND_TEXT: dict[str, str] = {
     "help": "show commands",
     "version": "show the current bot version",
     "words": "open the words menu",
+    "assign": "open the assignments menu",
     "add_words": "send raw lesson text for draft extraction",
     "cancel": "cancel the current add-words flow",
 }
+
+
+@dataclass(frozen=True, slots=True)
+class _AssignmentUserView:
+    user_id: int
+    username: str | None
+    roles: tuple[str, ...]
+    active_goals_count: int
+    completed_goals_count: int
+    aggregate_percent: int
+    last_activity_at: datetime | None
+    last_seen_at: datetime | None
 
 
 def _draft_checkpoint_text(flow) -> str:
@@ -464,6 +480,8 @@ def build_application(
     app.bot_data["get_user_progress_summary_use_case"] = GetUserProgressSummaryUseCase(store=content_store)
     app.bot_data["assign_goal_to_users_use_case"] = AssignGoalToUsersUseCase(store=content_store)
     app.bot_data["goal_word_candidates_use_case"] = GetGoalWordCandidatesUseCase(store=content_store)
+    app.bot_data["admin_user_goals_use_case"] = GetAdminUserGoalsUseCase(store=content_store)
+    app.bot_data["admin_goal_detail_use_case"] = GetAdminGoalDetailUseCase(store=content_store)
     app.bot_data["admin_users_progress_overview_use_case"] = GetAdminUsersProgressOverviewUseCase(
         store=content_store
     )
@@ -473,6 +491,7 @@ def build_application(
     app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("version", version_handler))
     app.add_handler(CommandHandler("words", words_menu_handler))
+    app.add_handler(CommandHandler("assign", assign_menu_handler))
     app.add_handler(CommandHandler("add_words", add_words_start_handler))
     app.add_handler(CommandHandler("cancel", add_words_cancel_handler))
     app.add_handler(ChatMemberHandler(chat_member_logger_handler, ChatMemberHandler.ANY_CHAT_MEMBER))
@@ -487,15 +506,20 @@ def build_application(
     app.add_handler(CallbackQueryHandler(mode_selected_handler, pattern=r"^mode:"))
     app.add_handler(CallbackQueryHandler(choice_answer_handler, pattern=r"^answer:"))
     app.add_handler(CallbackQueryHandler(words_menu_callback_handler, pattern=r"^words:menu$"))
-    app.add_handler(CallbackQueryHandler(words_goals_callback_handler, pattern=r"^words:goals$"))
-    app.add_handler(CallbackQueryHandler(words_progress_callback_handler, pattern=r"^words:progress$"))
-    app.add_handler(CallbackQueryHandler(goal_setup_start_callback_handler, pattern=r"^words:goal_setup$"))
+    app.add_handler(CallbackQueryHandler(assign_menu_callback_handler, pattern=r"^assign:menu$"))
+    app.add_handler(CallbackQueryHandler(noop_callback_handler, pattern=r"^assign:noop$"))
+    app.add_handler(CallbackQueryHandler(words_goals_callback_handler, pattern=r"^assign:goals$"))
+    app.add_handler(CallbackQueryHandler(words_progress_callback_handler, pattern=r"^assign:progress$"))
+    app.add_handler(CallbackQueryHandler(goal_setup_start_callback_handler, pattern=r"^assign:goal_setup$"))
+    app.add_handler(CallbackQueryHandler(goal_target_menu_callback_handler, pattern=r"^assign:goal_target_menu$"))
     app.add_handler(CallbackQueryHandler(goal_period_callback_handler, pattern=r"^words:goal_period:"))
     app.add_handler(CallbackQueryHandler(goal_type_callback_handler, pattern=r"^words:goal_type:"))
     app.add_handler(CallbackQueryHandler(goal_target_preset_callback_handler, pattern=r"^words:goal_target:"))
     app.add_handler(CallbackQueryHandler(goal_source_callback_handler, pattern=r"^words:goal_source:"))
     app.add_handler(CallbackQueryHandler(goal_reset_callback_handler, pattern=r"^words:goal_reset:"))
-    app.add_handler(CallbackQueryHandler(admin_assign_goal_start_handler, pattern=r"^words:admin_assign_goal$"))
+    app.add_handler(CallbackQueryHandler(admin_assign_goal_start_handler, pattern=r"^assign:admin_assign_goal$"))
+    app.add_handler(CallbackQueryHandler(admin_goal_target_menu_callback_handler, pattern=r"^assign:admin_goal_target_menu$"))
+    app.add_handler(CallbackQueryHandler(admin_goal_source_menu_callback_handler, pattern=r"^assign:admin_goal_source_menu$"))
     app.add_handler(CallbackQueryHandler(admin_goal_period_callback_handler, pattern=r"^words:admin_goal_period:"))
     app.add_handler(CallbackQueryHandler(admin_goal_target_callback_handler, pattern=r"^words:admin_goal_target:"))
     app.add_handler(CallbackQueryHandler(admin_goal_source_callback_handler, pattern=r"^words:admin_goal_source:"))
@@ -509,7 +533,16 @@ def build_application(
         CallbackQueryHandler(admin_goal_manual_done_callback_handler, pattern=r"^words:admin_goal_manual:done$")
     )
     app.add_handler(
-        CallbackQueryHandler(admin_users_progress_callback_handler, pattern=r"^words:admin_users_progress$")
+        CallbackQueryHandler(admin_goal_recipients_callback_handler, pattern=r"^assign:admin_goal_recipients:")
+    )
+    app.add_handler(
+        CallbackQueryHandler(admin_users_progress_callback_handler, pattern=r"^assign:users$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(assign_user_detail_callback_handler, pattern=r"^assign:user:")
+    )
+    app.add_handler(
+        CallbackQueryHandler(assign_goal_detail_callback_handler, pattern=r"^assign:goal:")
     )
     app.add_handler(
         CallbackQueryHandler(words_topics_callback_handler, pattern=r"^words:topics$")
@@ -766,6 +799,14 @@ def _admin_users_progress_overview_use_case(
     return context.application.bot_data["admin_users_progress_overview_use_case"]
 
 
+def _admin_user_goals_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetAdminUserGoalsUseCase:
+    return context.application.bot_data["admin_user_goals_use_case"]
+
+
+def _admin_goal_detail_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetAdminGoalDetailUseCase:
+    return context.application.bot_data["admin_goal_detail_use_case"]
+
+
 def _start_published_word_image_review(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> StartPublishedWordImageEditUseCase:
@@ -910,6 +951,8 @@ def _visible_command_rows(
         ["/start", "/help"],
         ["/version", "/words"],
     ]
+    if "assign" in commands:
+        rows.append(["/assign"])
     if "add_words" in commands:
         rows.append(["/add_words", "/cancel"])
     return rows
@@ -1201,6 +1244,20 @@ def _words_menu_view(
                     permission=PERMISSION_WORD_IMAGES_EDIT,
                 )
             ),
+            language=_telegram_ui_language(context, user),
+        ),
+    )
+
+
+def _assign_menu_view(
+    *,
+    text: str,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+) -> TelegramTextView:
+    return build_assignment_menu_view(
+        text=text,
+        reply_markup=_assign_menu_keyboard(
             is_admin=bool(user and _is_admin(user.id, context)),
             language=_telegram_ui_language(context, user),
         ),
@@ -1222,6 +1279,211 @@ def _help_view(
             )
         ),
     )
+
+
+def _remember_expected_user_input(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int | None,
+    message_id: int | None,
+) -> None:
+    if chat_id is None or message_id is None:
+        return
+    context.user_data[_EXPECTED_USER_INPUT_STATE_KEY] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+    }
+
+
+def _clear_expected_user_input(context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop(_EXPECTED_USER_INPUT_STATE_KEY, None)
+
+
+async def _edit_expected_user_input_prompt(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    text: str,
+    reply_markup,
+) -> bool:
+    stored = context.user_data.get(_EXPECTED_USER_INPUT_STATE_KEY)
+    if not isinstance(stored, dict):
+        return False
+    chat_id = stored.get("chat_id")
+    message_id = stored.get("message_id")
+    if not isinstance(chat_id, int) or not isinstance(message_id, int):
+        return False
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            reply_markup=reply_markup,
+        )
+    except BadRequest as error:
+        if "message is not modified" in str(error).lower():
+            return True
+        logger.debug("Failed to edit stored goal prompt message", exc_info=True)
+        return False
+    return True
+
+
+def _known_assignment_users(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    viewer_user_id: int,
+    viewer_username: str | None = None,
+) -> list[_AssignmentUserView]:
+    policy = _menu_access_policy(context)
+    overview_by_user_id = {
+        item.user_id: item
+        for item in _admin_users_progress_overview_use_case(context).execute()
+    }
+    login_rows = _telegram_user_login_repository(context).list()
+    login_by_user_id = {row.user_id: row for row in login_rows}
+    visible_user_ids = set(login_by_user_id)
+    visible_user_ids.add(viewer_user_id)
+    if _is_admin(viewer_user_id, context):
+        for role_user_ids in policy.role_memberships.values():
+            visible_user_ids.update(role_user_ids)
+    else:
+        visible_user_ids = {viewer_user_id}
+
+    users: list[_AssignmentUserView] = []
+    for user_id in sorted(visible_user_ids):
+        login = login_by_user_id.get(user_id)
+        overview = overview_by_user_id.get(user_id)
+        username = login.username if login is not None else None
+        if user_id == viewer_user_id and viewer_username:
+            username = viewer_username
+        last_seen_at = (
+            datetime.fromisoformat(login.last_seen_at)
+            if login is not None and login.last_seen_at
+            else None
+        )
+        users.append(
+            _AssignmentUserView(
+                user_id=user_id,
+                username=username,
+                roles=policy.roles_for_user(user_id),
+                active_goals_count=(overview.active_goals_count if overview is not None else 0),
+                completed_goals_count=(overview.completed_goals_count if overview is not None else 0),
+                aggregate_percent=(overview.aggregate_percent if overview is not None else 0),
+                last_activity_at=(overview.last_activity_at if overview is not None else None),
+                last_seen_at=last_seen_at,
+            )
+        )
+    users.sort(
+        key=lambda item: (
+            item.last_seen_at is not None,
+            item.last_seen_at or datetime.min.replace(tzinfo=UTC),
+            item.user_id,
+        ),
+        reverse=True,
+    )
+    return users
+
+
+def _assignment_user_label(item: _AssignmentUserView) -> str:
+    username = f"@{item.username}" if item.username else "no username"
+    role_names = [role for role in item.roles if role != "user"]
+    role_text = ", ".join(role_names) if role_names else "user"
+    return f"{username} | id={item.user_id} | {role_text}"
+
+
+def _render_assignment_user_detail_text(*, context: ContextTypes.DEFAULT_TYPE, user, item: _AssignmentUserView, goals) -> str:
+    lines = [
+        _tg(
+            "assign_user_detail_title",
+            context=context,
+            user=user,
+            username=(f"@{item.username}" if item.username else "-"),
+            user_id=item.user_id,
+            roles=(", ".join(role for role in item.roles if role != "user") or "user"),
+        ),
+        _tg(
+            "assign_user_detail_summary",
+            context=context,
+            user=user,
+            active=item.active_goals_count,
+            completed=item.completed_goals_count,
+            percent=item.aggregate_percent,
+            last_activity=(item.last_activity_at.date().isoformat() if item.last_activity_at else "-"),
+        ),
+    ]
+    if goals:
+        lines.append(_tg("assign_user_goals_title", context=context, user=user))
+        for goal in goals:
+            lines.append(
+                _tg(
+                    "assign_user_goal_line",
+                    context=context,
+                    user=user,
+                    period=goal.goal.goal_period.value,
+                    goal_type=goal.goal.goal_type.value,
+                    progress=goal.goal.progress_count,
+                    target=goal.goal.target_count,
+                    percent=goal.progress_percent,
+                    status=goal.goal.status.value,
+                )
+            )
+    else:
+        lines.append(_tg("assign_user_goals_empty", context=context, user=user))
+    return "\n".join(lines)
+
+
+def _render_assignment_goal_detail_text(*, context: ContextTypes.DEFAULT_TYPE, user, detail) -> str:
+    lines = [
+        _tg(
+            "assign_goal_detail_title",
+            context=context,
+            user=user,
+            period=detail.goal.goal_period.value,
+            goal_type=detail.goal.goal_type.value,
+            status=detail.goal.status.value,
+            progress=detail.goal.progress_count,
+            target=detail.goal.target_count,
+            percent=detail.progress_percent,
+        )
+    ]
+    if detail.words:
+        lines.append(_tg("assign_goal_detail_words_title", context=context, user=user))
+        for word in detail.words:
+            if word.homework_mode is None:
+                lines.append(
+                    _tg(
+                        "assign_goal_word_line",
+                        context=context,
+                        user=user,
+                        english=word.english_word,
+                        translation=word.translation,
+                        mode="-",
+                        stage="-",
+                    )
+                )
+                continue
+            stages: list[str] = []
+            stages.append("easy" if word.easy_mastered else "easy...")
+            stages.append("medium" if word.medium_mastered else "medium...")
+            if word.hard_skipped:
+                stages.append("hard-skip")
+            elif word.hard_mastered:
+                stages.append("hard")
+            else:
+                stages.append("hard...")
+            lines.append(
+                _tg(
+                    "assign_goal_word_line",
+                    context=context,
+                    user=user,
+                    english=word.english_word,
+                    translation=word.translation,
+                    mode=word.homework_mode.value,
+                    stage=", ".join(stages),
+                )
+            )
+    else:
+        lines.append(_tg("assign_goal_detail_words_empty", context=context, user=user))
+    return "\n".join(lines)
 
 
 def _editable_topics_view(
@@ -1426,6 +1688,25 @@ async def version_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
 
+async def assign_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    user = update.effective_user
+    if message is None or user is None:
+        return
+    _telegram_user_login_repository(context).record(
+        user_id=user.id,
+        username=getattr(user, "username", None),
+    )
+    await send_telegram_view(
+        message,
+        _assign_menu_view(
+            text=_tg("assign_menu_prompt", context=context, user=user),
+            context=context,
+            user=user,
+        ),
+    )
+
+
 async def words_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     user = update.effective_user
@@ -1440,6 +1721,34 @@ async def words_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ),
     )
     await send_telegram_view(message, _quick_actions_view(context=context, user=user))
+
+
+async def assign_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    try:
+        await edit_telegram_text_view(
+            query,
+            _assign_menu_view(
+                text=_tg("assign_menu_title", context=context, user=update.effective_user),
+                context=context,
+                user=update.effective_user,
+            ),
+        )
+    except BadRequest as error:
+        if "message is not modified" in str(error).lower():
+            logger.debug("Assign menu message unchanged")
+            return
+        raise
+
+
+async def noop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:  # noqa: ARG001
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
 
 
 async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1469,7 +1778,7 @@ def _goal_setup_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> Inl
             [InlineKeyboardButton(_tg("goal_period_daily", language=language), callback_data="words:goal_period:daily")],
             [InlineKeyboardButton(_tg("goal_period_weekly", language=language), callback_data="words:goal_period:weekly")],
             [InlineKeyboardButton(_tg("goal_period_homework", language=language), callback_data="words:goal_period:homework")],
-            [InlineKeyboardButton(_tg("menu", language=language), callback_data="words:menu")],
+            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:menu")],
         ]
     )
 
@@ -1483,6 +1792,7 @@ def _goal_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> In
                 InlineKeyboardButton("20", callback_data="words:goal_target:20"),
             ],
             [InlineKeyboardButton(_tg("goal_target_custom", language=language), callback_data="words:goal_target:custom")],
+            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:goal_setup")],
         ]
     )
 
@@ -1492,14 +1802,22 @@ def _goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> In
         [
             [InlineKeyboardButton(_tg("goal_source_recent", language=language), callback_data="words:goal_source:recent")],
             [InlineKeyboardButton(_tg("goal_source_all", language=language), callback_data="words:goal_source:all")],
+            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:goal_target_menu")],
         ]
+    )
+
+
+def _goal_custom_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(_tg("back", language=language), callback_data="assign:goal_target_menu")]]
     )
 
 
 def _goal_list_keyboard(*, goals, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = [
-        [InlineKeyboardButton(_tg("goal_setup_button", language=language), callback_data="words:goal_setup")],
-        [InlineKeyboardButton(_tg("progress_button", language=language), callback_data="words:progress")],
+        [InlineKeyboardButton(_tg("goal_setup_button", language=language), callback_data="assign:goal_setup")],
+        [InlineKeyboardButton(_tg("progress_button", language=language), callback_data="assign:progress")],
+        [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:menu")],
     ]
     for goal in goals:
         rows.append([InlineKeyboardButton(_tg("goal_reset_button", language=language), callback_data=f"words:goal_reset:{goal.goal.id}")])
@@ -1512,6 +1830,7 @@ def _admin_goal_period_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE)
             [InlineKeyboardButton(_tg("goal_period_daily", language=language), callback_data="words:admin_goal_period:daily")],
             [InlineKeyboardButton(_tg("goal_period_weekly", language=language), callback_data="words:admin_goal_period:weekly")],
             [InlineKeyboardButton(_tg("goal_period_homework", language=language), callback_data="words:admin_goal_period:homework")],
+            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:menu")],
         ]
     )
 
@@ -1525,7 +1844,14 @@ def _admin_goal_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE)
                 InlineKeyboardButton("20", callback_data="words:admin_goal_target:20"),
             ],
             [InlineKeyboardButton(_tg("goal_target_custom", language=language), callback_data="words:admin_goal_target:custom")],
+            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:admin_assign_goal")],
         ]
+    )
+
+
+def _admin_goal_custom_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(_tg("back", language=language), callback_data="assign:admin_goal_target_menu")]]
     )
 
 
@@ -1536,6 +1862,7 @@ def _admin_goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE)
             [InlineKeyboardButton(_tg("goal_source_topic", language=language), callback_data="words:admin_goal_source:topic")],
             [InlineKeyboardButton(_tg("goal_source_all", language=language), callback_data="words:admin_goal_source:all")],
             [InlineKeyboardButton(_tg("goal_source_manual", language=language), callback_data="words:admin_goal_source:manual")],
+            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:admin_goal_target_menu")],
         ]
     )
 
@@ -1603,6 +1930,18 @@ async def goal_setup_start_callback_handler(update: Update, context: ContextType
     )
 
 
+async def goal_target_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    await query.edit_message_text(
+        _tg("goal_target_prompt", context=context, user=user),
+        reply_markup=_goal_target_keyboard(language=_telegram_ui_language(context, user)),
+    )
+
+
 async def goal_period_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -1633,7 +1972,15 @@ async def goal_target_preset_callback_handler(update: Update, context: ContextTy
     target = query.data.split(":")[-1]
     if target == "custom":
         context.user_data["words_flow_mode"] = _GOAL_AWAITING_TARGET_TEXT
-        await query.edit_message_text(_tg("goal_target_custom_prompt", context=context, user=user))
+        _remember_expected_user_input(
+            context,
+            chat_id=getattr(getattr(query, "message", None), "chat_id", None),
+            message_id=getattr(getattr(query, "message", None), "message_id", None),
+        )
+        await query.edit_message_text(
+            _tg("goal_target_custom_prompt", context=context, user=user),
+            reply_markup=_goal_custom_target_keyboard(language=_telegram_ui_language(context, user)),
+        )
         return
     context.user_data["goal_target_count"] = int(target)
     await query.edit_message_text(
@@ -1686,8 +2033,21 @@ async def admin_assign_goal_start_handler(update: Update, context: ContextTypes.
     if not _is_admin(user.id, context):
         await query.edit_message_text(_tg("admin_only", context=context, user=user))
         return
-    context.user_data["words_flow_mode"] = _ADMIN_GOAL_AWAITING_USER_IDS_TEXT
-    await query.edit_message_text(_tg("admin_goal_users_prompt", context=context, user=user))
+    for key in (
+        "admin_goal_period",
+        "admin_goal_type",
+        "admin_goal_target_count",
+        "admin_goal_source",
+        "admin_goal_manual_word_ids",
+        "admin_goal_recipient_user_ids",
+        "admin_goal_recipients_page",
+    ):
+        context.user_data.pop(key, None)
+    context.user_data["admin_goal_recipient_user_ids"] = set()
+    await query.edit_message_text(
+        _tg("assign_setup_intro", context=context, user=user),
+        reply_markup=_admin_goal_period_keyboard(language=_telegram_ui_language(context, user)),
+    )
 
 
 async def admin_goal_period_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1696,8 +2056,23 @@ async def admin_goal_period_callback_handler(update: Update, context: ContextTyp
     if query is None or user is None or query.data is None:
         return
     await query.answer()
-    context.user_data["admin_goal_period"] = query.data.split(":")[-1]
-    context.user_data["admin_goal_type"] = GoalType.NEW_WORDS.value
+    raw_period = query.data.split(":")[-1]
+    context.user_data["admin_goal_period"] = raw_period
+    context.user_data["admin_goal_type"] = (
+        GoalType.WORD_LEVEL_HOMEWORK.value if raw_period == GoalPeriod.HOMEWORK.value else GoalType.NEW_WORDS.value
+    )
+    await query.edit_message_text(
+        _tg("goal_target_prompt", context=context, user=user),
+        reply_markup=_admin_goal_target_keyboard(language=_telegram_ui_language(context, user)),
+    )
+
+
+async def admin_goal_target_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
     await query.edit_message_text(
         _tg("goal_target_prompt", context=context, user=user),
         reply_markup=_admin_goal_target_keyboard(language=_telegram_ui_language(context, user)),
@@ -1713,9 +2088,29 @@ async def admin_goal_target_callback_handler(update: Update, context: ContextTyp
     target = query.data.split(":")[-1]
     if target == "custom":
         context.user_data["words_flow_mode"] = _ADMIN_GOAL_AWAITING_TARGET_TEXT
-        await query.edit_message_text(_tg("goal_target_custom_prompt", context=context, user=user))
+        _remember_expected_user_input(
+            context,
+            chat_id=getattr(getattr(query, "message", None), "chat_id", None),
+            message_id=getattr(getattr(query, "message", None), "message_id", None),
+        )
+        await query.edit_message_text(
+            _tg("goal_target_custom_prompt", context=context, user=user),
+            reply_markup=_admin_goal_custom_target_keyboard(language=_telegram_ui_language(context, user)),
+        )
         return
     context.user_data["admin_goal_target_count"] = int(target)
+    await query.edit_message_text(
+        _tg("goal_source_prompt", context=context, user=user),
+        reply_markup=_admin_goal_source_keyboard(language=_telegram_ui_language(context, user)),
+    )
+
+
+async def admin_goal_source_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
     await query.edit_message_text(
         _tg("goal_source_prompt", context=context, user=user),
         reply_markup=_admin_goal_source_keyboard(language=_telegram_ui_language(context, user)),
@@ -1726,7 +2121,8 @@ def _admin_goal_manual_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user, pag
     items = _content_store(context).list_all_vocabulary()
     selected = set(context.user_data.get("admin_goal_manual_word_ids", set()))
     page_size = 8
-    pages = max(1, (len(items) + page_size - 1) // page_size)
+    total = len(items)
+    pages = max(1, (total + page_size - 1) // page_size)
     page = max(0, min(page, pages - 1))
     context.user_data["admin_goal_manual_page"] = page
     rows: list[list[InlineKeyboardButton]] = []
@@ -1739,9 +2135,182 @@ def _admin_goal_manual_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user, pag
     if page + 1 < pages:
         nav.append(InlineKeyboardButton(_tg("next_6", language=_telegram_ui_language(context, user)), callback_data=f"words:admin_goal_manual:page:{page+1}"))
     if nav:
-        rows.append(nav)
+        rows.append(
+            [
+                *nav,
+                InlineKeyboardButton(
+                    _page_range_label(
+                        page=page,
+                        page_size=page_size,
+                        total=total,
+                        language=_telegram_ui_language(context, user),
+                    ),
+                    callback_data="assign:noop",
+                ),
+            ]
+        )
+    elif total > 0:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    _page_range_label(
+                        page=page,
+                        page_size=page_size,
+                        total=total,
+                        language=_telegram_ui_language(context, user),
+                    ),
+                    callback_data="assign:noop",
+                )
+            ]
+        )
     rows.append([InlineKeyboardButton(_tg("goal_manual_done", language=_telegram_ui_language(context, user)), callback_data="words:admin_goal_manual:done")])
+    rows.append([InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data="assign:admin_goal_source_menu")])
     return InlineKeyboardMarkup(rows)
+
+
+def _admin_goal_recipients_keyboard(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    page: int,
+) -> InlineKeyboardMarkup:
+    items = _known_assignment_users(
+        context,
+        viewer_user_id=user.id,
+        viewer_username=getattr(user, "username", None),
+    )
+    selected = set(context.user_data.get("admin_goal_recipient_user_ids", set()))
+    page_size = 8
+    total = len(items)
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, pages - 1))
+    context.user_data["admin_goal_recipients_page"] = page
+    rows: list[list[InlineKeyboardButton]] = []
+    for item in items[page * page_size : page * page_size + page_size]:
+        marker = "✅" if item.user_id in selected else "☑️"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{marker} {_assignment_user_label(item)[:48]}",
+                    callback_data=f"assign:admin_goal_recipients:toggle:{item.user_id}",
+                )
+            ]
+        )
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(
+            InlineKeyboardButton(
+                _tg("previous_6", language=_telegram_ui_language(context, user)),
+                callback_data=f"assign:admin_goal_recipients:page:{page-1}",
+            )
+        )
+    if page + 1 < pages:
+        nav.append(
+            InlineKeyboardButton(
+                _tg("next_6", language=_telegram_ui_language(context, user)),
+                callback_data=f"assign:admin_goal_recipients:page:{page+1}",
+            )
+        )
+    if nav:
+        rows.append(
+            [
+                *nav,
+                InlineKeyboardButton(
+                    _page_range_label(
+                        page=page,
+                        page_size=page_size,
+                        total=total,
+                        language=_telegram_ui_language(context, user),
+                    ),
+                    callback_data="assign:noop",
+                ),
+            ]
+        )
+    elif total > 0:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    _page_range_label(
+                        page=page,
+                        page_size=page_size,
+                        total=total,
+                        language=_telegram_ui_language(context, user),
+                    ),
+                    callback_data="assign:noop",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                _tg("assign_select_users_done", language=_telegram_ui_language(context, user)),
+                callback_data="assign:admin_goal_recipients:done",
+            )
+        ]
+    )
+    rows.append(
+        [InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data="assign:admin_goal_source_menu")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def _assignment_users_keyboard(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    users=None,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for item in users or []:
+        emoji = "🧑‍🎓"
+        role_names = [role for role in item.roles if role != "user"]
+        if "admin" in role_names:
+            emoji = "🛡️"
+        elif "editor" in role_names:
+            emoji = "🛠️"
+        label = item.username and f"@{item.username}" or f"id={item.user_id}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{emoji} {label}",
+                    callback_data=f"assign:user:{item.user_id}",
+                )
+            ]
+        )
+    rows.append(
+        [[InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data="assign:menu")]][0]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def _assignment_user_goals_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user_id: int, goals, user) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for item in goals:
+        emoji = "📘" if item.goal.goal_period is GoalPeriod.HOMEWORK else "🎯"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{emoji} {item.goal.goal_period.value} {item.progress_percent}%",
+                    callback_data=f"assign:goal:{user_id}:{item.goal.id}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data="assign:users")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _assignment_goal_detail_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user_id: int, user) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data=f"assign:user:{user_id}")]]
+    )
+
+
+def _page_range_label(*, page: int, page_size: int, total: int, language: str) -> str:
+    if total <= 0:
+        return _tg("page_range", language=language, start=0, end=0, total=0)
+    start = page * page_size + 1
+    end = min(total, page * page_size + page_size)
+    return _tg("page_range", language=language, start=start, end=end, total=total)
 
 
 async def admin_goal_source_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1752,20 +2321,31 @@ async def admin_goal_source_callback_handler(update: Update, context: ContextTyp
     await query.answer()
     if query.data.startswith("words:admin_goal_source:topic:"):
         context.user_data["admin_goal_source"] = f"topic:{query.data.split(':', 4)[-1]}"
-        await _create_admin_goal_from_context(query=query, context=context, user=user)
+        await query.edit_message_text(
+            _tg("assign_select_users_prompt", context=context, user=user),
+            reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=0),
+        )
         return
     source = query.data.split(":")[-1]
     context.user_data["admin_goal_source"] = source
     if source == GoalWordSource.TOPIC.value:
         topics = _service(context).list_topics()
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(topic.title[:40], callback_data=f"words:admin_goal_source:topic:{topic.id}")] for topic in topics])
+        rows = [
+            [InlineKeyboardButton(topic.title[:40], callback_data=f"words:admin_goal_source:topic:{topic.id}")]
+            for topic in topics
+        ]
+        rows.append([InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data="assign:admin_goal_source_menu")])
+        keyboard = InlineKeyboardMarkup(rows)
         await query.edit_message_text(_tg("goal_source_topic_prompt", context=context, user=user), reply_markup=keyboard)
         return
     if source == GoalWordSource.MANUAL.value:
         context.user_data["admin_goal_manual_word_ids"] = set()
         await query.edit_message_text(_tg("goal_source_manual_prompt", context=context, user=user), reply_markup=_admin_goal_manual_keyboard(context=context, user=user, page=0))
         return
-    await _create_admin_goal_from_context(query=query, context=context, user=user)
+    await query.edit_message_text(
+        _tg("assign_select_users_prompt", context=context, user=user),
+        reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=0),
+    )
 
 
 async def admin_goal_manual_toggle_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1797,7 +2377,39 @@ async def admin_goal_manual_done_callback_handler(update: Update, context: Conte
     if not context.user_data.get("admin_goal_manual_word_ids"):
         await query.edit_message_text(_tg("goal_manual_empty", context=context, user=user))
         return
-    await _create_admin_goal_from_context(query=query, context=context, user=user)
+    await query.edit_message_text(
+        _tg("assign_select_users_prompt", context=context, user=user),
+        reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=0),
+    )
+
+
+async def admin_goal_recipients_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or query.data is None:
+        return
+    await query.answer()
+    if query.data.startswith("assign:admin_goal_recipients:page:"):
+        page = int(query.data.split(":")[-1])
+    elif query.data == "assign:admin_goal_recipients:done":
+        if not context.user_data.get("admin_goal_recipient_user_ids"):
+            await query.edit_message_text(_tg("assign_select_users_empty", context=context, user=user))
+            return
+        await _create_admin_goal_from_context(query=query, context=context, user=user)
+        return
+    else:
+        target_user_id = int(query.data.split(":")[-1])
+        selected = set(context.user_data.get("admin_goal_recipient_user_ids", set()))
+        if target_user_id in selected:
+            selected.remove(target_user_id)
+        else:
+            selected.add(target_user_id)
+        context.user_data["admin_goal_recipient_user_ids"] = selected
+        page = int(context.user_data.get("admin_goal_recipients_page", 0))
+    await query.edit_message_text(
+        _tg("assign_select_users_prompt", context=context, user=user),
+        reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=page),
+    )
 
 
 async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAULT_TYPE, user) -> None:
@@ -1805,7 +2417,7 @@ async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAUL
     topic_id = source_raw.split(":", 1)[1] if source_raw.startswith("topic:") else None
     source = GoalWordSource.TOPIC if topic_id else GoalWordSource(source_raw)
     created = _assign_goal_to_users_use_case(context).execute(
-        user_ids=list(context.user_data.get("admin_goal_user_ids", [])),
+        user_ids=list(context.user_data.get("admin_goal_recipient_user_ids", [])),
         goal_period=GoalPeriod(str(context.user_data.get("admin_goal_period", GoalPeriod.WEEKLY.value))),
         goal_type=GoalType(str(context.user_data.get("admin_goal_type", GoalType.NEW_WORDS.value))),
         target_count=int(context.user_data.get("admin_goal_target_count", 10)),
@@ -1814,7 +2426,16 @@ async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAUL
         manual_word_ids=list(context.user_data.get("admin_goal_manual_word_ids", [])),
     )
     await query.edit_message_text(_tg("admin_goal_created", context=context, user=user, user_count=len(created), target=int(context.user_data.get("admin_goal_target_count", 10))))
-    for key in ("admin_goal_user_ids", "admin_goal_period", "admin_goal_type", "admin_goal_target_count", "admin_goal_source", "admin_goal_manual_word_ids", "words_flow_mode"):
+    for key in (
+        "admin_goal_period",
+        "admin_goal_type",
+        "admin_goal_target_count",
+        "admin_goal_source",
+        "admin_goal_manual_word_ids",
+        "admin_goal_recipient_user_ids",
+        "admin_goal_recipients_page",
+        "words_flow_mode",
+    ):
         context.user_data.pop(key, None)
 
 
@@ -1824,28 +2445,80 @@ async def admin_users_progress_callback_handler(update: Update, context: Context
     if query is None or user is None:
         return
     await query.answer()
-    if not _is_admin(user.id, context):
-        await query.edit_message_text(_tg("admin_only", context=context, user=user))
+    users = _known_assignment_users(
+        context,
+        viewer_user_id=user.id,
+        viewer_username=getattr(user, "username", None),
+    )
+    if not users:
+        await query.edit_message_text(_tg("assign_users_empty", context=context, user=user))
         return
-    overview = _admin_users_progress_overview_use_case(context).execute()
-    if not overview:
-        await query.edit_message_text(_tg("admin_users_progress_empty", context=context, user=user))
-        return
-    lines = [_tg("admin_users_progress_title", context=context, user=user)]
-    for item in overview:
+    lines = [_tg("assign_users_title", context=context, user=user)]
+    for item in users:
         lines.append(
             _tg(
-                "admin_users_progress_line",
+                "assign_users_line",
                 context=context,
                 user=user,
                 user_id=item.user_id,
+                username=(f"@{item.username}" if item.username else "-"),
+                roles=(", ".join(role for role in item.roles if role != "user") or "user"),
                 active=item.active_goals_count,
                 completed=item.completed_goals_count,
                 percent=item.aggregate_percent,
                 last_activity=(item.last_activity_at.date().isoformat() if item.last_activity_at else "-"),
             )
         )
-    await query.edit_message_text("\n".join(lines))
+    await query.edit_message_text(
+        "\n".join(lines),
+        reply_markup=_assignment_users_keyboard(context=context, user=user, users=users),
+    )
+
+
+async def assign_user_detail_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or query.data is None:
+        return
+    await query.answer()
+    target_user_id = int(query.data.split(":")[-1])
+    users = _known_assignment_users(
+        context,
+        viewer_user_id=user.id,
+        viewer_username=getattr(user, "username", None),
+    )
+    target = next((item for item in users if item.user_id == target_user_id), None)
+    if target is None:
+        await query.edit_message_text(_tg("assign_users_empty", context=context, user=user))
+        return
+    goals = _admin_user_goals_use_case(context).execute(user_id=target_user_id, include_history=True)
+    await query.edit_message_text(
+        _render_assignment_user_detail_text(context=context, user=user, item=target, goals=goals),
+        reply_markup=_assignment_user_goals_keyboard(
+            context=context,
+            user_id=target_user_id,
+            goals=goals,
+            user=user,
+        ),
+    )
+
+
+async def assign_goal_detail_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or query.data is None:
+        return
+    await query.answer()
+    _, _, user_id_raw, goal_id = query.data.split(":", 3)
+    target_user_id = int(user_id_raw)
+    detail = _admin_goal_detail_use_case(context).execute(user_id=target_user_id, goal_id=goal_id)
+    if detail is None:
+        await query.edit_message_text(_tg("assign_goal_detail_missing", context=context, user=user))
+        return
+    await query.edit_message_text(
+        _render_assignment_goal_detail_text(context=context, user=user, detail=detail),
+        reply_markup=_assignment_goal_detail_keyboard(context=context, user_id=target_user_id, user=user),
+    )
 
 
 async def words_topics_callback_handler(
@@ -2005,6 +2678,11 @@ async def words_edit_item_callback_handler(
         instruction_view.text,
         reply_markup=instruction_view.reply_markup,
     )
+    _remember_expected_user_input(
+        context,
+        chat_id=_message_chat_id(query.message),
+        message_id=getattr(query.message, "message_id", None),
+    )
     helper_message = await send_telegram_view(query.message, current_value_view)
     _track_flow_message(
         context,
@@ -2041,6 +2719,7 @@ async def words_edit_cancel_callback_handler(
     context.user_data.pop("words_flow_mode", None)
     context.user_data.pop("published_edit_topic_id", None)
     context.user_data.pop("published_edit_item_id", None)
+    _clear_expected_user_input(context)
     words = _list_editable_words(context).execute(topic_id=topic_id)
     await query.edit_message_text(
         "Edit cancelled. Choose a word to edit.",
@@ -2131,6 +2810,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
         return
     if not _has_menu_permission(context, user_id=user.id, permission=PERMISSION_WORDS_ADD):
         context.user_data.pop("words_flow_mode", None)
+        _clear_expected_user_input(context)
         return
     if words_flow_mode == _PUBLISHED_WORD_AWAITING_EDIT_TEXT:
         topic_id = context.user_data.get("published_edit_topic_id")
@@ -2139,6 +2819,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data.pop("words_flow_mode", None)
             context.user_data.pop("published_edit_topic_id", None)
             context.user_data.pop("published_edit_item_id", None)
+            _clear_expected_user_input(context)
             await message.reply_text(_tg("word_edit_task_inactive", context=context, user=user))
             return
         parsed_pair = parse_edited_vocabulary_line(message.text)
@@ -2173,6 +2854,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
                     tag=_PUBLISHED_WORD_EDIT_TAG,
                 ),
             )
+        await _delete_message_if_possible(context, message=message)
         words = _list_editable_words(context).execute(topic_id=topic_id)
         await message.reply_text(
             _tg(
@@ -2207,11 +2889,13 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data.pop("words_flow_mode", None)
             context.user_data.pop("image_review_flow_id", None)
             context.user_data.pop("image_review_item_id", None)
+            _clear_expected_user_input(context)
             await message.reply_text(_tg("image_review_task_inactive", context=context, user=user))
             return
         context.user_data.pop("words_flow_mode", None)
         context.user_data.pop("image_review_flow_id", None)
         context.user_data.pop("image_review_item_id", None)
+        _clear_expected_user_input(context)
         status_message = await message.reply_text(_tg("updating_image_prompt", context=context, user=user))
         stop_event = asyncio.Event()
         heartbeat_task = asyncio.create_task(
@@ -2241,6 +2925,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             return
         stop_event.set()
         await heartbeat_task
+        await _delete_message_if_possible(context, message=message)
         await status_message.edit_text(
             _status_view(text=_tg("prompt_updated", context=context, user=user)).text
         )
@@ -2259,11 +2944,13 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data.pop("words_flow_mode", None)
             context.user_data.pop("image_review_flow_id", None)
             context.user_data.pop("image_review_item_id", None)
+            _clear_expected_user_input(context)
             await message.reply_text(_tg("image_review_task_inactive", context=context, user=user))
             return
         context.user_data.pop("words_flow_mode", None)
         context.user_data.pop("image_review_flow_id", None)
         context.user_data.pop("image_review_item_id", None)
+        _clear_expected_user_input(context)
         status_message = await message.reply_text(_tg("searching_pixabay", context=context, user=user))
         stop_event = asyncio.Event()
         heartbeat_task = asyncio.create_task(
@@ -2292,6 +2979,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             return
         stop_event.set()
         await heartbeat_task
+        await _delete_message_if_possible(context, message=message)
         await status_message.edit_text(
             _status_view(text=_tg("pixabay_candidates_updated", context=context, user=user)).text
         )
@@ -2400,46 +3088,60 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     flow_mode = context.user_data.get("words_flow_mode")
     if flow_mode not in {
         _GOAL_AWAITING_TARGET_TEXT,
-        _ADMIN_GOAL_AWAITING_USER_IDS_TEXT,
         _ADMIN_GOAL_AWAITING_TARGET_TEXT,
     }:
         return
-    if flow_mode == _ADMIN_GOAL_AWAITING_USER_IDS_TEXT:
-        raw_tokens = [token.strip() for token in message.text.split(",")]
-        try:
-            user_ids = [int(token) for token in raw_tokens if token]
-        except ValueError:
-            await message.reply_text(_tg("admin_goal_users_prompt", context=context, user=user))
-            return
-        if not user_ids:
-            await message.reply_text(_tg("admin_goal_users_prompt", context=context, user=user))
-            return
-        context.user_data["admin_goal_user_ids"] = list(dict.fromkeys(user_ids))
-        context.user_data["words_flow_mode"] = None
-        await message.reply_text(
-            _tg("goal_setup_intro", context=context, user=user),
-            reply_markup=_admin_goal_period_keyboard(language=_telegram_ui_language(context, user)),
-        )
-        return
+    prompt_reply_markup = (
+        _goal_custom_target_keyboard(language=_telegram_ui_language(context, user))
+        if flow_mode == _GOAL_AWAITING_TARGET_TEXT
+        else _admin_goal_custom_target_keyboard(language=_telegram_ui_language(context, user))
+    )
     try:
         target_count = int(message.text.strip())
     except ValueError:
-        await message.reply_text(_tg("goal_target_custom_prompt", context=context, user=user))
+        edited = await _edit_expected_user_input_prompt(
+            context,
+            text=_tg("goal_target_custom_prompt", context=context, user=user),
+            reply_markup=prompt_reply_markup,
+        )
+        if not edited:
+            await message.reply_text(
+                _tg("goal_target_custom_prompt", context=context, user=user),
+                reply_markup=prompt_reply_markup,
+            )
         return
     if target_count <= 0:
-        await message.reply_text(_tg("goal_target_custom_prompt", context=context, user=user))
+        edited = await _edit_expected_user_input_prompt(
+            context,
+            text=_tg("goal_target_custom_prompt", context=context, user=user),
+            reply_markup=prompt_reply_markup,
+        )
+        if not edited:
+            await message.reply_text(
+                _tg("goal_target_custom_prompt", context=context, user=user),
+                reply_markup=prompt_reply_markup,
+            )
         return
     key = "goal_target_count" if flow_mode == _GOAL_AWAITING_TARGET_TEXT else "admin_goal_target_count"
     context.user_data[key] = target_count
     context.user_data.pop("words_flow_mode", None)
-    await message.reply_text(
-        _tg("goal_source_prompt", context=context, user=user),
-        reply_markup=(
-            _goal_source_keyboard(language=_telegram_ui_language(context, user))
-            if flow_mode == _GOAL_AWAITING_TARGET_TEXT
-            else _admin_goal_source_keyboard(language=_telegram_ui_language(context, user))
-        ),
+    next_reply_markup = (
+        _goal_source_keyboard(language=_telegram_ui_language(context, user))
+        if flow_mode == _GOAL_AWAITING_TARGET_TEXT
+        else _admin_goal_source_keyboard(language=_telegram_ui_language(context, user))
     )
+    edited = await _edit_expected_user_input_prompt(
+        context,
+        text=_tg("goal_source_prompt", context=context, user=user),
+        reply_markup=next_reply_markup,
+    )
+    if not edited:
+        await message.reply_text(
+            _tg("goal_source_prompt", context=context, user=user),
+            reply_markup=next_reply_markup,
+        )
+    await _delete_message_if_possible(context, message=message)
+    _clear_expected_user_input(context)
 
 
 async def add_words_edit_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3340,7 +4042,12 @@ async def image_review_edit_prompt_handler(
         ),
         instruction_markup=ForceReply(selective=True),
     )
-    await send_telegram_view(query.message, instruction_view)
+    prompt_message = await send_telegram_view(query.message, instruction_view)
+    _remember_expected_user_input(
+        context,
+        chat_id=_message_chat_id(prompt_message),
+        message_id=getattr(prompt_message, "message_id", None),
+    )
     await send_telegram_view(query.message, current_prompt_view)
 
 
@@ -3372,7 +4079,12 @@ async def image_review_edit_search_query_handler(
         ),
         instruction_markup=ForceReply(selective=True),
     )
-    await send_telegram_view(query.message, instruction_view)
+    prompt_message = await send_telegram_view(query.message, instruction_view)
+    _remember_expected_user_input(
+        context,
+        chat_id=_message_chat_id(prompt_message),
+        message_id=getattr(prompt_message, "message_id", None),
+    )
     await send_telegram_view(query.message, current_query_view)
 
 
@@ -4574,21 +5286,33 @@ def _words_menu_keyboard(
     can_add_words: bool,
     can_edit_words: bool,
     can_edit_images: bool,
-    is_admin: bool,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(_tg("training_topics", language=language), callback_data="words:topics")]]
-    rows.append([InlineKeyboardButton(_tg("goal_setup_button", language=language), callback_data="words:goals")])
-    rows.append([InlineKeyboardButton(_tg("progress_button", language=language), callback_data="words:progress")])
-    if is_admin:
-        rows.append([InlineKeyboardButton(_tg("admin_assign_goal_button", language=language), callback_data="words:admin_assign_goal")])
-        rows.append([InlineKeyboardButton(_tg("admin_users_progress_button", language=language), callback_data="words:admin_users_progress")])
     if can_add_words:
         rows.append([InlineKeyboardButton(_tg("add_words", language=language), callback_data="words:add_words")])
     if can_edit_words:
         rows.append([InlineKeyboardButton(_tg("edit_words", language=language), callback_data="words:edit_words")])
     if can_edit_images:
         rows.append([InlineKeyboardButton(_tg("edit_word_image", language=language), callback_data="words:edit_images")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _assign_menu_keyboard(
+    *,
+    is_admin: bool,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(_tg("goal_setup_button", language=language), callback_data="assign:goals")],
+        [InlineKeyboardButton(_tg("progress_button", language=language), callback_data="assign:progress")],
+        [InlineKeyboardButton(_tg("assign_users_button", language=language), callback_data="assign:users")],
+    ]
+    if is_admin:
+        rows.insert(
+            0,
+            [InlineKeyboardButton(_tg("admin_assign_goal_button", language=language), callback_data="assign:admin_assign_goal")],
+        )
     return InlineKeyboardMarkup(rows)
 
 

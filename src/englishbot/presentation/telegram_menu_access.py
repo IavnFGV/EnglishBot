@@ -21,6 +21,7 @@ DEFAULT_TELEGRAM_COMMAND_SPECS: tuple[TelegramCommandSpec, ...] = (
     TelegramCommandSpec("help", "Show commands"),
     TelegramCommandSpec("version", "Show bot version"),
     TelegramCommandSpec("words", "Open words menu"),
+    TelegramCommandSpec("assign", "Open assignments menu"),
     TelegramCommandSpec(
         "add_words",
         "Add words from raw text",

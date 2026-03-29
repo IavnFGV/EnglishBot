@@ -178,6 +178,7 @@ async def test_editor_can_edit_published_word_from_words_menu(
     assert item_query.message.replies[-1][0] == "Current value:\nMathematics: математика"
 
     message = _FakeIncomingMessage("Maths: математика / матан")
+    message.message_id = 555
     text_update = SimpleNamespace(
         effective_message=message,
         effective_user=SimpleNamespace(id=42),
@@ -194,7 +195,7 @@ async def test_editor_can_edit_published_word_from_words_menu(
     )
     assert message.replies[1][0] == "Choose another word to edit."
     assert message.replies[1][1] is not None
-    assert context.bot.deleted_messages == [(1, 999), (1, 1)]
+    assert context.bot.deleted_messages == [(1, 999), (1, 1), (1, 555)]
     saved = store.get_content_pack("school-subjects")
     assert saved["vocabulary_items"][0]["english_word"] == "Maths"
     assert saved["vocabulary_items"][0]["translation"] == "математика / матан"

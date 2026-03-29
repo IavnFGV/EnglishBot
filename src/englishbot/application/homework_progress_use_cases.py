@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from englishbot.domain.models import Goal, GoalPeriod, GoalStatus, GoalType
+from englishbot.domain.models import Goal, GoalPeriod, GoalStatus, GoalType, TrainingMode
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.logging_utils import logged_service_call
 
@@ -31,6 +31,25 @@ class AdminUserProgressOverviewItem:
     completed_goals_count: int
     aggregate_percent: int
     last_activity_at: datetime | None
+
+
+@dataclass(slots=True, frozen=True)
+class GoalWordDetailView:
+    word_id: str
+    english_word: str
+    translation: str
+    homework_mode: TrainingMode | None
+    easy_mastered: bool = False
+    medium_mastered: bool = False
+    hard_mastered: bool = False
+    hard_skipped: bool = False
+
+
+@dataclass(slots=True, frozen=True)
+class AdminGoalDetailView:
+    goal: Goal
+    progress_percent: int
+    words: list[GoalWordDetailView]
 
 
 class GoalWordSource(StrEnum):
@@ -211,6 +230,64 @@ class GetAdminUsersProgressOverviewUseCase:
             )
             for row in rows
         ]
+
+
+class GetAdminUserGoalsUseCase:
+    def __init__(self, *, store: SQLiteContentStore) -> None:
+        self._goals = ListUserGoalsUseCase(store=store)
+
+    @logged_service_call(
+        "GetAdminUserGoalsUseCase.execute",
+        include=("user_id", "include_history"),
+        result=lambda value: {"goal_count": len(value)},
+    )
+    def execute(self, *, user_id: int, include_history: bool = True) -> list[GoalProgressView]:
+        return self._goals.execute(user_id=user_id, include_history=include_history)
+
+
+class GetAdminGoalDetailUseCase:
+    def __init__(self, *, store: SQLiteContentStore) -> None:
+        self._store = store
+
+    @logged_service_call(
+        "GetAdminGoalDetailUseCase.execute",
+        include=("user_id", "goal_id"),
+        result=lambda value: {"found": value is not None, "word_count": (len(value.words) if value is not None else 0)},
+    )
+    def execute(self, *, user_id: int, goal_id: str) -> AdminGoalDetailView | None:
+        goals = self._store.list_user_goals(
+            user_id=user_id,
+            statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED, GoalStatus.EXPIRED),
+        )
+        goal = next((item for item in goals if item.id == goal_id), None)
+        if goal is None:
+            return None
+        words = [
+            GoalWordDetailView(
+                word_id=row["word_id"],
+                english_word=row["english_word"],
+                translation=row["translation"],
+                homework_mode=(
+                    TrainingMode(row["homework_mode"])
+                    if row.get("homework_mode")
+                    else None
+                ),
+                easy_mastered=bool(row.get("easy_mastered")),
+                medium_mastered=bool(row.get("medium_mastered")),
+                hard_mastered=bool(row.get("hard_mastered")),
+                hard_skipped=bool(row.get("hard_skipped")),
+            )
+            for row in self._store.list_goal_word_details(goal_id=goal_id, user_id=user_id)
+        ]
+        return AdminGoalDetailView(
+            goal=goal,
+            progress_percent=(
+                min(100, int((goal.progress_count / goal.target_count) * 100))
+                if goal.target_count > 0
+                else 0
+            ),
+            words=words,
+        )
 
 
 class HomeworkProgressUseCase:

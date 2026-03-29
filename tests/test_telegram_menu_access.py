@@ -44,5 +44,5 @@ def test_visible_commands_follow_permissions() -> None:
     regular_commands = [spec.command for spec in policy.visible_commands(user_id=999)]
     editor_commands = [spec.command for spec in policy.visible_commands(user_id=101)]
 
-    assert regular_commands == ["start", "help", "version", "words"]
+    assert regular_commands == ["start", "help", "version", "words", "assign"]
     assert editor_commands == [spec.command for spec in DEFAULT_TELEGRAM_COMMAND_SPECS]

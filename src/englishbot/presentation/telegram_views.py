@@ -131,6 +131,14 @@ def build_words_menu_view(
     return TelegramTextView(text=text, reply_markup=reply_markup)
 
 
+def build_assignment_menu_view(
+    *,
+    text: str,
+    reply_markup: TelegramReplyMarkup | None = None,
+) -> TelegramTextView:
+    return TelegramTextView(text=text, reply_markup=reply_markup)
+
+
 def build_quick_actions_view(
     *,
     text: str,

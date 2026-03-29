@@ -1234,6 +1234,58 @@ class SQLiteContentStore:
             for row in rows
         ]
 
+    def list_goal_word_details(self, *, goal_id: str, user_id: int) -> list[dict[str, object]]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    w.word_id AS word_id,
+                    li.display_word AS english_word,
+                    li.display_translation AS translation,
+                    CASE
+                        WHEN p.word_id IS NULL THEN NULL
+                        WHEN p.easy_mastered = 0 THEN ?
+                        WHEN p.medium_mastered = 0 THEN ?
+                        WHEN p.hard_skipped = 1 OR p.hard_mastered = 1 THEN ?
+                        ELSE ?
+                    END AS homework_mode,
+                    p.easy_mastered AS easy_mastered,
+                    p.medium_mastered AS medium_mastered,
+                    p.hard_mastered AS hard_mastered,
+                    p.hard_skipped AS hard_skipped
+                FROM user_goal_words w
+                LEFT JOIN learning_items li ON li.id = w.word_id
+                LEFT JOIN user_homework_word_progress p
+                    ON p.goal_id = w.goal_id
+                    AND p.user_id = ?
+                    AND p.word_id = w.word_id
+                WHERE w.goal_id = ?
+                ORDER BY li.display_word COLLATE NOCASE ASC, w.word_id ASC
+                """,
+                (
+                    TrainingMode.EASY.value,
+                    TrainingMode.MEDIUM.value,
+                    TrainingMode.MEDIUM.value,
+                    TrainingMode.HARD.value,
+                    user_id,
+                    goal_id,
+                ),
+            ).fetchall()
+        return [
+            {
+                "word_id": str(row["word_id"]),
+                "english_word": str(row["english_word"] or row["word_id"]),
+                "translation": str(row["translation"] or ""),
+                "homework_mode": row["homework_mode"],
+                "easy_mastered": bool(row["easy_mastered"]) if row["easy_mastered"] is not None else False,
+                "medium_mastered": bool(row["medium_mastered"]) if row["medium_mastered"] is not None else False,
+                "hard_mastered": bool(row["hard_mastered"]) if row["hard_mastered"] is not None else False,
+                "hard_skipped": bool(row["hard_skipped"]) if row["hard_skipped"] is not None else False,
+            }
+            for row in rows
+        ]
+
     def update_goal_status(
         self,
         *,

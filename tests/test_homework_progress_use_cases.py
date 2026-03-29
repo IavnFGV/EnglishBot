@@ -2,6 +2,8 @@ from pathlib import Path
 
 from englishbot.application.homework_progress_use_cases import (
     AssignGoalToUsersUseCase,
+    GetAdminGoalDetailUseCase,
+    GetAdminUserGoalsUseCase,
     GetAdminUsersProgressOverviewUseCase,
     GoalWordSource,
     HomeworkProgressUseCase,
@@ -104,3 +106,38 @@ def test_admin_progress_overview_aggregates_users(tmp_path: Path) -> None:
 
     assert len(overview) == 2
     assert overview[0].active_goals_count >= 1
+
+
+def test_admin_goal_detail_returns_words_and_homework_stage(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=8,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["cat"],
+    )
+
+    detail = GetAdminGoalDetailUseCase(store=store).execute(user_id=8, goal_id=goal.id)
+
+    assert detail is not None
+    assert detail.goal.id == goal.id
+    assert detail.words[0].word_id == "cat"
+    assert detail.words[0].homework_mode is TrainingMode.EASY
+
+
+def test_admin_user_goals_returns_history(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    use_case = HomeworkProgressUseCase(store=store)
+    goal = use_case.create_goal(
+        user_id=8,
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=1,
+    )
+    use_case.reset_goal(user_id=8, goal_id=goal.id)
+
+    goals = GetAdminUserGoalsUseCase(store=store).execute(user_id=8, include_history=True)
+
+    assert len(goals) == 1
+    assert goals[0].goal.status.value == "expired"

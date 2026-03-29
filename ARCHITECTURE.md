@@ -94,6 +94,13 @@ Behavioral rule:
 - user-visible screen text, captions, and message shape should be constructed in presentation helpers
 - the goal is to make it obvious from one place what the user actually sees in chat
 
+Short user-input rule:
+
+- if the Telegram adapter is waiting for a short form-like user input, it should keep one active prompt message, remember that prompt in adapter state, parse the reply, update the remembered prompt when possible, delete the processed user reply, and clear the remembered prompt state afterward
+- this rule applies to compact inputs such as numeric counts, one-line word edits, image prompt text, and image search query text
+- this rule does not apply by default to large payloads such as raw lesson text, full draft editing, large JSON/text blocks, or uploaded files/photos where preserving the user message is useful
+- prompt tracking, prompt updates, and Telegram message cleanup are adapter concerns and should stay in `englishbot.bot`, not in domain/application use cases
+
 ## Storage abstraction
 
 Repository protocols isolate the application layer from persistence:
