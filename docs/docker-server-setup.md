@@ -68,6 +68,7 @@ Backup behavior detail:
 - `docker-compose.yml` mounts backup directories explicitly:
   - `shared/backups/db -> /app/backups/db`
   - `shared/backups/db-versioned -> /app/backups/db-versioned`
+- `scripts/backup-runtime-db.sh` writes the live SQLite backup directly to `/app/backups/db/...` inside the running container, so the file appears immediately in `shared/backups/db/...` on the host.
 - This keeps rolling and permanent SQLite backups on host storage and avoids relying on implicit parent-directory mounts.
 
 ### Required GitHub repository secrets
