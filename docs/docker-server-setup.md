@@ -65,8 +65,10 @@ It runs on every push to `main` and does:
 
 Backup behavior detail:
 
-- During deploy backup, if container `englishbot` is running, the script creates SQLite backup in container temp path (`/tmp/...`) and then copies it to host `shared/backups/db/` via `docker cp`.
-- This does not depend on whether `/app/backups` is mounted in the currently running container (important for old containers created before mount changes).
+- `docker-compose.yml` mounts backup directories explicitly:
+  - `shared/backups/db -> /app/backups/db`
+  - `shared/backups/db-versioned -> /app/backups/db-versioned`
+- This keeps rolling and permanent SQLite backups on host storage and avoids relying on implicit parent-directory mounts.
 
 ### Required GitHub repository secrets
 

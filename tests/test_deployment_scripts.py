@@ -62,7 +62,8 @@ def test_docker_compose_mounts_persistent_runtime_directories() -> None:
     assert "/srv/englishbot/shared/.env:/app/.env:ro" in compose
     assert "/srv/englishbot/shared/data:/app/data" in compose
     assert "/srv/englishbot/shared/assets:/app/assets" in compose
-    assert "/srv/englishbot/shared/backups:/app/backups" in compose
+    assert "/srv/englishbot/shared/backups/db:/app/backups/db" in compose
+    assert "/srv/englishbot/shared/backups/db-versioned:/app/backups/db-versioned" in compose
     assert "/srv/englishbot/shared/logs:/app/logs" in compose
     assert "/srv/englishbot/shared/content/custom:/app/content/custom" in compose
 
