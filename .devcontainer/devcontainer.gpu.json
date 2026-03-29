@@ -29,7 +29,8 @@
     "source=${localEnv:HOME}/.ollama,target=/home/vscode/.ollama,type=bind",
     "source=${localEnv:HOME}/.comfyui/models,target=/opt/ComfyUI/models,type=bind",
     "source=${localEnv:HOME}/.comfyui/output,target=/opt/ComfyUI/output,type=bind",
-    "source=${localEnv:HOME}/.codex,target=/home/vscode/.codex,type=bind"
+    "source=${localEnv:HOME}/.codex,target=/home/vscode/.codex,type=bind",
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,readonly"
   ],
   "workspaceFolder": "/workspaces/EnglishBot",
   "remoteEnv": {
@@ -49,7 +50,8 @@
         "ms-python.vscode-pylance",
         "charliermarsh.ruff",
         "openai.chatgpt",
-        "mechatroner.rainbow-csv"
+        "mechatroner.rainbow-csv",
+        "zknpr.sqlite-explorer"
       ]
     }
   }

@@ -11,7 +11,8 @@
   },
   "mounts": [
     "source=englishbot-pip-cache,target=/home/vscode/.cache/pip,type=volume",
-    "source=${localEnv:HOME}/.codex,target=/home/vscode/.codex,type=bind"
+    "source=${localEnv:HOME}/.codex,target=/home/vscode/.codex,type=bind",
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,readonly"
   ],
   "workspaceFolder": "/workspaces/EnglishBot",
   "remoteEnv": {
@@ -35,7 +36,8 @@
         "ms-python.vscode-pylance",
         "charliermarsh.ruff",
         "openai.chatgpt",
-        "mechatroner.rainbow-csv"
+        "mechatroner.rainbow-csv",
+        "zknpr.sqlite-explorer"
       ]
     }
   }

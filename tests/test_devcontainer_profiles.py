@@ -29,6 +29,19 @@ def test_cpu_and_gpu_profiles_load_local_ai_switch_env_file() -> None:
     assert '${localWorkspaceFolder}/.devcontainer/local-ai.env' in gpu
 
 
+def test_all_devcontainer_profiles_mount_host_ssh_directory_read_only() -> None:
+    expected_mount = 'source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,readonly'
+
+    for path in (
+        ".devcontainer/devcontainer.json",
+        ".devcontainer/devcontainer.cpu.json",
+        ".devcontainer/devcontainer.gpu.json",
+        ".devcontainer/devcontainer.noai.json",
+    ):
+        config = Path(path).read_text(encoding="utf-8")
+        assert expected_mount in config
+
+
 def test_switch_local_ai_mode_script_uses_on_off_presets() -> None:
     script = Path("scripts/switch-local-ai-mode.sh").read_text(encoding="utf-8")
 
