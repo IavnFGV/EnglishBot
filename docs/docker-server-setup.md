@@ -63,6 +63,13 @@ It runs on every push to `main` and does:
 6. Keep the latest 5 rolling SQLite backups in `shared/backups/db/`
 7. When app version changes, save an additional permanent backup in `shared/backups/db-versioned/`
 
+Backup behavior detail:
+
+- `docker-compose.yml` mounts backup directories explicitly:
+  - `shared/backups/db -> /app/backups/db`
+  - `shared/backups/db-versioned -> /app/backups/db-versioned`
+- This keeps rolling and permanent SQLite backups on host storage and avoids relying on implicit parent-directory mounts.
+
 ### Required GitHub repository secrets
 
 - `DEPLOY_HOST`: Hetzner server IP or hostname
