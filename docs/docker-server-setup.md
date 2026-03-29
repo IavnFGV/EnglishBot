@@ -51,13 +51,13 @@ docker compose up -d --build
 
 ## GitHub Actions auto-deploy
 
-This repo includes [deploy.yml](/workspaces/EnglishBot/.github/workflows/deploy.yml).
+This repo includes [deploy.yml](../.github/workflows/deploy.yml).
 
 It runs on every push to `main` and does:
 
 1. `pytest -q`
 2. SSH into the Hetzner server
-3. Run [deploy-docker-app.sh](/workspaces/EnglishBot/scripts/deploy-docker-app.sh)
+3. Run [deploy-docker-app.sh](../scripts/deploy-docker-app.sh)
 4. Rebuild and restart the Docker container with `docker compose up -d --build`
 5. Create a git tag for the successful deploy, for example `deploy-v0.1.0-b3`
 6. Keep the latest 5 rolling SQLite backups in `shared/backups/db/`
@@ -69,6 +69,7 @@ Backup behavior detail:
   - `shared/backups/db -> /app/backups/db`
   - `shared/backups/db-versioned -> /app/backups/db-versioned`
 - `scripts/backup-runtime-db.sh` writes the live SQLite backup directly to `/app/backups/db/...` inside the running container, so the file appears immediately in `shared/backups/db/...` on the host.
+- If the currently running container was started before backup mounts were added, the script falls back to `docker cp` from the container filesystem, so deploy does not fail only because of a stale container mount configuration.
 - This keeps rolling and permanent SQLite backups on host storage and avoids relying on implicit parent-directory mounts.
 
 ### Required GitHub repository secrets
