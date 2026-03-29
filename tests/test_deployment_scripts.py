@@ -24,6 +24,7 @@ def test_hetzner_bootstrap_script_prepares_runtime_directories() -> None:
     assert 'mkdir -p "${APP_ROOT}/shared/data"' in script
     assert 'mkdir -p "${APP_ROOT}/shared/assets"' in script
     assert 'mkdir -p "${APP_ROOT}/shared/backups/db"' in script
+    assert 'mkdir -p "${APP_ROOT}/shared/backups/db-versioned"' in script
     assert 'mkdir -p "${APP_ROOT}/shared/content/custom"' in script
     assert 'mkdir -p "${APP_ROOT}/shared/deploy"' in script
     assert 'mkdir -p "${APP_ROOT}/shared/logs"' in script
@@ -84,12 +85,15 @@ def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
     assert 'BUILD_COUNTER_FILE="${BUILD_COUNTER_FILE:-${SHARED_DIR}/deploy/build-counter.env}"' in script
     assert 'CURRENT_RELEASE_FILE="${CURRENT_RELEASE_FILE:-${SHARED_DIR}/deploy/current-release.env}"' in script
     assert 'DB_BACKUP_FILE="${DB_BACKUP_FILE:-${SHARED_DIR}/deploy/last-db-backup.env}"' in script
+    assert 'VERSION_CHANGE_DB_BACKUP_FILE="${VERSION_CHANGE_DB_BACKUP_FILE:-${SHARED_DIR}/deploy/last-version-change-db-backup.env}"' in script
     assert "awk -F'\"' " in script
     assert 'Could not read project.version from pyproject.toml' in script
     assert 'ENGLISHBOT_BUILD_NUMBER="$((PREVIOUS_BUILD_NUMBER + 1))"' in script
     assert 'ENGLISHBOT_BUILD_NUMBER="1"' in script
     assert 'ENGLISHBOT_DEPLOY_TAG="deploy-v${APP_VERSION}-b${ENGLISHBOT_BUILD_NUMBER}"' in script
     assert 'DB_BACKUP_PATH="$(bash scripts/backup-runtime-db.sh "${ENGLISHBOT_DEPLOY_TAG}")"' in script
+    assert 'PERMANENT_BACKUP_LABEL="version-change-${PREVIOUS_BUILD_VERSION}-to-${APP_VERSION}"' in script
+    assert 'PERMANENT_BACKUP_LABEL="${PERMANENT_BACKUP_LABEL}" \\' in script
     assert 'ENGLISHBOT_DB_BACKUP_PATH=${DB_BACKUP_PATH}' in script
     assert 'ENGLISHBOT_BUILD_VERSION=${APP_VERSION}' in script
     assert 'ENGLISHBOT_BUILD_NUMBER=${ENGLISHBOT_BUILD_NUMBER}' in script
@@ -104,12 +108,15 @@ def test_server_backup_script_keeps_only_latest_five_versions() -> None:
     script = Path("scripts/backup-runtime-db.sh").read_text(encoding="utf-8")
 
     assert 'BACKUP_DIR="${BACKUP_DIR:-${SHARED_DIR}/backups/db}"' in script
+    assert 'PERMANENT_BACKUP_DIR="${PERMANENT_BACKUP_DIR:-${SHARED_DIR}/backups/db-versioned}"' in script
     assert 'KEEP_BACKUPS="${KEEP_BACKUPS:-5}"' in script
+    assert 'PERMANENT_BACKUP_LABEL="${PERMANENT_BACKUP_LABEL:-}"' in script
     assert 'docker exec' in script
     assert 'source.backup(target)' in script
     assert 'englishbot-db-${SAFE_LABEL}-${TIMESTAMP}.sqlite3' in script
     assert "find \"${BACKUP_DIR}\" -maxdepth 1 -type f -name 'englishbot-db-*.sqlite3'" in script
     assert 'if [[ ${#EXISTING_BACKUPS[@]} -gt "${KEEP_BACKUPS}" ]]' in script
+    assert 'englishbot-db-permanent-${SAFE_PERMANENT_LABEL}-${TIMESTAMP}.sqlite3' in script
 
 
 def test_server_restore_script_restores_backup_and_restarts_bot() -> None:

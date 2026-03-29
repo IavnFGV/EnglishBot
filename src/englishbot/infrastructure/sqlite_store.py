@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 import sqlite3
 import unicodedata
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from englishbot.application.learning_progress import week_start
 from englishbot.domain.add_words_models import AddWordsFlowState
 from englishbot.domain.image_review_models import (
     ImageCandidate,
@@ -15,6 +17,11 @@ from englishbot.domain.image_review_models import (
     ImageReviewItem,
 )
 from englishbot.domain.models import (
+    Goal,
+    GoalPeriod,
+    GoalStatus,
+    GoalType,
+    HomeworkWordProgress,
     Lesson,
     Lexeme,
     SessionAnswer,
@@ -24,6 +31,7 @@ from englishbot.domain.models import (
     TrainingSession,
     UserProgress,
     VocabularyItem,
+    WordStats,
 )
 from englishbot.infrastructure.content_loader import JsonContentPackLoader
 from englishbot.importing.draft_io import JsonDraftReader, draft_to_data
@@ -246,6 +254,7 @@ class SQLiteContentStore:
                     session_id TEXT NOT NULL REFERENCES training_sessions(id) ON DELETE CASCADE,
                     sort_order INTEGER NOT NULL,
                     vocabulary_item_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+                    mode TEXT,
                     PRIMARY KEY (session_id, sort_order)
                 );
 
@@ -298,8 +307,100 @@ class SQLiteContentStore:
                     current_streak_days INTEGER NOT NULL DEFAULT 0,
                     last_played_on TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS user_word_stats (
+                    user_id INTEGER NOT NULL,
+                    word_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+                    attempt_easy INTEGER NOT NULL DEFAULT 0,
+                    attempt_medium INTEGER NOT NULL DEFAULT 0,
+                    attempt_hard INTEGER NOT NULL DEFAULT 0,
+                    success_easy INTEGER NOT NULL DEFAULT 0,
+                    success_medium INTEGER NOT NULL DEFAULT 0,
+                    success_hard INTEGER NOT NULL DEFAULT 0,
+                    last_seen_at TEXT,
+                    last_correct_at TEXT,
+                    current_level INTEGER NOT NULL DEFAULT 0,
+                    current_streak_success INTEGER NOT NULL DEFAULT 0,
+                    current_streak_fail INTEGER NOT NULL DEFAULT 0,
+                    review_interval_days INTEGER NOT NULL DEFAULT 0,
+                    next_review_at TEXT,
+                    PRIMARY KEY (user_id, word_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS user_weekly_points (
+                    user_id INTEGER NOT NULL,
+                    week_start_date TEXT NOT NULL,
+                    points INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (user_id, week_start_date)
+                );
+
+                CREATE TABLE IF NOT EXISTS user_weekly_word_awards (
+                    user_id INTEGER NOT NULL,
+                    week_start_date TEXT NOT NULL,
+                    word_id TEXT NOT NULL,
+                    PRIMARY KEY (user_id, week_start_date, word_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS user_goals (
+                    id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    goal_period TEXT NOT NULL,
+                    goal_type TEXT NOT NULL,
+                    target_count INTEGER NOT NULL,
+                    progress_count INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL,
+                    deadline_date TEXT,
+                    reward_points INTEGER,
+                    required_level INTEGER,
+                    target_topic_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS user_goal_words (
+                    goal_id TEXT NOT NULL REFERENCES user_goals(id) ON DELETE CASCADE,
+                    word_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+                    PRIMARY KEY (goal_id, word_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS user_session_word_history (
+                    session_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    word_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+                    seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (session_id, word_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS user_homework_word_progress (
+                    goal_id TEXT NOT NULL REFERENCES user_goals(id) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL,
+                    word_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+                    easy_success_count INTEGER NOT NULL DEFAULT 0,
+                    medium_success_count INTEGER NOT NULL DEFAULT 0,
+                    hard_success_count INTEGER NOT NULL DEFAULT 0,
+                    easy_mastered INTEGER NOT NULL DEFAULT 0,
+                    medium_mastered INTEGER NOT NULL DEFAULT 0,
+                    hard_mastered INTEGER NOT NULL DEFAULT 0,
+                    hard_skipped INTEGER NOT NULL DEFAULT 0,
+                    hard_failed_streak INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (goal_id, word_id)
+                );
                 """
             )
+            word_stats_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(user_word_stats)").fetchall()
+            }
+            if "review_interval_days" not in word_stats_columns:
+                connection.execute("ALTER TABLE user_word_stats ADD COLUMN review_interval_days INTEGER NOT NULL DEFAULT 0")
+            if "next_review_at" not in word_stats_columns:
+                connection.execute("ALTER TABLE user_word_stats ADD COLUMN next_review_at TEXT")
+            item_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(training_session_items)"
+                ).fetchall()
+            }
+            if "mode" not in item_columns:
+                connection.execute("ALTER TABLE training_session_items ADD COLUMN mode TEXT")
 
     def has_runtime_content(self) -> bool:
         self.initialize()
@@ -352,6 +453,13 @@ class SQLiteContentStore:
                 connection.execute("DELETE FROM topics")
                 connection.execute("DELETE FROM add_words_flows")
                 connection.execute("DELETE FROM image_review_flows")
+                connection.execute("DELETE FROM user_word_stats")
+                connection.execute("DELETE FROM user_weekly_points")
+                connection.execute("DELETE FROM user_weekly_word_awards")
+                connection.execute("DELETE FROM user_goals")
+                connection.execute("DELETE FROM user_goal_words")
+                connection.execute("DELETE FROM user_session_word_history")
+                connection.execute("DELETE FROM user_homework_word_progress")
             for topic in topic_map.values():
                 connection.execute(
                     """
@@ -866,6 +974,471 @@ class SQLiteContentStore:
             ).fetchall()
         return [self._row_to_progress(row) for row in rows]
 
+    def get_word_stats(self, user_id: int, word_id: str) -> WordStats | None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM user_word_stats
+                WHERE user_id = ? AND word_id = ?
+                """,
+                (user_id, word_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return WordStats(
+            user_id=row["user_id"],
+            word_id=row["word_id"],
+            attempt_easy=row["attempt_easy"],
+            attempt_medium=row["attempt_medium"],
+            attempt_hard=row["attempt_hard"],
+            success_easy=row["success_easy"],
+            success_medium=row["success_medium"],
+            success_hard=row["success_hard"],
+            last_seen_at=(
+                datetime.fromisoformat(row["last_seen_at"]) if row["last_seen_at"] else None
+            ),
+            last_correct_at=(
+                datetime.fromisoformat(row["last_correct_at"]) if row["last_correct_at"] else None
+            ),
+            current_level=row["current_level"],
+            current_streak_success=row["current_streak_success"],
+            current_streak_fail=row["current_streak_fail"],
+            review_interval_days=int(row["review_interval_days"] or 0),
+            next_review_at=(
+                datetime.fromisoformat(row["next_review_at"]) if row["next_review_at"] else None
+            ),
+        )
+
+    def save_word_stats(self, stats: WordStats) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO user_word_stats (
+                    user_id, word_id, attempt_easy, attempt_medium, attempt_hard,
+                    success_easy, success_medium, success_hard, last_seen_at, last_correct_at,
+                    current_level, current_streak_success, current_streak_fail,
+                    review_interval_days, next_review_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, word_id) DO UPDATE SET
+                    attempt_easy=excluded.attempt_easy,
+                    attempt_medium=excluded.attempt_medium,
+                    attempt_hard=excluded.attempt_hard,
+                    success_easy=excluded.success_easy,
+                    success_medium=excluded.success_medium,
+                    success_hard=excluded.success_hard,
+                    last_seen_at=excluded.last_seen_at,
+                    last_correct_at=excluded.last_correct_at,
+                    current_level=excluded.current_level,
+                    current_streak_success=excluded.current_streak_success,
+                    current_streak_fail=excluded.current_streak_fail,
+                    review_interval_days=excluded.review_interval_days,
+                    next_review_at=excluded.next_review_at
+                """,
+                (
+                    stats.user_id,
+                    stats.word_id,
+                    stats.attempt_easy,
+                    stats.attempt_medium,
+                    stats.attempt_hard,
+                    stats.success_easy,
+                    stats.success_medium,
+                    stats.success_hard,
+                    stats.last_seen_at.isoformat() if stats.last_seen_at else None,
+                    stats.last_correct_at.isoformat() if stats.last_correct_at else None,
+                    stats.current_level,
+                    stats.current_streak_success,
+                    stats.current_streak_fail,
+                    stats.review_interval_days,
+                    stats.next_review_at.isoformat() if stats.next_review_at else None,
+                ),
+            )
+
+    def award_weekly_points(
+        self,
+        *,
+        user_id: int,
+        word_id: str,
+        mode: TrainingMode,
+        level_up_delta: int,
+        awarded_at: datetime,
+    ) -> int:
+        self.initialize()
+        week_start_date = week_start(awarded_at).date().isoformat()
+        difficulty_bonus = {TrainingMode.EASY: 0, TrainingMode.MEDIUM: 1, TrainingMode.HARD: 2}[mode]
+        level_bonus = {0: 0, 1: 5, 2: 10, 3: 20}.get(level_up_delta, 20 if level_up_delta > 3 else 0)
+        with _connect(self._db_path) as connection:
+            already_awarded = connection.execute(
+                """
+                SELECT 1
+                FROM user_weekly_word_awards
+                WHERE user_id = ? AND week_start_date = ? AND word_id = ?
+                """,
+                (user_id, week_start_date, word_id),
+            ).fetchone()
+            base_points = 0 if already_awarded else 10
+            total_delta = base_points + difficulty_bonus + level_bonus
+            connection.execute(
+                """
+                INSERT INTO user_weekly_points (user_id, week_start_date, points)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, week_start_date) DO UPDATE SET
+                    points = user_weekly_points.points + excluded.points
+                """,
+                (user_id, week_start_date, total_delta),
+            )
+            if already_awarded is None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO user_weekly_word_awards (user_id, week_start_date, word_id)
+                    VALUES (?, ?, ?)
+                    """,
+                    (user_id, week_start_date, word_id),
+                )
+            row = connection.execute(
+                """
+                SELECT points
+                FROM user_weekly_points
+                WHERE user_id = ? AND week_start_date = ?
+                """,
+                (user_id, week_start_date),
+            ).fetchone()
+        return int(row["points"]) if row else 0
+
+    def assign_goal(
+        self,
+        *,
+        user_id: int,
+        goal_period: GoalPeriod,
+        goal_type: GoalType,
+        target_count: int,
+        deadline_date: str | None = None,
+        reward_points: int | None = None,
+        required_level: int | None = None,
+        target_topic_id: str | None = None,
+        target_word_ids: list[str] | None = None,
+    ) -> Goal:
+        self.initialize()
+        goal_id = str(uuid.uuid4())
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO user_goals (
+                    id, user_id, goal_period, goal_type, target_count, progress_count, status,
+                    deadline_date, reward_points, required_level, target_topic_id
+                ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+                """,
+                (
+                    goal_id,
+                    user_id,
+                    goal_period.value,
+                    goal_type.value,
+                    target_count,
+                    GoalStatus.ACTIVE.value,
+                    deadline_date,
+                    reward_points,
+                    required_level,
+                    target_topic_id,
+                ),
+            )
+            for word_id in target_word_ids or []:
+                connection.execute(
+                    "INSERT OR IGNORE INTO user_goal_words (goal_id, word_id) VALUES (?, ?)",
+                    (goal_id, word_id),
+                )
+                if (
+                    goal_period is GoalPeriod.HOMEWORK
+                    and goal_type is GoalType.WORD_LEVEL_HOMEWORK
+                ):
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO user_homework_word_progress (
+                            goal_id, user_id, word_id
+                        ) VALUES (?, ?, ?)
+                        """,
+                        (goal_id, user_id, word_id),
+                    )
+        return Goal(
+            id=goal_id,
+            user_id=user_id,
+            goal_period=goal_period,
+            goal_type=goal_type,
+            target_count=target_count,
+            progress_count=0,
+            status=GoalStatus.ACTIVE,
+            deadline_date=deadline_date,
+            reward_points=reward_points,
+            required_level=required_level,
+            target_topic_id=target_topic_id,
+        )
+
+    def list_active_homework_words(self, *, user_id: int) -> dict[str, int]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT w.word_id, COALESCE(g.required_level, 1) AS required_level
+                FROM user_goals g
+                JOIN user_goal_words w ON w.goal_id = g.id
+                WHERE g.user_id = ?
+                  AND g.status = ?
+                  AND g.goal_period = ?
+                  AND g.goal_type = ?
+                """,
+                (
+                    user_id,
+                    GoalStatus.ACTIVE.value,
+                    GoalPeriod.HOMEWORK.value,
+                    GoalType.WORD_LEVEL_HOMEWORK.value,
+                ),
+            ).fetchall()
+        return {row["word_id"]: int(row["required_level"]) for row in rows}
+
+    def required_homework_level(self, *, user_id: int, item_id: str) -> int | None:
+        return self.list_active_homework_words(user_id=user_id).get(item_id)
+
+    def list_active_goal_words(self, *, user_id: int) -> set[str]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT w.word_id
+                FROM user_goals g
+                JOIN user_goal_words w ON w.goal_id = g.id
+                WHERE g.user_id = ? AND g.status = ? AND g.goal_period IN (?, ?)
+                """,
+                (
+                    user_id,
+                    GoalStatus.ACTIVE.value,
+                    GoalPeriod.DAILY.value,
+                    GoalPeriod.WEEKLY.value,
+                ),
+            ).fetchall()
+        return {str(row["word_id"]) for row in rows}
+
+    def list_recent_session_words(self, *, user_id: int, limit_sessions: int = 3) -> set[str]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            session_rows = connection.execute(
+                """
+                SELECT session_id, MAX(rowid) AS max_rowid
+                FROM user_session_word_history
+                WHERE user_id = ?
+                GROUP BY session_id
+                ORDER BY max_rowid DESC
+                LIMIT ?
+                """,
+                (user_id, limit_sessions),
+            ).fetchall()
+            session_ids = [str(row["session_id"]) for row in session_rows]
+            if not session_ids:
+                return set()
+            placeholders = ",".join("?" for _ in session_ids)
+            rows = connection.execute(
+                f"SELECT DISTINCT word_id FROM user_session_word_history WHERE session_id IN ({placeholders})",
+                tuple(session_ids),
+            ).fetchall()
+        return {str(row["word_id"]) for row in rows}
+
+    def list_due_review_words(self, *, user_id: int) -> set[str]:
+        self.initialize()
+        now_iso = datetime.now(UTC).isoformat()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT word_id
+                FROM user_word_stats
+                WHERE user_id = ?
+                  AND next_review_at IS NOT NULL
+                  AND next_review_at <= ?
+                """,
+                (user_id, now_iso),
+            ).fetchall()
+        return {str(row["word_id"]) for row in rows}
+
+    def get_homework_stage_mode(self, *, user_id: int, item_id: str) -> TrainingMode | None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT p.*
+                FROM user_homework_word_progress p
+                JOIN user_goals g ON g.id = p.goal_id
+                WHERE p.user_id = ?
+                  AND p.word_id = ?
+                  AND g.status = ?
+                  AND g.goal_period = ?
+                ORDER BY g.created_at DESC
+                LIMIT 1
+                """,
+                (user_id, item_id, GoalStatus.ACTIVE.value, GoalPeriod.HOMEWORK.value),
+            ).fetchone()
+        if row is None:
+            return None
+        if not bool(row["easy_mastered"]):
+            return TrainingMode.EASY
+        if not bool(row["medium_mastered"]):
+            return TrainingMode.MEDIUM
+        if bool(row["hard_skipped"]) or bool(row["hard_mastered"]):
+            return TrainingMode.MEDIUM
+        return TrainingMode.HARD
+
+    def update_homework_word_progress(
+        self,
+        *,
+        user_id: int,
+        word_id: str,
+        mode: TrainingMode,
+        is_correct: bool,
+        current_level: int,
+    ) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT p.goal_id, p.easy_success_count, p.medium_success_count, p.hard_success_count,
+                       p.easy_mastered, p.medium_mastered, p.hard_mastered, p.hard_skipped, p.hard_failed_streak
+                FROM user_homework_word_progress p
+                JOIN user_goals g ON g.id = p.goal_id
+                WHERE p.user_id = ?
+                  AND p.word_id = ?
+                  AND g.status = ?
+                  AND g.goal_period = ?
+                """,
+                (user_id, word_id, GoalStatus.ACTIVE.value, GoalPeriod.HOMEWORK.value),
+            ).fetchall()
+            for row in rows:
+                easy_success_count = int(row["easy_success_count"])
+                medium_success_count = int(row["medium_success_count"])
+                hard_success_count = int(row["hard_success_count"])
+                easy_mastered = bool(row["easy_mastered"])
+                medium_mastered = bool(row["medium_mastered"])
+                hard_mastered = bool(row["hard_mastered"])
+                hard_skipped = bool(row["hard_skipped"])
+                hard_failed_streak = int(row["hard_failed_streak"])
+
+                if is_correct and mode is TrainingMode.EASY:
+                    easy_success_count += 1
+                if is_correct and mode is TrainingMode.MEDIUM:
+                    medium_success_count += 1
+                    easy_mastered = True
+                if is_correct and mode is TrainingMode.HARD:
+                    hard_success_count += 1
+                    easy_mastered = True
+                    medium_mastered = True
+                    hard_mastered = hard_success_count >= 2
+                    hard_failed_streak = 0
+                elif mode is TrainingMode.HARD and not is_correct:
+                    hard_failed_streak += 1
+                    if hard_failed_streak >= 2:
+                        hard_skipped = True
+
+                if easy_success_count >= 2:
+                    easy_mastered = True
+                if medium_success_count >= 2:
+                    medium_mastered = True
+                if current_level >= 2:
+                    easy_mastered = True
+                    medium_mastered = True
+                if hard_mastered:
+                    hard_skipped = False
+
+                connection.execute(
+                    """
+                    UPDATE user_homework_word_progress
+                    SET easy_success_count = ?,
+                        medium_success_count = ?,
+                        hard_success_count = ?,
+                        easy_mastered = ?,
+                        medium_mastered = ?,
+                        hard_mastered = ?,
+                        hard_skipped = ?,
+                        hard_failed_streak = ?
+                    WHERE goal_id = ? AND word_id = ?
+                    """,
+                    (
+                        easy_success_count,
+                        medium_success_count,
+                        hard_success_count,
+                        1 if easy_mastered else 0,
+                        1 if medium_mastered else 0,
+                        1 if hard_mastered else 0,
+                        1 if hard_skipped else 0,
+                        hard_failed_streak,
+                        row["goal_id"],
+                        word_id,
+                    ),
+                )
+                goal_row = connection.execute(
+                    """
+                    SELECT COUNT(*) AS total,
+                           SUM(CASE WHEN medium_mastered = 1 THEN 1 ELSE 0 END) AS mastered
+                    FROM user_homework_word_progress
+                    WHERE goal_id = ?
+                    """,
+                    (row["goal_id"],),
+                ).fetchone()
+                if goal_row and int(goal_row["total"] or 0) > 0 and int(goal_row["mastered"] or 0) >= int(
+                    goal_row["total"]
+                ):
+                    connection.execute(
+                        "UPDATE user_goals SET status = ? WHERE id = ?",
+                        (GoalStatus.COMPLETED.value, row["goal_id"]),
+                    )
+
+    def update_goals_progress(
+        self,
+        *,
+        user_id: int,
+        word_id: str,
+        topic_id: str,
+        is_correct: bool,
+        current_level: int,
+    ) -> None:
+        self.initialize()
+        if not is_correct:
+            return
+        with _connect(self._db_path) as connection:
+            goals = connection.execute(
+                """
+                SELECT * FROM user_goals WHERE user_id = ? AND status = ?
+                """,
+                (user_id, GoalStatus.ACTIVE.value),
+            ).fetchall()
+            for goal in goals:
+                increment = 0
+                if goal["goal_type"] in {GoalType.NEW_WORDS.value, GoalType.WORD_LEVEL_HOMEWORK.value}:
+                    word_match = connection.execute(
+                        "SELECT 1 FROM user_goal_words WHERE goal_id = ? AND word_id = ?",
+                        (goal["id"], word_id),
+                    ).fetchone()
+                    if word_match:
+                        if goal["goal_type"] == GoalType.WORD_LEVEL_HOMEWORK.value:
+                            needed = int(goal["required_level"] or 1)
+                            increment = 1 if current_level >= needed else 0
+                        else:
+                            increment = 1
+                elif goal["goal_type"] == GoalType.TOPICS.value:
+                    increment = 1 if goal["target_topic_id"] == topic_id else 0
+                if increment <= 0:
+                    continue
+                progress_count = int(goal["progress_count"]) + increment
+                status = (
+                    GoalStatus.COMPLETED.value
+                    if progress_count >= int(goal["target_count"])
+                    else GoalStatus.ACTIVE.value
+                )
+                connection.execute(
+                    """
+                    UPDATE user_goals
+                    SET progress_count = ?, status = ?
+                    WHERE id = ?
+                    """,
+                    (progress_count, status, goal["id"]),
+                )
+
     def add_game_stars(self, *, user_id: int, stars: int) -> int:
         self.initialize()
         with _connect(self._db_path) as connection:
@@ -957,13 +1530,26 @@ class SQLiteContentStore:
             )
             connection.execute("DELETE FROM training_session_items WHERE session_id = ?", (session.id,))
             connection.execute("DELETE FROM training_session_answers WHERE session_id = ?", (session.id,))
+            connection.execute("DELETE FROM user_session_word_history WHERE session_id = ?", (session.id,))
             for item in session.items:
                 connection.execute(
                     """
-                    INSERT INTO training_session_items (session_id, sort_order, vocabulary_item_id)
-                    VALUES (?, ?, ?)
+                    INSERT INTO training_session_items (session_id, sort_order, vocabulary_item_id, mode)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    (session.id, item.order, item.vocabulary_item_id),
+                    (
+                        session.id,
+                        item.order,
+                        item.vocabulary_item_id,
+                        item.mode.value if item.mode is not None else None,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO user_session_word_history (session_id, user_id, word_id, seen_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    (session.id, session.user_id, item.vocabulary_item_id),
                 )
             for sort_order, answer in enumerate(session.answer_history):
                 connection.execute(
@@ -1011,7 +1597,7 @@ class SQLiteContentStore:
                 return None
             item_rows = connection.execute(
                 """
-                SELECT sort_order, vocabulary_item_id
+                SELECT sort_order, vocabulary_item_id, mode
                 FROM training_session_items
                 WHERE session_id = ?
                 ORDER BY sort_order
@@ -1037,6 +1623,12 @@ class SQLiteContentStore:
             completed=bool(session_row["completed"]),
             items=[
                 SessionItem(order=row["sort_order"], vocabulary_item_id=row["vocabulary_item_id"])
+                if row["mode"] is None
+                else SessionItem(
+                    order=row["sort_order"],
+                    vocabulary_item_id=row["vocabulary_item_id"],
+                    mode=TrainingMode(row["mode"]),
+                )
                 for row in item_rows
             ],
             answer_history=[
@@ -1574,6 +2166,72 @@ class SQLiteUserProgressRepository:
 
     def list_by_user(self, user_id: int) -> list[UserProgress]:
         return self._store.list_progress_by_user(user_id)
+
+    def get_word_stats(self, user_id: int, item_id: str) -> WordStats | None:
+        return self._store.get_word_stats(user_id, item_id)
+
+    def save_word_stats(self, stats: WordStats) -> None:
+        self._store.save_word_stats(stats)
+
+    def award_weekly_points(
+        self,
+        *,
+        user_id: int,
+        word_id: str,
+        mode: TrainingMode,
+        level_up_delta: int,
+        awarded_at: datetime,
+    ) -> int:
+        return self._store.award_weekly_points(
+            user_id=user_id,
+            word_id=word_id,
+            mode=mode,
+            level_up_delta=level_up_delta,
+            awarded_at=awarded_at,
+        )
+
+    def update_goals_progress(
+        self,
+        *,
+        user_id: int,
+        word_id: str,
+        topic_id: str,
+        is_correct: bool,
+        current_level: int,
+    ) -> None:
+        self._store.update_goals_progress(
+            user_id=user_id,
+            word_id=word_id,
+            topic_id=topic_id,
+            is_correct=is_correct,
+            current_level=current_level,
+        )
+
+    def required_homework_level(self, *, user_id: int, item_id: str) -> int | None:
+        return self._store.required_homework_level(user_id=user_id, item_id=item_id)
+
+    def list_due_review_words(self, *, user_id: int) -> set[str]:
+        return self._store.list_due_review_words(user_id=user_id)
+
+    def get_homework_stage_mode(self, *, user_id: int, item_id: str) -> TrainingMode | None:
+        return self._store.get_homework_stage_mode(user_id=user_id, item_id=item_id)
+
+    def update_homework_word_progress(
+        self,
+        *,
+        user_id: int,
+        word_id: str,
+        mode: TrainingMode,
+        is_correct: bool,
+        current_level: int,
+    ) -> None:
+        self._store.update_homework_word_progress(
+            user_id=user_id,
+            word_id=word_id,
+            mode=mode,
+            is_correct=is_correct,
+            current_level=current_level,
+        )
 
 
 class SQLiteSessionRepository:

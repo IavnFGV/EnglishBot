@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import random
 import uuid
 from dataclasses import dataclass
 
 from englishbot.application.answer_checker import AnswerChecker
 from englishbot.application.clock import Clock, SystemClock
 from englishbot.application.errors import InvalidSessionStateError, TopicNotFoundError
+from englishbot.application.learning_progress import apply_attempt, choose_word_mode
 from englishbot.application.lesson_use_cases import (
     ListLessonsByTopicUseCase,
     ValidateTopicLessonUseCase,
@@ -23,6 +25,7 @@ from englishbot.domain.models import (
     TrainingQuestion,
     TrainingSession,
     UserProgress,
+    WordStats,
 )
 from englishbot.domain.repositories import (
     SessionRepository,
@@ -93,6 +96,7 @@ class StartTrainingSessionUseCase:
         mode: TrainingMode,
         session_size: int = 5,
         lesson_id: str | None = None,
+        adaptive_per_word: bool = False,
     ) -> TrainingQuestion:
         topic = self._topic_repository.get_by_id(topic_id)
         if topic is None:
@@ -101,12 +105,58 @@ class StartTrainingSessionUseCase:
         self._validate_topic_lesson.execute(topic_id=topic_id, lesson_id=lesson_id)
         topic_items = self._vocabulary_repository.list_by_topic(topic_id, lesson_id)
         progress_items = self._progress_repository.list_by_user(user_id)
-        selected_items = self._word_selector.select_words(
-            user_id=user_id,
-            items=topic_items,
-            progress_items=progress_items,
-            session_size=session_size,
+        selected_items = (
+            self._word_selector.select_game_words(
+                user_id=user_id,
+                topic_id=topic_id,
+                items=topic_items,
+                progress_items=progress_items,
+                session_size=session_size,
+            )
+            if adaptive_per_word
+            else self._word_selector.select_words(
+                user_id=user_id,
+                items=topic_items,
+                progress_items=progress_items,
+                session_size=session_size,
+            )
         )
+        item_modes = {}
+        hard_limit = max(1, session_size // 4) if adaptive_per_word else 0
+        hard_selected = 0
+        if adaptive_per_word:
+            for item in selected_items:
+                homework_mode = None
+                if hasattr(self._progress_repository, "get_homework_stage_mode"):
+                    homework_mode = self._progress_repository.get_homework_stage_mode(
+                        user_id=user_id,
+                        item_id=item.id,
+                    )
+                if homework_mode is not None:
+                    if homework_mode is TrainingMode.HARD and hard_selected >= hard_limit:
+                        homework_mode = TrainingMode.MEDIUM
+                    item_modes[item.id] = homework_mode
+                    if homework_mode is TrainingMode.HARD:
+                        hard_selected += 1
+                    continue
+                required_level = None
+                if hasattr(self._progress_repository, "required_homework_level"):
+                    required_level = self._progress_repository.required_homework_level(
+                        user_id=user_id,
+                        item_id=item.id,
+                    )
+                level = 0
+                if hasattr(self._progress_repository, "get_word_stats"):
+                    word_stats = self._progress_repository.get_word_stats(user_id, item.id)
+                    if word_stats is not None:
+                        level = word_stats.current_level
+                item_modes[item.id] = choose_word_mode(
+                    current_level=level,
+                    rng=random.Random(f"{user_id}:{item.id}:{session_size}"),
+                    min_required_level=required_level,
+                )
+                if item_modes[item.id] is TrainingMode.HARD:
+                    hard_selected += 1
         session = TrainingSession(
             id=str(uuid.uuid4()),
             user_id=user_id,
@@ -114,7 +164,7 @@ class StartTrainingSessionUseCase:
             lesson_id=lesson_id,
             mode=mode,
             items=[
-                SessionItem(order=index, vocabulary_item_id=item.id)
+                SessionItem(order=index, vocabulary_item_id=item.id, mode=item_modes.get(item.id))
                 for index, item in enumerate(selected_items)
             ],
         )
@@ -216,6 +266,45 @@ class SubmitAnswerUseCase:
         progress.record(result.is_correct)
         progress.last_seen_at = self._clock.now()
         self._progress_repository.save(progress)
+        level_up_delta = 0
+        if hasattr(self._progress_repository, "get_word_stats") and hasattr(
+            self._progress_repository, "save_word_stats"
+        ):
+            word_stats = self._progress_repository.get_word_stats(user_id, question.item_id)
+            if word_stats is None:
+                word_stats = WordStats(user_id=user_id, word_id=question.item_id)
+            previous_level, current_level = apply_attempt(
+                stats=word_stats,
+                mode=question.mode,
+                is_correct=result.is_correct,
+                seen_at=self._clock.now(),
+            )
+            level_up_delta = max(0, current_level - previous_level)
+            self._progress_repository.save_word_stats(word_stats)
+            if result.is_correct and hasattr(self._progress_repository, "award_weekly_points"):
+                self._progress_repository.award_weekly_points(
+                    user_id=user_id,
+                    word_id=question.item_id,
+                    mode=question.mode,
+                    level_up_delta=level_up_delta,
+                    awarded_at=self._clock.now(),
+                )
+            if hasattr(self._progress_repository, "update_goals_progress"):
+                self._progress_repository.update_goals_progress(
+                    user_id=user_id,
+                    word_id=question.item_id,
+                    topic_id=session.topic_id,
+                    is_correct=result.is_correct,
+                    current_level=word_stats.current_level,
+                )
+            if hasattr(self._progress_repository, "update_homework_word_progress"):
+                self._progress_repository.update_homework_word_progress(
+                    user_id=user_id,
+                    word_id=question.item_id,
+                    mode=question.mode,
+                    is_correct=result.is_correct,
+                    current_level=word_stats.current_level,
+                )
         try:
             session.record_answer(answer=answer, is_correct=result.is_correct)
         except ValueError as error:
@@ -313,6 +402,7 @@ class TrainingFacade:
         mode: TrainingMode,
         session_size: int = 5,
         lesson_id: str | None = None,
+        adaptive_per_word: bool = False,
     ) -> TrainingQuestion:
         return self._start_training_session.execute(
             user_id=user_id,
@@ -320,6 +410,7 @@ class TrainingFacade:
             mode=mode,
             session_size=session_size,
             lesson_id=lesson_id,
+            adaptive_per_word=adaptive_per_word,
         )
 
     def get_current_question(self, *, user_id: int) -> TrainingQuestion:

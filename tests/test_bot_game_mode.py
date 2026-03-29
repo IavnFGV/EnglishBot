@@ -25,7 +25,15 @@ class _FakeService:
     def __init__(self, outcomes: list[AnswerOutcome] | None = None) -> None:
         self.outcomes = outcomes or []
 
-    def start_session(self, *, user_id: int, topic_id: str, lesson_id: str | None, mode: TrainingMode):
+    def start_session(
+        self,
+        *,
+        user_id: int,
+        topic_id: str,
+        lesson_id: str | None,
+        mode: TrainingMode,
+        adaptive_per_word: bool = False,  # noqa: ARG002
+    ):
         return TrainingQuestion(
             session_id="s1",
             item_id="i1",

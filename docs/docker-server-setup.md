@@ -28,6 +28,7 @@ If the operational process changes, update this document in the same change set.
     assets/
     backups/
       db/
+      db-versioned/
     logs/
     deploy/
       build-counter.env
@@ -59,7 +60,8 @@ It runs on every push to `main` and does:
 3. Run [deploy-docker-app.sh](/workspaces/EnglishBot/scripts/deploy-docker-app.sh)
 4. Rebuild and restart the Docker container with `docker compose up -d --build`
 5. Create a git tag for the successful deploy, for example `deploy-v0.1.0-b3`
-6. Keep the latest 5 SQLite backups in `shared/backups/db/`
+6. Keep the latest 5 rolling SQLite backups in `shared/backups/db/`
+7. When app version changes, save an additional permanent backup in `shared/backups/db-versioned/`
 
 ### Required GitHub repository secrets
 
@@ -126,6 +128,7 @@ bash scripts/restore-runtime-db.sh /srv/englishbot/shared/backups/db/<backup-fil
 
 - `data/` keeps SQLite runtime state
 - `assets/` keeps generated and downloaded images
-- `backups/db/` keeps the latest 5 SQLite backup copies
+- `backups/db/` keeps the latest 5 rolling SQLite backup copies
+- `backups/db-versioned/` keeps permanent backups created on app version changes (kept until manual cleanup)
 - `logs/` keeps rotating log files
 - `content/custom/` keeps editor-created content packs
