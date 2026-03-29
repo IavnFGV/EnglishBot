@@ -107,6 +107,7 @@ from englishbot.infrastructure.sqlite_store import (
     SQLiteAddWordsFlowRepository,
     SQLiteImageReviewFlowRepository,
     SQLiteTelegramFlowMessageRepository,
+    SQLiteTelegramUserLoginRepository,
 )
 from englishbot.presentation.add_words_text import (
     format_draft_edit_text,
@@ -311,6 +312,7 @@ def build_application(
     )
     image_review_repository = SQLiteImageReviewFlowRepository(content_store)
     telegram_flow_message_repository = SQLiteTelegramFlowMessageRepository(content_store)
+    telegram_user_login_repository = SQLiteTelegramUserLoginRepository(content_store)
     image_review_harness = ImageReviewFlowHarness(
         canonicalizer=DraftToContentPackCanonicalizer(),
         writer=JsonContentPackWriter(),
@@ -442,6 +444,7 @@ def build_application(
     )
     app.bot_data["image_review_assets_dir"] = Path("assets")
     app.bot_data["telegram_flow_message_repository"] = telegram_flow_message_repository
+    app.bot_data["telegram_user_login_repository"] = telegram_user_login_repository
     app.bot_data["content_pack_generate_images_use_case"] = GenerateContentPackImagesUseCase(
         enricher=content_pack_image_enricher,
         db_path=settings.content_db_path,
@@ -673,6 +676,10 @@ def _service(context: ContextTypes.DEFAULT_TYPE) -> TrainingFacade:
 
 def _content_store(context: ContextTypes.DEFAULT_TYPE) -> SQLiteContentStore:
     return context.application.bot_data["content_store"]
+
+
+def _telegram_user_login_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserLoginRepository:
+    return context.application.bot_data["telegram_user_login_repository"]
 
 
 def _reload_training_service(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1303,6 +1310,10 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     user = update.effective_user
     if user is not None:
+        _telegram_user_login_repository(context).record(
+            user_id=user.id,
+            username=getattr(user, "username", None),
+        )
         logger.info("User %s opened /start", user.id)
         active_session = _service(context).get_active_session(user_id=user.id)
         if active_session is not None:

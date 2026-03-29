@@ -57,6 +57,14 @@ class UserGameProfile:
     last_played_on: str | None
 
 
+@dataclass(slots=True, frozen=True)
+class TelegramUserLogin:
+    user_id: int
+    username: str | None
+    first_seen_at: str
+    last_seen_at: str
+
+
 def _optional_json_str(value: object) -> str | None:
     if value is None:
         return None
@@ -307,6 +315,13 @@ class SQLiteContentStore:
                     tag TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     PRIMARY KEY (flow_id, chat_id, message_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS telegram_user_logins (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS user_game_profile (
@@ -2073,6 +2088,42 @@ class SQLiteContentStore:
                     (flow_id, tag),
                 )
 
+    def record_telegram_user_login(self, *, user_id: int, username: str | None) -> None:
+        self.initialize()
+        normalized_username = _optional_json_str(username)
+        timestamp = datetime.now(UTC).isoformat()
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO telegram_user_logins (user_id, username, first_seen_at, last_seen_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    username=excluded.username,
+                    last_seen_at=excluded.last_seen_at
+                """,
+                (user_id, normalized_username, timestamp, timestamp),
+            )
+
+    def list_telegram_user_logins(self) -> list[TelegramUserLogin]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT user_id, username, first_seen_at, last_seen_at
+                FROM telegram_user_logins
+                ORDER BY last_seen_at DESC, user_id ASC
+                """
+            ).fetchall()
+        return [
+            TelegramUserLogin(
+                user_id=int(row["user_id"]),
+                username=row["username"],
+                first_seen_at=str(row["first_seen_at"]),
+                last_seen_at=str(row["last_seen_at"]),
+            )
+            for row in rows
+        ]
+
     def _upsert_lexeme(self, connection: sqlite3.Connection, *, headword: str) -> str:
         normalized_headword = _normalize_headword(headword)
         if not normalized_headword:
@@ -2452,3 +2503,14 @@ class SQLiteTelegramFlowMessageRepository:
 
     def clear(self, *, flow_id: str, tag: str | None = None) -> None:
         self._store.clear_telegram_flow_messages(flow_id=flow_id, tag=tag)
+
+
+class SQLiteTelegramUserLoginRepository:
+    def __init__(self, store: SQLiteContentStore) -> None:
+        self._store = store
+
+    def record(self, *, user_id: int, username: str | None) -> None:
+        self._store.record_telegram_user_login(user_id=user_id, username=username)
+
+    def list(self) -> list[TelegramUserLogin]:
+        return self._store.list_telegram_user_logins()

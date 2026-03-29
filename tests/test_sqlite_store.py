@@ -33,6 +33,7 @@ from englishbot.infrastructure.sqlite_store import (
     SQLiteContentStore,
     SQLiteImageReviewFlowRepository,
     SQLiteTelegramFlowMessageRepository,
+    SQLiteTelegramUserLoginRepository,
 )
 
 
@@ -125,6 +126,22 @@ def test_sqlite_content_store_imports_json_and_reconstructs_content_pack(tmp_pat
     assert content_pack["topic"] == {"id": "fairy-tales", "title": "Fairy Tales"}
     assert content_pack["lessons"] == [{"id": "lesson-1", "title": "Lesson 1"}]
     assert content_pack["vocabulary_items"][0]["image_ref"] == "assets/fairy-tales/dragon.png"
+
+
+def test_sqlite_telegram_user_logins_store_last_seen_username(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    repository = SQLiteTelegramUserLoginRepository(store)
+
+    repository.record(user_id=7, username="first_name")
+    first_snapshot = repository.list()
+    repository.record(user_id=7, username="renamed_user")
+    second_snapshot = repository.list()
+
+    assert len(second_snapshot) == 1
+    assert second_snapshot[0].user_id == 7
+    assert second_snapshot[0].username == "renamed_user"
+    assert second_snapshot[0].first_seen_at == first_snapshot[0].first_seen_at
+    assert second_snapshot[0].last_seen_at >= first_snapshot[0].last_seen_at
 
 
 def test_sqlite_content_store_reuses_lexeme_across_multiple_learning_items(tmp_path: Path) -> None:
