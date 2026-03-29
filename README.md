@@ -20,7 +20,7 @@ What works now:
 
 What is still intentionally simple:
 
-- learner progress and sessions are still in memory
+- runtime state lives in one local SQLite file instead of a separate service stack
 - published content is still imported/exported as JSON packs under `content/demo/` and `content/custom/`
 - sense-level dictionary modeling is still intentionally postponed
 
@@ -66,7 +66,7 @@ This keeps the learner flow stable while allowing:
   - Easy: choose the correct English word from three options
   - Medium: see shuffled letters as a hint and type the English word
   - Hard: type the English word manually without a letter hint
-- Per-user progress tracking in memory
+- Per-user progress, goals, and homework tracking in SQLite
 - Short session summary after training
 - Demo content for `weather`, `school`, and `seasons`
 - Structured JSON content packs loaded from `content/demo/` and `content/custom/`
@@ -77,7 +77,7 @@ The project is a simple modular monolith:
 
 - `englishbot.domain`: entities and repository interfaces
 - `englishbot.application`: small use cases plus focused logic components
-- `englishbot.infrastructure`: in-memory repositories and seed data
+- `englishbot.infrastructure`: SQLite-backed runtime store, JSON content-pack loading, and persistence adapters
 - `englishbot.bot`: Telegram handlers and UI mapping
 - `englishbot.bootstrap`: dependency wiring
 
@@ -93,7 +93,7 @@ The application layer is split into clear responsibilities:
 - answer checking
 - session summary calculation
 
-More details are in `ARCHITECTURE.md`.
+More details are in `ARCHITECTURE.md` and `docs/homework-progress.md`.
 
 ## Learner Flow
 
@@ -453,14 +453,16 @@ That means the next major implementation slice should focus on:
 - shared-chat interaction rules
 - learner-trigger and review-trigger scheduling
 - safe chat routing when both editor and learner are present
-- durable persistence for learner progress and content state
+- stronger operational tooling around the existing runtime state
 
 ### Optional ComfyUI Devcontainer Pattern
 
 The devcontainer now includes a managed ComfyUI setup similar in spirit to the Ollama setup:
 
 - `.devcontainer/comfyui.env`
+- `.devcontainer/prepare-host-dirs.sh`
 - `.devcontainer/start-comfyui.sh`
+- `.devcontainer/manage-generation-services.sh`
 - ComfyUI code installed into the devcontainer image at `/opt/ComfyUI`
 - host bind mounts for persistent data:
   - `${HOME}/.comfyui/models -> /opt/ComfyUI/models`
@@ -475,11 +477,17 @@ CPU/GPU behavior:
 
 If you want persistent model storage across rebuilds:
 
-1. Ensure host directories exist:
+1. Prepare the host directories:
+
+```bash
+bash .devcontainer/prepare-host-dirs.sh
+```
+
+2. Ensure these directories now exist:
    - `${HOME}/.comfyui/models`
    - `${HOME}/.comfyui/output`
-2. Place checkpoints/models into `${HOME}/.comfyui/models`
-3. Rebuild/reopen the devcontainer
+3. Place checkpoints/models into `${HOME}/.comfyui/models`
+4. Rebuild/reopen the devcontainer
 
 If the configured checkpoint file is missing, `.devcontainer/start-comfyui.sh` now behaves similarly to the Ollama startup flow:
 
@@ -518,33 +526,57 @@ This repository includes a reusable Ollama devcontainer setup.
 
 What it does:
 
-- installs the Ollama binary into the devcontainer image
-- reuses the host model cache by bind-mounting `${HOME}/.ollama` to `/home/vscode/.ollama`
+- supports three devcontainer profiles: `cpu`, `gpu`, and `noai`
+- installs Ollama only when profile build arg `OLLAMA_INSTALL=1`
+- installs ComfyUI only when profile build arg `COMFYUI_INSTALL=1`
+- installs Python extras per profile through `PYTHON_EXTRAS` (`dev,llm` for `cpu/gpu`, `dev` for `noai`)
 - reuses pip cache through a named Docker volume mounted to `/home/vscode/.cache/pip`
-- runs `.devcontainer/start-ollama.sh` on container start to:
-  - normalize permissions on mounted directories
-  - start `ollama serve` if it is not already running
-  - wait for readiness on `http://127.0.0.1:11434/api/tags`
-  - pull the configured model only if it is missing
+- can keep Ollama/ComfyUI disabled in dev mode via one switch file: `.devcontainer/local-ai.env`
 
 Configuration files:
 
 - `.devcontainer/devcontainer.cpu.json`
 - `.devcontainer/devcontainer.gpu.json`
+- `.devcontainer/devcontainer.noai.json`
+- `.devcontainer/local-ai.env`
+- `.devcontainer/local-ai.on.env`
+- `.devcontainer/local-ai.off.env`
 - `.devcontainer/ollama.env`
+- `.devcontainer/comfyui.env`
 - `.devcontainer/start-ollama.sh`
+- `.devcontainer/start-comfyui.sh`
+- `.devcontainer/manage-generation-services.sh`
+- `.devcontainer/prepare-host-dirs.sh`
 - `.devcontainer/fix-container-perms.sh`
 - `.devcontainer/check-host-gpu.sh`
 - `scripts/switch-devcontainer-profile.sh`
+- `scripts/switch-local-ai-mode.sh`
 
 Switch profiles:
 
 ```bash
 bash scripts/switch-devcontainer-profile.sh cpu
 bash scripts/switch-devcontainer-profile.sh gpu
+bash scripts/switch-devcontainer-profile.sh noai
 ```
 
-The default active profile in `.devcontainer/devcontainer.json` is the CPU profile.
+Switch local AI services:
+
+```bash
+bash scripts/switch-local-ai-mode.sh off
+bash scripts/switch-local-ai-mode.sh on
+```
+
+The default active profile in `.devcontainer/devcontainer.json` is the `noai` profile for lightweight WSL and non-GPU setups.
+The default local AI mode in `.devcontainer/local-ai.env` is `off`, so Ollama/ComfyUI do not autostart and models are not auto-pulled unless you switch it to `on`.
+
+Inside the `cpu` and `gpu` profiles you can also inspect or restart services manually:
+
+```bash
+bash .devcontainer/manage-generation-services.sh status
+bash .devcontainer/manage-generation-services.sh restart ollama
+bash .devcontainer/manage-generation-services.sh restart comfyui
+```
 
 Python-side Ollama integration is intentionally lightweight:
 
@@ -571,19 +603,18 @@ pytest
 
 ## Current simplifications
 
-- Storage is in memory for now, so progress is reset on restart.
+- SQLite is used as a local runtime store; there is no separate backend service split.
 - `Medium` mode is intentionally simplified to typed input with a shuffled-letter hint.
-- Images are represented by placeholder references, not Telegram file uploads.
-- Demo content is loaded from local JSON files rather than a database or admin-managed import pipeline.
+- Local AI services are optional; when image generation is unavailable, the app falls back to placeholder assets instead of failing the flow.
+- JSON content packs remain the import/export format even though runtime state is normalized in SQLite.
 
 ## Future extensions
 
 - Separate admin bot that reuses the same domain and application services
-- Teacher/admin workflow for preparing and validating JSON packs before full in-app content management
 - OpenAI-backed or other hosted/local semantic extraction clients for lesson import
 - Content import from teacher text, spreadsheets, or photo-derived OCR
 - Review scheduling and spaced repetition
-- Manual moderation and editing of imported vocabulary
+- Richer moderation and editing flows for imported vocabulary
 ## Bulk Topic Import
 
 You can bulk-import multiple topic word lists from one text file without images:

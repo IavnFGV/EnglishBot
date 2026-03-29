@@ -1,6 +1,8 @@
 FROM mcr.microsoft.com/devcontainers/python:3.12-bookworm
 
+ARG OLLAMA_INSTALL=1
 ARG COMFYUI_INSTALL=1
+ARG PYTHON_EXTRAS=dev,llm
 ARG COMFYUI_REPO=https://github.com/Comfy-Org/ComfyUI.git
 ARG COMFYUI_REF=master
 ARG COMFYUI_TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
@@ -14,7 +16,9 @@ WORKDIR /tmp/englishbot-build
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ffmpeg git sqlite3 zstd \
-    && curl -fsSL https://ollama.com/install.sh | sh \
+    && if [ "${OLLAMA_INSTALL}" = "1" ]; then \
+         curl -fsSL https://ollama.com/install.sh | sh; \
+       fi \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -37,6 +41,6 @@ RUN mkdir -p src/englishbot \
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install --upgrade pip \
-    && python -m pip install '.[dev,llm]'
+    && python -m pip install ".[${PYTHON_EXTRAS}]"
 
 WORKDIR /workspaces/EnglishBot

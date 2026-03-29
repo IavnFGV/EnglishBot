@@ -8,7 +8,7 @@ The current codebase should be treated as a working POC with real editor and lea
 
 - `englishbot.domain`: core entities and repository contracts
 - `englishbot.application`: small use cases and focused services for topic listing, lesson listing, session startup, question retrieval, answer submission, selection, checking, and summary calculation
-- `englishbot.infrastructure`: in-memory repositories and JSON-loaded demo content packs
+- `englishbot.infrastructure`: SQLite-backed runtime store, JSON content-pack loading, and persistence adapters
 - `englishbot.bot`: Telegram adapter with thin handlers
 - `englishbot.bootstrap`: composition root for wiring dependencies
 - `englishbot.config`: centralized runtime configuration service for env-backed settings and file-backed overrides
@@ -115,7 +115,7 @@ The JSON content packs are still used as import/export artifacts, but not as the
 
 Current simplifications:
 
-- in-memory repositories are used instead of durable persistence
+- SQLite is the local runtime store; there is no separate backend service split
 - medium mode uses typed input with a shuffled-letter hint instead of a custom letter-assembly UI
 - full sense-level dictionary modeling is intentionally postponed
 - ambiguity is still handled at the `learning_item` level through translation and optional hint text
@@ -257,5 +257,5 @@ This implies the next design pressure points will be:
 
 - group-chat aware routing
 - scheduled review invitations
-- durable learner state
+- stronger operational tooling around the existing runtime state
 - stronger separation between editor actions and learner-facing chat behavior

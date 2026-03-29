@@ -14,8 +14,11 @@ case "$profile" in
   gpu)
     cp "$devcontainer_dir/devcontainer.gpu.json" "$devcontainer_dir/devcontainer.json"
     ;;
+  noai)
+    cp "$devcontainer_dir/devcontainer.noai.json" "$devcontainer_dir/devcontainer.json"
+    ;;
   *)
-    echo "Usage: $0 [cpu|gpu]" >&2
+    echo "Usage: $0 [cpu|gpu|noai]" >&2
     exit 1
     ;;
 esac

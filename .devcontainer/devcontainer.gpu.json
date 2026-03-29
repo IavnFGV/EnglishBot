@@ -5,6 +5,7 @@
     "context": "..",
     "args": {
       "COMFYUI_INSTALL": "1",
+      "PYTHON_EXTRAS": "dev,llm",
       "COMFYUI_TORCH_INDEX_URL": "https://download.pytorch.org/whl/cu124"
     }
   },
@@ -19,7 +20,9 @@
     "--gpus",
     "all",
     "--env-file",
-    "${localWorkspaceFolder}/.devcontainer/ollama.env"
+    "${localWorkspaceFolder}/.devcontainer/ollama.env",
+    "--env-file",
+    "${localWorkspaceFolder}/.devcontainer/local-ai.env"
   ],
   "mounts": [
     "source=englishbot-pip-cache,target=/home/vscode/.cache/pip,type=volume",

@@ -5,6 +5,7 @@
     "context": "..",
     "args": {
       "COMFYUI_INSTALL": "1",
+      "PYTHON_EXTRAS": "dev,llm",
       "COMFYUI_TORCH_INDEX_URL": "https://download.pytorch.org/whl/cpu"
     }
   },
@@ -28,7 +29,9 @@
     "--env-file",
     "${localWorkspaceFolder}/.devcontainer/comfyui.env",
     "--env-file",
-    "${localWorkspaceFolder}/.devcontainer/ollama.env"
+    "${localWorkspaceFolder}/.devcontainer/ollama.env",
+    "--env-file",
+    "${localWorkspaceFolder}/.devcontainer/local-ai.env"
   ],
   "remoteUser": "vscode",
   "features": {
