@@ -184,6 +184,7 @@ _IMAGE_REVIEW_STEP_TAG = "image_review_step"
 _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
 _TRAINING_QUESTION_TAG = "training_question"
+_TRAINING_FEEDBACK_TAG = "training_feedback"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
 _GAME_STAR_REWARD_CORRECT = 10
@@ -5114,7 +5115,22 @@ async def _send_feedback(
         )
         if update_text:
             text = f"{text}\n\n{update_text}"
-    await message.reply_text(text, reply_markup=reply_markup, parse_mode=view.parse_mode)
+    flow_id = getattr(active_session, "session_id", None)
+    if isinstance(flow_id, str):
+        await _delete_tracked_flow_messages(
+            context,
+            flow_id=flow_id,
+            tag=_TRAINING_FEEDBACK_TAG,
+        )
+    sent_message = await message.reply_text(text, reply_markup=reply_markup, parse_mode=view.parse_mode)
+    if isinstance(flow_id, str):
+        _track_flow_message(
+            context,
+            flow_id=flow_id,
+            tag=_TRAINING_FEEDBACK_TAG,
+            message=sent_message,
+            fallback_chat_id=_message_chat_id(message),
+        )
 
 
 async def _send_game_feedback(

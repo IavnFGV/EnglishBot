@@ -515,3 +515,33 @@ async def test_process_answer_reports_weekly_points_and_completed_goal() -> None
     assert any("Weekly points +11" in reply for reply in message.replies)
     assert any("Completed goals:" in reply for reply in message.replies)
     assert any("Daily/Words: 1/1 (100%)" in reply for reply in message.replies)
+
+
+@pytest.mark.anyio
+async def test_process_answer_replaces_previous_feedback_message() -> None:
+    message = _FakeMessage("cloud")
+    registry = _FakeTelegramFlowMessageRepository()
+    registry.track(flow_id="session-1", chat_id=1, message_id=55, tag="training_feedback")
+    fake_bot = _FakeBot()
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot=fake_bot,
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _CompletingService(),
+                "telegram_ui_language": "en",
+                "telegram_flow_message_repository": registry,
+            }
+        ),
+    )
+
+    await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
+
+    assert fake_bot.deleted_messages == [(1, 55)]
+    tracked = registry.list(flow_id="session-1", tag="training_feedback")
+    assert len(tracked) == 1
+    assert tracked[0].message_id == 11
