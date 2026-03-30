@@ -94,6 +94,7 @@ The application layer is split into clear responsibilities:
 - session summary calculation
 
 More details are in `ARCHITECTURE.md` and `docs/homework-progress.md`.
+The admin Telegram Web App MVP is documented in `docs/telegram-webapp-admin.md`.
 
 ## Learner Flow
 

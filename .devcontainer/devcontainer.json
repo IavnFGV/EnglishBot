@@ -37,7 +37,8 @@
         "charliermarsh.ruff",
         "openai.chatgpt",
         "mechatroner.rainbow-csv",
-        "zknpr.sqlite-explorer"
+        "zknpr.sqlite-explorer",
+        "k--kato.intellij-idea-keybindings"
       ]
     }
   }

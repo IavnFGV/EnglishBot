@@ -41,6 +41,20 @@ _SETTING_DEFINITIONS: dict[str, RuntimeSettingDefinition] = {
     "log_backup_count": RuntimeSettingDefinition("log_backup_count", ("LOG_BACKUP_COUNT",), 5, "int"),
     "admin_user_ids": RuntimeSettingDefinition("admin_user_ids", ("ADMIN_USER_IDS",), (), "csv_int"),
     "editor_user_ids": RuntimeSettingDefinition("editor_user_ids", ("EDITOR_USER_IDS",), (), "csv_int"),
+    "web_app_base_url": RuntimeSettingDefinition("web_app_base_url", ("WEB_APP_BASE_URL",), ""),
+    "web_app_host": RuntimeSettingDefinition("web_app_host", ("WEB_APP_HOST",), "127.0.0.1"),
+    "web_app_port": RuntimeSettingDefinition("web_app_port", ("WEB_APP_PORT",), 8080, "int"),
+    "web_app_dev_user_ids": RuntimeSettingDefinition(
+        "web_app_dev_user_ids",
+        ("WEB_APP_DEV_USER_IDS",),
+        (),
+        "csv_int",
+    ),
+    "admin_bootstrap_secret": RuntimeSettingDefinition(
+        "admin_bootstrap_secret",
+        ("ADMIN_BOOTSTRAP_SECRET",),
+        "",
+    ),
     "content_db_path": RuntimeSettingDefinition(
         "content_db_path",
         ("CONTENT_DB_PATH",),
@@ -296,6 +310,11 @@ class Settings:
     log_backup_count: int = 5
     admin_user_ids: tuple[int, ...] = ()
     editor_user_ids: tuple[int, ...] = ()
+    web_app_base_url: str = ""
+    web_app_host: str = "127.0.0.1"
+    web_app_port: int = 8080
+    web_app_dev_user_ids: tuple[int, ...] = ()
+    admin_bootstrap_secret: str = ""
     content_db_path: Path = Path("data/englishbot.db")
     pixabay_api_key: str = ""
     pixabay_base_url: str = "https://pixabay.com/api/"
@@ -325,6 +344,11 @@ class Settings:
             log_backup_count=service.get_int("log_backup_count"),
             admin_user_ids=tuple(service.get("admin_user_ids")),
             editor_user_ids=tuple(service.get("editor_user_ids")),
+            web_app_base_url=service.get_str("web_app_base_url"),
+            web_app_host=service.get_str("web_app_host"),
+            web_app_port=service.get_int("web_app_port"),
+            web_app_dev_user_ids=tuple(service.get("web_app_dev_user_ids")),
+            admin_bootstrap_secret=service.get_str("admin_bootstrap_secret"),
             content_db_path=service.get_path("content_db_path") or Path("data/englishbot.db"),
             pixabay_api_key=service.get_str("pixabay_api_key"),
             pixabay_base_url=service.get_str("pixabay_base_url"),

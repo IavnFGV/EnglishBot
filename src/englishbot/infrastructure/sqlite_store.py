@@ -9,7 +9,6 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from englishbot.application.learning_progress import week_start
 from englishbot.domain.add_words_models import AddWordsFlowState
 from englishbot.domain.image_review_models import (
     ImageCandidate,
@@ -61,6 +60,8 @@ class UserGameProfile:
 class TelegramUserLogin:
     user_id: int
     username: str | None
+    first_name: str | None
+    last_name: str | None
     first_seen_at: str
     last_seen_at: str
 
@@ -70,6 +71,18 @@ class TelegramUserRoleAssignment:
     user_id: int
     role: str
     assigned_at: str
+
+
+@dataclass(slots=True, frozen=True)
+class TelegramAdminUser:
+    id: int
+    telegram_id: int
+    username: str | None
+    first_name: str | None
+    last_name: str | None
+    roles: tuple[str, ...]
+    first_seen_at: str | None
+    last_seen_at: str | None
 
 
 def _optional_json_str(value: object) -> str | None:
@@ -156,6 +169,9 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA busy_timeout = 5000")
+    connection.execute("PRAGMA synchronous = NORMAL")
     return connection
 
 
@@ -328,6 +344,8 @@ class SQLiteContentStore:
                 CREATE TABLE IF NOT EXISTS telegram_user_logins (
                     user_id INTEGER PRIMARY KEY,
                     username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL
                 );
@@ -444,6 +462,13 @@ class SQLiteContentStore:
             }
             if "source_tag" not in session_columns:
                 connection.execute("ALTER TABLE training_sessions ADD COLUMN source_tag TEXT")
+            telegram_login_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(telegram_user_logins)").fetchall()
+            }
+            if "first_name" not in telegram_login_columns:
+                connection.execute("ALTER TABLE telegram_user_logins ADD COLUMN first_name TEXT")
+            if "last_name" not in telegram_login_columns:
+                connection.execute("ALTER TABLE telegram_user_logins ADD COLUMN last_name TEXT")
 
     def has_runtime_content(self) -> bool:
         self.initialize()
@@ -1109,6 +1134,8 @@ class SQLiteContentStore:
         awarded_at: datetime,
     ) -> int:
         self.initialize()
+        from englishbot.application.learning_progress import week_start
+
         week_start_date = week_start(awarded_at).date().isoformat()
         difficulty_bonus = {TrainingMode.EASY: 0, TrainingMode.MEDIUM: 1, TrainingMode.HARD: 2}[mode]
         level_bonus = {0: 0, 1: 5, 2: 10, 3: 20}.get(level_up_delta, 20 if level_up_delta > 3 else 0)
@@ -1631,6 +1658,8 @@ class SQLiteContentStore:
 
     def get_weekly_points(self, *, user_id: int, now: datetime | None = None) -> int:
         self.initialize()
+        from englishbot.application.learning_progress import week_start
+
         current = now or datetime.now(UTC)
         week_start_date = week_start(current).date().isoformat()
         with _connect(self._db_path) as connection:
@@ -2163,20 +2192,40 @@ class SQLiteContentStore:
                     (flow_id, tag),
                 )
 
-    def record_telegram_user_login(self, *, user_id: int, username: str | None) -> None:
+    def record_telegram_user_login(
+        self,
+        *,
+        user_id: int,
+        username: str | None,
+        first_name: str | None = None,
+        last_name: str | None = None,
+    ) -> None:
         self.initialize()
         normalized_username = _optional_json_str(username)
+        normalized_first_name = _optional_json_str(first_name)
+        normalized_last_name = _optional_json_str(last_name)
         timestamp = datetime.now(UTC).isoformat()
         with _connect(self._db_path) as connection:
             connection.execute(
                 """
-                INSERT INTO telegram_user_logins (user_id, username, first_seen_at, last_seen_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO telegram_user_logins (
+                    user_id, username, first_name, last_name, first_seen_at, last_seen_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id) DO UPDATE SET
                     username=excluded.username,
+                    first_name=excluded.first_name,
+                    last_name=excluded.last_name,
                     last_seen_at=excluded.last_seen_at
                 """,
-                (user_id, normalized_username, timestamp, timestamp),
+                (
+                    user_id,
+                    normalized_username,
+                    normalized_first_name,
+                    normalized_last_name,
+                    timestamp,
+                    timestamp,
+                ),
             )
 
     def list_telegram_user_logins(self) -> list[TelegramUserLogin]:
@@ -2184,7 +2233,7 @@ class SQLiteContentStore:
         with _connect(self._db_path) as connection:
             rows = connection.execute(
                 """
-                SELECT user_id, username, first_seen_at, last_seen_at
+                SELECT user_id, username, first_name, last_name, first_seen_at, last_seen_at
                 FROM telegram_user_logins
                 ORDER BY last_seen_at DESC, user_id ASC
                 """
@@ -2193,6 +2242,8 @@ class SQLiteContentStore:
             TelegramUserLogin(
                 user_id=int(row["user_id"]),
                 username=row["username"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
                 first_seen_at=str(row["first_seen_at"]),
                 last_seen_at=str(row["last_seen_at"]),
             )
@@ -2243,6 +2294,68 @@ class SQLiteContentStore:
             role_name: frozenset(sorted(user_ids))
             for role_name, user_ids in memberships.items()
         }
+
+    def replace_telegram_user_roles(self, *, user_id: int, roles: tuple[str, ...]) -> None:
+        self.initialize()
+        normalized_roles = tuple(
+            sorted(
+                {
+                    str(role).strip().lower()
+                    for role in roles
+                    if str(role).strip() and str(role).strip().lower() != "user"
+                }
+            )
+        )
+        timestamp = datetime.now(UTC).isoformat()
+        with _connect(self._db_path) as connection:
+            connection.execute("DELETE FROM telegram_user_roles WHERE user_id = ?", (user_id,))
+            for role in normalized_roles:
+                connection.execute(
+                    """
+                    INSERT INTO telegram_user_roles (user_id, role, assigned_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (user_id, role, timestamp),
+                )
+
+    def list_telegram_roles_for_user(self, *, user_id: int) -> tuple[str, ...]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT role
+                FROM telegram_user_roles
+                WHERE user_id = ?
+                ORDER BY role ASC
+                """,
+                (user_id,),
+            ).fetchall()
+        return tuple(str(row["role"]) for row in rows)
+
+    def list_telegram_admin_users(self) -> list[TelegramAdminUser]:
+        login_map = {item.user_id: item for item in self.list_telegram_user_logins()}
+        roles_by_user: dict[int, list[str]] = {}
+        for assignment in self.list_telegram_user_role_assignments():
+            roles_by_user.setdefault(assignment.user_id, []).append(assignment.role)
+        users: list[TelegramAdminUser] = []
+        all_user_ids = sorted(set(login_map) | set(roles_by_user))
+        for user_id in all_user_ids:
+            login = login_map.get(user_id)
+            roles = tuple(sorted(set(roles_by_user.get(user_id, [])) | {"user"}))
+            users.append(
+                TelegramAdminUser(
+                    id=user_id,
+                    telegram_id=user_id,
+                    username=None if login is None else login.username,
+                    first_name=None if login is None else login.first_name,
+                    last_name=None if login is None else login.last_name,
+                    roles=roles,
+                    first_seen_at=None if login is None else login.first_seen_at,
+                    last_seen_at=None if login is None else login.last_seen_at,
+                )
+            )
+        users.sort(key=lambda item: (item.last_seen_at or "", item.telegram_id), reverse=True)
+        return users
 
     def _upsert_lexeme(self, connection: sqlite3.Connection, *, headword: str) -> str:
         normalized_headword = _normalize_headword(headword)
@@ -2629,8 +2742,20 @@ class SQLiteTelegramUserLoginRepository:
     def __init__(self, store: SQLiteContentStore) -> None:
         self._store = store
 
-    def record(self, *, user_id: int, username: str | None) -> None:
-        self._store.record_telegram_user_login(user_id=user_id, username=username)
+    def record(
+        self,
+        *,
+        user_id: int,
+        username: str | None,
+        first_name: str | None = None,
+        last_name: str | None = None,
+    ) -> None:
+        self._store.record_telegram_user_login(
+            user_id=user_id,
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+        )
 
     def list(self) -> list[TelegramUserLogin]:
         return self._store.list_telegram_user_logins()
@@ -2643,8 +2768,17 @@ class SQLiteTelegramUserRoleRepository:
     def grant(self, *, user_id: int, role: str) -> None:
         self._store.grant_telegram_user_role(user_id=user_id, role=role)
 
+    def replace(self, *, user_id: int, roles: tuple[str, ...]) -> None:
+        self._store.replace_telegram_user_roles(user_id=user_id, roles=roles)
+
+    def list_roles_for_user(self, *, user_id: int) -> tuple[str, ...]:
+        return self._store.list_telegram_roles_for_user(user_id=user_id)
+
     def list_assignments(self) -> list[TelegramUserRoleAssignment]:
         return self._store.list_telegram_user_role_assignments()
 
     def list_memberships(self) -> dict[str, frozenset[int]]:
         return self._store.list_telegram_user_role_memberships()
+
+    def list_users(self) -> list[TelegramAdminUser]:
+        return self._store.list_telegram_admin_users()

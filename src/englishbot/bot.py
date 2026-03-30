@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import random
@@ -17,6 +18,7 @@ from telegram import (
     KeyboardButton,
     ReplyKeyboardMarkup,
     Update,
+    WebAppInfo,
 )
 from telegram.error import BadRequest
 from telegram.ext import (
@@ -381,6 +383,8 @@ def build_application(
     app.bot_data["telegram_ui_language"] = _normalize_telegram_ui_language(
         settings.telegram_ui_language
     )
+    app.bot_data["web_app_base_url"] = settings.web_app_base_url.rstrip("/")
+    app.bot_data["admin_bootstrap_secret"] = settings.admin_bootstrap_secret
     app.bot_data["add_words_start_use_case"] = StartAddWordsFlowUseCase(
         harness=add_words_harness,
         flow_repository=add_words_flow_repository,
@@ -518,6 +522,7 @@ def build_application(
     app.add_handler(CommandHandler("assign", assign_menu_handler))
     app.add_handler(CommandHandler("add_words", add_words_start_handler))
     app.add_handler(CommandHandler("cancel", add_words_cancel_handler))
+    app.add_handler(CommandHandler("makeadmin", makeadmin_handler))
     app.add_handler(ChatMemberHandler(chat_member_logger_handler, ChatMemberHandler.ANY_CHAT_MEMBER))
     app.add_handler(CallbackQueryHandler(continue_session_handler, pattern=r"^session:continue$"))
     app.add_handler(CallbackQueryHandler(restart_session_handler, pattern=r"^session:restart$"))
@@ -741,6 +746,10 @@ def _content_store(context: ContextTypes.DEFAULT_TYPE) -> SQLiteContentStore:
 
 def _telegram_user_login_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserLoginRepository:
     return context.application.bot_data["telegram_user_login_repository"]
+
+
+def _telegram_user_role_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserRoleRepository:
+    return context.application.bot_data["telegram_user_role_repository"]
 
 
 def _reload_training_service(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1006,6 +1015,22 @@ def _preview_message_ids(context: ContextTypes.DEFAULT_TYPE) -> dict[int, int]:
     return context.application.bot_data["word_import_preview_message_ids"]
 
 
+def _admin_web_app_url(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int | None,
+) -> str | None:
+    if user_id is None or not _is_admin(user_id, context):
+        return None
+    configured_url = context.application.bot_data.get("web_app_base_url")
+    if not isinstance(configured_url, str):
+        return None
+    normalized = configured_url.strip().rstrip("/")
+    if not normalized:
+        return None
+    return f"{normalized}/webapp"
+
+
 @dataclass(frozen=True)
 class _EditorAICapabilities:
     smart_parsing_available: bool
@@ -1188,7 +1213,14 @@ def _start_menu_view(
     summary = _learner_assignment_launch_summary_use_case(context).execute(user_id=user.id)
     return build_start_menu_view(
         text=_render_start_menu_text(context=context, user=user, summary=summary),
-        reply_markup=_start_menu_keyboard(summary=summary, language=_telegram_ui_language(context, user)),
+        reply_markup=_start_menu_keyboard(
+            summary=summary,
+            admin_web_app_url=_admin_web_app_url(
+                context,
+                user_id=(user.id if user is not None else None),
+            ),
+            language=_telegram_ui_language(context, user),
+        ),
     )
 
 
@@ -1315,6 +1347,10 @@ def _assign_menu_view(
         text=text,
         reply_markup=_assign_menu_keyboard(
             is_admin=bool(user and _is_admin(user.id, context)),
+            admin_web_app_url=_admin_web_app_url(
+                context,
+                user_id=(user.id if user is not None else None),
+            ),
             language=_telegram_ui_language(context, user),
         ),
     )
@@ -1631,6 +1667,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         _telegram_user_login_repository(context).record(
             user_id=user.id,
             username=getattr(user, "username", None),
+            first_name=getattr(user, "first_name", None),
+            last_name=getattr(user, "last_name", None),
         )
         logger.info("User %s opened /start", user.id)
         active_session = _service(context).get_active_session(user_id=user.id)
@@ -1749,6 +1787,90 @@ async def version_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
 
+async def makeadmin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    user = update.effective_user
+    if message is None or user is None:
+        return
+
+    _telegram_user_login_repository(context).record(
+        user_id=user.id,
+        username=getattr(user, "username", None),
+        first_name=getattr(user, "first_name", None),
+        last_name=getattr(user, "last_name", None),
+    )
+
+    if not context.args:
+        await send_telegram_view(
+            message,
+            build_status_view(
+                text="Usage: /makeadmin <telegram_id> [bootstrap_secret]"
+            ),
+        )
+        return
+
+    try:
+        target_user_id = int(context.args[0])
+    except ValueError:
+        await send_telegram_view(
+            message,
+            build_status_view(text="The target telegram_id must be an integer."),
+        )
+        return
+
+    provided_secret = context.args[1] if len(context.args) > 1 else ""
+    role_repository = _telegram_user_role_repository(context)
+    admin_ids = role_repository.list_memberships().get("admin", frozenset())
+    requester_is_admin = user.id in admin_ids
+    bootstrap_secret = str(
+        context.application.bot_data.get("admin_bootstrap_secret", "")
+    ).strip()
+    secret_is_valid = bool(
+        bootstrap_secret and provided_secret and hmac.compare_digest(provided_secret, bootstrap_secret)
+    )
+
+    if not requester_is_admin and not secret_is_valid:
+        await send_telegram_view(
+            message,
+            build_status_view(
+                text=(
+                    "Access denied. Current admins can use /makeadmin directly. "
+                    "Otherwise provide a valid bootstrap secret."
+                )
+            ),
+        )
+        return
+
+    try:
+        role_repository.grant(user_id=target_user_id, role="admin")
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Failed to grant admin role via /makeadmin target_user_id=%s requester_user_id=%s",
+            target_user_id,
+            user.id,
+        )
+        await send_telegram_view(
+            message,
+            build_status_view(text="Failed to grant the admin role."),
+        )
+        return
+
+    updated_admin_ids = role_repository.list_memberships().get("admin", frozenset())
+    if target_user_id not in updated_admin_ids:
+        await send_telegram_view(
+            message,
+            build_status_view(text="Failed to grant the admin role."),
+        )
+        return
+
+    await send_telegram_view(
+        message,
+        build_status_view(
+            text=f"Admin role granted to Telegram user {target_user_id}."
+        ),
+    )
+
+
 async def assign_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     user = update.effective_user
@@ -1757,6 +1879,8 @@ async def assign_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     _telegram_user_login_repository(context).record(
         user_id=user.id,
         username=getattr(user, "username", None),
+        first_name=getattr(user, "first_name", None),
+        last_name=getattr(user, "last_name", None),
     )
     await send_telegram_view(
         message,
@@ -5526,70 +5650,79 @@ def _words_menu_keyboard(
 def _start_menu_keyboard(
     *,
     summary: list[AssignmentLaunchView],
+    admin_web_app_url: str | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     summary_by_kind = {item.kind: item for item in summary}
-    return InlineKeyboardMarkup(
+    rows = [
+        [InlineKeyboardButton(_tg("start_game_button", language=language), callback_data="start:game")],
         [
-            [InlineKeyboardButton(_tg("start_game_button", language=language), callback_data="start:game")],
+            InlineKeyboardButton(
+                _start_assignment_button_label(
+                    AssignmentSessionKind.DAILY,
+                    available=summary_by_kind[AssignmentSessionKind.DAILY].available,
+                    language=language,
+                ),
+                callback_data=(
+                    "start:launch:daily"
+                    if summary_by_kind[AssignmentSessionKind.DAILY].available
+                    else "start:disabled:daily"
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                _start_assignment_button_label(
+                    AssignmentSessionKind.WEEKLY,
+                    available=summary_by_kind[AssignmentSessionKind.WEEKLY].available,
+                    language=language,
+                ),
+                callback_data=(
+                    "start:launch:weekly"
+                    if summary_by_kind[AssignmentSessionKind.WEEKLY].available
+                    else "start:disabled:weekly"
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                _start_assignment_button_label(
+                    AssignmentSessionKind.HOMEWORK,
+                    available=summary_by_kind[AssignmentSessionKind.HOMEWORK].available,
+                    language=language,
+                ),
+                callback_data=(
+                    "start:launch:homework"
+                    if summary_by_kind[AssignmentSessionKind.HOMEWORK].available
+                    else "start:disabled:homework"
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                _start_assignment_button_label(
+                    AssignmentSessionKind.ALL,
+                    available=summary_by_kind[AssignmentSessionKind.ALL].available,
+                    language=language,
+                ),
+                callback_data=(
+                    "start:launch:all"
+                    if summary_by_kind[AssignmentSessionKind.ALL].available
+                    else "start:disabled:all"
+                ),
+            )
+        ],
+    ]
+    if admin_web_app_url:
+        rows.append(
             [
                 InlineKeyboardButton(
-                    _start_assignment_button_label(
-                        AssignmentSessionKind.DAILY,
-                        available=summary_by_kind[AssignmentSessionKind.DAILY].available,
-                        language=language,
-                    ),
-                    callback_data=(
-                        "start:launch:daily"
-                        if summary_by_kind[AssignmentSessionKind.DAILY].available
-                        else "start:disabled:daily"
-                    ),
+                    "Admin Panel",
+                    web_app=WebAppInfo(url=admin_web_app_url),
                 )
-            ],
-            [
-                InlineKeyboardButton(
-                    _start_assignment_button_label(
-                        AssignmentSessionKind.WEEKLY,
-                        available=summary_by_kind[AssignmentSessionKind.WEEKLY].available,
-                        language=language,
-                    ),
-                    callback_data=(
-                        "start:launch:weekly"
-                        if summary_by_kind[AssignmentSessionKind.WEEKLY].available
-                        else "start:disabled:weekly"
-                    ),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    _start_assignment_button_label(
-                        AssignmentSessionKind.HOMEWORK,
-                        available=summary_by_kind[AssignmentSessionKind.HOMEWORK].available,
-                        language=language,
-                    ),
-                    callback_data=(
-                        "start:launch:homework"
-                        if summary_by_kind[AssignmentSessionKind.HOMEWORK].available
-                        else "start:disabled:homework"
-                    ),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    _start_assignment_button_label(
-                        AssignmentSessionKind.ALL,
-                        available=summary_by_kind[AssignmentSessionKind.ALL].available,
-                        language=language,
-                    ),
-                    callback_data=(
-                        "start:launch:all"
-                        if summary_by_kind[AssignmentSessionKind.ALL].available
-                        else "start:disabled:all"
-                    ),
-                )
-            ],
-        ]
-    )
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
 
 
 def _start_submenu_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
@@ -5620,6 +5753,7 @@ def _assignment_round_complete_keyboard(
 def _assign_menu_keyboard(
     *,
     is_admin: bool,
+    admin_web_app_url: str | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows = [
@@ -5632,6 +5766,8 @@ def _assign_menu_keyboard(
             0,
             [InlineKeyboardButton(_tg("admin_assign_goal_button", language=language), callback_data="assign:admin_assign_goal")],
         )
+        if admin_web_app_url:
+            rows.insert(1, [InlineKeyboardButton("Admin Panel", web_app=WebAppInfo(url=admin_web_app_url))])
     return InlineKeyboardMarkup(rows)
 
 

@@ -7,6 +7,8 @@ def test_hetzner_bootstrap_script_exists_and_installs_docker_stack() -> None:
     assert 'apt install -y docker.io docker-compose-v2 ufw fail2ban' in script
     assert 'systemctl enable docker' in script
     assert 'systemctl start docker' in script
+    assert 'ufw allow 80/tcp' in script
+    assert 'ufw allow 443/tcp' in script
 
 
 def test_hetzner_bootstrap_script_copies_root_ssh_keys_to_deploy_user() -> None:
@@ -28,6 +30,8 @@ def test_hetzner_bootstrap_script_prepares_runtime_directories() -> None:
     assert 'mkdir -p "${APP_ROOT}/shared/content/custom"' in script
     assert 'mkdir -p "${APP_ROOT}/shared/deploy"' in script
     assert 'mkdir -p "${APP_ROOT}/shared/logs"' in script
+    assert 'mkdir -p "${APP_ROOT}/shared/nginx/acme"' in script
+    assert 'mkdir -p "${APP_ROOT}/shared/nginx/certs"' in script
     assert 'touch "${APP_ROOT}/shared/.env"' in script
 
 
@@ -52,6 +56,18 @@ def test_production_dockerfile_installs_bot_runtime_and_demo_content() -> None:
     assert 'CMD ["python", "-m", "englishbot"]' in dockerfile
 
 
+def test_nginx_reverse_proxy_config_exists_for_admin_webapp() -> None:
+    config = Path("deploy/nginx/englishbot-webapp.conf").read_text(encoding="utf-8")
+
+    assert "listen 80;" in config
+    assert "listen 443 ssl http2;" in config
+    assert "location /.well-known/acme-challenge/" in config
+    assert "root /var/www/certbot;" in config
+    assert "ssl_certificate /etc/nginx/certs/fullchain.pem;" in config
+    assert "ssl_certificate_key /etc/nginx/certs/privkey.pem;" in config
+    assert "proxy_pass http://englishbot-webapp:8080;" in config
+
+
 def test_docker_compose_mounts_persistent_runtime_directories() -> None:
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
 
@@ -66,11 +82,25 @@ def test_docker_compose_mounts_persistent_runtime_directories() -> None:
     assert "/srv/englishbot/shared/backups/db-versioned:/app/backups/db-versioned" in compose
     assert "/srv/englishbot/shared/logs:/app/logs" in compose
     assert "/srv/englishbot/shared/content/custom:/app/content/custom" in compose
+    assert "englishbot-webapp:" in compose
+    assert 'command: ["python", "-m", "englishbot.webapp"]' in compose
+    assert "WEB_APP_HOST: 0.0.0.0" in compose
+    assert "WEB_APP_PORT: 8080" in compose
+    assert 'expose:' in compose
+    assert 'englishbot-nginx:' in compose
+    assert 'image: nginx:1.27-alpine' in compose
+    assert './deploy/nginx/englishbot-webapp.conf:/etc/nginx/conf.d/default.conf:ro' in compose
+    assert '/srv/englishbot/shared/nginx/acme:/var/www/certbot:ro' in compose
+    assert '/srv/englishbot/shared/nginx/certs:/etc/nginx/certs:ro' in compose
+    assert '"80:80"' in compose
+    assert '"443:443"' in compose
 
 
 def test_server_bot_only_env_template_disables_local_ai_services() -> None:
     env_template = Path(".env.server.bot-only.example").read_text(encoding="utf-8")
 
+    assert "WEB_APP_BASE_URL=https://203.0.113.10.nip.io" in env_template
+    assert "ADMIN_BOOTSTRAP_SECRET=replace_me" in env_template
     assert "OLLAMA_ENABLED=false" in env_template
     assert "COMFYUI_ENABLED=false" in env_template
     assert "PIXABAY_API_KEY=" in env_template
@@ -129,6 +159,18 @@ def test_server_restore_script_restores_backup_and_restarts_bot() -> None:
     assert 'docker compose stop "${CONTAINER_NAME}"' in script
     assert 'cp "${BACKUP_PATH}" "${DB_PATH_HOST}"' in script
     assert "docker compose up -d" in script
+
+
+def test_issue_webapp_cert_script_requests_certificate_and_restarts_nginx() -> None:
+    script = Path("scripts/issue-webapp-cert.sh").read_text(encoding="utf-8")
+
+    assert 'Usage: CERTBOT_EMAIL=you@example.com bash scripts/issue-webapp-cert.sh <domain>' in script
+    assert "grep '^WEB_APP_BASE_URL='" in script
+    assert 'certbot certonly \\' in script
+    assert '--webroot \\' in script
+    assert 'ln -sfn "${FULLCHAIN_SOURCE}" "${CERT_LINK_DIR}/fullchain.pem"' in script
+    assert 'ln -sfn "${PRIVKEY_SOURCE}" "${CERT_LINK_DIR}/privkey.pem"' in script
+    assert 'docker compose restart "${NGINX_SERVICE_NAME}"' in script
 
 
 def test_server_rollback_script_supports_previous_or_explicit_deploy_tag() -> None:

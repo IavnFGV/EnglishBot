@@ -54,11 +54,15 @@ mkdir -p "${APP_ROOT}/shared/backups/db-versioned"
 mkdir -p "${APP_ROOT}/shared/content/custom"
 mkdir -p "${APP_ROOT}/shared/deploy"
 mkdir -p "${APP_ROOT}/shared/logs"
+mkdir -p "${APP_ROOT}/shared/nginx/acme"
+mkdir -p "${APP_ROOT}/shared/nginx/certs"
 touch "${APP_ROOT}/shared/.env"
 chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${APP_ROOT}"
 
 echo "==> Configuring firewall"
 ufw allow OpenSSH
+ufw allow 80/tcp
+ufw allow 443/tcp
 ufw --force enable
 
 echo "==> Enabling fail2ban"

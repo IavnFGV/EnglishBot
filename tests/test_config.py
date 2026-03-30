@@ -97,6 +97,20 @@ def test_settings_from_config_service_reads_disabled_ai_flags(tmp_path: Path) ->
     assert settings.comfyui_enabled is False
 
 
+def test_settings_from_config_service_reads_admin_bootstrap_secret(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "TELEGRAM_BOT_TOKEN=test-token\n"
+        "ADMIN_BOOTSTRAP_SECRET=recover-me\n",
+        encoding="utf-8",
+    )
+    service = create_runtime_config_service(env_file_path=env_file, environ={})
+
+    settings = Settings.from_config_service(service)
+
+    assert settings.admin_bootstrap_secret == "recover-me"
+
+
 def test_clients_can_read_defaults_from_injected_config_service(tmp_path: Path) -> None:
     service = make_test_config_service(
         {

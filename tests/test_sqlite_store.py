@@ -133,14 +133,16 @@ def test_sqlite_telegram_user_logins_store_last_seen_username(tmp_path: Path) ->
     store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
     repository = SQLiteTelegramUserLoginRepository(store)
 
-    repository.record(user_id=7, username="first_name")
+    repository.record(user_id=7, username="first_name", first_name="Alice", last_name="Admin")
     first_snapshot = repository.list()
-    repository.record(user_id=7, username="renamed_user")
+    repository.record(user_id=7, username="renamed_user", first_name="Alice", last_name="Owner")
     second_snapshot = repository.list()
 
     assert len(second_snapshot) == 1
     assert second_snapshot[0].user_id == 7
     assert second_snapshot[0].username == "renamed_user"
+    assert second_snapshot[0].first_name == "Alice"
+    assert second_snapshot[0].last_name == "Owner"
     assert second_snapshot[0].first_seen_at == first_snapshot[0].first_seen_at
     assert second_snapshot[0].last_seen_at >= first_snapshot[0].last_seen_at
 
@@ -162,6 +164,30 @@ def test_sqlite_telegram_user_roles_are_persisted_and_grouped(tmp_path: Path) ->
         "admin": frozenset({7}),
         "editor": frozenset({8}),
     }
+
+
+def test_sqlite_telegram_user_roles_can_be_replaced_and_listed_for_admin_webapp(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    login_repository = SQLiteTelegramUserLoginRepository(store)
+    role_repository = SQLiteTelegramUserRoleRepository(store)
+
+    login_repository.record(
+        user_id=7,
+        username="alice",
+        first_name="Alice",
+        last_name="Admin",
+    )
+    role_repository.grant(user_id=7, role="admin")
+    role_repository.replace(user_id=7, roles=("editor", "user"))
+
+    users = role_repository.list_users()
+
+    assert role_repository.list_roles_for_user(user_id=7) == ("editor",)
+    assert len(users) == 1
+    assert users[0].telegram_id == 7
+    assert users[0].first_name == "Alice"
+    assert users[0].last_name == "Admin"
+    assert users[0].roles == ("editor", "user")
 
 
 def test_sqlite_content_store_reuses_lexeme_across_multiple_learning_items(tmp_path: Path) -> None:
@@ -336,6 +362,24 @@ def test_initialize_drops_legacy_vocabulary_items_table_after_learning_items_exi
 
     assert "learning_items" in tables
     assert "vocabulary_items" not in tables
+
+
+def test_sqlite_store_configures_wal_and_busy_timeout_for_multi_process_access(
+    tmp_path: Path,
+) -> None:
+    import sqlite3
+
+    db_path = tmp_path / "data" / "englishbot.db"
+    store = SQLiteContentStore(db_path=db_path)
+
+    store.initialize()
+
+    with sqlite3.connect(db_path) as connection:
+        journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+        busy_timeout = connection.execute("PRAGMA busy_timeout").fetchone()[0]
+
+    assert str(journal_mode).lower() == "wal"
+    assert int(busy_timeout) == 5000
 
 
 def test_build_training_service_uses_sqlite_runtime_storage(tmp_path: Path) -> None:
