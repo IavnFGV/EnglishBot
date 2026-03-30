@@ -6,7 +6,7 @@ import json
 import logging
 import random
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -236,8 +236,8 @@ _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
 _GAME_STAR_REWARD_CORRECT = 10
 _GAME_CHEST_REWARDS: tuple[int, ...] = (30, 50, 50, 100)
-_NOTIFICATION_RECENT_ANSWER_WINDOW = timedelta(minutes=1)
-_NOTIFICATION_DELAY_AFTER_RECENT_ANSWER = timedelta(minutes=2)
+_NOTIFICATION_RECENT_ASSIGNMENT_ACTIVITY_WINDOW = timedelta(minutes=5)
+_DAILY_ASSIGNMENT_REMINDER_TIME = time(hour=13, minute=0, tzinfo=UTC)
 _HELP_COMMAND_TEXT: dict[str, str] = {
     "start": "open your personal start menu",
     "help": "show commands",
@@ -581,7 +581,7 @@ def build_application(
     app.bot_data["admin_users_progress_overview_use_case"] = GetAdminUsersProgressOverviewUseCase(
         store=content_store
     )
-    app.bot_data["recent_quiz_activity_by_user"] = {}
+    app.bot_data["recent_assignment_activity_by_user"] = {}
 
     app.add_handler(TypeHandler(Update, raw_update_logger_handler), group=-1)
     app.add_handler(CommandHandler("start", start_handler))
@@ -820,6 +820,16 @@ def _telegram_user_login_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLit
 
 def _telegram_user_role_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserRoleRepository:
     return context.application.bot_data["telegram_user_role_repository"]
+
+
+def _telegram_ui_language_for_user_id(context: ContextTypes.DEFAULT_TYPE, *, user_id: int) -> str:
+    login = next(
+        (item for item in _telegram_user_login_repository(context).list() if item.user_id == user_id),
+        None,
+    )
+    if login is not None and login.language_code is not None:
+        return _normalize_telegram_ui_language(login.language_code)
+    return _telegram_ui_language(context)
 
 
 def _reload_training_service(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1759,6 +1769,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             username=getattr(user, "username", None),
             first_name=getattr(user, "first_name", None),
             last_name=getattr(user, "last_name", None),
+            language_code=getattr(user, "language_code", None),
         )
         logger.info("User %s opened /start", user.id)
         active_session = _service(context).get_active_session(user_id=user.id)
@@ -1886,6 +1897,7 @@ async def makeadmin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         username=getattr(user, "username", None),
         first_name=getattr(user, "first_name", None),
         last_name=getattr(user, "last_name", None),
+        language_code=getattr(user, "language_code", None),
     )
 
     if not context.args:
@@ -1969,6 +1981,7 @@ async def assign_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         username=getattr(user, "username", None),
         first_name=getattr(user, "first_name", None),
         last_name=getattr(user, "last_name", None),
+        language_code=getattr(user, "language_code", None),
     )
     await send_telegram_view(
         message,
@@ -4402,6 +4415,7 @@ async def continue_session_handler(update: Update, context: ContextTypes.DEFAULT
         context.user_data["awaiting_text_answer"] = False
         await query.edit_message_text(_tg("no_active_session_send_start", context=context, user=user))
         return
+    _record_assignment_activity(context, user_id=user.id)
     context.user_data["awaiting_text_answer"] = question.mode in {
         TrainingMode.MEDIUM,
         TrainingMode.HARD,
@@ -4764,7 +4778,8 @@ async def _process_answer(
     except ApplicationError as error:
         await message.reply_text(str(error))
         return
-    _record_recent_quiz_activity(context, user_id=user.id)
+    if _assignment_kind_from_session(active_session_before_submit) is not None:
+        _record_assignment_activity(context, user_id=user.id)
     active_session_id = getattr(active_session_before_submit, "session_id", None)
     if isinstance(active_session_id, str):
         await _delete_tracked_flow_messages(
@@ -5015,6 +5030,11 @@ async def _post_init(app: Application) -> None:
                 data={"notification_key": notification.key},
                 name=notification.key,
             )
+        job_queue.run_daily(
+            _daily_assignment_reminder_job,
+            time=_DAILY_ASSIGNMENT_REMINDER_TIME,
+            name="daily-assignment-reminder",
+        )
 
 
 async def _run_status_heartbeat(
@@ -5067,12 +5087,17 @@ def _pending_notification_repository(context: ContextTypes.DEFAULT_TYPE):
     return bot_data.get("pending_telegram_notification_repository")
 
 
-def _recent_quiz_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> dict[int, datetime]:
-    stored = context.application.bot_data.setdefault("recent_quiz_activity_by_user", {})
+def _recent_assignment_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> dict[int, datetime]:
+    stored = context.application.bot_data.get("recent_assignment_activity_by_user")
+    if stored is None:
+        stored = context.application.bot_data.get("recent_quiz_activity_by_user")
+    if stored is None:
+        stored = context.application.bot_data.setdefault("recent_assignment_activity_by_user", {})
     if isinstance(stored, dict):
+        context.application.bot_data["recent_assignment_activity_by_user"] = stored
         return stored
     replacement: dict[int, datetime] = {}
-    context.application.bot_data["recent_quiz_activity_by_user"] = replacement
+    context.application.bot_data["recent_assignment_activity_by_user"] = replacement
     return replacement
 
 
@@ -5091,22 +5116,29 @@ def _dismiss_notification_keyboard(notification_key: str) -> InlineKeyboardMarku
     )
 
 
+def _notification_wait_seconds(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int,
+) -> float:
+    recent_activity_at = _recent_assignment_activity_by_user(context).get(user_id)
+    if recent_activity_at is None:
+        return 0.0
+    elapsed = datetime.now(UTC) - recent_activity_at
+    remaining = _NOTIFICATION_RECENT_ASSIGNMENT_ACTIVITY_WINDOW - elapsed
+    return max(0.0, remaining.total_seconds())
+
+
 def _notification_should_wait(
     context: ContextTypes.DEFAULT_TYPE,
     *,
     user_id: int,
 ) -> bool:
-    active_session = _service(context).get_active_session(user_id=user_id)
-    if active_session is not None:
-        return True
-    recent_answer_at = _recent_quiz_activity_by_user(context).get(user_id)
-    if recent_answer_at is None:
-        return False
-    return datetime.now(UTC) - recent_answer_at < _NOTIFICATION_RECENT_ANSWER_WINDOW
+    return _notification_wait_seconds(context, user_id=user_id) > 0.0
 
 
-def _record_recent_quiz_activity(context: ContextTypes.DEFAULT_TYPE, *, user_id: int) -> None:
-    _recent_quiz_activity_by_user(context)[user_id] = datetime.now(UTC)
+def _record_assignment_activity(context: ContextTypes.DEFAULT_TYPE, *, user_id: int) -> None:
+    _recent_assignment_activity_by_user(context)[user_id] = datetime.now(UTC)
 
 
 def _schedule_notification(
@@ -5114,11 +5146,7 @@ def _schedule_notification(
     *,
     notification: _PendingNotification,
 ) -> None:
-    delay_seconds = (
-        _NOTIFICATION_DELAY_AFTER_RECENT_ANSWER.total_seconds()
-        if _notification_should_wait(context, user_id=notification.recipient_user_id)
-        else 0
-    )
+    delay_seconds = _notification_wait_seconds(context, user_id=notification.recipient_user_id)
     not_before_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
     repository = _pending_notification_repository(context)
     if repository is not None:
@@ -5200,10 +5228,41 @@ async def _deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) 
         return
     job_queue.run_once(
         _deliver_pending_notification_job,
-        when=_NOTIFICATION_DELAY_AFTER_RECENT_ANSWER.total_seconds(),
+        when=_notification_wait_seconds(
+            context,
+            user_id=(
+                repository.get(notification_key=notification_key).recipient_user_id
+                if repository is not None
+                else _pending_notifications(context)[notification_key].recipient_user_id
+            ),
+        ),
         data={"notification_key": notification_key},
         name=notification_key,
     )
+
+
+async def _daily_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    rows = _content_store(context).list_users_goal_overview()
+    today = datetime.now(UTC).date().isoformat()
+    for row in rows:
+        user_id = int(row["user_id"])
+        active_goals_count = int(row["active_goals_count"])
+        if active_goals_count <= 0:
+            continue
+        _schedule_notification(
+            context,
+            notification=_PendingNotification(
+                key=f"assignment-reminder:{today}:{user_id}",
+                recipient_user_id=user_id,
+                text=_tg(
+                    "daily_assignment_reminder"
+                    if active_goals_count != 1
+                    else "daily_assignment_reminder_one",
+                    language=_telegram_ui_language_for_user_id(context, user_id=user_id),
+                    goal_count=active_goals_count,
+                ),
+            ),
+        )
 
 
 async def _flush_pending_notifications_for_user(

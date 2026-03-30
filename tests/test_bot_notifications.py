@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 
 from englishbot.bot import (
+    _daily_assignment_reminder_job,
     _deliver_pending_notification_job,
     _flush_pending_notifications_for_user,
     _post_init,
@@ -18,12 +19,23 @@ from englishbot.bot import (
 class _FakeJobQueue:
     def __init__(self) -> None:
         self.calls: list[SimpleNamespace] = []
+        self.daily_calls: list[SimpleNamespace] = []
 
     def run_once(self, callback, when, data=None, name=None):  # noqa: ANN001
         self.calls.append(
             SimpleNamespace(
                 callback=callback,
                 when=when,
+                data=data,
+                name=name,
+            )
+        )
+
+    def run_daily(self, callback, time, data=None, name=None):  # noqa: ANN001
+        self.daily_calls.append(
+            SimpleNamespace(
+                callback=callback,
+                time=time,
                 data=data,
                 name=name,
             )
@@ -50,7 +62,10 @@ def _build_context(*, active_session=None):
     application = SimpleNamespace(
         bot_data={
             "pending_notifications": {},
-            "recent_quiz_activity_by_user": {},
+            "recent_assignment_activity_by_user": {},
+            "content_store": SimpleNamespace(list_users_goal_overview=lambda: []),
+            "telegram_user_login_repository": SimpleNamespace(list=lambda: []),
+            "telegram_ui_language": "en",
             "training_service": SimpleNamespace(get_active_session=lambda user_id: active_session),  # noqa: ARG005
             "telegram_user_role_repository": SimpleNamespace(
                 list_memberships=lambda: {"admin": frozenset({101, 202})}
@@ -127,7 +142,7 @@ async def test_deliver_pending_notification_job_requeues_when_user_was_recently_
         not_before_at=datetime.now(UTC),
         created_at=datetime.now(UTC),
     )
-    context.application.bot_data["recent_quiz_activity_by_user"][77] = datetime.now(UTC)
+    context.application.bot_data["recent_assignment_activity_by_user"][77] = datetime.now(UTC)
     job_context = SimpleNamespace(
         application=context.application,
         bot=bot,
@@ -138,7 +153,34 @@ async def test_deliver_pending_notification_job_requeues_when_user_was_recently_
 
     assert bot.sent_messages == []
     assert job_queue.calls[-1].name == "n1"
-    assert job_queue.calls[-1].when == 120.0
+    assert 299.0 <= job_queue.calls[-1].when <= 300.0
+
+
+@pytest.mark.anyio
+async def test_deliver_pending_notification_job_ignores_stale_active_session_without_recent_activity() -> None:
+    context, _, bot = _build_context(active_session=SimpleNamespace(session_id="stale"))
+    repository = _FakeNotificationRepository()
+    context.application.bot_data["pending_telegram_notification_repository"] = repository
+    repository.items["n1"] = SimpleNamespace(
+        key="n1",
+        recipient_user_id=77,
+        text="Hello now",
+        not_before_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+    )
+    context.application.bot_data["recent_assignment_activity_by_user"][77] = (
+        datetime.now(UTC) - timedelta(minutes=6)
+    )
+    job_context = SimpleNamespace(
+        application=context.application,
+        bot=bot,
+        job=SimpleNamespace(data={"notification_key": "n1"}),
+    )
+
+    await _deliver_pending_notification_job(job_context)  # type: ignore[arg-type]
+
+    assert len(bot.sent_messages) == 1
+    assert bot.sent_messages[0].chat_id == 77
 
 
 @pytest.mark.anyio
@@ -153,7 +195,7 @@ async def test_flush_pending_notifications_for_user_sends_immediately_after_quiz
         not_before_at=datetime.now(UTC),
         created_at=datetime.now(UTC),
     )
-    context.application.bot_data["recent_quiz_activity_by_user"][77] = datetime.now(UTC)
+    context.application.bot_data["recent_assignment_activity_by_user"][77] = datetime.now(UTC)
 
     await _flush_pending_notifications_for_user(context, user_id=77)  # type: ignore[arg-type]
 
@@ -214,6 +256,38 @@ def test_schedule_goal_completed_notifications_enqueues_admin_messages() -> None
 
 
 @pytest.mark.anyio
+async def test_daily_assignment_reminder_job_enqueues_notifications_for_users_with_active_goals() -> None:
+    context, job_queue, _ = _build_context()
+    repository = _FakeNotificationRepository()
+    context.application.bot_data["pending_telegram_notification_repository"] = repository
+    context.application.bot_data["content_store"] = SimpleNamespace(
+        list_users_goal_overview=lambda: [
+            {"user_id": 77, "active_goals_count": 2},
+            {"user_id": 88, "active_goals_count": 0},
+            {"user_id": 99, "active_goals_count": 1},
+        ]
+    )
+    context.application.bot_data["telegram_user_login_repository"] = SimpleNamespace(
+        list=lambda: [
+            SimpleNamespace(user_id=77, language_code="ru"),
+            SimpleNamespace(user_id=99, language_code="en"),
+        ]
+    )
+
+    await _daily_assignment_reminder_job(context)  # type: ignore[arg-type]
+
+    keys = set(repository.items)
+    assert any(key.endswith(":77") and key.startswith("assignment-reminder:") for key in keys)
+    assert any(key.endswith(":99") and key.startswith("assignment-reminder:") for key in keys)
+    assert not any(key.endswith(":88") and key.startswith("assignment-reminder:") for key in keys)
+    assert len(job_queue.calls) == 2
+    reminder_for_77 = next(item for key, item in repository.items.items() if key.endswith(":77"))
+    assert "2 активных целей" in reminder_for_77.text
+    reminder_for_99 = next(item for key, item in repository.items.items() if key.endswith(":99"))
+    assert "1 active goal" in reminder_for_99.text
+
+
+@pytest.mark.anyio
 async def test_post_init_reschedules_pending_notifications_from_repository() -> None:
     job_queue = _FakeJobQueue()
     repository = _FakeNotificationRepository()
@@ -242,6 +316,9 @@ async def test_post_init_reschedules_pending_notifications_from_repository() -> 
 
     assert len(job_queue.calls) == 1
     assert job_queue.calls[0].data == {"notification_key": "n1"}
+    assert len(job_queue.daily_calls) == 1
+    assert job_queue.daily_calls[0].name == "daily-assignment-reminder"
+    assert job_queue.daily_calls[0].time.hour == 13
 
 
 @pytest.mark.anyio

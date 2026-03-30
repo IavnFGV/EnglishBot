@@ -126,7 +126,7 @@ class _SummarySequenceUseCase:
 
 class _RecordingTelegramUserLoginRepository:
     def __init__(self) -> None:
-        self.calls: list[tuple[int, str | None, str | None, str | None]] = []
+        self.calls: list[tuple[int, str | None, str | None, str | None, str | None]] = []
 
     def record(
         self,
@@ -135,8 +135,9 @@ class _RecordingTelegramUserLoginRepository:
         username: str | None,
         first_name: str | None = None,
         last_name: str | None = None,
+        language_code: str | None = None,
     ) -> None:
-        self.calls.append((user_id, username, first_name, last_name))
+        self.calls.append((user_id, username, first_name, last_name, language_code))
 
 
 class _RecordingTelegramUserRoleRepository:
@@ -232,7 +233,7 @@ async def test_start_handler_records_telegram_username(monkeypatch: pytest.Monke
 
     await start_handler(update, context)  # type: ignore[arg-type]
 
-    assert user_login_repository.calls == [(321, "local_test_user", "Local", "Tester")]
+    assert user_login_repository.calls == [(321, "local_test_user", "Local", "Tester", "ru")]
     assert len(sent_views) == 1
     assert sent_views[0].text.startswith("Что хотите сделать сейчас?")
     assert sent_views[0].reply_markup.inline_keyboard[0][0].callback_data == "start:game"

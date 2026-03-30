@@ -62,6 +62,7 @@ class TelegramUserLogin:
     username: str | None
     first_name: str | None
     last_name: str | None
+    language_code: str | None
     first_seen_at: str
     last_seen_at: str
 
@@ -355,6 +356,7 @@ class SQLiteContentStore:
                     username TEXT,
                     first_name TEXT,
                     last_name TEXT,
+                    language_code TEXT,
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL
                 );
@@ -486,6 +488,8 @@ class SQLiteContentStore:
                 connection.execute("ALTER TABLE telegram_user_logins ADD COLUMN first_name TEXT")
             if "last_name" not in telegram_login_columns:
                 connection.execute("ALTER TABLE telegram_user_logins ADD COLUMN last_name TEXT")
+            if "language_code" not in telegram_login_columns:
+                connection.execute("ALTER TABLE telegram_user_logins ADD COLUMN language_code TEXT")
 
     def has_runtime_content(self) -> bool:
         self.initialize()
@@ -2323,23 +2327,26 @@ class SQLiteContentStore:
         username: str | None,
         first_name: str | None = None,
         last_name: str | None = None,
+        language_code: str | None = None,
     ) -> None:
         self.initialize()
         normalized_username = _optional_json_str(username)
         normalized_first_name = _optional_json_str(first_name)
         normalized_last_name = _optional_json_str(last_name)
+        normalized_language_code = _optional_json_str(language_code)
         timestamp = datetime.now(UTC).isoformat()
         with _connect(self._db_path) as connection:
             connection.execute(
                 """
                 INSERT INTO telegram_user_logins (
-                    user_id, username, first_name, last_name, first_seen_at, last_seen_at
+                    user_id, username, first_name, last_name, language_code, first_seen_at, last_seen_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id) DO UPDATE SET
                     username=excluded.username,
                     first_name=excluded.first_name,
                     last_name=excluded.last_name,
+                    language_code=excluded.language_code,
                     last_seen_at=excluded.last_seen_at
                 """,
                 (
@@ -2347,6 +2354,7 @@ class SQLiteContentStore:
                     normalized_username,
                     normalized_first_name,
                     normalized_last_name,
+                    normalized_language_code,
                     timestamp,
                     timestamp,
                 ),
@@ -2357,7 +2365,7 @@ class SQLiteContentStore:
         with _connect(self._db_path) as connection:
             rows = connection.execute(
                 """
-                SELECT user_id, username, first_name, last_name, first_seen_at, last_seen_at
+                SELECT user_id, username, first_name, last_name, language_code, first_seen_at, last_seen_at
                 FROM telegram_user_logins
                 ORDER BY last_seen_at DESC, user_id ASC
                 """
@@ -2368,6 +2376,7 @@ class SQLiteContentStore:
                 username=row["username"],
                 first_name=row["first_name"],
                 last_name=row["last_name"],
+                language_code=row["language_code"],
                 first_seen_at=str(row["first_seen_at"]),
                 last_seen_at=str(row["last_seen_at"]),
             )
@@ -2968,12 +2977,14 @@ class SQLiteTelegramUserLoginRepository:
         username: str | None,
         first_name: str | None = None,
         last_name: str | None = None,
+        language_code: str | None = None,
     ) -> None:
         self._store.record_telegram_user_login(
             user_id=user_id,
             username=username,
             first_name=first_name,
             last_name=last_name,
+            language_code=language_code,
         )
 
     def list(self) -> list[TelegramUserLogin]:

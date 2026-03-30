@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from englishbot.application.add_words_flow import AddWordsFlowHarness
@@ -134,9 +135,9 @@ def test_sqlite_telegram_user_logins_store_last_seen_username(tmp_path: Path) ->
     store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
     repository = SQLiteTelegramUserLoginRepository(store)
 
-    repository.record(user_id=7, username="first_name", first_name="Alice", last_name="Admin")
+    repository.record(user_id=7, username="first_name", first_name="Alice", last_name="Admin", language_code="ru")
     first_snapshot = repository.list()
-    repository.record(user_id=7, username="renamed_user", first_name="Alice", last_name="Owner")
+    repository.record(user_id=7, username="renamed_user", first_name="Alice", last_name="Owner", language_code="uk")
     second_snapshot = repository.list()
 
     assert len(second_snapshot) == 1
@@ -144,8 +145,35 @@ def test_sqlite_telegram_user_logins_store_last_seen_username(tmp_path: Path) ->
     assert second_snapshot[0].username == "renamed_user"
     assert second_snapshot[0].first_name == "Alice"
     assert second_snapshot[0].last_name == "Owner"
+    assert second_snapshot[0].language_code == "uk"
     assert second_snapshot[0].first_seen_at == first_snapshot[0].first_seen_at
     assert second_snapshot[0].last_seen_at >= first_snapshot[0].last_seen_at
+
+
+def test_sqlite_telegram_user_logins_migrates_language_code_for_existing_db(tmp_path: Path) -> None:
+    db_path = tmp_path / "data" / "englishbot.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE telegram_user_logins (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL
+            )
+            """
+        )
+    repository = SQLiteTelegramUserLoginRepository(SQLiteContentStore(db_path=db_path))
+
+    repository.record(user_id=9, username="migrated", first_name="Mig", last_name="Rated", language_code="uk")
+
+    snapshot = repository.list()
+    assert len(snapshot) == 1
+    assert snapshot[0].user_id == 9
+    assert snapshot[0].language_code == "uk"
 
 
 def test_sqlite_telegram_user_roles_are_persisted_and_grouped(tmp_path: Path) -> None:
