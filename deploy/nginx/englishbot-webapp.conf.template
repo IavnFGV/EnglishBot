@@ -7,4 +7,6 @@ server {
     }
 
 {{HTTPS_REDIRECT_BLOCK}}
+}
+
 {{HTTPS_SERVER_BLOCK}}
