@@ -14,6 +14,7 @@ class TelegramWebAppSession:
     username: str | None
     first_name: str | None
     last_name: str | None
+    language_code: str | None
     roles: tuple[str, ...]
     is_admin: bool
     is_verified: bool
@@ -59,6 +60,7 @@ def session_from_init_data(
         username=_optional_str(user_data.get("username")),
         first_name=_optional_str(user_data.get("first_name")),
         last_name=_optional_str(user_data.get("last_name")),
+        language_code=_optional_str(user_data.get("language_code")),
         roles=roles,
         is_admin="admin" in roles,
         is_verified=True,
@@ -78,6 +80,7 @@ def build_dev_session(
         username=_optional_str(profile.get("username")),
         first_name=_optional_str(profile.get("first_name")),
         last_name=_optional_str(profile.get("last_name")),
+        language_code=_optional_str(profile.get("language_code")),
         roles=roles,
         is_admin="admin" in roles,
         is_verified=False,

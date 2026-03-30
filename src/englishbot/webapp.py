@@ -38,6 +38,24 @@ def create_web_app(settings: Settings) -> Callable:
         try:
             if is_read_request and path == "/webapp":
                 return _html_response(start_response, _render_webapp_html())
+            if is_read_request and path == "/webapp/help":
+                session = _authenticate_request(
+                    environ,
+                    settings=settings,
+                    login_repository=login_repository,
+                    role_repository=role_repository,
+                )
+                if session is None:
+                    return _json_response(
+                        start_response,
+                        401,
+                        {
+                            "message": (
+                                "Open this page from Telegram or use the configured local dev mode."
+                            )
+                        },
+                    )
+                return _html_response(start_response, _render_help_html(session))
             if is_read_request and path == "/api/session":
                 session = _authenticate_request(
                     environ,
@@ -268,6 +286,7 @@ def _session_payload(session: TelegramWebAppSession) -> dict[str, object]:
         "username": session.username,
         "first_name": session.first_name,
         "last_name": session.last_name,
+        "language_code": session.language_code,
         "roles": list(session.roles),
         "is_admin": session.is_admin,
         "is_verified": session.is_verified,
@@ -481,6 +500,7 @@ def _render_webapp_html() -> str:
     </section>
     <section class="content">
       <div id="status" class="status">Loading session…</div>
+      <p class="muted"><a href="/webapp/help" id="help-link">Open assignment guide</a></p>
       <div id="table-wrap" class="table-wrap hidden">
         <table>
           <thead>
@@ -510,6 +530,7 @@ def _render_webapp_html() -> str:
     const sessionMeta = document.getElementById("session-meta");
     const tableWrap = document.getElementById("table-wrap");
     const usersBody = document.getElementById("users-body");
+    const helpLink = document.getElementById("help-link");
     const roleChoices = ["admin", "user", "editor"];
 
     function setStatus(message, isError = false) {
@@ -622,6 +643,9 @@ def _render_webapp_html() -> str:
         `Telegram ID: ${session.telegram_id}`,
         `Roles: ${session.roles.join(", ")}`,
       ];
+      if (helpLink) {
+        helpLink.href = `/webapp/help${window.location.search || ""}`;
+      }
       if (session.is_dev_mode) {
         sessionBits.push("Local dev mode");
       } else if (session.is_verified) {
@@ -653,6 +677,210 @@ def _render_webapp_html() -> str:
 </body>
 </html>
 """
+
+
+def _render_help_html(session: TelegramWebAppSession) -> str:
+    language = _web_language(session.language_code)
+    text = _help_content(language)
+    return f"""<!doctype html>
+<html lang="{language}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{text["title"]}</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {{
+      --bg: #f5f1e8;
+      --panel: rgba(255, 252, 246, 0.96);
+      --line: #d7ccb8;
+      --text: #1e1c18;
+      --muted: #6d665b;
+      --accent: #0f766e;
+      --shadow: 0 18px 48px rgba(66, 43, 13, 0.12);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(194, 120, 3, 0.16), transparent 24%),
+        linear-gradient(180deg, #f7f2e8 0%, #efe6d7 100%);
+      min-height: 100vh;
+      padding: 24px;
+    }}
+    .shell {{
+      max-width: 980px;
+      margin: 0 auto;
+      background: var(--panel);
+      border: 1px solid rgba(215, 204, 184, 0.8);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }}
+    .hero {{
+      padding: 28px 28px 18px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(255, 255, 255, 0.55));
+    }}
+    .content {{
+      padding: 24px 28px 28px;
+    }}
+    h1, h2 {{
+      margin-top: 0;
+    }}
+    h2 {{
+      margin-bottom: 10px;
+      font-size: 20px;
+    }}
+    p, li {{
+      line-height: 1.55;
+    }}
+    .card {{
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px 18px 16px;
+      margin-bottom: 16px;
+    }}
+    .muted {{
+      color: var(--muted);
+    }}
+    code {{
+      background: #f6efe3;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }}
+    a {{
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+    }}
+    @media (max-width: 860px) {{
+      body {{ padding: 12px; }}
+      .hero, .content {{ padding-left: 16px; padding-right: 16px; }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <h1>{text["title"]}</h1>
+      <p class="muted">{text["subtitle"]}</p>
+    </section>
+    <section class="content">
+      <div class="card">
+        <h2>{text["mechanics_title"]}</h2>
+        <ul>
+          <li>{text["mechanics_item_1"]}</li>
+          <li>{text["mechanics_item_2"]}</li>
+          <li>{text["mechanics_item_3"]}</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>{text["points_title"]}</h2>
+        <ul>
+          <li>{text["points_item_1"]}</li>
+          <li>{text["points_item_2"]}</li>
+          <li>{text["points_item_3"]}</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>{text["examples_title"]}</h2>
+        <p>{text["example_words"]}</p>
+        <p>{text["example_homework"]}</p>
+      </div>
+      <div class="card">
+        <h2>{text["visibility_title"]}</h2>
+        <ul>
+          <li>{text["visibility_item_1"]}</li>
+          <li>{text["visibility_item_2"]}</li>
+          <li>{text["visibility_item_3"]}</li>
+        </ul>
+      </div>
+      <p><a href="/webapp">{text["back_link"]}</a></p>
+    </section>
+  </main>
+</body>
+</html>
+"""
+
+
+def _web_language(language_code: str | None) -> str:
+    if not language_code:
+        return "en"
+    primary = language_code.split("-", 1)[0].split("_", 1)[0].lower()
+    if primary in {"ru", "uk", "en"}:
+        return primary
+    return "en"
+
+
+def _help_content(language: str) -> dict[str, str]:
+    content: dict[str, dict[str, str]] = {
+        "en": {
+            "title": "How assignments work",
+            "subtitle": "A short guide to goal progress, weekly points, and completion rules.",
+            "mechanics_title": "Goal mechanics",
+            "mechanics_item_1": "A Words goal tracks progress on the assigned words. In the current MVP, progress increases when you answer correctly on one of those assigned words.",
+            "mechanics_item_2": "A Homework goal is stricter: a word is considered done only when it reaches the homework target level, so it may require more than one correct answer.",
+            "mechanics_item_3": "The period label such as Daily or Weekly tells you when the goal was assigned for, not how many rounds you must play.",
+            "points_title": "How weekly points are added",
+            "points_item_1": "You get base points for the first correct answer on a word during the current week.",
+            "points_item_2": "Medium and Hard answers add an extra difficulty bonus.",
+            "points_item_3": "If an answer increases the word level, you also get a level-up bonus.",
+            "examples_title": "Examples",
+            "example_words": "Example: a goal for 10 words means the goal tracks a set of 10 assigned words. It is not the same as 10 rounds.",
+            "example_homework": "Example: a homework goal for 5 words may stay active after one successful round, because each word must still reach the homework target level.",
+            "visibility_title": "What you see in the bot",
+            "visibility_item_1": "My progress shows active goals, the rule for each goal, and recently completed goals.",
+            "visibility_item_2": "After a correct answer, the bot shows when weekly points were added.",
+            "visibility_item_3": "If a goal is closed by that answer, the bot shows it explicitly instead of letting it disappear silently.",
+            "back_link": "Back to admin panel",
+        },
+        "ru": {
+            "title": "Как работают задания",
+            "subtitle": "Короткое объяснение прогресса по целям, недельных очков и правил закрытия.",
+            "mechanics_title": "Механика целей",
+            "mechanics_item_1": "Цель на слова отслеживает прогресс по назначенным словам. В текущем MVP прогресс растёт, когда вы правильно отвечаете на одно из этих слов.",
+            "mechanics_item_2": "Цель Homework строже: слово считается закрытым только когда доходит до целевого уровня домашки, поэтому одного правильного ответа может быть недостаточно.",
+            "mechanics_item_3": "Период Daily или Weekly показывает, на какой период назначена цель, а не сколько раундов нужно сыграть.",
+            "points_title": "Как начисляются недельные очки",
+            "points_item_1": "Базовые очки даются за первый правильный ответ по слову в текущей неделе.",
+            "points_item_2": "За Medium и Hard добавляется бонус сложности.",
+            "points_item_3": "Если ответ повысил уровень слова, добавляется бонус за level-up.",
+            "examples_title": "Примеры",
+            "example_words": "Пример: цель на 10 слов означает, что цель следит за набором из 10 назначенных слов. Это не то же самое, что 10 раундов.",
+            "example_homework": "Пример: цель Homework на 5 слов может остаться активной после одного удачного раунда, потому что каждое слово ещё должно дойти до целевого уровня домашки.",
+            "visibility_title": "Что видно в боте",
+            "visibility_item_1": "В разделе «Мой прогресс» показаны активные цели, правило прогресса для каждой цели и недавно завершённые цели.",
+            "visibility_item_2": "После правильного ответа бот показывает, когда добавились недельные очки.",
+            "visibility_item_3": "Если этим ответом цель закрылась, бот показывает это явно, а не прячет её молча.",
+            "back_link": "Назад в админку",
+        },
+        "uk": {
+            "title": "Як працюють завдання",
+            "subtitle": "Короткий опис прогресу за цілями, тижневих очок і правил завершення.",
+            "mechanics_title": "Механіка цілей",
+            "mechanics_item_1": "Ціль на слова відстежує прогрес за призначеними словами. У поточному MVP прогрес росте, коли ви правильно відповідаєте на одне з цих слів.",
+            "mechanics_item_2": "Ціль Homework суворіша: слово вважається завершеним лише тоді, коли доходить до цільового рівня домашки, тому одного правильного відповіді може бути недостатньо.",
+            "mechanics_item_3": "Період Daily або Weekly показує, на який період призначена ціль, а не скільки раундів треба зіграти.",
+            "points_title": "Як нараховуються тижневі очки",
+            "points_item_1": "Базові очки даються за першу правильну відповідь по слову в поточному тижні.",
+            "points_item_2": "За Medium і Hard додається бонус складності.",
+            "points_item_3": "Якщо відповідь підвищила рівень слова, додається бонус за level-up.",
+            "examples_title": "Приклади",
+            "example_words": "Приклад: ціль на 10 слів означає, що ціль стежить за набором із 10 призначених слів. Це не те саме, що 10 раундів.",
+            "example_homework": "Приклад: ціль Homework на 5 слів може залишитися активною після одного вдалого раунду, бо кожне слово ще має дійти до цільового рівня домашки.",
+            "visibility_title": "Що видно в боті",
+            "visibility_item_1": "У розділі «Мій прогрес» показано активні цілі, правило прогресу для кожної цілі та нещодавно завершені цілі.",
+            "visibility_item_2": "Після правильної відповіді бот показує, коли додалися тижневі очки.",
+            "visibility_item_3": "Якщо ціль закрилася саме цією відповіддю, бот покаже це явно, а не сховає мовчки.",
+            "back_link": "Назад в адмінку",
+        },
+    }
+    return content.get(language, content["en"])
 
 
 if __name__ == "__main__":

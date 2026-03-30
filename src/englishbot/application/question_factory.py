@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 
 from englishbot.application.errors import NotEnoughOptionsError
 from englishbot.domain.models import TrainingMode, TrainingQuestion, TrainingSession, VocabularyItem
@@ -123,13 +124,24 @@ class QuestionFactory:
         return options
 
     def _scramble_word(self, word: str) -> str:
-        letters = list(word)
+        parts = re.split(r"(\s+)", word)
+        scrambled_parts = [
+            part if not part or part.isspace() else self._scramble_token(part)
+            for part in parts
+        ]
+        scrambled = "".join(scrambled_parts)
+        if scrambled.lower() != word.lower():
+            return scrambled
+        return word
+
+    def _scramble_token(self, token: str) -> str:
+        letters = list(token)
         if len(letters) <= 1:
-            return word
+            return token
         for _ in range(5):
             shuffled = letters[:]
             self._rng.shuffle(shuffled)
             scrambled = "".join(shuffled)
-            if scrambled.lower() != word.lower():
+            if scrambled.lower() != token.lower():
                 return scrambled
-        return word[::-1]
+        return token[::-1]

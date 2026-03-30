@@ -89,8 +89,8 @@ export ENGLISHBOT_DEPLOY_TAG
 
 echo "==> Building runtime version metadata version=${ENGLISHBOT_BUILD_VERSION} build=${ENGLISHBOT_BUILD_NUMBER} git_sha=${ENGLISHBOT_GIT_SHA} branch=${ENGLISHBOT_GIT_BRANCH} tag=${ENGLISHBOT_DEPLOY_TAG}"
 echo "==> Database backup saved to ${DB_BACKUP_PATH}"
-echo "==> Rebuilding and restarting englishbot"
-docker compose up -d --build
+echo "==> Rebuilding and recreating runtime containers"
+docker compose up -d --build --force-recreate
 
 echo "==> Current container status"
 docker compose ps

@@ -42,6 +42,39 @@ def test_webapp_session_endpoint_allows_local_dev_admin(tmp_path: Path) -> None:
     assert response.json["session"]["is_dev_mode"] is True
 
 
+def test_webapp_help_page_uses_telegram_language_from_session(tmp_path: Path) -> None:
+    _seed_user_store(
+        tmp_path=tmp_path,
+        logins=[
+            SimpleNamespace(user_id=7, username="alice", first_name="Alice", last_name="Admin")
+        ],
+        roles=[(7, "admin")],
+    )
+    app = create_web_app(
+        Settings(
+            telegram_token="test-token",
+            log_level="INFO",
+            content_db_path=tmp_path / "data" / "englishbot.db",
+        )
+    )
+    init_data = _signed_init_data(
+        bot_token="test-token",
+        user={
+            "id": 7,
+            "username": "alice",
+            "first_name": "Alice",
+            "last_name": "Admin",
+            "language_code": "ru",
+        },
+    )
+
+    response = _request(app, "GET", "/webapp/help", headers={"X-Telegram-Init-Data": init_data})
+
+    assert response.status_code == 200
+    assert "Как работают задания" in response.body
+    assert "Как начисляются недельные очки" in response.body
+
+
 def test_webapp_head_request_returns_success_for_html_entrypoint(tmp_path: Path) -> None:
     _seed_user_store(
         tmp_path=tmp_path,

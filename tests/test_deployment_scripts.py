@@ -172,6 +172,7 @@ def test_issue_webapp_cert_script_requests_certificate_and_restarts_nginx() -> N
     assert "grep '^WEB_APP_BASE_URL='" in script
     assert 'certbot certonly \\' in script
     assert '--webroot \\' in script
+    assert 'docker compose up -d --build --force-recreate' in script
     assert 'ln -sfn "${FULLCHAIN_SOURCE}" "${CERT_LINK_DIR}/fullchain.pem"' in script
     assert 'ln -sfn "${PRIVKEY_SOURCE}" "${CERT_LINK_DIR}/privkey.pem"' in script
     assert 'docker compose restart "${NGINX_SERVICE_NAME}"' in script
@@ -207,3 +208,9 @@ def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
     assert "current-release.env" in workflow
     assert "git tag -a" in workflow
     assert "git push origin" in workflow
+
+
+def test_deploy_script_recreates_runtime_containers() -> None:
+    script = Path("scripts/deploy-docker-app.sh").read_text(encoding="utf-8")
+
+    assert 'docker compose up -d --build --force-recreate' in script

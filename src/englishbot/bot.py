@@ -75,8 +75,10 @@ from englishbot.application.homework_progress_use_cases import (
     GetLearnerAssignmentLaunchSummaryUseCase,
     GetGoalWordCandidatesUseCase,
     GetUserProgressSummaryUseCase,
+    GoalProgressView,
     GoalWordSource,
     HomeworkProgressUseCase,
+    LearnerProgressSummary,
     ListUserGoalsUseCase,
     StartAssignmentRoundUseCase,
 )
@@ -207,6 +209,13 @@ class _AssignmentUserView:
     aggregate_percent: int
     last_activity_at: datetime | None
     last_seen_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class _GoalFeedbackUpdate:
+    weekly_points_delta: int
+    progressed_goals: tuple[GoalProgressView, ...]
+    completed_goals: tuple[GoalProgressView, ...]
 
 
 def _draft_checkpoint_text(flow) -> str:
@@ -828,6 +837,119 @@ def _learner_assignment_launch_summary_use_case(
     return context.application.bot_data["learner_assignment_launch_summary_use_case"]
 
 
+def _goal_period_label(*, context: ContextTypes.DEFAULT_TYPE, user, value: str) -> str:
+    key = {
+        GoalPeriod.DAILY.value: "goal_period_daily",
+        GoalPeriod.WEEKLY.value: "goal_period_weekly",
+        GoalPeriod.HOMEWORK.value: "goal_period_homework",
+    }.get(value)
+    return _tg(key, context=context, user=user) if key is not None else value
+
+
+def _goal_type_label(*, context: ContextTypes.DEFAULT_TYPE, user, value: str) -> str:
+    key = {
+        GoalType.NEW_WORDS.value: "goal_type_new_words",
+        GoalType.ROUNDS.value: "goal_type_rounds",
+        GoalType.TOPICS.value: "goal_type_topics",
+        GoalType.ACTIVE_DAYS.value: "goal_type_active_days",
+        GoalType.WORD_LEVEL_HOMEWORK.value: "goal_type_word_level_homework",
+    }.get(value)
+    return _tg(key, context=context, user=user) if key is not None else value
+
+
+def _goal_rule_text(*, context: ContextTypes.DEFAULT_TYPE, user, goal_type: GoalType) -> str:
+    key = {
+        GoalType.NEW_WORDS: "goal_rule_new_words",
+        GoalType.ROUNDS: "goal_rule_rounds",
+        GoalType.TOPICS: "goal_rule_topics",
+        GoalType.ACTIVE_DAYS: "goal_rule_active_days",
+        GoalType.WORD_LEVEL_HOMEWORK: "goal_rule_word_level_homework",
+    }.get(goal_type, "goal_rule_fallback")
+    return _tg(key, context=context, user=user)
+
+
+def _list_goal_history(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    include_history: bool,
+) -> list[GoalProgressView]:
+    use_case = context.application.bot_data.get("list_user_goals_use_case")
+    if use_case is None:
+        return []
+    return list(use_case.execute(user_id=user_id, include_history=include_history))
+
+
+def _collect_goal_feedback_update(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    before_summary: LearnerProgressSummary,
+) -> _GoalFeedbackUpdate:
+    after_summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
+    before_active_by_id = {item.goal.id: item for item in before_summary.active_goals}
+    after_active_by_id = {item.goal.id: item for item in after_summary.active_goals}
+    progressed_goals = tuple(
+        item
+        for goal_id, item in after_active_by_id.items()
+        if goal_id in before_active_by_id
+        and item.goal.progress_count > before_active_by_id[goal_id].goal.progress_count
+    )
+    completed_candidates = _list_goal_history(context=context, user_id=user.id, include_history=True)
+    completed_goals = tuple(
+        item
+        for item in completed_candidates
+        if item.goal.status is GoalStatus.COMPLETED
+        and item.goal.id in before_active_by_id
+        and item.goal.id not in after_active_by_id
+    )
+    return _GoalFeedbackUpdate(
+        weekly_points_delta=max(0, after_summary.weekly_points - before_summary.weekly_points),
+        progressed_goals=progressed_goals,
+        completed_goals=completed_goals,
+    )
+
+
+def _render_goal_progress_line(*, context: ContextTypes.DEFAULT_TYPE, user, goal_view: GoalProgressView) -> str:
+    return _tg(
+        "progress_goal_line",
+        context=context,
+        user=user,
+        period=_goal_period_label(context=context, user=user, value=goal_view.goal.goal_period.value),
+        goal_type=_goal_type_label(context=context, user=user, value=goal_view.goal.goal_type.value),
+        progress=goal_view.goal.progress_count,
+        target=goal_view.goal.target_count,
+        percent=goal_view.progress_percent,
+    )
+
+
+def _render_feedback_update_text(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    update: _GoalFeedbackUpdate,
+) -> str:
+    lines: list[str] = []
+    if update.weekly_points_delta > 0:
+        lines.append(
+            _tg(
+                "feedback_weekly_points_delta",
+                context=context,
+                user=user,
+                delta=update.weekly_points_delta,
+            )
+        )
+    if update.progressed_goals:
+        lines.append(_tg("feedback_goal_progress_title", context=context, user=user))
+        for goal in update.progressed_goals:
+            lines.append(_render_goal_progress_line(context=context, user=user, goal_view=goal))
+    if update.completed_goals:
+        lines.append(_tg("feedback_goal_completed_title", context=context, user=user))
+        for goal in update.completed_goals:
+            lines.append(_render_goal_progress_line(context=context, user=user, goal_view=goal))
+    return "\n".join(lines)
+
+
 def _start_assignment_round_use_case(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> StartAssignmentRoundUseCase:
@@ -1031,6 +1153,16 @@ def _admin_web_app_url(
     return f"{normalized}/webapp"
 
 
+def _assignment_guide_web_app_url(context: ContextTypes.DEFAULT_TYPE) -> str | None:
+    configured_url = context.application.bot_data.get("web_app_base_url")
+    if not isinstance(configured_url, str):
+        return None
+    normalized = configured_url.strip().rstrip("/")
+    if not normalized:
+        return None
+    return f"{normalized}/webapp/help"
+
+
 @dataclass(frozen=True)
 class _EditorAICapabilities:
     smart_parsing_available: bool
@@ -1215,6 +1347,7 @@ def _start_menu_view(
         text=_render_start_menu_text(context=context, user=user, summary=summary),
         reply_markup=_start_menu_keyboard(
             summary=summary,
+            guide_web_app_url=_assignment_guide_web_app_url(context),
             admin_web_app_url=_admin_web_app_url(
                 context,
                 user_id=(user.id if user is not None else None),
@@ -1347,6 +1480,7 @@ def _assign_menu_view(
         text=text,
         reply_markup=_assign_menu_keyboard(
             is_admin=bool(user and _is_admin(user.id, context)),
+            guide_web_app_url=_assignment_guide_web_app_url(context),
             admin_web_app_url=_admin_web_app_url(
                 context,
                 user_id=(user.id if user is not None else None),
@@ -2054,6 +2188,8 @@ def _admin_goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE)
 
 def _render_progress_text(*, context: ContextTypes.DEFAULT_TYPE, user) -> str:
     summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
+    history = _list_goal_history(context=context, user_id=user.id, include_history=True)
+    completed_goals = [item for item in history if item.goal.status is GoalStatus.COMPLETED][:3]
     lines = [
         _tg("progress_summary_title", context=context, user=user),
         _tg(
@@ -2065,24 +2201,26 @@ def _render_progress_text(*, context: ContextTypes.DEFAULT_TYPE, user) -> str:
             streak=summary.game_streak_days,
             weekly_points=summary.weekly_points,
         ),
+        _tg("progress_points_rule", context=context, user=user),
     ]
     if summary.active_goals:
         lines.append(_tg("progress_active_goals", context=context, user=user))
         for goal in summary.active_goals:
+            lines.append(_render_goal_progress_line(context=context, user=user, goal_view=goal))
             lines.append(
                 _tg(
-                    "progress_goal_line",
+                    "progress_goal_rule_line",
                     context=context,
                     user=user,
-                    period=goal.goal.goal_period.value,
-                    goal_type=goal.goal.goal_type.value,
-                    progress=goal.goal.progress_count,
-                    target=goal.goal.target_count,
-                    percent=goal.progress_percent,
+                    rule=_goal_rule_text(context=context, user=user, goal_type=goal.goal.goal_type),
                 )
             )
     else:
         lines.append(_tg("progress_no_goals", context=context, user=user))
+    if completed_goals:
+        lines.append(_tg("progress_completed_goals", context=context, user=user))
+        for goal in completed_goals:
+            lines.append(_render_goal_progress_line(context=context, user=user, goal_view=goal))
     return "\n".join(lines)
 
 
@@ -4882,6 +5020,11 @@ async def _process_answer(
     if user is None or message is None:
         return
     active_session_before_submit = service.get_active_session(user_id=user.id)
+    feedback_update: _GoalFeedbackUpdate | None = None
+    if context.application.bot_data.get("homework_progress_use_case") is not None:
+        before_summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
+    else:
+        before_summary = None
     try:
         outcome = service.submit_answer(user_id=user.id, answer=answer)
     except InvalidSessionStateError:
@@ -4915,11 +5058,18 @@ async def _process_answer(
         outcome.next_question is not None
         and outcome.next_question.mode in {TrainingMode.MEDIUM, TrainingMode.HARD}
     )
+    if before_summary is not None:
+        feedback_update = _collect_goal_feedback_update(
+            context=context,
+            user=user,
+            before_summary=before_summary,
+        )
     await _send_feedback(
         message,
         outcome,
         context=context,
         active_session=active_session_before_submit,
+        feedback_update=feedback_update,
     )
     if outcome.next_question is not None:
         await _send_question(update, context, outcome.next_question)
@@ -4931,6 +5081,7 @@ async def _send_feedback(
     *,
     context: ContextTypes.DEFAULT_TYPE,
     active_session=None,
+    feedback_update: _GoalFeedbackUpdate | None = None,
 ) -> None:
     view = build_answer_feedback_view(
         outcome,
@@ -4951,7 +5102,16 @@ async def _send_feedback(
             has_more=has_more,
             language=_telegram_ui_language(context, getattr(message, "from_user", None)),
         )
-    await message.reply_text(view.text, reply_markup=reply_markup, parse_mode=view.parse_mode)
+    text = view.text
+    if feedback_update is not None:
+        update_text = _render_feedback_update_text(
+            context=context,
+            user=getattr(message, "from_user", None),
+            update=feedback_update,
+        )
+        if update_text:
+            text = f"{text}\n\n{update_text}"
+    await message.reply_text(text, reply_markup=reply_markup, parse_mode=view.parse_mode)
 
 
 async def _send_game_feedback(
@@ -5650,6 +5810,7 @@ def _words_menu_keyboard(
 def _start_menu_keyboard(
     *,
     summary: list[AssignmentLaunchView],
+    guide_web_app_url: str | None = None,
     admin_web_app_url: str | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
@@ -5713,6 +5874,15 @@ def _start_menu_keyboard(
             )
         ],
     ]
+    if guide_web_app_url:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    _tg("assignment_guide_button", language=language),
+                    web_app=WebAppInfo(url=guide_web_app_url),
+                )
+            ]
+        )
     if admin_web_app_url:
         rows.append(
             [
@@ -5753,6 +5923,7 @@ def _assignment_round_complete_keyboard(
 def _assign_menu_keyboard(
     *,
     is_admin: bool,
+    guide_web_app_url: str | None = None,
     admin_web_app_url: str | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
@@ -5761,6 +5932,15 @@ def _assign_menu_keyboard(
         [InlineKeyboardButton(_tg("progress_button", language=language), callback_data="assign:progress")],
         [InlineKeyboardButton(_tg("assign_users_button", language=language), callback_data="assign:users")],
     ]
+    if guide_web_app_url:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    _tg("assignment_guide_button", language=language),
+                    web_app=WebAppInfo(url=guide_web_app_url),
+                )
+            ]
+        )
     if is_admin:
         rows.insert(
             0,

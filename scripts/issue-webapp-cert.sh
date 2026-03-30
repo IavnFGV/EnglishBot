@@ -50,7 +50,7 @@ mkdir -p "${CERT_LINK_DIR}"
 cd "${APP_DIR}"
 
 echo "==> Starting or refreshing runtime containers"
-docker compose up -d --build
+docker compose up -d --build --force-recreate
 
 echo "==> Requesting Let's Encrypt certificate for ${DOMAIN}"
 sudo certbot certonly \

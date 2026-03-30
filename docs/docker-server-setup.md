@@ -64,7 +64,7 @@ WEB_APP_BASE_URL=https://204.168.193.232.nip.io
 
 ```bash
 cd /srv/englishbot/app
-docker compose up -d --build
+docker compose up -d --build --force-recreate
 ```
 
 ## GitHub Actions auto-deploy
@@ -76,7 +76,7 @@ It runs on every push to `main` and does:
 1. `pytest -q`
 2. SSH into the Hetzner server
 3. Run [deploy-docker-app.sh](../scripts/deploy-docker-app.sh)
-4. Rebuild and restart the Docker services with `docker compose up -d --build`
+4. Rebuild and recreate the Docker services with `docker compose up -d --build --force-recreate`
 5. Create a git tag for the successful deploy, for example `deploy-v0.1.0-b3`
 6. Keep the latest 5 rolling SQLite backups in `shared/backups/db/`
 
@@ -107,7 +107,7 @@ git clone YOUR_REPO_URL app
 cd /srv/englishbot/app
 git checkout main
 cp .env.server.bot-only.example /srv/englishbot/shared/.env
-docker compose up -d --build
+docker compose up -d --build --force-recreate
 ```
 
 After that, GitHub Actions can deploy updates by SSH.
@@ -121,6 +121,7 @@ Runtime note:
 - `englishbot-nginx` also serves `/.well-known/acme-challenge/` from `shared/nginx/acme/`
 - before certificates are issued, `englishbot-nginx` starts in HTTP mode on port `80`
 - after certificates are present, `englishbot-nginx` switches to HTTPS + HTTP->HTTPS redirect on restart
+- deploy scripts use `--force-recreate` so changes in bind-mounted runtime config such as `shared/.env` are applied reliably
 
 ## Free TLS Certificate
 

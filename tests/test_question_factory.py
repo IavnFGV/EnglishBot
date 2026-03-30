@@ -47,3 +47,15 @@ def test_question_factory_does_not_expose_image_filename_in_prompt() -> None:
     assert "assets/school/scissors.png" not in question.prompt
     assert "scissors.png" not in question.prompt
     assert "Visual clue: Image is shown above." in question.prompt
+
+
+def test_question_factory_scramble_keeps_spaces_in_multiword_answer() -> None:
+    factory = QuestionFactory(random.Random(7))
+
+    scrambled = factory._scramble_word("ice cream")
+
+    assert scrambled != "ice cream"
+    assert len(scrambled) == len("ice cream")
+    assert scrambled[3] == " "
+    assert sorted(scrambled[:3].lower()) == sorted("ice".lower())
+    assert sorted(scrambled[4:].lower()) == sorted("cream".lower())

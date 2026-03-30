@@ -3,7 +3,11 @@ from types import SimpleNamespace
 import pytest
 from telegram.error import BadRequest
 
-from englishbot.application.homework_progress_use_cases import AssignmentLaunchView, AssignmentSessionKind
+from englishbot.application.homework_progress_use_cases import (
+    AssignmentLaunchView,
+    AssignmentSessionKind,
+    GoalProgressView,
+)
 from englishbot.presentation.telegram_menu_access import TelegramMenuAccessPolicy
 from englishbot.bot import (
     _assign_menu_keyboard,
@@ -44,7 +48,7 @@ from englishbot.bot import (
     words_menu_callback_handler,
     words_topics_callback_handler,
 )
-from englishbot.domain.models import TrainingMode
+from englishbot.domain.models import Goal, GoalPeriod, GoalStatus, GoalType, TrainingMode
 
 
 class _FakeQuery:
@@ -235,6 +239,67 @@ async def test_words_goals_callback_handler_ignores_message_not_modified() -> No
     await words_goals_callback_handler(update, context)  # type: ignore[arg-type]
 
     assert query.answered is True
+
+
+@pytest.mark.anyio
+async def test_words_goals_callback_handler_shows_goal_rules_and_recently_completed() -> None:
+    query = _RecordingQuery()
+    active_goal = GoalProgressView(
+        goal=Goal(
+            id="g-active",
+            user_id=123,
+            goal_period=GoalPeriod.DAILY,
+            goal_type=GoalType.NEW_WORDS,
+            target_count=10,
+            progress_count=3,
+            status=GoalStatus.ACTIVE,
+        ),
+        progress_percent=30,
+    )
+    completed_goal = GoalProgressView(
+        goal=Goal(
+            id="g-done",
+            user_id=123,
+            goal_period=GoalPeriod.WEEKLY,
+            goal_type=GoalType.NEW_WORDS,
+            target_count=10,
+            progress_count=10,
+            status=GoalStatus.COMPLETED,
+        ),
+        progress_percent=100,
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "homework_progress_use_case": SimpleNamespace(
+                    get_summary=lambda user_id: SimpleNamespace(
+                        correct_answers=7,
+                        incorrect_answers=2,
+                        game_streak_days=3,
+                        weekly_points=18,
+                        active_goals=[active_goal],
+                    )
+                ),
+                "list_user_goals_use_case": SimpleNamespace(
+                    execute=lambda user_id, include_history=True: [completed_goal]
+                ),
+                "telegram_ui_language": "en",
+            }
+        ),
+        user_data={},
+    )
+
+    await words_goals_callback_handler(update, context)  # type: ignore[arg-type]
+
+    text = query.edits[-1][0]
+    assert "Points are added on correct answers" in text
+    assert "Counts when you answer correctly on one of the assigned words." in text
+    assert "Recently completed:" in text
+    assert "Weekly/Words: 10/10 (100%)" in text
 
 
 @pytest.mark.anyio
@@ -470,6 +535,16 @@ def test_assign_menu_keyboard_shows_admin_buttons() -> None:
     ]
 
 
+def test_assign_menu_keyboard_exposes_assignment_guide_web_app() -> None:
+    keyboard = _assign_menu_keyboard(
+        is_admin=False,
+        guide_web_app_url="https://admin.example.com/webapp/help",
+    )
+
+    assert keyboard.inline_keyboard[-1][0].text == "📚 How it works"
+    assert keyboard.inline_keyboard[-1][0].web_app.url == "https://admin.example.com/webapp/help"
+
+
 def test_start_menu_keyboard_exposes_personal_launch_actions() -> None:
     keyboard = _start_menu_keyboard(
         summary=[
@@ -507,6 +582,21 @@ def test_start_menu_keyboard_exposes_personal_launch_actions() -> None:
         "start:launch:homework",
         "start:launch:all",
     ]
+
+
+def test_start_menu_keyboard_exposes_assignment_guide_web_app() -> None:
+    keyboard = _start_menu_keyboard(
+        summary=[
+            AssignmentLaunchView(AssignmentSessionKind.DAILY, True, 4, 1),
+            AssignmentLaunchView(AssignmentSessionKind.WEEKLY, False, 0, 0),
+            AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, True, 6, 2),
+            AssignmentLaunchView(AssignmentSessionKind.ALL, True, 10, 2),
+        ],
+        guide_web_app_url="https://admin.example.com/webapp/help",
+    )
+
+    assert keyboard.inline_keyboard[-1][0].text == "📚 How it works"
+    assert keyboard.inline_keyboard[-1][0].web_app.url == "https://admin.example.com/webapp/help"
 
 
 def test_goal_flow_keyboards_include_back_navigation() -> None:

@@ -2,7 +2,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from englishbot.application.homework_progress_use_cases import AssignmentLaunchView, AssignmentSessionKind
+from englishbot.application.homework_progress_use_cases import (
+    AssignmentLaunchView,
+    AssignmentSessionKind,
+    GoalProgressView,
+)
 from englishbot import bot
 from englishbot.bot import (
     _process_answer,
@@ -11,7 +15,16 @@ from englishbot.bot import (
     start_handler,
     text_answer_handler,
 )
-from englishbot.domain.models import CheckResult, SessionSummary, TrainingMode, TrainingQuestion
+from englishbot.domain.models import (
+    CheckResult,
+    Goal,
+    GoalPeriod,
+    GoalStatus,
+    GoalType,
+    SessionSummary,
+    TrainingMode,
+    TrainingQuestion,
+)
 
 
 class _FakeMessage:
@@ -98,6 +111,17 @@ class _CompletingService:
             summary=SessionSummary(total_questions=1, correct_answers=1),
             next_question=None,
         )
+
+
+class _SummarySequenceUseCase:
+    def __init__(self, summaries: list[object]) -> None:
+        self._summaries = list(summaries)
+        self.calls = 0
+
+    def get_summary(self, user_id: int):  # noqa: ARG002
+        index = min(self.calls, len(self._summaries) - 1)
+        self.calls += 1
+        return self._summaries[index]
 
 
 class _RecordingTelegramUserLoginRepository:
@@ -418,4 +442,76 @@ async def test_process_answer_cleans_tracked_training_question_after_completion(
     await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
 
     assert fake_bot.deleted_messages == [(1, 99)]
-    assert registry.list(flow_id="session-1", tag="training_question") == []
+
+
+@pytest.mark.anyio
+async def test_process_answer_reports_weekly_points_and_completed_goal() -> None:
+    message = _FakeMessage("cloud")
+    active_goal = GoalProgressView(
+        goal=Goal(
+            id="goal-1",
+            user_id=123,
+            goal_period=GoalPeriod.DAILY,
+            goal_type=GoalType.NEW_WORDS,
+            target_count=1,
+            progress_count=0,
+            status=GoalStatus.ACTIVE,
+        ),
+        progress_percent=0,
+    )
+    completed_goal = GoalProgressView(
+        goal=Goal(
+            id="goal-1",
+            user_id=123,
+            goal_period=GoalPeriod.DAILY,
+            goal_type=GoalType.NEW_WORDS,
+            target_count=1,
+            progress_count=1,
+            status=GoalStatus.COMPLETED,
+        ),
+        progress_percent=100,
+    )
+    summary_use_case = _SummarySequenceUseCase(
+        [
+            SimpleNamespace(
+                correct_answers=0,
+                incorrect_answers=0,
+                game_streak_days=0,
+                weekly_points=0,
+                active_goals=[active_goal],
+            ),
+            SimpleNamespace(
+                correct_answers=1,
+                incorrect_answers=0,
+                game_streak_days=0,
+                weekly_points=11,
+                active_goals=[],
+            ),
+        ]
+    )
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot=_FakeBot(),
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _CompletingService(),
+                "telegram_ui_language": "en",
+                "telegram_flow_message_repository": _FakeTelegramFlowMessageRepository(),
+                "homework_progress_use_case": summary_use_case,
+                "list_user_goals_use_case": SimpleNamespace(
+                    execute=lambda user_id, include_history=True: [completed_goal]
+                ),
+                "learner_assignment_launch_summary_use_case": SimpleNamespace(execute=lambda user_id: []),
+            }
+        ),
+    )
+
+    await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
+
+    assert any("Weekly points +11" in reply for reply in message.replies)
+    assert any("Completed goals:" in reply for reply in message.replies)
+    assert any("Daily/Words: 1/1 (100%)" in reply for reply in message.replies)

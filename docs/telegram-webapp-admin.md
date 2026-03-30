@@ -56,7 +56,7 @@ python -m englishbot
 python -m englishbot.webapp
 ```
 
-In Docker deployment, `docker compose up -d --build` now starts both:
+In Docker deployment, `docker compose up -d --build --force-recreate` now starts both:
 
 - `englishbot`
 - `englishbot-webapp`
