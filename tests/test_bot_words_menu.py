@@ -149,7 +149,7 @@ async def test_words_add_words_callback_handler_enters_editor_flow() -> None:
 
 
 @pytest.mark.anyio
-async def test_words_menu_handler_sends_only_words_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_words_menu_handler_sends_words_menu_and_chat_menu(monkeypatch: pytest.MonkeyPatch) -> None:
     sent_views: list[object] = []
 
     async def _fake_send_telegram_view(message, view):  # noqa: ARG001
@@ -167,8 +167,9 @@ async def test_words_menu_handler_sends_only_words_menu(monkeypatch: pytest.Monk
 
     await words_menu_handler(update, context)  # type: ignore[arg-type]
 
-    assert len(sent_views) == 1
+    assert len(sent_views) == 2
     assert sent_views[0].text == "Words menu."
+    assert sent_views[1].text == "Quick actions:"
 
 
 @pytest.mark.anyio

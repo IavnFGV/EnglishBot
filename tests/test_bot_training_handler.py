@@ -234,9 +234,10 @@ async def test_start_handler_records_telegram_username(monkeypatch: pytest.Monke
     await start_handler(update, context)  # type: ignore[arg-type]
 
     assert user_login_repository.calls == [(321, "local_test_user", "Local", "Tester", "ru")]
-    assert len(sent_views) == 1
+    assert len(sent_views) == 2
     assert sent_views[0].text.startswith("Что хотите сделать сейчас?")
     assert sent_views[0].reply_markup.inline_keyboard[0][0].callback_data == "start:game"
+    assert sent_views[1].text == "Быстрые действия:"
 
 
 @pytest.mark.anyio

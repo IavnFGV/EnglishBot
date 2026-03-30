@@ -231,6 +231,7 @@ _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
 _TRAINING_QUESTION_TAG = "training_question"
 _TRAINING_FEEDBACK_TAG = "training_feedback"
+_CHAT_MENU_TAG = "chat_menu"
 _NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
@@ -1393,6 +1394,10 @@ def _quick_actions_view(
     )
 
 
+def _chat_menu_flow_id(*, user_id: int) -> str:
+    return f"chat-menu:{user_id}"
+
+
 def _start_menu_view(
     *,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1813,6 +1818,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         message,
         _start_menu_view(context=context, user=user),
     )
+    if user is not None:
+        await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1836,6 +1843,8 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             user=user,
         ),
     )
+    if user is not None:
+        await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def version_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1991,6 +2000,7 @@ async def assign_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             user=user,
         ),
     )
+    await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def words_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2006,6 +2016,8 @@ async def words_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             user=user,
         ),
     )
+    if user is not None:
+        await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def assign_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2954,12 +2966,7 @@ async def add_words_cancel_callback_handler(
     _clear_active_word_flow(user.id, context)
     context.user_data.pop("words_flow_mode", None)
     await query.edit_message_text(_tg("add_words_flow_cancelled", context=context, user=user))
-    await query.message.reply_text(
-        _tg("quick_actions_title", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(
-            command_rows=_visible_command_rows(context, user_id=user.id)
-        ),
-    )
+    await _ensure_chat_menu_message(context, message=query.message, user=user)
 
 
 async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3478,12 +3485,7 @@ async def add_words_publish_without_images_handler(
             item_count=len(finalized.draft.vocabulary_items),
         )
     )
-    await query.message.reply_text(
-        _tg("quick_actions_title", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(
-            command_rows=_visible_command_rows(context, user_id=user.id)
-        ),
-    )
+    await _ensure_chat_menu_message(context, message=query.message, user=user)
 
 
 async def add_words_approve_draft_handler(
@@ -5368,6 +5370,36 @@ async def _delete_tracked_flow_messages(
     await _delete_tracked_messages(
         context,
         tracked_messages=registry.list(flow_id=flow_id, tag=tag),
+    )
+
+
+async def _ensure_chat_menu_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    message,
+    user,
+) -> None:
+    user_id = getattr(user, "id", None)
+    if not isinstance(user_id, int):
+        return
+    flow_id = _chat_menu_flow_id(user_id=user_id)
+    await _delete_tracked_flow_messages(
+        context,
+        flow_id=flow_id,
+        tag=_CHAT_MENU_TAG,
+    )
+    sent_message = await send_telegram_view(
+        message,
+        _quick_actions_view(context=context, user=user),
+    )
+    if sent_message is None:
+        return
+    _track_flow_message(
+        context,
+        flow_id=flow_id,
+        tag=_CHAT_MENU_TAG,
+        message=sent_message,
+        fallback_chat_id=_message_chat_id(message),
     )
 
 
