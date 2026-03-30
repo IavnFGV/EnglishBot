@@ -16,7 +16,6 @@ from telegram import (
     ForceReply,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    KeyboardButton,
     ReplyKeyboardMarkup,
     Update,
 )
@@ -95,6 +94,61 @@ from englishbot.application.services import (
     TrainingFacade,
 )
 from englishbot.bootstrap import build_lesson_import_pipeline, build_training_service
+from englishbot.bot_assignments_admin_ui import admin_goal_manual_keyboard as ui_admin_goal_manual_keyboard
+from englishbot.bot_assignments_admin_ui import admin_goal_recipients_keyboard as ui_admin_goal_recipients_keyboard
+from englishbot.bot_assignments_admin_ui import assignment_goal_detail_keyboard as ui_assignment_goal_detail_keyboard
+from englishbot.bot_assignments_admin_ui import assignment_user_goals_keyboard as ui_assignment_user_goals_keyboard
+from englishbot.bot_assignments_admin_ui import assignment_user_label as ui_assignment_user_label
+from englishbot.bot_assignments_admin_ui import assignment_users_keyboard as ui_assignment_users_keyboard
+from englishbot.bot_assignments_admin_ui import goal_source_topic_keyboard as ui_goal_source_topic_keyboard
+from englishbot.bot_assignments_admin_ui import page_range_label as ui_page_range_label
+from englishbot.bot_assignments_admin_ui import render_assignment_goal_detail_text as ui_render_assignment_goal_detail_text
+from englishbot.bot_assignments_admin_ui import render_assignment_user_detail_text as ui_render_assignment_user_detail_text
+from englishbot.bot_assignments_ui import admin_goal_custom_target_keyboard as ui_admin_goal_custom_target_keyboard
+from englishbot.bot_assignments_ui import admin_goal_period_keyboard as ui_admin_goal_period_keyboard
+from englishbot.bot_assignments_ui import admin_goal_source_keyboard as ui_admin_goal_source_keyboard
+from englishbot.bot_assignments_ui import admin_goal_target_keyboard as ui_admin_goal_target_keyboard
+from englishbot.bot_assignments_ui import assign_menu_keyboard as ui_assign_menu_keyboard
+from englishbot.bot_assignments_ui import assignment_kind_label as ui_assignment_kind_label
+from englishbot.bot_assignments_ui import assignment_round_complete_keyboard as ui_assignment_round_complete_keyboard
+from englishbot.bot_assignments_ui import goal_custom_target_keyboard as ui_goal_custom_target_keyboard
+from englishbot.bot_assignments_ui import goal_list_keyboard as ui_goal_list_keyboard
+from englishbot.bot_assignments_ui import goal_period_label as ui_goal_period_label
+from englishbot.bot_assignments_ui import goal_rule_text as ui_goal_rule_text
+from englishbot.bot_assignments_ui import goal_setup_keyboard as ui_goal_setup_keyboard
+from englishbot.bot_assignments_ui import goal_source_keyboard as ui_goal_source_keyboard
+from englishbot.bot_assignments_ui import goal_target_keyboard as ui_goal_target_keyboard
+from englishbot.bot_assignments_ui import goal_type_label as ui_goal_type_label
+from englishbot.bot_assignments_ui import render_goal_progress_line as ui_render_goal_progress_line
+from englishbot.bot_assignments_ui import render_progress_text as ui_render_progress_text
+from englishbot.bot_assignments_ui import render_start_menu_text as ui_render_start_menu_text
+from englishbot.bot_assignments_ui import start_assignment_button_label as ui_start_assignment_button_label
+from englishbot.bot_assignments_ui import start_menu_keyboard as ui_start_menu_keyboard
+from englishbot.bot_editor_ui import chat_menu_keyboard as ui_chat_menu_keyboard
+from englishbot.bot_editor_ui import draft_review_keyboard as ui_draft_review_keyboard
+from englishbot.bot_editor_ui import draft_review_view as ui_draft_review_view
+from englishbot.bot_editor_ui import editable_topics_keyboard as ui_editable_topics_keyboard
+from englishbot.bot_editor_ui import editable_topics_view as ui_editable_topics_view
+from englishbot.bot_editor_ui import editable_word_button_label as ui_editable_word_button_label
+from englishbot.bot_editor_ui import editable_words_keyboard as ui_editable_words_keyboard
+from englishbot.bot_editor_ui import editable_words_view as ui_editable_words_view
+from englishbot.bot_editor_ui import game_mode_keyboard as ui_game_mode_keyboard
+from englishbot.bot_editor_ui import help_view as ui_help_view
+from englishbot.bot_editor_ui import image_review_keyboard as ui_image_review_keyboard
+from englishbot.bot_editor_ui import lesson_keyboard as ui_lesson_keyboard
+from englishbot.bot_editor_ui import lesson_selection_view as ui_lesson_selection_view
+from englishbot.bot_editor_ui import mode_keyboard as ui_mode_keyboard
+from englishbot.bot_editor_ui import mode_selection_view as ui_mode_selection_view
+from englishbot.bot_editor_ui import published_image_items_keyboard as ui_published_image_items_keyboard
+from englishbot.bot_editor_ui import published_image_topics_keyboard as ui_published_image_topics_keyboard
+from englishbot.bot_editor_ui import published_images_menu_keyboard as ui_published_images_menu_keyboard
+from englishbot.bot_editor_ui import published_word_edit_keyboard as ui_published_word_edit_keyboard
+from englishbot.bot_editor_ui import quick_actions_view as ui_quick_actions_view
+from englishbot.bot_editor_ui import topic_button_label as ui_topic_button_label
+from englishbot.bot_editor_ui import topic_keyboard as ui_topic_keyboard
+from englishbot.bot_editor_ui import topic_selection_view as ui_topic_selection_view
+from englishbot.bot_editor_ui import words_menu_keyboard as ui_words_menu_keyboard
+from englishbot.bot_editor_ui import words_menu_view as ui_words_menu_view
 from englishbot.config import RuntimeConfigService, Settings
 from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType, Topic, TrainingMode, TrainingQuestion
 from englishbot.image_generation.clients import ComfyUIImageGenerationClient
@@ -134,23 +188,14 @@ from englishbot.presentation.telegram_views import (
     build_assignment_menu_view,
     build_answer_feedback_view,
     build_current_image_preview_view,
-    build_draft_preview_view,
-    build_editable_topics_view,
-    build_editable_words_view,
-    build_help_view,
     build_image_review_attach_photo_view,
     build_image_review_prompt_edit_view,
     build_image_review_search_query_edit_view,
     build_image_review_step_view,
-    build_lesson_selection_view,
-    build_mode_selection_view,
     build_published_word_edit_prompt_view,
-    build_quick_actions_view,
     build_start_menu_view,
     build_status_view,
-    build_topic_selection_view,
     build_training_question_view,
-    build_words_menu_view,
     edit_telegram_text_view,
     send_telegram_view,
 )
@@ -839,34 +884,15 @@ def _learner_assignment_launch_summary_use_case(
 
 
 def _goal_period_label(*, context: ContextTypes.DEFAULT_TYPE, user, value: str) -> str:
-    key = {
-        GoalPeriod.DAILY.value: "goal_period_daily",
-        GoalPeriod.WEEKLY.value: "goal_period_weekly",
-        GoalPeriod.HOMEWORK.value: "goal_period_homework",
-    }.get(value)
-    return _tg(key, context=context, user=user) if key is not None else value
+    return ui_goal_period_label(tg=_tg, context=context, user=user, value=value)
 
 
 def _goal_type_label(*, context: ContextTypes.DEFAULT_TYPE, user, value: str) -> str:
-    key = {
-        GoalType.NEW_WORDS.value: "goal_type_new_words",
-        GoalType.ROUNDS.value: "goal_type_rounds",
-        GoalType.TOPICS.value: "goal_type_topics",
-        GoalType.ACTIVE_DAYS.value: "goal_type_active_days",
-        GoalType.WORD_LEVEL_HOMEWORK.value: "goal_type_word_level_homework",
-    }.get(value)
-    return _tg(key, context=context, user=user) if key is not None else value
+    return ui_goal_type_label(tg=_tg, context=context, user=user, value=value)
 
 
 def _goal_rule_text(*, context: ContextTypes.DEFAULT_TYPE, user, goal_type: GoalType) -> str:
-    key = {
-        GoalType.NEW_WORDS: "goal_rule_new_words",
-        GoalType.ROUNDS: "goal_rule_rounds",
-        GoalType.TOPICS: "goal_rule_topics",
-        GoalType.ACTIVE_DAYS: "goal_rule_active_days",
-        GoalType.WORD_LEVEL_HOMEWORK: "goal_rule_word_level_homework",
-    }.get(goal_type, "goal_rule_fallback")
-    return _tg(key, context=context, user=user)
+    return ui_goal_rule_text(tg=_tg, context=context, user=user, goal_type=goal_type)
 
 
 def _list_goal_history(
@@ -912,16 +938,7 @@ def _collect_goal_feedback_update(
 
 
 def _render_goal_progress_line(*, context: ContextTypes.DEFAULT_TYPE, user, goal_view: GoalProgressView) -> str:
-    return _tg(
-        "progress_goal_line",
-        context=context,
-        user=user,
-        period=_goal_period_label(context=context, user=user, value=goal_view.goal.goal_period.value),
-        goal_type=_goal_type_label(context=context, user=user, value=goal_view.goal.goal_type.value),
-        progress=goal_view.goal.progress_count,
-        target=goal_view.goal.target_count,
-        percent=goal_view.progress_percent,
-    )
+    return ui_render_goal_progress_line(tg=_tg, context=context, user=user, goal_view=goal_view)
 
 
 def _render_feedback_update_text(
@@ -1287,9 +1304,10 @@ def _draft_review_markup(
     user,
 ) -> InlineKeyboardMarkup:
     capabilities = _editor_ai_capabilities(context)
-    return _draft_review_keyboard(
+    return ui_draft_review_keyboard(
         flow_id,
         is_valid,
+        tg=_tg,
         show_auto_image_button=capabilities.local_image_generation_available,
         show_regenerate_button=capabilities.smart_parsing_available,
         language=_telegram_ui_language(context, user),
@@ -1304,8 +1322,8 @@ def _draft_review_view(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> TelegramTextView:
-    return build_draft_preview_view(
-        result,
+    return ui_draft_review_view(
+        result=result,
         reply_markup=_draft_review_markup(
             flow_id=flow_id,
             is_valid=is_valid,
@@ -1323,9 +1341,10 @@ def _image_review_markup(
     user,
 ) -> InlineKeyboardMarkup:
     capabilities = _editor_ai_capabilities(context)
-    return _image_review_keyboard(
+    return ui_image_review_keyboard(
         flow_id=flow_id,
         current_item=current_item,
+        tg=_tg,
         show_generate_image_button=capabilities.local_image_generation_available,
         language=_telegram_ui_language(context, user),
     )
@@ -1336,8 +1355,10 @@ def _quick_actions_view(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> TelegramTextView:
-    return build_quick_actions_view(
-        text=_tg("quick_actions_title", context=context, user=user),
+    return ui_quick_actions_view(
+        tg=_tg,
+        context=context,
+        user=user,
         reply_markup=_chat_menu_keyboard(
             command_rows=_visible_command_rows(
                 context,
@@ -1375,7 +1396,7 @@ def _topic_selection_view(
         context,
         [topic.id for topic in topics],
     )
-    return build_topic_selection_view(
+    return ui_topic_selection_view(
         text=text,
         reply_markup=_topic_keyboard(
             topics,
@@ -1393,7 +1414,7 @@ def _lesson_selection_view(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> TelegramTextView:
-    return build_lesson_selection_view(
+    return ui_lesson_selection_view(
         text=text,
         reply_markup=_lesson_keyboard(
             topic_id,
@@ -1411,7 +1432,7 @@ def _mode_selection_view(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> TelegramTextView:
-    return build_mode_selection_view(
+    return ui_mode_selection_view(
         text=text,
         reply_markup=_mode_keyboard(
             topic_id,
@@ -1429,7 +1450,7 @@ def _game_mode_selection_view(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> TelegramTextView:
-    return build_mode_selection_view(
+    return ui_mode_selection_view(
         text=text,
         reply_markup=_game_mode_keyboard(
             topic_id,
@@ -1445,7 +1466,7 @@ def _words_menu_view(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> TelegramTextView:
-    return build_words_menu_view(
+    return ui_words_menu_view(
         text=text,
         reply_markup=_words_menu_keyboard(
             can_add_words=bool(
@@ -1500,7 +1521,7 @@ def _help_view(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> TelegramTextView:
-    return build_help_view(
+    return ui_help_view(
         text=text,
         reply_markup=_chat_menu_keyboard(
             command_rows=_visible_command_rows(
@@ -1614,106 +1635,22 @@ def _known_assignment_users(
 
 
 def _assignment_user_label(item: _AssignmentUserView) -> str:
-    username = f"@{item.username}" if item.username else "no username"
-    role_names = [role for role in item.roles if role != "user"]
-    role_text = ", ".join(role_names) if role_names else "user"
-    return f"{username} | id={item.user_id} | {role_text}"
+    return ui_assignment_user_label(item)
 
 
 def _render_assignment_user_detail_text(*, context: ContextTypes.DEFAULT_TYPE, user, item: _AssignmentUserView, goals) -> str:
-    lines = [
-        _tg(
-            "assign_user_detail_title",
-            context=context,
-            user=user,
-            username=(f"@{item.username}" if item.username else "-"),
-            user_id=item.user_id,
-            roles=(", ".join(role for role in item.roles if role != "user") or "user"),
-        ),
-        _tg(
-            "assign_user_detail_summary",
-            context=context,
-            user=user,
-            active=item.active_goals_count,
-            completed=item.completed_goals_count,
-            percent=item.aggregate_percent,
-            last_activity=(item.last_activity_at.date().isoformat() if item.last_activity_at else "-"),
-        ),
-    ]
-    if goals:
-        lines.append(_tg("assign_user_goals_title", context=context, user=user))
-        for goal in goals:
-            lines.append(
-                _tg(
-                    "assign_user_goal_line",
-                    context=context,
-                    user=user,
-                    period=goal.goal.goal_period.value,
-                    goal_type=goal.goal.goal_type.value,
-                    progress=goal.goal.progress_count,
-                    target=goal.goal.target_count,
-                    percent=goal.progress_percent,
-                    status=goal.goal.status.value,
-                )
-            )
-    else:
-        lines.append(_tg("assign_user_goals_empty", context=context, user=user))
-    return "\n".join(lines)
+    return ui_render_assignment_user_detail_text(
+        tg=lambda key, **kwargs: _tg(key, context=context, user=user, **kwargs),
+        item=item,
+        goals=goals,
+    )
 
 
 def _render_assignment_goal_detail_text(*, context: ContextTypes.DEFAULT_TYPE, user, detail) -> str:
-    lines = [
-        _tg(
-            "assign_goal_detail_title",
-            context=context,
-            user=user,
-            period=detail.goal.goal_period.value,
-            goal_type=detail.goal.goal_type.value,
-            status=detail.goal.status.value,
-            progress=detail.goal.progress_count,
-            target=detail.goal.target_count,
-            percent=detail.progress_percent,
-        )
-    ]
-    if detail.words:
-        lines.append(_tg("assign_goal_detail_words_title", context=context, user=user))
-        for word in detail.words:
-            if word.homework_mode is None:
-                lines.append(
-                    _tg(
-                        "assign_goal_word_line",
-                        context=context,
-                        user=user,
-                        english=word.english_word,
-                        translation=word.translation,
-                        mode="-",
-                        stage="-",
-                    )
-                )
-                continue
-            stages: list[str] = []
-            stages.append("easy" if word.easy_mastered else "easy...")
-            stages.append("medium" if word.medium_mastered else "medium...")
-            if word.hard_skipped:
-                stages.append("hard-skip")
-            elif word.hard_mastered:
-                stages.append("hard")
-            else:
-                stages.append("hard...")
-            lines.append(
-                _tg(
-                    "assign_goal_word_line",
-                    context=context,
-                    user=user,
-                    english=word.english_word,
-                    translation=word.translation,
-                    mode=word.homework_mode.value,
-                    stage=", ".join(stages),
-                )
-            )
-    else:
-        lines.append(_tg("assign_goal_detail_words_empty", context=context, user=user))
-    return "\n".join(lines)
+    return ui_render_assignment_goal_detail_text(
+        tg=lambda key, **kwargs: _tg(key, context=context, user=user, **kwargs),
+        detail=detail,
+    )
 
 
 def _editable_topics_view(
@@ -1741,7 +1678,7 @@ def _editable_topics_view(
             language=_telegram_ui_language(context, user),
         )
     )
-    return build_editable_topics_view(text=text, reply_markup=markup)
+    return ui_editable_topics_view(text=text, reply_markup=markup)
 
 
 def _editable_words_view(
@@ -1752,7 +1689,7 @@ def _editable_words_view(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> TelegramTextView:
-    return build_editable_words_view(
+    return ui_editable_words_view(
         text=text,
         reply_markup=_editable_words_keyboard(
             topic_id=topic_id,
@@ -2093,136 +2030,51 @@ async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFA
 
 
 def _goal_setup_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton(_tg("goal_period_daily", language=language), callback_data="words:goal_period:daily")],
-            [InlineKeyboardButton(_tg("goal_period_weekly", language=language), callback_data="words:goal_period:weekly")],
-            [InlineKeyboardButton(_tg("goal_period_homework", language=language), callback_data="words:goal_period:homework")],
-            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:menu")],
-        ]
-    )
+    return ui_goal_setup_keyboard(tg=_tg, language=language)
 
 
 def _goal_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("5", callback_data="words:goal_target:5"),
-                InlineKeyboardButton("10", callback_data="words:goal_target:10"),
-                InlineKeyboardButton("20", callback_data="words:goal_target:20"),
-            ],
-            [InlineKeyboardButton(_tg("goal_target_custom", language=language), callback_data="words:goal_target:custom")],
-            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:goal_setup")],
-        ]
-    )
+    return ui_goal_target_keyboard(tg=_tg, language=language)
 
 
 def _goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton(_tg("goal_source_recent", language=language), callback_data="words:goal_source:recent")],
-            [InlineKeyboardButton(_tg("goal_source_all", language=language), callback_data="words:goal_source:all")],
-            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:goal_target_menu")],
-        ]
-    )
+    return ui_goal_source_keyboard(tg=_tg, language=language)
 
 
 def _goal_custom_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(_tg("back", language=language), callback_data="assign:goal_target_menu")]]
-    )
+    return ui_goal_custom_target_keyboard(tg=_tg, language=language)
 
 
 def _goal_list_keyboard(*, goals, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = [
-        [InlineKeyboardButton(_tg("goal_setup_button", language=language), callback_data="assign:goal_setup")],
-        [InlineKeyboardButton(_tg("progress_button", language=language), callback_data="assign:progress")],
-        [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:menu")],
-    ]
-    for goal in goals:
-        rows.append([InlineKeyboardButton(_tg("goal_reset_button", language=language), callback_data=f"words:goal_reset:{goal.goal.id}")])
-    return InlineKeyboardMarkup(rows)
+    return ui_goal_list_keyboard(tg=_tg, goals=goals, language=language)
 
 
 def _admin_goal_period_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton(_tg("goal_period_daily", language=language), callback_data="words:admin_goal_period:daily")],
-            [InlineKeyboardButton(_tg("goal_period_weekly", language=language), callback_data="words:admin_goal_period:weekly")],
-            [InlineKeyboardButton(_tg("goal_period_homework", language=language), callback_data="words:admin_goal_period:homework")],
-            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:menu")],
-        ]
-    )
+    return ui_admin_goal_period_keyboard(tg=_tg, language=language)
 
 
 def _admin_goal_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("5", callback_data="words:admin_goal_target:5"),
-                InlineKeyboardButton("10", callback_data="words:admin_goal_target:10"),
-                InlineKeyboardButton("20", callback_data="words:admin_goal_target:20"),
-            ],
-            [InlineKeyboardButton(_tg("goal_target_custom", language=language), callback_data="words:admin_goal_target:custom")],
-            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:admin_assign_goal")],
-        ]
-    )
+    return ui_admin_goal_target_keyboard(tg=_tg, language=language)
 
 
 def _admin_goal_custom_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(_tg("back", language=language), callback_data="assign:admin_goal_target_menu")]]
-    )
+    return ui_admin_goal_custom_target_keyboard(tg=_tg, language=language)
 
 
 def _admin_goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton(_tg("goal_source_recent", language=language), callback_data="words:admin_goal_source:recent")],
-            [InlineKeyboardButton(_tg("goal_source_topic", language=language), callback_data="words:admin_goal_source:topic")],
-            [InlineKeyboardButton(_tg("goal_source_all", language=language), callback_data="words:admin_goal_source:all")],
-            [InlineKeyboardButton(_tg("goal_source_manual", language=language), callback_data="words:admin_goal_source:manual")],
-            [InlineKeyboardButton(_tg("back", language=language), callback_data="assign:admin_goal_target_menu")],
-        ]
-    )
+    return ui_admin_goal_source_keyboard(tg=_tg, language=language)
 
 
 def _render_progress_text(*, context: ContextTypes.DEFAULT_TYPE, user) -> str:
     summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
     history = _list_goal_history(context=context, user_id=user.id, include_history=True)
-    completed_goals = [item for item in history if item.goal.status is GoalStatus.COMPLETED][:3]
-    lines = [
-        _tg("progress_summary_title", context=context, user=user),
-        _tg(
-            "progress_summary_stats",
-            context=context,
-            user=user,
-            correct=summary.correct_answers,
-            incorrect=summary.incorrect_answers,
-            streak=summary.game_streak_days,
-            weekly_points=summary.weekly_points,
-        ),
-        _tg("progress_points_rule", context=context, user=user),
-    ]
-    if summary.active_goals:
-        lines.append(_tg("progress_active_goals", context=context, user=user))
-        for goal in summary.active_goals:
-            lines.append(_render_goal_progress_line(context=context, user=user, goal_view=goal))
-            lines.append(
-                _tg(
-                    "progress_goal_rule_line",
-                    context=context,
-                    user=user,
-                    rule=_goal_rule_text(context=context, user=user, goal_type=goal.goal.goal_type),
-                )
-            )
-    else:
-        lines.append(_tg("progress_no_goals", context=context, user=user))
-    if completed_goals:
-        lines.append(_tg("progress_completed_goals", context=context, user=user))
-        for goal in completed_goals:
-            lines.append(_render_goal_progress_line(context=context, user=user, goal_view=goal))
-    return "\n".join(lines)
+    return ui_render_progress_text(
+        tg=_tg,
+        context=context,
+        user=user,
+        summary=summary,
+        history=history,
+    )
 
 
 def _render_start_menu_text(
@@ -2231,41 +2083,16 @@ def _render_start_menu_text(
     user,
     summary: list[AssignmentLaunchView],
 ) -> str:
-    summary_by_kind = {item.kind: item for item in summary}
-    lines = [_tg("start_menu_title", context=context, user=user), ""]
-    for kind in (
-        AssignmentSessionKind.DAILY,
-        AssignmentSessionKind.WEEKLY,
-        AssignmentSessionKind.HOMEWORK,
-        AssignmentSessionKind.ALL,
-    ):
-        item = summary_by_kind[kind]
-        lines.append(
-            _tg(
-                "start_menu_status_line",
-                context=context,
-                user=user,
-                label=_assignment_kind_label(kind, context=context, user=user),
-                words=item.remaining_word_count,
-                rounds=item.estimated_round_count,
-                status=(
-                    _tg("start_menu_status_ready", context=context, user=user)
-                    if item.available
-                    else _tg("start_menu_status_empty", context=context, user=user)
-                ),
-            )
-        )
-    return "\n".join(lines)
+    return ui_render_start_menu_text(
+        tg=_tg,
+        context=context,
+        user=user,
+        summary=summary,
+    )
 
 
 def _assignment_kind_label(kind: AssignmentSessionKind, *, context: ContextTypes.DEFAULT_TYPE, user) -> str:
-    key_map = {
-        AssignmentSessionKind.DAILY: "start_daily_button",
-        AssignmentSessionKind.WEEKLY: "start_weekly_button",
-        AssignmentSessionKind.HOMEWORK: "start_homework_button",
-        AssignmentSessionKind.ALL: "start_all_assignments_button",
-    }
-    return _tg(key_map[kind], context=context, user=user)
+    return ui_assignment_kind_label(kind, tg=_tg, context=context, user=user)
 
 
 def _start_assignment_button_label(
@@ -2274,14 +2101,12 @@ def _start_assignment_button_label(
     available: bool,
     language: str,
 ) -> str:
-    key_map = {
-        AssignmentSessionKind.DAILY: "start_daily_button",
-        AssignmentSessionKind.WEEKLY: "start_weekly_button",
-        AssignmentSessionKind.HOMEWORK: "start_homework_button",
-        AssignmentSessionKind.ALL: "start_all_assignments_button",
-    }
-    prefix = "" if available else f"{_tg('start_disabled_prefix', language=language)} "
-    return f"{prefix}{_tg(key_map[kind], language=language)}"
+    return ui_start_assignment_button_label(
+        kind,
+        tg=_tg,
+        available=available,
+        language=language,
+    )
 
 
 def _active_session_topic_label(
@@ -2547,52 +2372,15 @@ async def admin_goal_source_menu_callback_handler(update: Update, context: Conte
 def _admin_goal_manual_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user, page: int) -> InlineKeyboardMarkup:
     items = _content_store(context).list_all_vocabulary()
     selected = set(context.user_data.get("admin_goal_manual_word_ids", set()))
-    page_size = 8
-    total = len(items)
-    pages = max(1, (total + page_size - 1) // page_size)
-    page = max(0, min(page, pages - 1))
-    context.user_data["admin_goal_manual_page"] = page
-    rows: list[list[InlineKeyboardButton]] = []
-    for item in items[page * page_size : page * page_size + page_size]:
-        marker = "✅" if item.id in selected else "☑️"
-        rows.append([InlineKeyboardButton(f"{marker} {item.english_word[:24]}", callback_data=f"words:admin_goal_manual:toggle:{item.id}")])
-    nav: list[InlineKeyboardButton] = []
-    if page > 0:
-        nav.append(InlineKeyboardButton(_tg("previous_6", language=_telegram_ui_language(context, user)), callback_data=f"words:admin_goal_manual:page:{page-1}"))
-    if page + 1 < pages:
-        nav.append(InlineKeyboardButton(_tg("next_6", language=_telegram_ui_language(context, user)), callback_data=f"words:admin_goal_manual:page:{page+1}"))
-    if nav:
-        rows.append(
-            [
-                *nav,
-                InlineKeyboardButton(
-                    _page_range_label(
-                        page=page,
-                        page_size=page_size,
-                        total=total,
-                        language=_telegram_ui_language(context, user),
-                    ),
-                    callback_data="assign:noop",
-                ),
-            ]
-        )
-    elif total > 0:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    _page_range_label(
-                        page=page,
-                        page_size=page_size,
-                        total=total,
-                        language=_telegram_ui_language(context, user),
-                    ),
-                    callback_data="assign:noop",
-                )
-            ]
-        )
-    rows.append([InlineKeyboardButton(_tg("goal_manual_done", language=_telegram_ui_language(context, user)), callback_data="words:admin_goal_manual:done")])
-    rows.append([InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data="assign:admin_goal_source_menu")])
-    return InlineKeyboardMarkup(rows)
+    keyboard, normalized_page = ui_admin_goal_manual_keyboard(
+        tg=_tg,
+        items=items,
+        selected_word_ids=selected,
+        page=page,
+        language=_telegram_ui_language(context, user),
+    )
+    context.user_data["admin_goal_manual_page"] = normalized_page
+    return keyboard
 
 
 def _admin_goal_recipients_keyboard(
@@ -2607,78 +2395,15 @@ def _admin_goal_recipients_keyboard(
         viewer_username=getattr(user, "username", None),
     )
     selected = set(context.user_data.get("admin_goal_recipient_user_ids", set()))
-    page_size = 8
-    total = len(items)
-    pages = max(1, (total + page_size - 1) // page_size)
-    page = max(0, min(page, pages - 1))
-    context.user_data["admin_goal_recipients_page"] = page
-    rows: list[list[InlineKeyboardButton]] = []
-    for item in items[page * page_size : page * page_size + page_size]:
-        marker = "✅" if item.user_id in selected else "☑️"
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"{marker} {_assignment_user_label(item)[:48]}",
-                    callback_data=f"assign:admin_goal_recipients:toggle:{item.user_id}",
-                )
-            ]
-        )
-    nav: list[InlineKeyboardButton] = []
-    if page > 0:
-        nav.append(
-            InlineKeyboardButton(
-                _tg("previous_6", language=_telegram_ui_language(context, user)),
-                callback_data=f"assign:admin_goal_recipients:page:{page-1}",
-            )
-        )
-    if page + 1 < pages:
-        nav.append(
-            InlineKeyboardButton(
-                _tg("next_6", language=_telegram_ui_language(context, user)),
-                callback_data=f"assign:admin_goal_recipients:page:{page+1}",
-            )
-        )
-    if nav:
-        rows.append(
-            [
-                *nav,
-                InlineKeyboardButton(
-                    _page_range_label(
-                        page=page,
-                        page_size=page_size,
-                        total=total,
-                        language=_telegram_ui_language(context, user),
-                    ),
-                    callback_data="assign:noop",
-                ),
-            ]
-        )
-    elif total > 0:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    _page_range_label(
-                        page=page,
-                        page_size=page_size,
-                        total=total,
-                        language=_telegram_ui_language(context, user),
-                    ),
-                    callback_data="assign:noop",
-                )
-            ]
-        )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _tg("assign_select_users_done", language=_telegram_ui_language(context, user)),
-                callback_data="assign:admin_goal_recipients:done",
-            )
-        ]
+    keyboard, normalized_page = ui_admin_goal_recipients_keyboard(
+        tg=_tg,
+        items=items,
+        selected_user_ids=selected,
+        page=page,
+        language=_telegram_ui_language(context, user),
     )
-    rows.append(
-        [InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data="assign:admin_goal_source_menu")]
-    )
-    return InlineKeyboardMarkup(rows)
+    context.user_data["admin_goal_recipients_page"] = normalized_page
+    return keyboard
 
 
 def _assignment_users_keyboard(
@@ -2687,57 +2412,38 @@ def _assignment_users_keyboard(
     user,
     users=None,
 ) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    for item in users or []:
-        emoji = "🧑‍🎓"
-        role_names = [role for role in item.roles if role != "user"]
-        if "admin" in role_names:
-            emoji = "🛡️"
-        elif "editor" in role_names:
-            emoji = "🛠️"
-        label = item.username and f"@{item.username}" or f"id={item.user_id}"
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"{emoji} {label}",
-                    callback_data=f"assign:user:{item.user_id}",
-                )
-            ]
-        )
-    rows.append(
-        [[InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data="assign:menu")]][0]
+    return ui_assignment_users_keyboard(
+        tg=_tg,
+        users=users,
+        language=_telegram_ui_language(context, user),
     )
-    return InlineKeyboardMarkup(rows)
 
 
 def _assignment_user_goals_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user_id: int, goals, user) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    for item in goals:
-        emoji = "📘" if item.goal.goal_period is GoalPeriod.HOMEWORK else "🎯"
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"{emoji} {item.goal.goal_period.value} {item.progress_percent}%",
-                    callback_data=f"assign:goal:{user_id}:{item.goal.id}",
-                )
-            ]
-        )
-    rows.append([InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data="assign:users")])
-    return InlineKeyboardMarkup(rows)
+    return ui_assignment_user_goals_keyboard(
+        tg=_tg,
+        user_id=user_id,
+        goals=goals,
+        language=_telegram_ui_language(context, user),
+    )
 
 
 def _assignment_goal_detail_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user_id: int, user) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data=f"assign:user:{user_id}")]]
+    return ui_assignment_goal_detail_keyboard(
+        tg=_tg,
+        user_id=user_id,
+        language=_telegram_ui_language(context, user),
     )
 
 
 def _page_range_label(*, page: int, page_size: int, total: int, language: str) -> str:
-    if total <= 0:
-        return _tg("page_range", language=language, start=0, end=0, total=0)
-    start = page * page_size + 1
-    end = min(total, page * page_size + page_size)
-    return _tg("page_range", language=language, start=start, end=end, total=total)
+    return ui_page_range_label(
+        tg=_tg,
+        page=page,
+        page_size=page_size,
+        total=total,
+        language=language,
+    )
 
 
 async def admin_goal_source_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2757,12 +2463,11 @@ async def admin_goal_source_callback_handler(update: Update, context: ContextTyp
     context.user_data["admin_goal_source"] = source
     if source == GoalWordSource.TOPIC.value:
         topics = _service(context).list_topics()
-        rows = [
-            [InlineKeyboardButton(topic.title[:40], callback_data=f"words:admin_goal_source:topic:{topic.id}")]
-            for topic in topics
-        ]
-        rows.append([InlineKeyboardButton(_tg("back", language=_telegram_ui_language(context, user)), callback_data="assign:admin_goal_source_menu")])
-        keyboard = InlineKeyboardMarkup(rows)
+        keyboard = ui_goal_source_topic_keyboard(
+            tg=_tg,
+            topics=topics,
+            language=_telegram_ui_language(context, user),
+        )
         await query.edit_message_text(_tg("goal_source_topic_prompt", context=context, user=user), reply_markup=keyboard)
         return
     if source == GoalWordSource.MANUAL.value:
@@ -5644,81 +5349,14 @@ def _draft_review_keyboard(
     show_regenerate_button: bool = True,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    action_row: list[InlineKeyboardButton] = []
-    if show_auto_image_button:
-        action_row.append(
-            InlineKeyboardButton(
-                _tg("approve_auto_images", language=language),
-                callback_data=f"words:approve_auto_images:{flow_id}",
-            )
-        )
-    action_row.append(
-        InlineKeyboardButton(
-            _tg("manual_image_review", language=language),
-            callback_data=f"words:start_image_review:{flow_id}",
-        )
+    return ui_draft_review_keyboard(
+        flow_id,
+        is_valid,
+        tg=_tg,
+        show_auto_image_button=show_auto_image_button,
+        show_regenerate_button=show_regenerate_button,
+        language=language,
     )
-    rows = []
-    if action_row:
-        rows.append(action_row)
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _tg("publish_without_images", language=language),
-                callback_data=f"words:approve_draft:{flow_id}",
-            ),
-        ]
-    )
-    edit_row: list[InlineKeyboardButton] = []
-    if show_regenerate_button:
-        edit_row.append(
-            InlineKeyboardButton(
-                _tg("re_recognize_draft", language=language),
-                callback_data=f"words:regenerate_draft:{flow_id}",
-            )
-        )
-    edit_row.append(
-        InlineKeyboardButton(
-            _tg("edit_text", language=language),
-            callback_data=f"words:edit_text:{flow_id}",
-        )
-    )
-    rows.append(edit_row)
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _tg("show_json", language=language),
-                callback_data=f"words:show_json:{flow_id}",
-            ),
-            InlineKeyboardButton(
-                _tg("cancel", language=language),
-                callback_data=f"words:cancel:{flow_id}",
-            ),
-        ]
-    )
-    if not is_valid:
-        if action_row:
-            if show_auto_image_button:
-                rows[0][0] = InlineKeyboardButton(
-                    _tg("approve_disabled", language=language),
-                    callback_data="words:menu",
-                )
-                if len(rows[0]) > 1:
-                    rows[0][1] = InlineKeyboardButton(
-                        _tg("review_disabled", language=language),
-                        callback_data="words:menu",
-                    )
-            else:
-                rows[0][0] = InlineKeyboardButton(
-                    _tg("review_disabled", language=language),
-                    callback_data="words:menu",
-                )
-        publish_row_index = 1 if action_row else 0
-        rows[publish_row_index][0] = InlineKeyboardButton(
-            _tg("publish_disabled", language=language),
-            callback_data="words:menu",
-        )
-    return InlineKeyboardMarkup(rows)
 
 
 def _image_review_keyboard(
@@ -5728,82 +5366,13 @@ def _image_review_keyboard(
     show_generate_image_button: bool = True,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    candidate_count = len(current_item.candidates)
-    pick_buttons = [
-        InlineKeyboardButton(
-            _tg("use_n", language=language, index=index + 1),
-            callback_data=f"words:image_pick:{flow_id}:{index}",
-        )
-        for index in range(candidate_count)
-    ]
-    rows = [pick_buttons[index : index + 3] for index in range(0, len(pick_buttons), 3)]
-    action_row = [
-        InlineKeyboardButton(
-            _tg("search_images", language=language),
-            callback_data=f"words:image_search:{flow_id}",
-        ),
-    ]
-    if show_generate_image_button:
-        action_row.append(
-            InlineKeyboardButton(
-                _tg("generate_image", language=language),
-                callback_data=f"words:image_generate:{flow_id}",
-            )
-        )
-    rows.append(action_row)
-    if current_item.search_query:
-        pagination_row: list[InlineKeyboardButton] = []
-        if current_item.search_page > 1:
-            pagination_row.append(
-                InlineKeyboardButton(
-                    _tg("previous_6", language=language),
-                    callback_data=f"words:image_previous:{flow_id}",
-                )
-            )
-        pagination_row.append(
-            InlineKeyboardButton(
-                _tg("next_6", language=language),
-                callback_data=f"words:image_next:{flow_id}",
-            )
-        )
-        rows.append(pagination_row)
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _tg("edit_search_query", language=language),
-                callback_data=f"words:image_edit_search_query:{flow_id}",
-            ),
-        ]
+    return ui_image_review_keyboard(
+        tg=_tg,
+        flow_id=flow_id,
+        current_item=current_item,
+        show_generate_image_button=show_generate_image_button,
+        language=language,
     )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _tg("edit_prompt", language=language),
-                callback_data=f"words:image_edit_prompt:{flow_id}",
-            ),
-            InlineKeyboardButton(
-                _tg("attach_photo", language=language),
-                callback_data=f"words:image_attach_photo:{flow_id}",
-            ),
-        ]
-    )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _tg("show_json", language=language),
-                callback_data=f"words:image_show_json:{flow_id}",
-            ),
-        ]
-    )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _tg("skip_for_now", language=language),
-                callback_data=f"words:image_skip:{flow_id}",
-            )
-        ]
-    )
-    return InlineKeyboardMarkup(rows)
 
 
 def _words_menu_keyboard(
@@ -5813,14 +5382,13 @@ def _words_menu_keyboard(
     can_edit_images: bool,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(_tg("training_topics", language=language), callback_data="words:topics")]]
-    if can_add_words:
-        rows.append([InlineKeyboardButton(_tg("add_words", language=language), callback_data="words:add_words")])
-    if can_edit_words:
-        rows.append([InlineKeyboardButton(_tg("edit_words", language=language), callback_data="words:edit_words")])
-    if can_edit_images:
-        rows.append([InlineKeyboardButton(_tg("edit_word_image", language=language), callback_data="words:edit_images")])
-    return InlineKeyboardMarkup(rows)
+    return ui_words_menu_keyboard(
+        tg=_tg,
+        can_add_words=can_add_words,
+        can_edit_words=can_edit_words,
+        can_edit_images=can_edit_images,
+        language=language,
+    )
 
 
 def _start_menu_keyboard(
@@ -5830,85 +5398,13 @@ def _start_menu_keyboard(
     admin_web_app_url: str | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    summary_by_kind = {item.kind: item for item in summary}
-    rows = [
-        [InlineKeyboardButton(_tg("start_game_button", language=language), callback_data="start:game")],
-        [
-            InlineKeyboardButton(
-                _start_assignment_button_label(
-                    AssignmentSessionKind.DAILY,
-                    available=summary_by_kind[AssignmentSessionKind.DAILY].available,
-                    language=language,
-                ),
-                callback_data=(
-                    "start:launch:daily"
-                    if summary_by_kind[AssignmentSessionKind.DAILY].available
-                    else "start:disabled:daily"
-                ),
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                _start_assignment_button_label(
-                    AssignmentSessionKind.WEEKLY,
-                    available=summary_by_kind[AssignmentSessionKind.WEEKLY].available,
-                    language=language,
-                ),
-                callback_data=(
-                    "start:launch:weekly"
-                    if summary_by_kind[AssignmentSessionKind.WEEKLY].available
-                    else "start:disabled:weekly"
-                ),
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                _start_assignment_button_label(
-                    AssignmentSessionKind.HOMEWORK,
-                    available=summary_by_kind[AssignmentSessionKind.HOMEWORK].available,
-                    language=language,
-                ),
-                callback_data=(
-                    "start:launch:homework"
-                    if summary_by_kind[AssignmentSessionKind.HOMEWORK].available
-                    else "start:disabled:homework"
-                ),
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                _start_assignment_button_label(
-                    AssignmentSessionKind.ALL,
-                    available=summary_by_kind[AssignmentSessionKind.ALL].available,
-                    language=language,
-                ),
-                callback_data=(
-                    "start:launch:all"
-                    if summary_by_kind[AssignmentSessionKind.ALL].available
-                    else "start:disabled:all"
-                ),
-            )
-        ],
-    ]
-    if guide_web_app_url:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    _tg("assignment_guide_button", language=language),
-                    url=guide_web_app_url,
-                )
-            ]
-        )
-    if admin_web_app_url:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    "Admin Panel",
-                    url=admin_web_app_url,
-                )
-            ]
-        )
-    return InlineKeyboardMarkup(rows)
+    return ui_start_menu_keyboard(
+        tg=_tg,
+        summary=summary,
+        guide_web_app_url=guide_web_app_url,
+        admin_web_app_url=admin_web_app_url,
+        language=language,
+    )
 
 
 def _start_submenu_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
@@ -5923,16 +5419,11 @@ def _assignment_round_complete_keyboard(
     has_more: bool,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            *(
-                [[InlineKeyboardButton(_tg("assignment_next_round_button", language=language), callback_data=f"start:launch:{kind.value}")]]
-                if has_more
-                else []
-            ),
-            [InlineKeyboardButton(_tg("goal_setup_button", language=language), callback_data="assign:menu")],
-            [InlineKeyboardButton(_tg("back", language=language), callback_data="start:menu")],
-        ]
+    return ui_assignment_round_complete_keyboard(
+        kind,
+        tg=_tg,
+        has_more=has_more,
+        language=language,
     )
 
 
@@ -5943,28 +5434,13 @@ def _assign_menu_keyboard(
     admin_web_app_url: str | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(_tg("goal_setup_button", language=language), callback_data="assign:goals")],
-        [InlineKeyboardButton(_tg("progress_button", language=language), callback_data="assign:progress")],
-        [InlineKeyboardButton(_tg("assign_users_button", language=language), callback_data="assign:users")],
-    ]
-    if guide_web_app_url:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    _tg("assignment_guide_button", language=language),
-                    url=guide_web_app_url,
-                )
-            ]
-        )
-    if is_admin:
-        rows.insert(
-            0,
-            [InlineKeyboardButton(_tg("admin_assign_goal_button", language=language), callback_data="assign:admin_assign_goal")],
-        )
-        if admin_web_app_url:
-            rows.insert(1, [InlineKeyboardButton("Admin Panel", url=admin_web_app_url)])
-    return InlineKeyboardMarkup(rows)
+    return ui_assign_menu_keyboard(
+        tg=_tg,
+        is_admin=is_admin,
+        guide_web_app_url=guide_web_app_url,
+        admin_web_app_url=admin_web_app_url,
+        language=language,
+    )
 
 
 def _published_images_menu_keyboard(
@@ -5972,15 +5448,10 @@ def _published_images_menu_keyboard(
     topic_id: str,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    _tg("edit_word_image", language=language),
-                    callback_data=f"words:edit_images_menu:{topic_id}",
-                )
-            ]
-        ]
+    return ui_published_images_menu_keyboard(
+        tg=_tg,
+        topic_id=topic_id,
+        language=language,
     )
 
 
@@ -5990,21 +5461,12 @@ def _published_image_topics_keyboard(
     topic_item_counts: dict[str, int] | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    rows = [
-        [
-            InlineKeyboardButton(
-                _topic_button_label(
-                    title=topic.title,
-                    item_count=(topic_item_counts or {}).get(topic.id),
-                ),
-                callback_data=f"words:edit_images_menu:{topic.id}",
-            )
-        ]
-        for topic in topics
-    ]
-    if not rows:
-        rows = [[InlineKeyboardButton(_tg("no_topics", language=language), callback_data="words:menu")]]
-    return InlineKeyboardMarkup(rows)
+    return ui_published_image_topics_keyboard(
+        topics,
+        tg=_tg,
+        topic_item_counts=topic_item_counts,
+        language=language,
+    )
 
 
 def _published_image_items_keyboard(
@@ -6013,32 +5475,12 @@ def _published_image_items_keyboard(
     raw_items: list[object],
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    for index, raw_item in enumerate(raw_items):
-        if not isinstance(raw_item, dict):
-            continue
-        item_id = str(raw_item.get("id", "")).strip()
-        english_word = str(raw_item.get("english_word", "")).strip()
-        translation = str(raw_item.get("translation", "")).strip()
-        if not item_id or not english_word:
-            continue
-        has_image = bool(str(raw_item.get("image_ref", "")).strip())
-        label = _editable_word_button_label(
-            english_word=english_word,
-            translation=translation,
-            has_image=has_image,
-        )
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    label[:64],
-                    callback_data=f"words:edit_published_image:{topic_id}:{index}",
-                )
-            ]
-        )
-    if not rows:
-        rows = [[InlineKeyboardButton(_tg("no_items", language=language), callback_data="words:menu")]]
-    return InlineKeyboardMarkup(rows)
+    return ui_published_image_items_keyboard(
+        tg=_tg,
+        topic_id=topic_id,
+        raw_items=raw_items,
+        language=language,
+    )
 
 
 def _editable_topics_keyboard(
@@ -6047,21 +5489,12 @@ def _editable_topics_keyboard(
     topic_item_counts: dict[str, int] | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    rows = [
-        [
-            InlineKeyboardButton(
-                _topic_button_label(
-                    title=topic.title,
-                    item_count=(topic_item_counts or {}).get(topic.id),
-                ),
-                callback_data=f"words:edit_topic:{topic.id}",
-            )
-        ]
-        for topic in topics
-    ]
-    if not rows:
-        rows = [[InlineKeyboardButton(_tg("no_topics", language=language), callback_data="words:menu")]]
-    return InlineKeyboardMarkup(rows)
+    return ui_editable_topics_keyboard(
+        topics,
+        tg=_tg,
+        topic_item_counts=topic_item_counts,
+        language=language,
+    )
 
 
 def _editable_words_keyboard(
@@ -6070,22 +5503,12 @@ def _editable_words_keyboard(
     words,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    rows = [
-        [
-            InlineKeyboardButton(
-                _editable_word_button_label(
-                    english_word=word.english_word,
-                    translation=word.translation,
-                    has_image=getattr(word, "has_image", False),
-                )[:64],
-                callback_data=f"words:edit_item:{topic_id}:{index}",
-            )
-        ]
-        for index, word in enumerate(words)
-    ]
-    if not rows:
-        rows = [[InlineKeyboardButton(_tg("no_words", language=language), callback_data="words:menu")]]
-    return InlineKeyboardMarkup(rows)
+    return ui_editable_words_keyboard(
+        tg=_tg,
+        topic_id=topic_id,
+        words=words,
+        language=language,
+    )
 
 
 def _published_word_edit_keyboard(
@@ -6093,15 +5516,10 @@ def _published_word_edit_keyboard(
     topic_id: str,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    _tg("cancel", language=language),
-                    callback_data=f"words:edit_item_cancel:{topic_id}",
-                )
-            ]
-        ]
+    return ui_published_word_edit_keyboard(
+        tg=_tg,
+        topic_id=topic_id,
+        language=language,
     )
 
 
@@ -6111,20 +5529,15 @@ def _editable_word_button_label(
     translation: str,
     has_image: bool,
 ) -> str:
-    marker = "* " if has_image else ""
-    if translation:
-        return f"{marker}{english_word} — {translation}"
-    return f"{marker}{english_word}"
+    return ui_editable_word_button_label(
+        english_word=english_word,
+        translation=translation,
+        has_image=has_image,
+    )
 
 
 def _chat_menu_keyboard(*, command_rows: list[list[str]]) -> ReplyKeyboardMarkup:
-    rows = [[KeyboardButton(command) for command in row] for row in command_rows]
-    return ReplyKeyboardMarkup(
-        rows,
-        resize_keyboard=True,
-        one_time_keyboard=True,
-        is_persistent=False,
-    )
+    return ui_chat_menu_keyboard(command_rows=command_rows)
 
 
 def _topic_keyboard(
@@ -6133,19 +5546,10 @@ def _topic_keyboard(
     topic_item_counts: dict[str, int] | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    _topic_button_label(
-                        title=topic.title,
-                        item_count=(topic_item_counts or {}).get(topic.id),
-                    ),
-                    callback_data=f"topic:{topic.id}",
-                )
-            ]
-            for topic in topics
-        ]
+    return ui_topic_keyboard(
+        topics,
+        topic_item_counts=topic_item_counts,
+        language=language,
     )
 
 
@@ -6166,9 +5570,7 @@ def _topic_item_counts(
 
 
 def _topic_button_label(*, title: str, item_count: int | None) -> str:
-    if item_count is None:
-        return title
-    return f"{title} ({item_count})"
+    return ui_topic_button_label(title=title, item_count=item_count)
 
 
 def _active_session_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
@@ -6188,14 +5590,12 @@ def _lesson_keyboard(
     *,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(_tg("all_topic_words", language=language), callback_data=f"lesson:{topic_id}:all")]]
-    rows.extend(
-        [
-            [InlineKeyboardButton(lesson.title, callback_data=f"lesson:{topic_id}:{lesson.id}")]
-            for lesson in lessons
-        ]
+    return ui_lesson_keyboard(
+        topic_id,
+        lessons,
+        tg=_tg,
+        language=language,
     )
-    return InlineKeyboardMarkup(rows)
 
 
 def _mode_keyboard(
@@ -6204,24 +5604,11 @@ def _mode_keyboard(
     *,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    lesson_part = lesson_id or "all"
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    _tg("easy", language=language),
-                    callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.EASY.value}",
-                ),
-                InlineKeyboardButton(
-                    _tg("medium", language=language),
-                    callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.MEDIUM.value}",
-                ),
-                InlineKeyboardButton(
-                    _tg("hard", language=language),
-                    callback_data=f"mode:{topic_id}:{lesson_part}:{TrainingMode.HARD.value}",
-                ),
-            ],
-        ]
+    return ui_mode_keyboard(
+        topic_id,
+        lesson_id,
+        tg=_tg,
+        language=language,
     )
 
 
@@ -6231,24 +5618,11 @@ def _game_mode_keyboard(
     *,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    lesson_part = lesson_id or "all"
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    f"🎯 {_tg('easy', language=language)}",
-                    callback_data=f"gamemode:{topic_id}:{lesson_part}:{TrainingMode.EASY.value}",
-                ),
-                InlineKeyboardButton(
-                    f"🧩 {_tg('medium', language=language)}",
-                    callback_data=f"gamemode:{topic_id}:{lesson_part}:{TrainingMode.MEDIUM.value}",
-                ),
-                InlineKeyboardButton(
-                    f"⚡ {_tg('hard', language=language)}",
-                    callback_data=f"gamemode:{topic_id}:{lesson_part}:{TrainingMode.HARD.value}",
-                ),
-            ]
-        ]
+    return ui_game_mode_keyboard(
+        topic_id,
+        lesson_id,
+        tg=_tg,
+        language=language,
     )
 
 
