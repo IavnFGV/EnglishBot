@@ -1,5 +1,6 @@
-from pathlib import Path
 import random
+from datetime import UTC, datetime
+from pathlib import Path
 
 from englishbot.application.homework_progress_use_cases import (
     AssignmentSessionKind,
@@ -48,7 +49,7 @@ def test_homework_progress_use_case_creates_and_summarizes_goal(tmp_path: Path) 
         word_id="cat",
         mode=TrainingMode.MEDIUM,
         level_up_delta=1,
-        awarded_at=__import__("datetime").datetime(2026, 3, 24, tzinfo=__import__("datetime").UTC),
+        awarded_at=datetime.now(UTC),
     )
 
     created = use_case.create_goal(
