@@ -63,6 +63,7 @@ In Docker deployment, `docker compose up -d --build` now starts both:
 - `englishbot-nginx`
 
 The nginx container terminates HTTPS on `443` and proxies requests to the Web App container.
+Before certificates are issued, it can still run in plain HTTP mode on `80` for the ACME challenge.
 
 Default local bind:
 

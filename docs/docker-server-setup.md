@@ -119,6 +119,8 @@ Runtime note:
 - `englishbot-nginx` terminates TLS on `443` and proxies to `englishbot-webapp:8080`
 - both share the same runtime SQLite database and assets directory
 - `englishbot-nginx` also serves `/.well-known/acme-challenge/` from `shared/nginx/acme/`
+- before certificates are issued, `englishbot-nginx` starts in HTTP mode on port `80`
+- after certificates are present, `englishbot-nginx` switches to HTTPS + HTTP->HTTPS redirect on restart
 
 ## Free TLS Certificate
 

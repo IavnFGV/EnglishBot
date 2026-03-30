@@ -42,6 +42,25 @@ def test_webapp_session_endpoint_allows_local_dev_admin(tmp_path: Path) -> None:
     assert response.json["session"]["is_dev_mode"] is True
 
 
+def test_webapp_head_request_returns_success_for_html_entrypoint(tmp_path: Path) -> None:
+    _seed_user_store(
+        tmp_path=tmp_path,
+        logins=[],
+        roles=[],
+    )
+    app = create_web_app(
+        Settings(
+            telegram_token="test-token",
+            log_level="INFO",
+            content_db_path=tmp_path / "data" / "englishbot.db",
+        )
+    )
+
+    response = _request(app, "HEAD", "/webapp")
+
+    assert response.status_code == 200
+
+
 def test_webapp_users_endpoint_rejects_non_admin_user(tmp_path: Path) -> None:
     _seed_user_store(
         tmp_path=tmp_path,
@@ -178,8 +197,10 @@ def _request(
     chunks = app(environ, start_response)
     payload = b"".join(chunks).decode("utf-8")
     status_code = int(str(captured["status"]).split(" ", maxsplit=1)[0])
+    headers = dict(captured["headers"])
+    content_type = str(headers.get("Content-Type", ""))
     return SimpleNamespace(
         status_code=status_code,
         body=payload,
-        json=json.loads(payload),
+        json=(json.loads(payload) if "application/json" in content_type else None),
     )

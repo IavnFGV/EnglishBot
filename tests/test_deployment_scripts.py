@@ -57,15 +57,18 @@ def test_production_dockerfile_installs_bot_runtime_and_demo_content() -> None:
 
 
 def test_nginx_reverse_proxy_config_exists_for_admin_webapp() -> None:
-    config = Path("deploy/nginx/englishbot-webapp.conf").read_text(encoding="utf-8")
+    config = Path("deploy/nginx/englishbot-webapp.conf.template").read_text(encoding="utf-8")
+    render_script = Path("deploy/nginx/render-nginx-config.sh").read_text(encoding="utf-8")
 
     assert "listen 80;" in config
-    assert "listen 443 ssl http2;" in config
     assert "location /.well-known/acme-challenge/" in config
-    assert "root /var/www/certbot;" in config
-    assert "ssl_certificate /etc/nginx/certs/fullchain.pem;" in config
-    assert "ssl_certificate_key /etc/nginx/certs/privkey.pem;" in config
-    assert "proxy_pass http://englishbot-webapp:8080;" in config
+    assert "{{HTTPS_REDIRECT_BLOCK}}" in config
+    assert "{{HTTPS_SERVER_BLOCK}}" in config
+    assert 'FULLCHAIN_PATH="/etc/nginx/certs/fullchain.pem"' in render_script
+    assert 'PRIVKEY_PATH="/etc/nginx/certs/privkey.pem"' in render_script
+    assert "listen 443 ssl;" in render_script
+    assert "http2 on;" in render_script
+    assert "proxy_pass http://englishbot-webapp:8080;" in render_script
 
 
 def test_docker_compose_mounts_persistent_runtime_directories() -> None:
@@ -89,7 +92,8 @@ def test_docker_compose_mounts_persistent_runtime_directories() -> None:
     assert 'expose:' in compose
     assert 'englishbot-nginx:' in compose
     assert 'image: nginx:1.27-alpine' in compose
-    assert './deploy/nginx/englishbot-webapp.conf:/etc/nginx/conf.d/default.conf:ro' in compose
+    assert './deploy/nginx/englishbot-webapp.conf.template:/etc/nginx/templates/englishbot-webapp.conf.template:ro' in compose
+    assert './deploy/nginx/render-nginx-config.sh:/docker-entrypoint.d/40-render-nginx-config.sh:ro' in compose
     assert '/srv/englishbot/shared/nginx/acme:/var/www/certbot:ro' in compose
     assert '/srv/englishbot/shared/nginx/certs:/etc/nginx/certs:ro' in compose
     assert '"80:80"' in compose

@@ -34,10 +34,11 @@ def create_web_app(settings: Settings) -> Callable:
     def application(environ, start_response):  # noqa: ANN001
         method = environ.get("REQUEST_METHOD", "GET").upper()
         path = environ.get("PATH_INFO", "/")
+        is_read_request = method in {"GET", "HEAD"}
         try:
-            if method == "GET" and path == "/webapp":
+            if is_read_request and path == "/webapp":
                 return _html_response(start_response, _render_webapp_html())
-            if method == "GET" and path == "/api/session":
+            if is_read_request and path == "/api/session":
                 session = _authenticate_request(
                     environ,
                     settings=settings,
@@ -55,7 +56,7 @@ def create_web_app(settings: Settings) -> Callable:
                         },
                     )
                 return _json_response(start_response, 200, {"session": _session_payload(session)})
-            if method == "GET" and path == "/api/users":
+            if is_read_request and path == "/api/users":
                 session, error_response = _require_admin(
                     environ,
                     start_response,
