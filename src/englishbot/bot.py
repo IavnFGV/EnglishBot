@@ -6,7 +6,7 @@ import json
 import logging
 import random
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -174,6 +174,7 @@ from englishbot.infrastructure.sqlite_store import (
     SQLiteSessionRepository,
     SQLiteTelegramFlowMessageRepository,
     SQLiteTelegramUserLoginRepository,
+    SQLitePendingTelegramNotificationRepository,
     SQLiteTelegramUserRoleRepository,
     SQLiteUserProgressRepository,
     SQLiteVocabularyRepository,
@@ -230,10 +231,13 @@ _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
 _TRAINING_QUESTION_TAG = "training_question"
 _TRAINING_FEEDBACK_TAG = "training_feedback"
+_NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
 _GAME_STAR_REWARD_CORRECT = 10
 _GAME_CHEST_REWARDS: tuple[int, ...] = (30, 50, 50, 100)
+_NOTIFICATION_RECENT_ANSWER_WINDOW = timedelta(minutes=1)
+_NOTIFICATION_DELAY_AFTER_RECENT_ANSWER = timedelta(minutes=2)
 _HELP_COMMAND_TEXT: dict[str, str] = {
     "start": "open your personal start menu",
     "help": "show commands",
@@ -262,6 +266,13 @@ class _GoalFeedbackUpdate:
     weekly_points_delta: int
     progressed_goals: tuple[GoalProgressView, ...]
     completed_goals: tuple[GoalProgressView, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingNotification:
+    key: str
+    recipient_user_id: int
+    text: str
 
 
 def _draft_checkpoint_text(flow) -> str:
@@ -397,6 +408,7 @@ def build_application(
     image_review_repository = SQLiteImageReviewFlowRepository(content_store)
     telegram_flow_message_repository = SQLiteTelegramFlowMessageRepository(content_store)
     telegram_user_login_repository = SQLiteTelegramUserLoginRepository(content_store)
+    pending_notification_repository = SQLitePendingTelegramNotificationRepository(content_store)
     telegram_user_role_repository = SQLiteTelegramUserRoleRepository(content_store)
     image_review_harness = ImageReviewFlowHarness(
         canonicalizer=DraftToContentPackCanonicalizer(),
@@ -534,6 +546,7 @@ def build_application(
     app.bot_data["image_review_assets_dir"] = Path("assets")
     app.bot_data["telegram_flow_message_repository"] = telegram_flow_message_repository
     app.bot_data["telegram_user_login_repository"] = telegram_user_login_repository
+    app.bot_data["pending_telegram_notification_repository"] = pending_notification_repository
     app.bot_data["content_pack_generate_images_use_case"] = GenerateContentPackImagesUseCase(
         enricher=content_pack_image_enricher,
         db_path=settings.content_db_path,
@@ -568,6 +581,7 @@ def build_application(
     app.bot_data["admin_users_progress_overview_use_case"] = GetAdminUsersProgressOverviewUseCase(
         store=content_store
     )
+    app.bot_data["recent_quiz_activity_by_user"] = {}
 
     app.add_handler(TypeHandler(Update, raw_update_logger_handler), group=-1)
     app.add_handler(CommandHandler("start", start_handler))
@@ -596,6 +610,7 @@ def build_application(
     app.add_handler(CallbackQueryHandler(words_menu_callback_handler, pattern=r"^words:menu$"))
     app.add_handler(CallbackQueryHandler(assign_menu_callback_handler, pattern=r"^assign:menu$"))
     app.add_handler(CallbackQueryHandler(noop_callback_handler, pattern=r"^assign:noop$"))
+    app.add_handler(CallbackQueryHandler(notification_dismiss_callback_handler, pattern=rf"^{_NOTIFICATION_DISMISS_CALLBACK}$"))
     app.add_handler(CallbackQueryHandler(words_goals_callback_handler, pattern=r"^assign:goals$"))
     app.add_handler(CallbackQueryHandler(words_progress_callback_handler, pattern=r"^assign:progress$"))
     app.add_handler(CallbackQueryHandler(goal_setup_start_callback_handler, pattern=r"^assign:goal_setup$"))
@@ -2008,6 +2023,14 @@ async def noop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
 
 
+async def notification_dismiss_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    await _delete_message_if_possible(context, message=query.message)
+
+
 async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None:
@@ -2557,6 +2580,7 @@ async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAUL
         topic_id=topic_id,
         manual_word_ids=list(context.user_data.get("admin_goal_manual_word_ids", [])),
     )
+    _schedule_assignment_assigned_notifications(context, goals=created)
     await query.edit_message_text(_tg("admin_goal_created", context=context, user=user, user_count=len(created), target=int(context.user_data.get("admin_goal_target_count", 10))))
     for key in (
         "admin_goal_period",
@@ -4740,6 +4764,7 @@ async def _process_answer(
     except ApplicationError as error:
         await message.reply_text(str(error))
         return
+    _record_recent_quiz_activity(context, user_id=user.id)
     active_session_id = getattr(active_session_before_submit, "session_id", None)
     if isinstance(active_session_id, str):
         await _delete_tracked_flow_messages(
@@ -4777,8 +4802,16 @@ async def _process_answer(
         active_session=active_session_before_submit,
         feedback_update=feedback_update,
     )
+    if feedback_update is not None and feedback_update.completed_goals:
+        _schedule_goal_completed_notifications(
+            context,
+            learner=user,
+            completed_goals=feedback_update.completed_goals,
+        )
     if outcome.next_question is not None:
         await _send_question(update, context, outcome.next_question)
+    else:
+        await _flush_pending_notifications_for_user(context, user_id=user.id)
 
 
 async def _send_feedback(
@@ -4905,6 +4938,7 @@ async def _finish_game_session(
         "lesson_id": game_state.get("lesson_id"),
         "mode_value": game_state.get("mode_value"),
     }
+    await _flush_pending_notifications_for_user(context, user_id=user.id)
 
 
 async def _send_question(
@@ -4969,6 +5003,18 @@ async def _post_init(app: Application) -> None:
             for spec in policy.visible_commands(user_id=user_id)
         ]
         await app.bot.set_my_commands(scoped_commands, scope=BotCommandScopeChat(chat_id=user_id))
+    notification_repository = app.bot_data.get("pending_telegram_notification_repository")
+    job_queue = getattr(app, "job_queue", None)
+    if notification_repository is not None and job_queue is not None:
+        now = datetime.now(UTC)
+        for notification in notification_repository.list():
+            delay_seconds = max(0.0, (notification.not_before_at - now).total_seconds())
+            job_queue.run_once(
+                _deliver_pending_notification_job,
+                when=delay_seconds,
+                data={"notification_key": notification.key},
+                name=notification.key,
+            )
 
 
 async def _run_status_heartbeat(
@@ -5002,6 +5048,226 @@ def _message_chat_id(message) -> int | None:
     if isinstance(chat_id, int):
         return chat_id
     return None
+
+
+def _pending_notifications(context: ContextTypes.DEFAULT_TYPE) -> dict[str, _PendingNotification]:
+    stored = context.application.bot_data.setdefault("pending_notifications", {})
+    if isinstance(stored, dict):
+        return stored
+    replacement: dict[str, _PendingNotification] = {}
+    context.application.bot_data["pending_notifications"] = replacement
+    return replacement
+
+
+def _pending_notification_repository(context: ContextTypes.DEFAULT_TYPE):
+    application = getattr(context, "application", None)
+    bot_data = getattr(application, "bot_data", None)
+    if not isinstance(bot_data, dict):
+        return None
+    return bot_data.get("pending_telegram_notification_repository")
+
+
+def _recent_quiz_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> dict[int, datetime]:
+    stored = context.application.bot_data.setdefault("recent_quiz_activity_by_user", {})
+    if isinstance(stored, dict):
+        return stored
+    replacement: dict[int, datetime] = {}
+    context.application.bot_data["recent_quiz_activity_by_user"] = replacement
+    return replacement
+
+
+def _notification_action_button(notification_key: str) -> InlineKeyboardButton:
+    if notification_key.startswith("assignment-completed:"):
+        return InlineKeyboardButton("Open users progress", callback_data="assign:users")
+    return InlineKeyboardButton("Open assignments", callback_data="assign:menu")
+
+
+def _dismiss_notification_keyboard(notification_key: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[
+            _notification_action_button(notification_key),
+            InlineKeyboardButton("Dismiss", callback_data=_NOTIFICATION_DISMISS_CALLBACK),
+        ]]
+    )
+
+
+def _notification_should_wait(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int,
+) -> bool:
+    active_session = _service(context).get_active_session(user_id=user_id)
+    if active_session is not None:
+        return True
+    recent_answer_at = _recent_quiz_activity_by_user(context).get(user_id)
+    if recent_answer_at is None:
+        return False
+    return datetime.now(UTC) - recent_answer_at < _NOTIFICATION_RECENT_ANSWER_WINDOW
+
+
+def _record_recent_quiz_activity(context: ContextTypes.DEFAULT_TYPE, *, user_id: int) -> None:
+    _recent_quiz_activity_by_user(context)[user_id] = datetime.now(UTC)
+
+
+def _schedule_notification(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    notification: _PendingNotification,
+) -> None:
+    delay_seconds = (
+        _NOTIFICATION_DELAY_AFTER_RECENT_ANSWER.total_seconds()
+        if _notification_should_wait(context, user_id=notification.recipient_user_id)
+        else 0
+    )
+    not_before_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
+    repository = _pending_notification_repository(context)
+    if repository is not None:
+        repository.save(
+            notification_key=notification.key,
+            recipient_user_id=notification.recipient_user_id,
+            text=notification.text,
+            not_before_at=not_before_at,
+        )
+    else:
+        pending = _pending_notifications(context)
+        pending[notification.key] = _PendingNotification(
+            key=notification.key,
+            recipient_user_id=notification.recipient_user_id,
+            text=notification.text,
+            not_before_at=not_before_at,
+            created_at=datetime.now(UTC),
+        )
+    job_queue = getattr(context.application, "job_queue", None)
+    if job_queue is None:
+        return
+    job_queue.run_once(
+        _deliver_pending_notification_job,
+        when=delay_seconds,
+        data={"notification_key": notification.key},
+        name=notification.key,
+    )
+
+
+async def _deliver_notification_now(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    notification_key: str,
+    force: bool = False,
+) -> bool:
+    repository = _pending_notification_repository(context)
+    notification = (
+        repository.get(notification_key=notification_key)
+        if repository is not None
+        else _pending_notifications(context).get(notification_key)
+    )
+    if notification is None:
+        return False
+    if not force and _notification_should_wait(context, user_id=notification.recipient_user_id):
+        return False
+    try:
+        await context.bot.send_message(
+            chat_id=notification.recipient_user_id,
+            text=notification.text,
+            reply_markup=_dismiss_notification_keyboard(notification.key),
+        )
+    except BadRequest:
+        logger.debug("Failed to deliver notification key=%s", notification.key, exc_info=True)
+    finally:
+        if repository is not None:
+            repository.remove(notification_key=notification_key)
+        else:
+            _pending_notifications(context).pop(notification_key, None)
+    return True
+
+
+async def _deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    job = getattr(context, "job", None)
+    data = getattr(job, "data", None)
+    notification_key = data.get("notification_key") if isinstance(data, dict) else None
+    if not isinstance(notification_key, str):
+        return
+    delivered = await _deliver_notification_now(context, notification_key=notification_key)
+    if delivered:
+        return
+    repository = _pending_notification_repository(context)
+    if repository is not None:
+        if repository.get(notification_key=notification_key) is None:
+            return
+    elif notification_key not in _pending_notifications(context):
+        return
+    job_queue = getattr(context.application, "job_queue", None)
+    if job_queue is None:
+        return
+    job_queue.run_once(
+        _deliver_pending_notification_job,
+        when=_NOTIFICATION_DELAY_AFTER_RECENT_ANSWER.total_seconds(),
+        data={"notification_key": notification_key},
+        name=notification_key,
+    )
+
+
+async def _flush_pending_notifications_for_user(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int,
+) -> None:
+    repository = _pending_notification_repository(context)
+    pending_keys = (
+        [item.key for item in repository.list(recipient_user_id=user_id)]
+        if repository is not None
+        else [
+            key
+            for key, notification in _pending_notifications(context).items()
+            if notification.recipient_user_id == user_id
+        ]
+    )
+    for notification_key in pending_keys:
+        await _deliver_notification_now(context, notification_key=notification_key, force=True)
+
+
+def _schedule_assignment_assigned_notifications(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    goals: list,
+) -> None:
+    for goal in goals:
+        notification = _PendingNotification(
+            key=f"assignment-assigned:{goal.id}:{goal.user_id}",
+            recipient_user_id=goal.user_id,
+            text=(
+                "New assignment added: "
+                f"{goal.goal_period.value}/{goal.goal_type.value} "
+                f"{goal.target_count}."
+            ),
+        )
+        _schedule_notification(context, notification=notification)
+
+
+def _schedule_goal_completed_notifications(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    learner,
+    completed_goals: tuple[GoalProgressView, ...],
+) -> None:
+    role_repository = context.application.bot_data.get("telegram_user_role_repository")
+    if role_repository is None:
+        return
+    memberships = role_repository.list_memberships()
+    admin_ids = memberships.get("admin", frozenset())
+    learner_name = getattr(learner, "username", None) or getattr(learner, "first_name", None) or str(learner.id)
+    for admin_user_id in admin_ids:
+        for goal in completed_goals:
+            notification = _PendingNotification(
+                key=f"assignment-completed:{goal.goal.id}:{admin_user_id}",
+                recipient_user_id=admin_user_id,
+                text=(
+                    "Assignment completed: "
+                    f"{learner_name} finished "
+                    f"{goal.goal.goal_period.value}/{goal.goal.goal_type.value} "
+                    f"{goal.goal.progress_count}/{goal.goal.target_count}."
+                ),
+            )
+            _schedule_notification(context, notification=notification)
 
 
 async def _delete_tracked_messages(

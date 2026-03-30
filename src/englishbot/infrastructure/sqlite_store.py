@@ -85,6 +85,15 @@ class TelegramAdminUser:
     last_seen_at: str | None
 
 
+@dataclass(slots=True, frozen=True)
+class PendingTelegramNotification:
+    key: str
+    recipient_user_id: int
+    text: str
+    not_before_at: datetime
+    created_at: datetime
+
+
 def _optional_json_str(value: object) -> str | None:
     if value is None:
         return None
@@ -355,6 +364,14 @@ class SQLiteContentStore:
                     role TEXT NOT NULL,
                     assigned_at TEXT NOT NULL,
                     PRIMARY KEY (user_id, role)
+                );
+
+                CREATE TABLE IF NOT EXISTS pending_telegram_notifications (
+                    notification_key TEXT PRIMARY KEY,
+                    recipient_user_id INTEGER NOT NULL,
+                    text TEXT NOT NULL,
+                    not_before_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS user_game_profile (
@@ -2464,6 +2481,101 @@ class SQLiteContentStore:
         users.sort(key=lambda item: (item.last_seen_at or "", item.telegram_id), reverse=True)
         return users
 
+    def save_pending_telegram_notification(
+        self,
+        *,
+        notification_key: str,
+        recipient_user_id: int,
+        text: str,
+        not_before_at: datetime,
+    ) -> None:
+        self.initialize()
+        created_at = datetime.now(UTC).isoformat()
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO pending_telegram_notifications (
+                    notification_key, recipient_user_id, text, not_before_at, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(notification_key) DO UPDATE SET
+                    recipient_user_id = excluded.recipient_user_id,
+                    text = excluded.text,
+                    not_before_at = excluded.not_before_at
+                """,
+                (
+                    notification_key,
+                    recipient_user_id,
+                    text,
+                    not_before_at.isoformat(),
+                    created_at,
+                ),
+            )
+
+    def get_pending_telegram_notification(
+        self,
+        *,
+        notification_key: str,
+    ) -> PendingTelegramNotification | None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT notification_key, recipient_user_id, text, not_before_at, created_at
+                FROM pending_telegram_notifications
+                WHERE notification_key = ?
+                """,
+                (notification_key,),
+            ).fetchone()
+        if row is None:
+            return None
+        return PendingTelegramNotification(
+            key=str(row["notification_key"]),
+            recipient_user_id=int(row["recipient_user_id"]),
+            text=str(row["text"]),
+            not_before_at=datetime.fromisoformat(str(row["not_before_at"])),
+            created_at=datetime.fromisoformat(str(row["created_at"])),
+        )
+
+    def list_pending_telegram_notifications(
+        self,
+        *,
+        recipient_user_id: int | None = None,
+    ) -> list[PendingTelegramNotification]:
+        self.initialize()
+        query = """
+            SELECT notification_key, recipient_user_id, text, not_before_at, created_at
+            FROM pending_telegram_notifications
+        """
+        params: list[object] = []
+        if recipient_user_id is not None:
+            query += " WHERE recipient_user_id = ?"
+            params.append(recipient_user_id)
+        query += " ORDER BY not_before_at ASC, created_at ASC"
+        with _connect(self._db_path) as connection:
+            rows = connection.execute(query, tuple(params)).fetchall()
+        return [
+            PendingTelegramNotification(
+                key=str(row["notification_key"]),
+                recipient_user_id=int(row["recipient_user_id"]),
+                text=str(row["text"]),
+                not_before_at=datetime.fromisoformat(str(row["not_before_at"])),
+                created_at=datetime.fromisoformat(str(row["created_at"])),
+            )
+            for row in rows
+        ]
+
+    def remove_pending_telegram_notification(self, *, notification_key: str) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                """
+                DELETE FROM pending_telegram_notifications
+                WHERE notification_key = ?
+                """,
+                (notification_key,),
+            )
+
     def _upsert_lexeme(self, connection: sqlite3.Connection, *, headword: str) -> str:
         normalized_headword = _normalize_headword(headword)
         if not normalized_headword:
@@ -2889,3 +3001,32 @@ class SQLiteTelegramUserRoleRepository:
 
     def list_users(self) -> list[TelegramAdminUser]:
         return self._store.list_telegram_admin_users()
+
+
+class SQLitePendingTelegramNotificationRepository:
+    def __init__(self, store: SQLiteContentStore) -> None:
+        self._store = store
+
+    def save(
+        self,
+        *,
+        notification_key: str,
+        recipient_user_id: int,
+        text: str,
+        not_before_at: datetime,
+    ) -> None:
+        self._store.save_pending_telegram_notification(
+            notification_key=notification_key,
+            recipient_user_id=recipient_user_id,
+            text=text,
+            not_before_at=not_before_at,
+        )
+
+    def get(self, *, notification_key: str) -> PendingTelegramNotification | None:
+        return self._store.get_pending_telegram_notification(notification_key=notification_key)
+
+    def list(self, *, recipient_user_id: int | None = None) -> list[PendingTelegramNotification]:
+        return self._store.list_pending_telegram_notifications(recipient_user_id=recipient_user_id)
+
+    def remove(self, *, notification_key: str) -> None:
+        self._store.remove_pending_telegram_notification(notification_key=notification_key)

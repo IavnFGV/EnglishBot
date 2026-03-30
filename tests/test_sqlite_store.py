@@ -32,6 +32,7 @@ from englishbot.infrastructure.sqlite_store import (
     SQLiteAddWordsFlowRepository,
     SQLiteContentStore,
     SQLiteImageReviewFlowRepository,
+    SQLitePendingTelegramNotificationRepository,
     SQLiteTelegramFlowMessageRepository,
     SQLiteTelegramUserLoginRepository,
     SQLiteTelegramUserRoleRepository,
@@ -188,6 +189,29 @@ def test_sqlite_telegram_user_roles_can_be_replaced_and_listed_for_admin_webapp(
     assert users[0].first_name == "Alice"
     assert users[0].last_name == "Admin"
     assert users[0].roles == ("editor", "user")
+
+
+def test_sqlite_pending_telegram_notification_repository_persists_notifications(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    repository = SQLitePendingTelegramNotificationRepository(store)
+
+    repository.save(
+        notification_key="n1",
+        recipient_user_id=77,
+        text="Hello",
+        not_before_at=__import__("datetime").datetime(2026, 3, 30, tzinfo=__import__("datetime").UTC),
+    )
+
+    stored = repository.get(notification_key="n1")
+    items = repository.list(recipient_user_id=77)
+
+    assert stored is not None
+    assert stored.key == "n1"
+    assert stored.recipient_user_id == 77
+    assert stored.text == "Hello"
+    assert len(items) == 1
+    repository.remove(notification_key="n1")
+    assert repository.get(notification_key="n1") is None
 
 
 def test_sqlite_content_store_reuses_lexeme_across_multiple_learning_items(tmp_path: Path) -> None:
