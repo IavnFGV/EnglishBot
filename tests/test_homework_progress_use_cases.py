@@ -1,4 +1,5 @@
 import random
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -64,7 +65,7 @@ def test_homework_progress_use_case_creates_and_summarizes_goal(tmp_path: Path) 
     assert summary.correct_answers == 1
     assert summary.incorrect_answers == 1
     assert summary.weekly_points > 0
-    assert len(summary.active_goals) == 1
+    assert summary.active_goals == []
 
 
 def test_homework_progress_use_case_resets_goal(tmp_path: Path) -> None:
@@ -206,3 +207,66 @@ def test_start_assignment_round_use_case_creates_assignment_session(tmp_path: Pa
     assert question.session_id == session.id
     assert session.source_tag == "assignment:weekly"
     assert len(session.items) == 2
+
+
+def test_new_words_goal_progress_counts_unique_completed_words(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=15,
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=2,
+        target_word_ids=["cat", "dog"],
+    )
+    store.save_progress(UserProgress(user_id=15, item_id="cat", times_seen=2, correct_answers=1))
+
+    store.update_goals_progress(
+        user_id=15,
+        word_id="cat",
+        topic_id="animals",
+        is_correct=True,
+        current_level=1,
+    )
+    store.update_goals_progress(
+        user_id=15,
+        word_id="cat",
+        topic_id="animals",
+        is_correct=True,
+        current_level=1,
+    )
+
+    refreshed_goal = store.list_user_goals(user_id=15)[0]
+    summary = GetLearnerAssignmentLaunchSummaryUseCase(store=store, batch_size=5).execute(user_id=15)
+    summary_by_kind = {item.kind: item for item in summary}
+
+    assert refreshed_goal.id == goal.id
+    assert refreshed_goal.progress_count == 1
+    assert refreshed_goal.status.value == "active"
+    assert summary_by_kind[AssignmentSessionKind.DAILY].available is True
+    assert summary_by_kind[AssignmentSessionKind.DAILY].remaining_word_count == 1
+
+
+def test_list_user_goals_refreshes_stale_new_words_progress_from_existing_db(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=16,
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=2,
+        target_word_ids=["cat", "dog"],
+    )
+    store.save_progress(UserProgress(user_id=16, item_id="cat", times_seen=1, correct_answers=1))
+    with sqlite3.connect(tmp_path / "data" / "englishbot.db") as connection:
+        connection.execute(
+            "UPDATE user_goals SET progress_count = ? WHERE id = ?",
+            (2, goal.id),
+        )
+
+    refreshed_goal = store.list_user_goals(user_id=16)[0]
+    summary = GetLearnerAssignmentLaunchSummaryUseCase(store=store, batch_size=5).execute(user_id=16)
+    summary_by_kind = {item.kind: item for item in summary}
+
+    assert refreshed_goal.progress_count == 1
+    assert refreshed_goal.status.value == "active"
+    assert summary_by_kind[AssignmentSessionKind.DAILY].available is True
+    assert summary_by_kind[AssignmentSessionKind.DAILY].remaining_word_count == 1

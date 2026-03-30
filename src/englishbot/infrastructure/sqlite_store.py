@@ -1254,6 +1254,7 @@ class SQLiteContentStore:
         status_values = tuple(status.value for status in statuses)
         placeholders = ",".join("?" for _ in status_values)
         with _connect(self._db_path) as connection:
+            self._refresh_goal_progress(connection, user_id=user_id)
             rows = connection.execute(
                 f"""
                 SELECT *
@@ -1280,6 +1281,90 @@ class SQLiteContentStore:
             )
             for row in rows
         ]
+
+    def _refresh_goal_progress(self, connection: sqlite3.Connection, *, user_id: int) -> None:
+        active_goals = connection.execute(
+            """
+            SELECT id, user_id, goal_type, target_count, progress_count, status
+            FROM user_goals
+            WHERE user_id = ? AND status = ?
+            """,
+            (user_id, GoalStatus.ACTIVE.value),
+        ).fetchall()
+        for goal in active_goals:
+            goal_type = GoalType(str(goal["goal_type"]))
+            if goal_type is GoalType.NEW_WORDS:
+                progress_count = self._count_completed_goal_words(
+                    connection,
+                    goal_id=str(goal["id"]),
+                    user_id=int(goal["user_id"]),
+                )
+            elif goal_type is GoalType.WORD_LEVEL_HOMEWORK:
+                progress_count = self._count_mastered_homework_words(
+                    connection,
+                    goal_id=str(goal["id"]),
+                    user_id=int(goal["user_id"]),
+                )
+            else:
+                continue
+            target_count = int(goal["target_count"])
+            status = (
+                GoalStatus.COMPLETED.value
+                if target_count > 0 and progress_count >= target_count
+                else GoalStatus.ACTIVE.value
+            )
+            if progress_count == int(goal["progress_count"]) and status == str(goal["status"]):
+                continue
+            connection.execute(
+                """
+                UPDATE user_goals
+                SET progress_count = ?, status = ?
+                WHERE id = ?
+                """,
+                (progress_count, status, goal["id"]),
+            )
+
+    def _count_completed_goal_words(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        goal_id: str,
+        user_id: int,
+    ) -> int:
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS completed_count
+            FROM user_goal_words goal_words
+            JOIN user_progress progress
+              ON progress.user_id = ?
+             AND progress.item_id = goal_words.word_id
+            WHERE goal_words.goal_id = ?
+              AND progress.correct_answers > 0
+            """,
+            (user_id, goal_id),
+        ).fetchone()
+        return int(row["completed_count"] or 0) if row else 0
+
+    def _count_mastered_homework_words(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        goal_id: str,
+        user_id: int,
+    ) -> int:
+        row = connection.execute(
+            """
+            SELECT SUM(CASE WHEN progress.medium_mastered = 1 THEN 1 ELSE 0 END) AS mastered_count
+            FROM user_goal_words goal_words
+            LEFT JOIN user_homework_word_progress progress
+              ON progress.goal_id = goal_words.goal_id
+             AND progress.user_id = ?
+             AND progress.word_id = goal_words.word_id
+            WHERE goal_words.goal_id = ?
+            """,
+            (user_id, goal_id),
+        ).fetchone()
+        return int(row["mastered_count"] or 0) if row else 0
 
     def list_goal_word_details(self, *, goal_id: str, user_id: int) -> list[dict[str, object]]:
         self.initialize()
@@ -1355,6 +1440,16 @@ class SQLiteContentStore:
     def list_users_goal_overview(self) -> list[dict[str, object]]:
         self.initialize()
         with _connect(self._db_path) as connection:
+            user_rows = connection.execute(
+                """
+                SELECT DISTINCT user_id
+                FROM user_goals
+                WHERE status = ?
+                """,
+                (GoalStatus.ACTIVE.value,),
+            ).fetchall()
+            for user_row in user_rows:
+                self._refresh_goal_progress(connection, user_id=int(user_row["user_id"]))
             rows = connection.execute(
                 """
                 SELECT
@@ -1597,13 +1692,21 @@ class SQLiteContentStore:
                     """,
                     (row["goal_id"],),
                 ).fetchone()
-                if goal_row and int(goal_row["total"] or 0) > 0 and int(goal_row["mastered"] or 0) >= int(
-                    goal_row["total"]
-                ):
-                    connection.execute(
-                        "UPDATE user_goals SET status = ? WHERE id = ?",
-                        (GoalStatus.COMPLETED.value, row["goal_id"]),
-                    )
+                total = int(goal_row["total"] or 0) if goal_row else 0
+                mastered = int(goal_row["mastered"] or 0) if goal_row else 0
+                status = (
+                    GoalStatus.COMPLETED.value
+                    if total > 0 and mastered >= total
+                    else GoalStatus.ACTIVE.value
+                )
+                connection.execute(
+                    """
+                    UPDATE user_goals
+                    SET progress_count = ?, status = ?
+                    WHERE id = ?
+                    """,
+                    (mastered, status, row["goal_id"]),
+                )
 
     def update_goals_progress(
         self,
@@ -1626,22 +1729,26 @@ class SQLiteContentStore:
             ).fetchall()
             for goal in goals:
                 increment = 0
-                if goal["goal_type"] in {GoalType.NEW_WORDS.value, GoalType.WORD_LEVEL_HOMEWORK.value}:
+                if goal["goal_type"] == GoalType.NEW_WORDS.value:
                     word_match = connection.execute(
                         "SELECT 1 FROM user_goal_words WHERE goal_id = ? AND word_id = ?",
                         (goal["id"], word_id),
                     ).fetchone()
                     if word_match:
-                        if goal["goal_type"] == GoalType.WORD_LEVEL_HOMEWORK.value:
-                            needed = int(goal["required_level"] or 1)
-                            increment = 1 if current_level >= needed else 0
-                        else:
-                            increment = 1
+                        increment = 1
                 elif goal["goal_type"] == GoalType.TOPICS.value:
                     increment = 1 if goal["target_topic_id"] == topic_id else 0
                 if increment <= 0:
                     continue
-                progress_count = int(goal["progress_count"]) + increment
+                progress_count = (
+                    self._count_completed_goal_words(
+                        connection,
+                        goal_id=str(goal["id"]),
+                        user_id=user_id,
+                    )
+                    if goal["goal_type"] == GoalType.NEW_WORDS.value
+                    else int(goal["progress_count"]) + increment
+                )
                 status = (
                     GoalStatus.COMPLETED.value
                     if progress_count >= int(goal["target_count"])
