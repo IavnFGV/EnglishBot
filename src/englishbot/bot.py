@@ -8,6 +8,7 @@ import random
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlencode
 
 from telegram import (
     BotCommand,
@@ -18,7 +19,6 @@ from telegram import (
     KeyboardButton,
     ReplyKeyboardMarkup,
     Update,
-    WebAppInfo,
 )
 from telegram.error import BadRequest
 from telegram.ext import (
@@ -1140,8 +1140,9 @@ def _preview_message_ids(context: ContextTypes.DEFAULT_TYPE) -> dict[int, int]:
 def _admin_web_app_url(
     context: ContextTypes.DEFAULT_TYPE,
     *,
-    user_id: int | None,
+    user,
 ) -> str | None:
+    user_id = getattr(user, "id", None)
     if user_id is None or not _is_admin(user_id, context):
         return None
     configured_url = context.application.bot_data.get("web_app_base_url")
@@ -1150,17 +1151,25 @@ def _admin_web_app_url(
     normalized = configured_url.strip().rstrip("/")
     if not normalized:
         return None
-    return f"{normalized}/webapp"
+    language = _telegram_ui_language(context, user)
+    query = urlencode({"user_id": user_id, "lang": language})
+    return f"{normalized}/webapp?{query}"
 
 
-def _assignment_guide_web_app_url(context: ContextTypes.DEFAULT_TYPE) -> str | None:
+def _assignment_guide_web_app_url(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user,
+) -> str | None:
     configured_url = context.application.bot_data.get("web_app_base_url")
     if not isinstance(configured_url, str):
         return None
     normalized = configured_url.strip().rstrip("/")
     if not normalized:
         return None
-    return f"{normalized}/webapp/help"
+    language = _telegram_ui_language(context, user)
+    query = urlencode({"lang": language})
+    return f"{normalized}/webapp/help?{query}"
 
 
 @dataclass(frozen=True)
@@ -1347,11 +1356,8 @@ def _start_menu_view(
         text=_render_start_menu_text(context=context, user=user, summary=summary),
         reply_markup=_start_menu_keyboard(
             summary=summary,
-            guide_web_app_url=_assignment_guide_web_app_url(context),
-            admin_web_app_url=_admin_web_app_url(
-                context,
-                user_id=(user.id if user is not None else None),
-            ),
+            guide_web_app_url=_assignment_guide_web_app_url(context, user=user),
+            admin_web_app_url=_admin_web_app_url(context, user=user),
             language=_telegram_ui_language(context, user),
         ),
     )
@@ -1480,11 +1486,8 @@ def _assign_menu_view(
         text=text,
         reply_markup=_assign_menu_keyboard(
             is_admin=bool(user and _is_admin(user.id, context)),
-            guide_web_app_url=_assignment_guide_web_app_url(context),
-            admin_web_app_url=_admin_web_app_url(
-                context,
-                user_id=(user.id if user is not None else None),
-            ),
+            guide_web_app_url=_assignment_guide_web_app_url(context, user=user),
+            admin_web_app_url=_admin_web_app_url(context, user=user),
             language=_telegram_ui_language(context, user),
         ),
     )
@@ -5879,7 +5882,7 @@ def _start_menu_keyboard(
             [
                 InlineKeyboardButton(
                     _tg("assignment_guide_button", language=language),
-                    web_app=WebAppInfo(url=guide_web_app_url),
+                    url=guide_web_app_url,
                 )
             ]
         )
@@ -5888,7 +5891,7 @@ def _start_menu_keyboard(
             [
                 InlineKeyboardButton(
                     "Admin Panel",
-                    web_app=WebAppInfo(url=admin_web_app_url),
+                    url=admin_web_app_url,
                 )
             ]
         )
@@ -5937,7 +5940,7 @@ def _assign_menu_keyboard(
             [
                 InlineKeyboardButton(
                     _tg("assignment_guide_button", language=language),
-                    web_app=WebAppInfo(url=guide_web_app_url),
+                    url=guide_web_app_url,
                 )
             ]
         )
@@ -5947,7 +5950,7 @@ def _assign_menu_keyboard(
             [InlineKeyboardButton(_tg("admin_assign_goal_button", language=language), callback_data="assign:admin_assign_goal")],
         )
         if admin_web_app_url:
-            rows.insert(1, [InlineKeyboardButton("Admin Panel", web_app=WebAppInfo(url=admin_web_app_url))])
+            rows.insert(1, [InlineKeyboardButton("Admin Panel", url=admin_web_app_url)])
     return InlineKeyboardMarkup(rows)
 
 

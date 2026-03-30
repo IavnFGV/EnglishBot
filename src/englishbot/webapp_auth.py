@@ -88,6 +88,28 @@ def build_dev_session(
     )
 
 
+def build_link_session(
+    *,
+    telegram_id: int,
+    roles_by_user: Mapping[int, tuple[str, ...]],
+    language_code: str | None = None,
+    profile_by_user: Mapping[int, Mapping[str, str | None]] | None = None,
+) -> TelegramWebAppSession:
+    profile = {} if profile_by_user is None else dict(profile_by_user.get(telegram_id, {}))
+    roles = _normalize_roles(roles_by_user.get(telegram_id, ()))
+    return TelegramWebAppSession(
+        telegram_id=telegram_id,
+        username=_optional_str(profile.get("username")),
+        first_name=_optional_str(profile.get("first_name")),
+        last_name=_optional_str(profile.get("last_name")),
+        language_code=_optional_str(language_code) or _optional_str(profile.get("language_code")),
+        roles=roles,
+        is_admin="admin" in roles,
+        is_verified=False,
+        is_dev_mode=False,
+    )
+
+
 def _normalize_roles(roles: tuple[str, ...]) -> tuple[str, ...]:
     normalized = set(roles)
     normalized.add("user")

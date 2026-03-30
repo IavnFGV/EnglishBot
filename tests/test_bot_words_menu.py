@@ -538,11 +538,11 @@ def test_assign_menu_keyboard_shows_admin_buttons() -> None:
 def test_assign_menu_keyboard_exposes_assignment_guide_web_app() -> None:
     keyboard = _assign_menu_keyboard(
         is_admin=False,
-        guide_web_app_url="https://admin.example.com/webapp/help",
+        guide_web_app_url="https://admin.example.com/webapp/help?lang=en",
     )
 
     assert keyboard.inline_keyboard[-1][0].text == "📚 How it works"
-    assert keyboard.inline_keyboard[-1][0].web_app.url == "https://admin.example.com/webapp/help"
+    assert keyboard.inline_keyboard[-1][0].url == "https://admin.example.com/webapp/help?lang=en"
 
 
 def test_start_menu_keyboard_exposes_personal_launch_actions() -> None:
@@ -592,11 +592,11 @@ def test_start_menu_keyboard_exposes_assignment_guide_web_app() -> None:
             AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, True, 6, 2),
             AssignmentLaunchView(AssignmentSessionKind.ALL, True, 10, 2),
         ],
-        guide_web_app_url="https://admin.example.com/webapp/help",
+        guide_web_app_url="https://admin.example.com/webapp/help?lang=en",
     )
 
     assert keyboard.inline_keyboard[-1][0].text == "📚 How it works"
-    assert keyboard.inline_keyboard[-1][0].web_app.url == "https://admin.example.com/webapp/help"
+    assert keyboard.inline_keyboard[-1][0].url == "https://admin.example.com/webapp/help?lang=en"
 
 
 def test_goal_flow_keyboards_include_back_navigation() -> None:

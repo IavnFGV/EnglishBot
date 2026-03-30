@@ -5,7 +5,12 @@ import hmac
 import json
 from urllib.parse import urlencode
 
-from englishbot.webapp_auth import build_dev_session, session_from_init_data, verify_init_data
+from englishbot.webapp_auth import (
+    build_dev_session,
+    build_link_session,
+    session_from_init_data,
+    verify_init_data,
+)
 
 
 def test_verify_init_data_accepts_valid_telegram_signature() -> None:
@@ -58,6 +63,22 @@ def test_build_dev_session_marks_local_debug_session() -> None:
     assert session.is_admin is False
     assert session.is_verified is False
     assert session.is_dev_mode is True
+
+
+def test_build_link_session_creates_unverified_session_from_query_link() -> None:
+    session = build_link_session(
+        telegram_id=9,
+        roles_by_user={9: ("admin",)},
+        language_code="uk",
+        profile_by_user={9: {"username": "editor", "first_name": "Edit", "last_name": "User"}},
+    )
+
+    assert session.telegram_id == 9
+    assert session.roles == ("admin", "user")
+    assert session.is_admin is True
+    assert session.is_verified is False
+    assert session.is_dev_mode is False
+    assert session.language_code == "uk"
 
 
 def _build_signed_init_data(*, bot_token: str, user: dict[str, object]) -> str:

@@ -4,7 +4,8 @@
 
 - a minimal Telegram Web App entry point at `/webapp`
 - a lightweight Python web server entrypoint: `python -m englishbot.webapp`
-- server-side Telegram `initData` verification for Web App requests
+- temporary link-based auth for menu links with `user_id` and `lang` query parameters
+- optional server-side Telegram `initData` verification remains supported for future Web App launches
 - an admin-only users table with role editing for:
   - `admin`
   - `user`
@@ -78,32 +79,28 @@ Set `WEB_APP_BASE_URL` to the public HTTPS base URL that points to the web serve
 WEB_APP_BASE_URL=https://204.168.193.232.nip.io
 ```
 
-When the current Telegram user has the `admin` role, the bot shows an `Admin Panel` button in the start menu and assignments menu. The button opens:
+When the current Telegram user has the `admin` role, the bot shows an `Admin Panel` button in the start menu and assignments menu. The button opens a direct HTTPS link like:
 
 ```text
-<WEB_APP_BASE_URL>/webapp
+<WEB_APP_BASE_URL>/webapp?user_id=<telegram_id>&lang=<ui_language>
 ```
 
-## Local Dev Mode
-
-Telegram Web Apps normally require a real Telegram launch with valid `initData`.
-
-For local-only MVP testing there is a narrow fallback:
-
-- set `WEB_APP_DEV_USER_IDS`
-- open the page from localhost with `?dev_user_id=<telegram_id>`
-
-Example:
+The guide button opens a public help page like:
 
 ```text
-http://127.0.0.1:8080/webapp?dev_user_id=123456
+<WEB_APP_BASE_URL>/webapp/help?lang=<ui_language>
 ```
 
-Restrictions:
+## Current MVP Security Note
 
-- works only from loopback addresses
-- works only for IDs explicitly listed in `WEB_APP_DEV_USER_IDS`
-- still requires backend admin role checks
+This iteration intentionally uses simple menu links with `user_id` and `lang` query parameters so the bot UI stays predictable.
+
+That means:
+
+- the help page is public and localized by `lang`
+- the admin page currently trusts the `user_id` passed in the link and still checks backend roles
+- this is acceptable only as a temporary MVP shortcut
+- the code still keeps the `initData` path so verified Telegram launches can be restored later without redesign
 
 ## Free HTTPS
 

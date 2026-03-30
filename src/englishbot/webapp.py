@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 from wsgiref.simple_server import make_server
 
 from dotenv import load_dotenv
@@ -16,7 +16,12 @@ from englishbot.infrastructure.sqlite_store import (
     SQLiteTelegramUserLoginRepository,
     SQLiteTelegramUserRoleRepository,
 )
-from englishbot.webapp_auth import TelegramWebAppSession, build_dev_session, session_from_init_data
+from englishbot.webapp_auth import (
+    TelegramWebAppSession,
+    build_dev_session,
+    build_link_session,
+    session_from_init_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +50,7 @@ def create_web_app(settings: Settings) -> Callable:
                     login_repository=login_repository,
                     role_repository=role_repository,
                 )
-                if session is None:
-                    return _json_response(
-                        start_response,
-                        401,
-                        {
-                            "message": (
-                                "Open this page from Telegram or use the configured local dev mode."
-                            )
-                        },
-                    )
-                return _html_response(start_response, _render_help_html(session))
+                return _html_response(start_response, _render_help_html(session, environ=environ))
             if is_read_request and path == "/api/session":
                 session = _authenticate_request(
                     environ,
@@ -195,6 +190,18 @@ def _authenticate_request(
             last_name=session.last_name,
         )
         return session
+
+    public_user_id_raw = _header(environ, "HTTP_X_TELEGRAM_USER_ID") or _query_param(environ, "user_id")
+    if public_user_id_raw:
+        language_code = _header(environ, "HTTP_X_TELEGRAM_LANG") or _query_param(environ, "lang")
+        # This is an MVP shortcut for Telegram menu links that open normal HTTPS pages.
+        # Replace it with verified initData when the bot switches back to proper Web App launches.
+        return build_link_session(
+            telegram_id=int(public_user_id_raw),
+            roles_by_user=roles_by_user,
+            language_code=language_code,
+            profile_by_user=profile_by_user,
+        )
 
     dev_user_id_raw = _header(environ, "HTTP_X_DEV_USER_ID") or _query_param(environ, "dev_user_id")
     if dev_user_id_raw and _is_loopback_request(environ):
@@ -545,6 +552,14 @@ def _render_webapp_html() -> str:
         headers["X-Telegram-Init-Data"] = initData;
       }
       const query = new URLSearchParams(window.location.search);
+      const userId = query.get("user_id");
+      const language = query.get("lang");
+      if (userId) {
+        headers["X-Telegram-User-Id"] = userId;
+      }
+      if (language) {
+        headers["X-Telegram-Lang"] = language;
+      }
       const devUserId = query.get("dev_user_id");
       if (!initData && devUserId) {
         headers["X-Dev-User-Id"] = devUserId;
@@ -679,9 +694,15 @@ def _render_webapp_html() -> str:
 """
 
 
-def _render_help_html(session: TelegramWebAppSession) -> str:
-    language = _web_language(session.language_code)
+def _render_help_html(session: TelegramWebAppSession | None, *, environ) -> str:  # noqa: ANN001
+    language = _web_language(
+        (session.language_code if session is not None else None) or _query_param(environ, "lang")
+    )
     text = _help_content(language)
+    back_query: dict[str, str | int] = {"lang": language}
+    if session is not None:
+        back_query["user_id"] = session.telegram_id
+    back_href = f"/webapp?{urlencode(back_query)}"
     return f"""<!doctype html>
 <html lang="{language}">
 <head>
@@ -800,7 +821,7 @@ def _render_help_html(session: TelegramWebAppSession) -> str:
           <li>{text["visibility_item_3"]}</li>
         </ul>
       </div>
-      <p><a href="/webapp">{text["back_link"]}</a></p>
+      <p><a href="{back_href}">{text["back_link"]}</a></p>
     </section>
   </main>
 </body>

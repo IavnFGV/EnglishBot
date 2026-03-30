@@ -17,7 +17,7 @@ from englishbot.infrastructure.sqlite_store import (
 from englishbot.webapp import create_web_app
 
 
-def test_webapp_session_endpoint_allows_local_dev_admin(tmp_path: Path) -> None:
+def test_webapp_session_endpoint_allows_query_link_admin(tmp_path: Path) -> None:
     _seed_user_store(
         tmp_path=tmp_path,
         logins=[
@@ -30,19 +30,19 @@ def test_webapp_session_endpoint_allows_local_dev_admin(tmp_path: Path) -> None:
             telegram_token="test-token",
             log_level="INFO",
             content_db_path=tmp_path / "data" / "englishbot.db",
-            web_app_dev_user_ids=(7,),
         )
     )
 
-    response = _request(app, "GET", "/api/session", headers={"X-Dev-User-Id": "7"})
+    response = _request(app, "GET", "/api/session?user_id=7&lang=ru")
 
     assert response.status_code == 200
     assert response.json["session"]["telegram_id"] == 7
     assert response.json["session"]["is_admin"] is True
-    assert response.json["session"]["is_dev_mode"] is True
+    assert response.json["session"]["is_dev_mode"] is False
+    assert response.json["session"]["language_code"] == "ru"
 
 
-def test_webapp_help_page_uses_telegram_language_from_session(tmp_path: Path) -> None:
+def test_webapp_help_page_uses_query_language_without_session(tmp_path: Path) -> None:
     _seed_user_store(
         tmp_path=tmp_path,
         logins=[
@@ -57,18 +57,7 @@ def test_webapp_help_page_uses_telegram_language_from_session(tmp_path: Path) ->
             content_db_path=tmp_path / "data" / "englishbot.db",
         )
     )
-    init_data = _signed_init_data(
-        bot_token="test-token",
-        user={
-            "id": 7,
-            "username": "alice",
-            "first_name": "Alice",
-            "last_name": "Admin",
-            "language_code": "ru",
-        },
-    )
-
-    response = _request(app, "GET", "/webapp/help", headers={"X-Telegram-Init-Data": init_data})
+    response = _request(app, "GET", "/webapp/help?lang=ru")
 
     assert response.status_code == 200
     assert "Как работают задания" in response.body
@@ -107,12 +96,7 @@ def test_webapp_users_endpoint_rejects_non_admin_user(tmp_path: Path) -> None:
             content_db_path=tmp_path / "data" / "englishbot.db",
         )
     )
-    init_data = _signed_init_data(
-        bot_token="test-token",
-        user={"id": 8, "username": "bob", "first_name": "Bob", "last_name": "User"},
-    )
-
-    response = _request(app, "GET", "/api/users", headers={"X-Telegram-Init-Data": init_data})
+    response = _request(app, "GET", "/api/users?user_id=8")
 
     assert response.status_code == 403
     assert response.json["message"] == "Access denied. Admin role is required."
@@ -134,27 +118,21 @@ def test_webapp_users_endpoint_returns_users_for_admin_and_updates_roles(tmp_pat
             content_db_path=tmp_path / "data" / "englishbot.db",
         )
     )
-    admin_init_data = _signed_init_data(
-        bot_token="test-token",
-        user={"id": 7, "username": "alice", "first_name": "Alice", "last_name": "Admin"},
-    )
-
     list_response = _request(
         app,
         "GET",
-        "/api/users",
-        headers={"X-Telegram-Init-Data": admin_init_data},
+        "/api/users?user_id=7",
     )
     update_response = _request(
         app,
         "POST",
         "/api/users/8/roles",
-        headers={"X-Telegram-Init-Data": admin_init_data},
+        headers={"X-Telegram-User-Id": "7"},
         body={"roles": ["admin", "user"]},
     )
 
     assert list_response.status_code == 200
-    assert [user["telegram_id"] for user in list_response.json["users"]] == [7, 8]
+    assert sorted(user["telegram_id"] for user in list_response.json["users"]) == [7, 8]
     assert update_response.status_code == 200
     assert update_response.json["user"]["roles"] == ["admin", "user"]
 
@@ -210,10 +188,14 @@ def _request(
     encoded_body = b""
     if body is not None:
         encoded_body = json.dumps(body).encode("utf-8")
+    if "?" in path:
+        path_info, query_string = path.split("?", maxsplit=1)
+    else:
+        path_info, query_string = path, ""
     environ = {
         "REQUEST_METHOD": method,
-        "PATH_INFO": path,
-        "QUERY_STRING": "",
+        "PATH_INFO": path_info,
+        "QUERY_STRING": query_string,
         "CONTENT_LENGTH": str(len(encoded_body)),
         "wsgi.input": io.BytesIO(encoded_body),
         "REMOTE_ADDR": "127.0.0.1",

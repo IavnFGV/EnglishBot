@@ -239,7 +239,7 @@ async def test_start_handler_records_telegram_username(monkeypatch: pytest.Monke
 
 
 @pytest.mark.anyio
-async def test_start_handler_shows_admin_web_app_button_when_configured(
+async def test_start_handler_shows_admin_panel_link_when_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     sent_views: list[object] = []
@@ -283,7 +283,7 @@ async def test_start_handler_shows_admin_web_app_button_when_configured(
 
     await start_handler(update, context)  # type: ignore[arg-type]
 
-    assert sent_views[0].reply_markup.inline_keyboard[-1][0].web_app.url == "https://admin.example.com/webapp"
+    assert sent_views[0].reply_markup.inline_keyboard[-1][0].url == "https://admin.example.com/webapp?user_id=321&lang=en"
 
 
 @pytest.mark.anyio
