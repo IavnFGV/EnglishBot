@@ -1845,13 +1845,11 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     ),
                 ),
             )
-            await send_telegram_view(message, _quick_actions_view(context=context, user=user))
             return
     await send_telegram_view(
         message,
         _start_menu_view(context=context, user=user),
     )
-    await send_telegram_view(message, _quick_actions_view(context=context, user=user))
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2043,7 +2041,6 @@ async def words_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             user=user,
         ),
     )
-    await send_telegram_view(message, _quick_actions_view(context=context, user=user))
 
 
 async def assign_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

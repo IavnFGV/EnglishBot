@@ -39,6 +39,7 @@ from englishbot.bot import (
     start_assignment_unavailable_callback_handler,
     words_add_words_callback_handler,
     words_goals_callback_handler,
+    words_menu_handler,
     goal_target_preset_callback_handler,
     goal_text_handler,
     admin_users_progress_callback_handler,
@@ -145,6 +146,29 @@ async def test_words_add_words_callback_handler_enters_editor_flow() -> None:
     assert query.answered is True
     assert context.user_data["words_flow_mode"] == "awaiting_raw_text"
     assert query.edits[-1][0].startswith("Send the raw lesson text in one message.")
+
+
+@pytest.mark.anyio
+async def test_words_menu_handler_sends_only_words_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    sent_views: list[object] = []
+
+    async def _fake_send_telegram_view(message, view):  # noqa: ARG001
+        sent_views.append(view)
+
+    monkeypatch.setattr("englishbot.bot.send_telegram_view", _fake_send_telegram_view)
+
+    update = SimpleNamespace(
+        effective_message=SimpleNamespace(),
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"editor_user_ids": set(), "admin_user_ids": set()}),
+    )
+
+    await words_menu_handler(update, context)  # type: ignore[arg-type]
+
+    assert len(sent_views) == 1
+    assert sent_views[0].text == "Words menu."
 
 
 @pytest.mark.anyio
