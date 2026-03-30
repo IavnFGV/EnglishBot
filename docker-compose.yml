@@ -58,7 +58,7 @@ services:
     command:
       - /bin/sh
       - -c
-      - /docker-entrypoint.d/40-render-nginx-config.sh && nginx -g 'daemon off;'
+      - sh /docker-entrypoint.d/40-render-nginx-config.sh && nginx -g 'daemon off;'
     volumes:
       - ./deploy/nginx/englishbot-webapp.conf.template:/etc/nginx/templates/englishbot-webapp.conf.template:ro
       - ./deploy/nginx/render-nginx-config.sh:/docker-entrypoint.d/40-render-nginx-config.sh:ro
