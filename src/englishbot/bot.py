@@ -1186,7 +1186,6 @@ def _build_assignment_progress_snapshot(
             remaining_word_count = round_progress.remaining_word_count
             estimated_round_count = round_progress.estimated_round_count
     return AssignmentProgressSnapshot(
-        label=_assignment_kind_label(kind, context=context, user=user),
         center_label=_tg("assignment_progress_center_label", context=context, user=user),
         legend_labels=(
             _tg("assignment_progress_legend_start", context=context, user=user),
@@ -1243,11 +1242,12 @@ def _assignment_progress_caption(
     *,
     context: ContextTypes.DEFAULT_TYPE,
     snapshot: AssignmentProgressSnapshot,
+    kind: AssignmentSessionKind,
     user,
 ) -> str:
     return "\n".join(
         [
-            f"<b>{html.escape(snapshot.label)}</b>",
+            f"<b>{html.escape(_assignment_kind_label(kind, context=context, user=user))}</b>",
             _tg(
                 "assignment_round_progress_status",
                 context=context,
@@ -1310,12 +1310,14 @@ async def _send_or_update_assignment_progress_message(
     caption = _assignment_progress_caption(
         context=context,
         snapshot=snapshot,
+        kind=kind,
         user=user,
     )
     registry = _telegram_flow_messages(context)
     tracked_messages = registry.list(flow_id=flow_id, tag=_ASSIGNMENT_PROGRESS_TAG) if registry is not None else []
     tracked_message = tracked_messages[0] if tracked_messages else None
     bot = getattr(context, "bot", None)
+    fallback_chat_id = _message_chat_id(message)
     if tracked_message is not None and bot is not None and hasattr(bot, "edit_message_media"):
         try:
             with output_path.open("rb") as photo_file:
@@ -1340,18 +1342,29 @@ async def _send_or_update_assignment_progress_message(
         flow_id=flow_id,
         tag=_ASSIGNMENT_PROGRESS_TAG,
     )
-    with output_path.open("rb") as photo_file:
-        sent_message = await message.reply_photo(
-            photo=photo_file,
-            caption=caption,
-            parse_mode="HTML",
-        )
+    try:
+        with output_path.open("rb") as photo_file:
+            sent_message = await message.reply_photo(
+                photo=photo_file,
+                caption=caption,
+                parse_mode="HTML",
+            )
+    except BadRequest:
+        if bot is None or not isinstance(fallback_chat_id, int) or not hasattr(bot, "send_photo"):
+            return
+        with output_path.open("rb") as photo_file:
+            sent_message = await bot.send_photo(
+                chat_id=fallback_chat_id,
+                photo=photo_file,
+                caption=caption,
+                parse_mode="HTML",
+            )
     _track_flow_message(
         context,
         flow_id=flow_id,
         tag=_ASSIGNMENT_PROGRESS_TAG,
         message=sent_message,
-        fallback_chat_id=_message_chat_id(message),
+        fallback_chat_id=fallback_chat_id,
     )
 
 

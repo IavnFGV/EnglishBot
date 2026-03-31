@@ -15,7 +15,6 @@ class AssignmentProgressSegment:
 
 @dataclass(frozen=True, slots=True)
 class AssignmentProgressSnapshot:
-    label: str
     center_label: str
     legend_labels: tuple[str, str, str, str]
     completed_word_count: int
@@ -34,28 +33,17 @@ def render_assignment_progress_image(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image = Image.new("RGB", (size, size), "#fff8ef")
     draw = ImageDraw.Draw(image)
-    title_font = _load_font(max(14, size // 15))
     count_font = _load_font(max(26, size // 5))
     detail_font = _load_font(max(11, size // 24))
 
     center_x = size // 2
-    center_y = int(size * 0.42)
-    outer_radius = int(size * 0.42)
+    center_y = int(size * 0.38)
+    outer_radius = int(size * 0.39)
     inner_radius = int(size * 0.11)
     segment_count = max(1, len(snapshot.segments))
     start_angle = -90.0
     sweep_angle = 360.0 / segment_count
     gap = min(4.0, sweep_angle * 0.12)
-
-    title = snapshot.label
-    title_box = draw.textbbox((0, 0), title, font=title_font)
-    title_width = title_box[2] - title_box[0]
-    draw.text(
-        ((size - title_width) / 2, int(size * 0.08)),
-        title,
-        fill="#243447",
-        font=title_font,
-    )
 
     for index, segment in enumerate(snapshot.segments):
         segment_start = start_angle + index * sweep_angle + gap / 2
@@ -108,16 +96,6 @@ def render_assignment_progress_image(
         font=count_font,
     )
 
-    detail_text = snapshot.center_label
-    detail_box = draw.textbbox((0, 0), detail_text, font=detail_font)
-    detail_width = detail_box[2] - detail_box[0]
-    draw.text(
-        ((size - detail_width) / 2, center_y + inner_radius // 2),
-        detail_text,
-        fill="#6c7a89",
-        font=detail_font,
-    )
-
     legend_items = [
         ("#dde7ef", snapshot.legend_labels[0]),
         ("#f7d36a", snapshot.legend_labels[1]),
@@ -125,13 +103,13 @@ def render_assignment_progress_image(
         ("#5ec27f", snapshot.legend_labels[3]),
     ]
     legend_rows = [legend_items[:2], legend_items[2:]]
-    row_gap = max(16, size // 15)
-    base_y = size - (row_gap * 2) - max(8, size // 28)
+    row_gap = max(20, size // 13)
+    base_y = int(size * 0.83)
     for row_index, row in enumerate(legend_rows):
         legend_y = base_y + row_index * row_gap
-        legend_x = int(size * 0.1)
+        legend_x = int(size * 0.12)
         for color, label in row:
-            dot_size = max(10, size // 20)
+            dot_size = max(14, size // 18)
             draw.ellipse(
                 [legend_x, legend_y, legend_x + dot_size, legend_y + dot_size],
                 fill=color,
@@ -142,7 +120,7 @@ def render_assignment_progress_image(
                 fill="#415364",
                 font=detail_font,
             )
-            legend_x += int(size * 0.4)
+            legend_x += int(size * 0.44)
 
     image.save(output_path, format="PNG")
     return output_path

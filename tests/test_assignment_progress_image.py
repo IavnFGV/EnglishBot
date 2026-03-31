@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 from PIL import Image
+from telegram.error import BadRequest
 
 from englishbot import bot
 from englishbot.application.homework_progress_use_cases import (
@@ -36,7 +37,6 @@ def _build_store(tmp_path: Path) -> SQLiteContentStore:
 
 def test_render_assignment_progress_image_writes_png(tmp_path: Path) -> None:
     snapshot = AssignmentProgressSnapshot(
-        label="Homework",
         center_label="done",
         legend_labels=("start", "warm-up", "almost", "done"),
         completed_word_count=1,
@@ -165,12 +165,24 @@ class _FakeBot:
     def __init__(self) -> None:
         self.media_edits: list[tuple[int, int, str | None]] = []
         self.deleted_messages: list[tuple[int, int]] = []
+        self.sent_photos: list[tuple[int, str | None]] = []
 
     async def edit_message_media(self, *, chat_id: int, message_id: int, media) -> None:
         self.media_edits.append((chat_id, message_id, getattr(media, "caption", None)))
 
     async def delete_message(self, *, chat_id: int, message_id: int) -> None:
         self.deleted_messages.append((chat_id, message_id))
+
+    async def send_photo(self, *, chat_id: int, photo, caption=None, parse_mode=None):  # noqa: ARG002
+        _ = photo.read()
+        self.sent_photos.append((chat_id, caption))
+        return SimpleNamespace(message_id=999, chat_id=chat_id)
+
+
+class _FailingReplyPhotoMessage(_FakePhotoMessage):
+    async def reply_photo(self, photo, caption=None, reply_markup=None, parse_mode=None):  # noqa: ARG002
+        _ = photo.read()
+        raise BadRequest("Message to be replied not found")
 
 
 @pytest.mark.anyio
@@ -226,3 +238,45 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
 
     assert len(fake_bot.media_edits) == 1
     assert fake_bot.media_edits[0][2] == "<b>📘 Homework</b>\n✅ Done: 1/2 words • 🎯 Left: 1 • 🔁 About 0 rounds"
+
+
+@pytest.mark.anyio
+async def test_send_or_update_assignment_progress_message_falls_back_to_send_photo_when_reply_is_gone(
+    tmp_path: Path,
+) -> None:
+    store = _build_store(tmp_path)
+    HomeworkProgressUseCase(store=store).create_goal(
+        user_id=8,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=2,
+        target_word_ids=["april", "august"],
+    )
+    registry = _FakeFlowRegistry()
+    message = _FailingReplyPhotoMessage()
+    fake_bot = _FakeBot()
+    context = SimpleNamespace(
+        bot=fake_bot,
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": store,
+                "telegram_flow_message_repository": registry,
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+    user = SimpleNamespace(id=8, language_code="en")
+
+    await bot._send_or_update_assignment_progress_message(
+        context,  # type: ignore[arg-type]
+        message=message,
+        user=user,
+        kind=AssignmentSessionKind.HOMEWORK,
+    )
+
+    assert fake_bot.sent_photos == [
+        (1, "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🎯 Left: 2 • 🔁 About 0 rounds")
+    ]
+    tracked = registry.list(flow_id="assignment-progress:8:homework", tag="assignment_progress")
+    assert len(tracked) == 1
+    assert tracked[0].message_id == 999
