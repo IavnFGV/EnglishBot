@@ -178,6 +178,13 @@ Do NOT:
 - tightly couple session logic to Telegram callback payloads
 - skip tests for domain/application services
 
+## User Data Cleanup Conventions
+
+- Keep the `/clearuser` learning-data cleanup path up to date whenever the schema or runtime adds new user-scoped learning state.
+- If you add a new table, repository record, cache entry, tracked Telegram flow, or on-disk artifact that stores data tied to a specific learner, explicitly decide whether `/clearuser` must remove it and update the cleanup implementation in the same change set when the answer is yes.
+- Treat user progress, goals, sessions, reminders, staged editor/review flows, and user-specific generated files as part of this review.
+- Do not leave user-specific learning data outside the documented `/clearuser` cleanup path by accident.
+
 ## Telegram UX Conventions
 
 For Telegram flows that trigger background or long-running work:

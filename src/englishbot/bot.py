@@ -246,7 +246,6 @@ _TRAINING_FEEDBACK_TAG = "training_feedback"
 _ASSIGNMENT_PROGRESS_TAG = "assignment_progress"
 _CHAT_MENU_TAG = "chat_menu"
 _NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
-_CLEAR_USER_MAGIC_WORD = "SECRETWORD"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
 _MEDIUM_TASK_STATE_KEY = "medium_task_state"
@@ -631,7 +630,7 @@ def build_application(
     app.add_handler(CommandHandler("add_words", add_words_start_handler))
     app.add_handler(CommandHandler("cancel", add_words_cancel_handler))
     app.add_handler(CommandHandler("makeadmin", makeadmin_handler))
-    app.add_handler(CommandHandler("clear_user", clear_user_handler))
+    app.add_handler(CommandHandler("clearuser", clear_user_handler))
     app.add_handler(ChatMemberHandler(chat_member_logger_handler, ChatMemberHandler.ANY_CHAT_MEMBER))
     app.add_handler(CallbackQueryHandler(continue_session_handler, pattern=r"^session:continue$"))
     app.add_handler(CallbackQueryHandler(restart_session_handler, pattern=r"^session:restart$"))
@@ -2474,17 +2473,10 @@ async def clear_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if message is None or user is None:
         return
 
-    if not _is_admin(user.id, context):
-        await send_telegram_view(
-            message,
-            build_status_view(text="Access denied. Only admins can use /clear_user."),
-        )
-        return
-
     if len(context.args) != 2:
         await send_telegram_view(
             message,
-            build_status_view(text="Usage: /clear_user <telegram_id> SECRETWORD"),
+            build_status_view(text="Usage: /clearuser <telegram_id> <bootstrap_secret>"),
         )
         return
 
@@ -2497,11 +2489,23 @@ async def clear_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    provided_magic_word = str(context.args[1]).strip()
-    if not hmac.compare_digest(provided_magic_word, _CLEAR_USER_MAGIC_WORD):
+    provided_secret = str(context.args[1]).strip()
+    bootstrap_secret = str(
+        context.application.bot_data.get("admin_bootstrap_secret", "")
+    ).strip()
+    requester_is_admin = _is_admin(user.id, context)
+    secret_is_valid = bool(
+        bootstrap_secret and provided_secret and hmac.compare_digest(provided_secret, bootstrap_secret)
+    )
+    if not requester_is_admin and not secret_is_valid:
         await send_telegram_view(
             message,
-            build_status_view(text="Access denied. The confirmation word is invalid."),
+            build_status_view(
+                text=(
+                    "Access denied. Current admins can use /clearuser directly. "
+                    "Otherwise provide a valid bootstrap secret."
+                )
+            ),
         )
         return
 

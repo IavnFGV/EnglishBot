@@ -512,10 +512,11 @@ async def test_clear_user_handler_clears_learning_data_for_admin(
         effective_user=SimpleNamespace(id=321),
     )
     context = SimpleNamespace(
-        args=["777", "SECRETWORD"],
+        args=["777", "topsecret"],
         application=SimpleNamespace(
             bot_data={
                 "admin_user_ids": {321},
+                "admin_bootstrap_secret": "topsecret",
                 "training_service": SimpleNamespace(
                     discard_active_session=lambda user_id: discarded_user_ids.append(user_id)
                 ),
@@ -563,7 +564,8 @@ async def test_clear_user_handler_rejects_invalid_confirmation_word(
         args=["777", "WRONG"],
         application=SimpleNamespace(
             bot_data={
-                "admin_user_ids": {321},
+                "admin_user_ids": set(),
+                "admin_bootstrap_secret": "topsecret",
                 "training_service": SimpleNamespace(
                     discard_active_session=lambda user_id: (_ for _ in ()).throw(AssertionError("must not discard"))
                 ),
@@ -576,7 +578,10 @@ async def test_clear_user_handler_rejects_invalid_confirmation_word(
 
     await clear_user_handler(update, context)  # type: ignore[arg-type]
 
-    assert sent_views[0].text == "Access denied. The confirmation word is invalid."
+    assert sent_views[0].text == (
+        "Access denied. Current admins can use /clearuser directly. "
+        "Otherwise provide a valid bootstrap secret."
+    )
 
 
 @pytest.mark.anyio
