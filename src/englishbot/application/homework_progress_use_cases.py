@@ -4,7 +4,7 @@ import random
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from math import ceil
 
@@ -92,6 +92,14 @@ class GoalWordSource(StrEnum):
     TOPIC = "topic"
     ALL = "all"
     MANUAL = "manual"
+
+
+def _as_utc_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 class GetGoalWordCandidatesUseCase:
@@ -523,11 +531,15 @@ def _remaining_assignment_words(
                 required_level = int(goal.required_level or 2)
             else:
                 word_stats = store.get_word_stats(user_id, word_id)
+                last_correct_at = _as_utc_datetime(
+                    word_stats.last_correct_at if word_stats is not None else None
+                )
+                goal_created_at = _as_utc_datetime(goal.created_at)
                 is_complete = bool(
                     word_stats is not None
-                    and word_stats.last_correct_at is not None
-                    and goal.created_at is not None
-                    and word_stats.last_correct_at >= goal.created_at
+                    and last_correct_at is not None
+                    and goal_created_at is not None
+                    and last_correct_at >= goal_created_at
                 )
                 required_level = None
             if is_complete:

@@ -357,3 +357,34 @@ def test_new_words_goal_does_not_reuse_progress_from_previous_goal_assignments(t
     refreshed_second_goal = next(goal for goal in store.list_user_goals(user_id=17) if goal.id == second_goal.id)
     assert refreshed_second_goal.status is GoalStatus.ACTIVE
     assert refreshed_second_goal.progress_count == 0
+
+
+def test_assignment_launch_summary_handles_naive_goal_created_at_from_existing_db(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=18,
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=1,
+        target_word_ids=["cat"],
+    )
+    with sqlite3.connect(tmp_path / "data" / "englishbot.db") as connection:
+        connection.execute(
+            "UPDATE user_goals SET created_at = ? WHERE id = ?",
+            ("2026-03-31 00:00:00", goal.id),
+        )
+    store.save_word_stats(
+        WordStats(
+            user_id=18,
+            word_id="cat",
+            success_easy=1,
+            current_level=1,
+            last_correct_at=datetime(2026, 3, 31, 0, 1, tzinfo=UTC),
+        )
+    )
+
+    summary = GetLearnerAssignmentLaunchSummaryUseCase(store=store, batch_size=5).execute(user_id=18)
+    summary_by_kind = {item.kind: item for item in summary}
+
+    assert summary_by_kind[AssignmentSessionKind.DAILY].remaining_word_count == 0
+    assert summary_by_kind[AssignmentSessionKind.DAILY].available is False
