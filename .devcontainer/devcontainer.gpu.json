@@ -52,7 +52,8 @@
         "openai.chatgpt",
         "mechatroner.rainbow-csv",
         "zknpr.sqlite-explorer",
-        "k--kato.intellij-idea-keybindings"
+        "k--kato.intellij-idea-keybindings",
+        "ms-azuretools.vscode-containers"
       ]
     }
   }
