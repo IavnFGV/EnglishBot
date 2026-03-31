@@ -1159,7 +1159,7 @@ def _build_assignment_progress_snapshot(
     store = _content_store(context)
     goals = store.list_user_goals(
         user_id=user_id,
-        statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED),
+        statuses=(GoalStatus.ACTIVE,),
     )
     progress_by_word: dict[str, AssignmentProgressSegment] = {}
     relevant_periods = _assignment_periods_for_kind(kind)

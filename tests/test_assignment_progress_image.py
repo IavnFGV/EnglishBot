@@ -114,6 +114,62 @@ def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path
     assert values["august"] == pytest.approx(1.0)
 
 
+def test_build_assignment_progress_snapshot_uses_only_active_homework(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    use_case = HomeworkProgressUseCase(store=store)
+    use_case.create_goal(
+        user_id=11,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=2,
+        target_word_ids=["april", "august"],
+    )
+    store.update_homework_word_progress(
+        user_id=11,
+        word_id="april",
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=2,
+    )
+    store.update_homework_word_progress(
+        user_id=11,
+        word_id="august",
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=2,
+    )
+    use_case.create_goal(
+        user_id=11,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["apricot"],
+    )
+
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": store,
+                "telegram_ui_language": "en",
+            }
+        )
+    )
+
+    snapshot = bot._build_assignment_progress_snapshot(
+        context=context,  # type: ignore[arg-type]
+        user_id=11,
+        kind=AssignmentSessionKind.HOMEWORK,
+        user=SimpleNamespace(id=11, language_code="en"),
+    )
+
+    assert snapshot is not None
+    assert snapshot.total_word_count == 1
+    assert snapshot.completed_word_count == 0
+    assert snapshot.remaining_word_count == 1
+    assert [item.word_id for item in snapshot.segments] == ["apricot"]
+    assert snapshot.segments[0].progress_value == pytest.approx(0.0)
+
+
 class _FakeFlowRegistry:
     def __init__(self) -> None:
         self.items: list[SimpleNamespace] = []
