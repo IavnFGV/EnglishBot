@@ -506,7 +506,6 @@ def _remaining_assignment_words(
     user_id: int,
     kind: AssignmentSessionKind,
 ) -> list[AssignmentWordView]:
-    progress_map = {item.item_id: item for item in store.list_progress_by_user(user_id)}
     goals = store.list_user_goals(user_id=user_id, statuses=(GoalStatus.ACTIVE,))
     periods = _periods_for_kind(kind)
     remaining: OrderedDict[str, AssignmentWordView] = OrderedDict()
@@ -523,8 +522,13 @@ def _remaining_assignment_words(
                 is_complete = bool(row.get("medium_mastered"))
                 required_level = int(goal.required_level or 2)
             else:
-                progress = progress_map.get(word_id)
-                is_complete = bool(progress and progress.correct_answers > 0)
+                word_stats = store.get_word_stats(user_id, word_id)
+                is_complete = bool(
+                    word_stats is not None
+                    and word_stats.last_correct_at is not None
+                    and goal.created_at is not None
+                    and word_stats.last_correct_at >= goal.created_at
+                )
                 required_level = None
             if is_complete:
                 continue

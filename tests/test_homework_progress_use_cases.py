@@ -1,6 +1,6 @@
 import random
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from englishbot.application.homework_progress_use_cases import (
@@ -14,7 +14,8 @@ from englishbot.application.homework_progress_use_cases import (
     HomeworkProgressUseCase,
     StartAssignmentRoundUseCase,
 )
-from englishbot.domain.models import GoalPeriod, GoalType, TrainingMode, UserProgress
+from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType, TrainingMode, UserProgress
+from englishbot.domain.models import WordStats
 from englishbot.application.question_factory import QuestionFactory
 from englishbot.infrastructure.sqlite_store import (
     SQLiteContentStore,
@@ -65,7 +66,8 @@ def test_homework_progress_use_case_creates_and_summarizes_goal(tmp_path: Path) 
     assert summary.correct_answers == 1
     assert summary.incorrect_answers == 1
     assert summary.weekly_points > 0
-    assert summary.active_goals == []
+    assert len(summary.active_goals) == 1
+    assert summary.active_goals[0].goal.id == created.id
 
 
 def test_homework_progress_use_case_resets_goal(tmp_path: Path) -> None:
@@ -172,14 +174,13 @@ def test_assignment_launch_summary_aggregates_daily_homework_and_all(tmp_path: P
         target_count=1,
         target_word_ids=["dog"],
     )
-    store.save_progress(UserProgress(user_id=9, item_id="cat", times_seen=1, correct_answers=1))
-
     summary = GetLearnerAssignmentLaunchSummaryUseCase(store=store, batch_size=1).execute(user_id=9)
     summary_by_kind = {item.kind: item for item in summary}
 
-    assert summary_by_kind[AssignmentSessionKind.DAILY].available is False
+    assert summary_by_kind[AssignmentSessionKind.DAILY].available is True
+    assert summary_by_kind[AssignmentSessionKind.DAILY].remaining_word_count == 1
     assert summary_by_kind[AssignmentSessionKind.HOMEWORK].remaining_word_count == 1
-    assert summary_by_kind[AssignmentSessionKind.ALL].remaining_word_count == 1
+    assert summary_by_kind[AssignmentSessionKind.ALL].remaining_word_count == 2
 
 
 def test_start_assignment_round_use_case_creates_assignment_session(tmp_path: Path) -> None:
@@ -218,7 +219,21 @@ def test_new_words_goal_progress_counts_unique_completed_words(tmp_path: Path) -
         target_count=2,
         target_word_ids=["cat", "dog"],
     )
-    store.save_progress(UserProgress(user_id=15, item_id="cat", times_seen=2, correct_answers=1))
+    created_at = datetime(2026, 3, 31, 0, 0, tzinfo=UTC)
+    with sqlite3.connect(tmp_path / "data" / "englishbot.db") as connection:
+        connection.execute(
+            "UPDATE user_goals SET created_at = ? WHERE id = ?",
+            (created_at.isoformat(), goal.id),
+        )
+    store.save_word_stats(
+        WordStats(
+            user_id=15,
+            word_id="cat",
+            success_easy=1,
+            current_level=1,
+            last_correct_at=created_at + timedelta(minutes=1),
+        )
+    )
 
     store.update_goals_progress(
         user_id=15,
@@ -255,12 +270,25 @@ def test_list_user_goals_refreshes_stale_new_words_progress_from_existing_db(tmp
         target_count=2,
         target_word_ids=["cat", "dog"],
     )
-    store.save_progress(UserProgress(user_id=16, item_id="cat", times_seen=1, correct_answers=1))
+    created_at = datetime(2026, 3, 31, 0, 0, tzinfo=UTC)
     with sqlite3.connect(tmp_path / "data" / "englishbot.db") as connection:
+        connection.execute(
+            "UPDATE user_goals SET created_at = ? WHERE id = ?",
+            (created_at.isoformat(), goal.id),
+        )
         connection.execute(
             "UPDATE user_goals SET progress_count = ? WHERE id = ?",
             (2, goal.id),
         )
+    store.save_word_stats(
+        WordStats(
+            user_id=16,
+            word_id="cat",
+            success_easy=1,
+            current_level=1,
+            last_correct_at=created_at + timedelta(minutes=1),
+        )
+    )
 
     refreshed_goal = store.list_user_goals(user_id=16)[0]
     summary = GetLearnerAssignmentLaunchSummaryUseCase(store=store, batch_size=5).execute(user_id=16)
@@ -270,3 +298,62 @@ def test_list_user_goals_refreshes_stale_new_words_progress_from_existing_db(tmp
     assert refreshed_goal.status.value == "active"
     assert summary_by_kind[AssignmentSessionKind.DAILY].available is True
     assert summary_by_kind[AssignmentSessionKind.DAILY].remaining_word_count == 1
+
+
+def test_new_words_goal_does_not_reuse_progress_from_previous_goal_assignments(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    use_case = HomeworkProgressUseCase(store=store)
+
+    first_goal = use_case.create_goal(
+        user_id=17,
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=2,
+        target_word_ids=["cat", "dog"],
+    )
+    first_goal_created_at = "2026-03-30T10:00:00+00:00"
+    with sqlite3.connect(tmp_path / "data" / "englishbot.db") as connection:
+        connection.execute(
+            "UPDATE user_goals SET created_at = ? WHERE id = ?",
+            (first_goal_created_at, first_goal.id),
+        )
+    store.save_word_stats(
+        WordStats(
+            user_id=17,
+            word_id="cat",
+            success_easy=2,
+            current_level=1,
+            last_correct_at=datetime(2026, 3, 30, 10, 5, tzinfo=UTC),
+        )
+    )
+    store.save_word_stats(
+        WordStats(
+            user_id=17,
+            word_id="dog",
+            success_easy=2,
+            current_level=1,
+            last_correct_at=datetime(2026, 3, 30, 10, 6, tzinfo=UTC),
+        )
+    )
+
+    completed_first_goal = next(goal for goal in store.list_user_goals(user_id=17, statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED)) if goal.id == first_goal.id)
+    assert completed_first_goal.status is GoalStatus.COMPLETED
+    assert completed_first_goal.progress_count == 2
+
+    second_goal = use_case.create_goal(
+        user_id=17,
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=2,
+        target_word_ids=["cat", "dog"],
+    )
+    second_goal_created_at = "2026-03-30T10:10:00+00:00"
+    with sqlite3.connect(tmp_path / "data" / "englishbot.db") as connection:
+        connection.execute(
+            "UPDATE user_goals SET created_at = ? WHERE id = ?",
+            (second_goal_created_at, second_goal.id),
+        )
+
+    refreshed_second_goal = next(goal for goal in store.list_user_goals(user_id=17) if goal.id == second_goal.id)
+    assert refreshed_second_goal.status is GoalStatus.ACTIVE
+    assert refreshed_second_goal.progress_count == 0

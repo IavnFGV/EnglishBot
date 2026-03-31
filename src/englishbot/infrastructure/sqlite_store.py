@@ -1356,11 +1356,14 @@ class SQLiteContentStore:
             """
             SELECT COUNT(*) AS completed_count
             FROM user_goal_words goal_words
-            JOIN user_progress progress
-              ON progress.user_id = ?
-             AND progress.item_id = goal_words.word_id
+            JOIN user_goals goals
+              ON goals.id = goal_words.goal_id
+            JOIN user_word_stats stats
+              ON stats.user_id = ?
+             AND stats.word_id = goal_words.word_id
             WHERE goal_words.goal_id = ?
-              AND progress.correct_answers > 0
+              AND stats.last_correct_at IS NOT NULL
+              AND stats.last_correct_at >= goals.created_at
             """,
             (user_id, goal_id),
         ).fetchone()
