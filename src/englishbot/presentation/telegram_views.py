@@ -64,8 +64,9 @@ def build_training_question_view(
     *,
     image_path: Path | None,
     reply_markup: TelegramReplyMarkup | None = None,
+    body_text_override: str | None = None,
 ) -> TelegramView:
-    rendered_question = _render_compact_training_question(question)
+    rendered_question = body_text_override or _render_compact_training_question(question)
     if image_path is not None:
         return TelegramPhotoView(
             photo_path=image_path,

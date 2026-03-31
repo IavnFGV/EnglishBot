@@ -42,6 +42,34 @@ class _FakeMessage:
         return SimpleNamespace(message_id=self.message_id, chat_id=self.chat_id)
 
 
+class _FakeEditableMessage(_FakeMessage):
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
+        self.edits: list[str] = []
+        self.edit_reply_markup_calls: list[object | None] = []
+
+    async def edit_caption(self, caption: str, reply_markup=None, parse_mode=None) -> None:  # noqa: ARG002
+        self.edits.append(caption)
+        self.edit_reply_markup_calls.append(reply_markup)
+
+
+class _FakeQuery:
+    def __init__(self, data: str, message: _FakeEditableMessage, *, user_id: int = 123) -> None:
+        self.data = data
+        self.message = message
+        self.from_user = SimpleNamespace(id=user_id)
+        self.answers = 0
+        self.edit_calls: list[tuple[str, object | None, str | None]] = []
+
+    async def answer(self, text=None, show_alert=None) -> None:  # noqa: ARG002
+        self.answers += 1
+
+    async def edit_message_text(self, text: str, reply_markup=None, parse_mode=None) -> None:
+        self.edit_calls.append((text, reply_markup, parse_mode))
+        self.message.edits.append(text)
+        self.message.edit_reply_markup_calls.append(reply_markup)
+
+
 class _FakeTelegramFlowMessageRepository:
     def __init__(self) -> None:
         self.messages: list[SimpleNamespace] = []
@@ -93,6 +121,25 @@ class _IdleService:
 
     def list_topics(self):
         return [SimpleNamespace(id="weather", title="Weather")]
+
+
+class _MediumQuestionService:
+    def __init__(self, question: TrainingQuestion) -> None:
+        self.question = question
+
+    def get_active_session(self, *, user_id: int):  # noqa: ARG002
+        return SimpleNamespace(
+            session_id=self.question.session_id,
+            topic_id="weather",
+            lesson_id=None,
+            source_tag=None,
+            mode=TrainingMode.MEDIUM,
+            current_position=1,
+            total_items=1,
+        )
+
+    def get_current_question(self, *, user_id: int):  # noqa: ARG002
+        return self.question
 
 
 class _CompletingService:
@@ -440,6 +487,155 @@ async def test_send_question_replaces_previous_tracked_training_question() -> No
     tracked = registry.list(flow_id="session-1", tag="training_question")
     assert len(tracked) == 1
     assert tracked[0].message_id == 12
+
+
+@pytest.mark.anyio
+async def test_send_question_builds_medium_inline_keyboard_and_state() -> None:
+    message = _FakeMessage("start")
+    registry = _FakeTelegramFlowMessageRepository()
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(bot_data={"telegram_flow_message_repository": registry}),
+        bot=_FakeBot(),
+    )
+    update = SimpleNamespace(effective_message=message)
+    question = TrainingQuestion(
+        session_id="session-medium-1",
+        item_id="apple",
+        mode=TrainingMode.MEDIUM,
+        prompt="Translation: яблоко\nVisual clue: Image is shown above.\nShuffled letters hint: APLEP\nType the English word.",
+        image_ref=None,
+        correct_answer="APPLE",
+        letter_hint="APLEP",
+    )
+
+    await _send_question(update, context, question)  # type: ignore[arg-type]
+
+    assert "🧩" in message.replies[0]
+    assert "_ _ _ _ _" in message.replies[0]
+    keyboard = message.reply_markup_calls[0]
+    assert [button.text for row in keyboard.inline_keyboard[:-1] for button in row] == [
+        "A",
+        "P",
+        "L",
+        "E",
+        "P",
+    ]
+    assert keyboard.inline_keyboard[-1][0].text == "⌫"
+    state = context.user_data["medium_task_state"]
+    assert state.target_word == "APPLE"
+    assert state.shuffled_letters == ("A", "P", "L", "E", "P")
+    assert state.selected_letter_indexes == ()
+    assert state.message_id == 11
+
+
+@pytest.mark.anyio
+async def test_medium_answer_callback_handler_uses_backspace_and_repeated_letters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    question = TrainingQuestion(
+        session_id="session-medium-2",
+        item_id="apple",
+        mode=TrainingMode.MEDIUM,
+        prompt="Translation: яблоко\nVisual clue: Image is shown above.\nShuffled letters hint: APLEP\nType the English word.",
+        image_ref=None,
+        correct_answer="APPLE",
+        letter_hint="APLEP",
+    )
+    processed_answers: list[str] = []
+
+    async def _fake_process_answer(update, context, answer: str) -> None:  # noqa: ARG001
+        processed_answers.append(answer)
+
+    monkeypatch.setattr(bot, "_process_answer", _fake_process_answer)
+
+    message = _FakeEditableMessage("medium")
+    message.message_id = 77
+    query = _FakeQuery("medium:pick:0", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+        effective_message=message,
+    )
+    context = SimpleNamespace(
+        user_data={
+            "medium_task_state": bot._MediumTaskState(
+                session_id=question.session_id,
+                item_id=question.item_id,
+                target_word=question.correct_answer,
+                shuffled_letters=("A", "P", "L", "E", "P"),
+                selected_letter_indexes=(),
+                message_id=77,
+            )
+        },
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _MediumQuestionService(question),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    for callback_data in (
+        "medium:pick:0",
+        "medium:pick:1",
+        "medium:backspace",
+        "medium:pick:1",
+        "medium:pick:4",
+        "medium:pick:2",
+        "medium:pick:3",
+    ):
+        query.data = callback_data
+        await bot.medium_answer_callback_handler(update, context)  # type: ignore[arg-type]
+
+    assert processed_answers == ["APPLE"]
+    assert any("A P _ _ _" in text for text, _reply_markup, _parse_mode in query.edit_calls)
+    assert any("A P P _ _" in text for text, _reply_markup, _parse_mode in query.edit_calls)
+
+
+@pytest.mark.anyio
+async def test_medium_answer_callback_handler_ignores_stale_message_callbacks() -> None:
+    question = TrainingQuestion(
+        session_id="session-medium-3",
+        item_id="apple",
+        mode=TrainingMode.MEDIUM,
+        prompt="Translation: яблоко\nVisual clue: Image is shown above.\nShuffled letters hint: APLEP\nType the English word.",
+        image_ref=None,
+        correct_answer="APPLE",
+        letter_hint="APLEP",
+    )
+    message = _FakeEditableMessage("medium")
+    message.message_id = 88
+    query = _FakeQuery("medium:pick:0", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+        effective_message=message,
+    )
+    context = SimpleNamespace(
+        user_data={
+            "medium_task_state": bot._MediumTaskState(
+                session_id=question.session_id,
+                item_id=question.item_id,
+                target_word=question.correct_answer,
+                shuffled_letters=("A", "P", "L", "E", "P"),
+                selected_letter_indexes=(),
+                message_id=99,
+            )
+        },
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _MediumQuestionService(question),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    await bot.medium_answer_callback_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.answers == 1
+    assert query.edit_calls == []
+    assert context.user_data["medium_task_state"].selected_letter_indexes == ()
 
 
 @pytest.mark.anyio

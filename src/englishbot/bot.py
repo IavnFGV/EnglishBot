@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import hashlib
 import hmac
 import json
@@ -185,6 +186,7 @@ from englishbot.presentation.add_words_text import (
     parse_edited_vocabulary_line,
 )
 from englishbot.presentation.telegram_views import (
+    TelegramPhotoView,
     TelegramTextView,
     build_active_session_exists_view,
     build_assignment_menu_view,
@@ -236,6 +238,7 @@ _CHAT_MENU_TAG = "chat_menu"
 _NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
+_MEDIUM_TASK_STATE_KEY = "medium_task_state"
 _GAME_STAR_REWARD_CORRECT = 10
 _GAME_CHEST_REWARDS: tuple[int, ...] = (30, 50, 50, 100)
 _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW = timedelta(minutes=5)
@@ -279,6 +282,16 @@ class _AssignmentRoundProgressView:
     remaining_word_count: int
     estimated_round_count: int
     variant_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class _MediumTaskState:
+    session_id: str
+    item_id: str
+    target_word: str
+    shuffled_letters: tuple[str, ...]
+    selected_letter_indexes: tuple[int, ...]
+    message_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -619,6 +632,7 @@ def build_application(
     app.add_handler(CallbackQueryHandler(game_next_round_handler, pattern=r"^game:next_round$"))
     app.add_handler(CallbackQueryHandler(game_repeat_handler, pattern=r"^game:repeat$"))
     app.add_handler(CallbackQueryHandler(mode_selected_handler, pattern=r"^mode:"))
+    app.add_handler(CallbackQueryHandler(medium_answer_callback_handler, pattern=r"^medium:"))
     app.add_handler(CallbackQueryHandler(choice_answer_handler, pattern=r"^answer:"))
     app.add_handler(CallbackQueryHandler(words_menu_callback_handler, pattern=r"^words:menu$"))
     app.add_handler(CallbackQueryHandler(assign_menu_callback_handler, pattern=r"^assign:menu$"))
@@ -1883,10 +1897,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         logger.info("User %s opened /start", user.id)
         active_session = _service(context).get_active_session(user_id=user.id)
         if active_session is not None:
-            context.user_data["awaiting_text_answer"] = active_session.mode in {
-                TrainingMode.MEDIUM,
-                TrainingMode.HARD,
-            }
+            context.user_data["awaiting_text_answer"] = active_session.mode is TrainingMode.HARD
             await send_telegram_view(
                 message,
                 build_active_session_exists_view(
@@ -4467,13 +4478,11 @@ async def continue_session_handler(update: Update, context: ContextTypes.DEFAULT
         question = _service(context).get_current_question(user_id=user.id)
     except InvalidSessionStateError:
         context.user_data["awaiting_text_answer"] = False
+        _clear_medium_task_state(context)
         await query.edit_message_text(_tg("no_active_session_send_start", context=context, user=user))
         return
     _record_assignment_activity(context, user_id=user.id)
-    context.user_data["awaiting_text_answer"] = question.mode in {
-        TrainingMode.MEDIUM,
-        TrainingMode.HARD,
-    }
+    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
     await query.edit_message_text(_tg("continue_current_session", context=context, user=user))
     await _send_question(update, context, question)
 
@@ -4487,6 +4496,7 @@ async def restart_session_handler(update: Update, context: ContextTypes.DEFAULT_
     logger.info("User %s chose to discard the active session", user.id)
     _service(context).discard_active_session(user_id=user.id)
     context.user_data["awaiting_text_answer"] = False
+    _clear_medium_task_state(context)
     await query.edit_message_text(_tg("previous_session_discarded", context=context, user=user))
     await send_telegram_view(
         query.message,
@@ -4518,10 +4528,7 @@ async def start_assignment_round_callback_handler(update: Update, context: Conte
             reply_markup=_start_submenu_keyboard(language=_telegram_ui_language(context, user)),
         )
         return
-    context.user_data["awaiting_text_answer"] = question.mode in {
-        TrainingMode.MEDIUM,
-        TrainingMode.HARD,
-    }
+    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
     await query.edit_message_text(
         _tg(
             "assignment_round_started",
@@ -4623,10 +4630,7 @@ async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TY
     except ApplicationError as error:
         await query.edit_message_text(str(error))
         return
-    context.user_data["awaiting_text_answer"] = question.mode in {
-        TrainingMode.MEDIUM,
-        TrainingMode.HARD,
-    }
+    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
     await query.edit_message_text(_tg("session_started", context=context, user=user))
     await _send_question(update, context, question)
 
@@ -4682,10 +4686,7 @@ async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_
         "correct_answers": 0,
         "streak_days": streak_days,
     }
-    context.user_data["awaiting_text_answer"] = question.mode in {
-        TrainingMode.MEDIUM,
-        TrainingMode.HARD,
-    }
+    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
     await query.edit_message_text(
         _tg("game_round_started", context=context, user=user, streak_days=streak_days)
     )
@@ -4699,10 +4700,78 @@ async def game_repeat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     await query.answer()
     context.user_data.pop(_GAME_STATE_KEY, None)
+    _clear_medium_task_state(context)
     await query.edit_message_text(_tg("start_menu_title", context=context, user=user))
     await send_telegram_view(
         query.message,
         _start_menu_view(context=context, user=user),
+    )
+
+
+async def medium_answer_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or query.data is None:
+        return
+    await query.answer()
+    state = _get_medium_task_state(context)
+    message = getattr(query, "message", None)
+    message_id = getattr(message, "message_id", None)
+    if (
+        state is None
+        or state.message_id is None
+        or message_id != state.message_id
+        or _service(context).get_active_session(user_id=user.id) is None
+    ):
+        return
+    current_question = _service(context).get_current_question(user_id=user.id)
+    if (
+        current_question.mode is not TrainingMode.MEDIUM
+        or current_question.session_id != state.session_id
+        or current_question.item_id != state.item_id
+    ):
+        _clear_medium_task_state(context)
+        return
+    if query.data == "medium:backspace":
+        if not state.selected_letter_indexes:
+            return
+        state = _MediumTaskState(
+            session_id=state.session_id,
+            item_id=state.item_id,
+            target_word=state.target_word,
+            shuffled_letters=state.shuffled_letters,
+            selected_letter_indexes=state.selected_letter_indexes[:-1],
+            message_id=state.message_id,
+        )
+    elif query.data.startswith("medium:pick:"):
+        if _medium_task_is_complete(state):
+            return
+        try:
+            picked_index = int(query.data.rsplit(":", 1)[-1])
+        except ValueError:
+            return
+        if picked_index < 0 or picked_index >= len(state.shuffled_letters):
+            return
+        if picked_index in state.selected_letter_indexes:
+            return
+        state = _MediumTaskState(
+            session_id=state.session_id,
+            item_id=state.item_id,
+            target_word=state.target_word,
+            shuffled_letters=state.shuffled_letters,
+            selected_letter_indexes=(*state.selected_letter_indexes, picked_index),
+            message_id=state.message_id,
+        )
+    else:
+        return
+    _set_medium_task_state(context, state)
+    if _medium_task_is_complete(state):
+        _clear_medium_task_state(context)
+        await _process_answer(update, context, _medium_task_answer_text(state))
+        return
+    await _edit_training_question_view(
+        query,
+        view=_build_medium_question_view(current_question, state=state),
     )
 
 
@@ -4724,6 +4793,7 @@ async def text_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     if _service(context).get_active_session(user_id=user.id) is None:
         context.user_data["awaiting_text_answer"] = False
+        _clear_medium_task_state(context)
         await message.reply_text(_tg("no_active_session_begin", context=context, user=user))
         return
     await _process_answer(update, context, message.text)
@@ -4817,6 +4887,7 @@ async def _process_answer(
     message = update.effective_message
     if user is None or message is None:
         return
+    _clear_medium_task_state(context)
     active_session_before_submit = service.get_active_session(user_id=user.id)
     feedback_update: _GoalFeedbackUpdate | None = None
     if context.application.bot_data.get("homework_progress_use_case") is not None:
@@ -4827,6 +4898,7 @@ async def _process_answer(
         outcome = service.submit_answer(user_id=user.id, answer=answer)
     except InvalidSessionStateError:
         context.user_data["awaiting_text_answer"] = False
+        _clear_medium_task_state(context)
         await message.reply_text(_tg("no_active_session_begin", context=context, user=user))
         return
     except ApplicationError as error:
@@ -4845,18 +4917,18 @@ async def _process_answer(
     if isinstance(game_state, dict) and game_state.get("active"):
         await _send_game_feedback(message, outcome, context)
         if outcome.next_question is not None:
-            context.user_data["awaiting_text_answer"] = outcome.next_question.mode in {
-                TrainingMode.MEDIUM,
-                TrainingMode.HARD,
-            }
+            context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(
+                outcome.next_question
+            )
             await _send_question(update, context, outcome.next_question)
         else:
             context.user_data["awaiting_text_answer"] = False
+            _clear_medium_task_state(context)
             await _finish_game_session(message, outcome, context)
         return
     context.user_data["awaiting_text_answer"] = bool(
         outcome.next_question is not None
-        and outcome.next_question.mode in {TrainingMode.MEDIUM, TrainingMode.HARD}
+        and _expects_text_answer_for_question(outcome.next_question)
     )
     if before_summary is not None:
         feedback_update = _collect_goal_feedback_update(
@@ -5029,6 +5101,161 @@ async def _finish_game_session(
     await _flush_pending_notifications_for_user(context, user_id=user.id)
 
 
+def _expects_text_answer_for_question(question: TrainingQuestion) -> bool:
+    return question.mode is TrainingMode.HARD
+
+
+def _clear_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data.pop(_MEDIUM_TASK_STATE_KEY, None)
+
+
+def _build_medium_task_state(
+    question: TrainingQuestion,
+    *,
+    message_id: int | None = None,
+) -> _MediumTaskState:
+    letter_source = question.letter_hint or question.correct_answer
+    shuffled_letters = tuple(character for character in letter_source if not character.isspace())
+    return _MediumTaskState(
+        session_id=question.session_id,
+        item_id=question.item_id,
+        target_word=question.correct_answer,
+        shuffled_letters=shuffled_letters,
+        selected_letter_indexes=(),
+        message_id=message_id,
+    )
+
+
+def _get_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> _MediumTaskState | None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return None
+    state = user_data.get(_MEDIUM_TASK_STATE_KEY)
+    if isinstance(state, _MediumTaskState):
+        return state
+    return None
+
+
+def _set_medium_task_state(context: ContextTypes.DEFAULT_TYPE, state: _MediumTaskState) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data[_MEDIUM_TASK_STATE_KEY] = state
+
+
+def _medium_task_slot_count(state: _MediumTaskState) -> int:
+    return sum(1 for character in state.target_word if not character.isspace())
+
+
+def _medium_task_is_complete(state: _MediumTaskState) -> bool:
+    return len(state.selected_letter_indexes) >= _medium_task_slot_count(state)
+
+
+def _medium_task_selected_letters(state: _MediumTaskState) -> list[str]:
+    return [state.shuffled_letters[index] for index in state.selected_letter_indexes]
+
+
+def _medium_task_slots_text(state: _MediumTaskState) -> str:
+    selected_letters = _medium_task_selected_letters(state)
+    selected_index = 0
+    current_word_slots: list[str] = []
+    rendered_words: list[str] = []
+    for character in state.target_word:
+        if character.isspace():
+            if current_word_slots:
+                rendered_words.append(" ".join(current_word_slots))
+                current_word_slots = []
+            continue
+        slot_value = "_"
+        if selected_index < len(selected_letters):
+            slot_value = selected_letters[selected_index]
+        current_word_slots.append(slot_value)
+        selected_index += 1
+    if current_word_slots:
+        rendered_words.append(" ".join(current_word_slots))
+    return "   ".join(rendered_words) or "_"
+
+
+def _medium_task_answer_text(state: _MediumTaskState) -> str:
+    selected_letters = iter(_medium_task_selected_letters(state))
+    assembled: list[str] = []
+    for character in state.target_word:
+        if character.isspace():
+            assembled.append(character)
+            continue
+        assembled.append(next(selected_letters, ""))
+    return "".join(assembled)
+
+
+def _medium_task_keyboard(state: _MediumTaskState) -> InlineKeyboardMarkup:
+    selected_indexes = set(state.selected_letter_indexes)
+    available_buttons = [
+        InlineKeyboardButton(letter, callback_data=f"medium:pick:{index}")
+        for index, letter in enumerate(state.shuffled_letters)
+        if index not in selected_indexes
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+    row_width = 4
+    for start in range(0, len(available_buttons), row_width):
+        rows.append(available_buttons[start : start + row_width])
+    rows.append([InlineKeyboardButton("⌫", callback_data="medium:backspace")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _extract_training_translation(prompt: str) -> str:
+    for line in prompt.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Translation:"):
+            return stripped.removeprefix("Translation:").strip()
+    return prompt.strip()
+
+
+def _build_medium_question_text(question: TrainingQuestion, state: _MediumTaskState) -> str:
+    translation = html.escape(_extract_training_translation(question.prompt))
+    slots = html.escape(_medium_task_slots_text(state))
+    return f"🧩 <b>{translation}</b>\n\n<b>{slots}</b>"
+
+
+def _build_medium_question_view(
+    question: TrainingQuestion,
+    *,
+    state: _MediumTaskState,
+) -> TelegramTextView | TelegramPhotoView:
+    image_path = resolve_existing_image_path(question.image_ref)
+    return build_training_question_view(
+        question,
+        image_path=image_path,
+        reply_markup=_medium_task_keyboard(state),
+        body_text_override=_build_medium_question_text(question, state),
+    )
+
+
+async def _edit_training_question_view(
+    query,
+    *,
+    view: TelegramTextView | TelegramPhotoView,
+) -> None:
+    try:
+        if isinstance(view, TelegramPhotoView):
+            kwargs = {
+                "caption": view.caption,
+                "reply_markup": view.reply_markup,
+            }
+            if view.parse_mode is not None:
+                kwargs["parse_mode"] = view.parse_mode
+            await query.message.edit_caption(**kwargs)
+            return
+        await query.edit_message_text(
+            view.text,
+            reply_markup=view.reply_markup,
+            parse_mode=view.parse_mode,
+        )
+    except BadRequest as error:
+        if "Message is not modified" not in str(error):
+            raise
+
+
 async def _send_question(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -5042,21 +5269,40 @@ async def _send_question(
         flow_id=question.session_id,
         tag=_TRAINING_QUESTION_TAG,
     )
+    _clear_medium_task_state(context)
+    view: TelegramTextView | TelegramPhotoView
     reply_markup = None
-    if question.options:
+    if question.mode is TrainingMode.MEDIUM:
+        view = _build_medium_question_view(
+            question,
+            state=_build_medium_task_state(question),
+        )
+    elif question.options:
         reply_markup = InlineKeyboardMarkup(
             [
                 [InlineKeyboardButton(option, callback_data=f"answer:{option}")]
                 for option in question.options
             ]
         )
-    image_path = resolve_existing_image_path(question.image_ref)
-    view = build_training_question_view(
-        question,
-        image_path=image_path,
-        reply_markup=reply_markup,
-    )
+        image_path = resolve_existing_image_path(question.image_ref)
+        view = build_training_question_view(
+            question,
+            image_path=image_path,
+            reply_markup=reply_markup,
+        )
+    else:
+        image_path = resolve_existing_image_path(question.image_ref)
+        view = build_training_question_view(
+            question,
+            image_path=image_path,
+            reply_markup=reply_markup,
+        )
     sent_message = await send_telegram_view(message, view)
+    if question.mode is TrainingMode.MEDIUM:
+        _set_medium_task_state(
+            context,
+            _build_medium_task_state(question, message_id=getattr(sent_message, "message_id", None)),
+        )
     _track_flow_message(
         context,
         flow_id=question.session_id,
