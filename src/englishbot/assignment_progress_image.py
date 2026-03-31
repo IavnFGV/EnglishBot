@@ -33,12 +33,12 @@ def render_assignment_progress_image(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image = Image.new("RGB", (size, size), "#fff8ef")
     draw = ImageDraw.Draw(image)
-    count_font = _load_font(max(26, size // 5))
+    count_font = _load_font(max(26, size // 6))
     detail_font = _load_font(max(11, size // 24))
 
     center_x = size // 2
-    center_y = int(size * 0.38)
-    outer_radius = int(size * 0.39)
+    center_y = int(size * 0.41)
+    outer_radius = int(size * 0.38)
     inner_radius = int(size * 0.11)
     segment_count = max(1, len(snapshot.segments))
     start_angle = -90.0
@@ -92,8 +92,10 @@ def render_assignment_progress_image(
     draw.text(
         ((size - count_width) / 2, center_y - count_height / 2 - 8),
         count_text,
-        fill="#243447",
+        fill="#2b3d52",
         font=count_font,
+        stroke_width=max(2, size // 180),
+        stroke_fill="#fff8ef",
     )
 
     legend_items = [
