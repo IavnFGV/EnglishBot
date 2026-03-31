@@ -278,7 +278,7 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
     assert message.photo_calls[0][0] == "\x89PNG"
     assert (
         message.photo_calls[0][1]
-        == "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🧩 Round left: 1 • 🎯 Homework left: 2 • 🔁 About 1 rounds"
+        == "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🌱 Warmed up: 0 • 🧩 Round left: 1 • 🎯 Homework left: 2 • 🔁 About 1 rounds"
     )
 
     store.update_homework_word_progress(
@@ -299,7 +299,7 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
     assert len(fake_bot.media_edits) == 1
     assert (
         fake_bot.media_edits[0][2]
-        == "<b>📘 Homework</b>\n✅ Done: 1/2 words • 🧩 Round left: 1 • 🎯 Homework left: 1 • 🔁 About 1 rounds"
+        == "<b>📘 Homework</b>\n✅ Done: 1/2 words • 🌱 Warmed up: 0 • 🧩 Round left: 1 • 🎯 Homework left: 1 • 🔁 About 1 rounds"
     )
 
 
@@ -347,7 +347,7 @@ async def test_send_or_update_assignment_progress_message_falls_back_to_send_pho
     assert fake_bot.sent_photos == [
         (
             1,
-            "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🧩 Round left: 1 • 🎯 Homework left: 2 • 🔁 About 1 rounds",
+            "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🌱 Warmed up: 0 • 🧩 Round left: 1 • 🎯 Homework left: 2 • 🔁 About 1 rounds",
         )
     ]
     tracked = registry.list(flow_id=f"assignment-progress:8:homework:{goal.id}", tag="assignment_progress")
@@ -404,8 +404,62 @@ async def test_send_or_update_assignment_progress_message_uses_current_goal_from
     assert len(message.photo_calls) == 1
     assert (
         message.photo_calls[0][1]
-        == "<b>📘 Homework</b>\n✅ Done: 0/1 words • 🧩 Round left: 0 • 🎯 Homework left: 1 • 🔁 About 1 rounds"
+        == "<b>📘 Homework</b>\n✅ Done: 0/1 words • 🌱 Warmed up: 0 • 🧩 Round left: 0 • 🎯 Homework left: 1 • 🔁 About 1 rounds"
     )
+
+
+@pytest.mark.anyio
+async def test_send_or_update_assignment_progress_message_shows_warmed_up_words_for_current_goal(
+    tmp_path: Path,
+) -> None:
+    store = _build_store(tmp_path)
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=14,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=2,
+        target_word_ids=["april", "august"],
+    )
+    store.update_homework_word_progress(
+        user_id=14,
+        word_id="april",
+        mode=TrainingMode.EASY,
+        is_correct=True,
+        current_level=1,
+    )
+    store.update_homework_word_progress(
+        user_id=14,
+        word_id="august",
+        mode=TrainingMode.EASY,
+        is_correct=True,
+        current_level=1,
+    )
+    message = _FakePhotoMessage()
+    context = SimpleNamespace(
+        bot=_FakeBot(),
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": store,
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(  # noqa: ARG005
+                        current_position=2,
+                        total_items=2,
+                        source_tag=f"assignment:homework:{goal.id}",
+                    )
+                ),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    await bot._send_or_update_assignment_progress_message(
+        context,  # type: ignore[arg-type]
+        message=message,
+        user=SimpleNamespace(id=14, language_code="en"),
+        kind=AssignmentSessionKind.HOMEWORK,
+    )
+
+    assert "🌱 Warmed up: 2" in message.photo_calls[0][1]
 
 
 @pytest.mark.anyio
