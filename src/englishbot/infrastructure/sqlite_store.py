@@ -868,6 +868,34 @@ class SQLiteContentStore:
         if cursor.rowcount == 0:
             raise ValueError("Vocabulary item was not found.")
 
+    def update_word_image(
+        self,
+        *,
+        item_id: str,
+        image_ref: str,
+        image_source: str | None,
+        pixabay_search_query: str | None,
+        source_fragment: str | None,
+    ) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE learning_items
+                SET image_ref = ?, image_source = ?, pixabay_search_query = ?, source_fragment = ?
+                WHERE id = ?
+                """,
+                (
+                    image_ref,
+                    image_source,
+                    pixabay_search_query,
+                    source_fragment,
+                    item_id,
+                ),
+            )
+        if cursor.rowcount == 0:
+            raise ValueError("Vocabulary item was not found.")
+
     def get_content_pack(self, topic_id: str) -> dict[str, object]:
         self.initialize()
         topic = self.get_topic(topic_id)

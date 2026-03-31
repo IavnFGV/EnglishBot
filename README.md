@@ -407,6 +407,23 @@ Learner bot behavior:
 - if `image_ref` exists and the local file exists, the bot sends a Telegram photo with the question as caption
 - if the file is missing, the bot falls back to the existing text-only question flow
 
+Backfill missing vocabulary images from Pixabay without local image generation:
+
+```bash
+python -m englishbot.fill_word_images \
+  --assets-dir assets \
+  --delay-sec 1
+```
+
+Useful options:
+
+- `--topic-id fairy-tales` to fill one topic only
+- `--limit 50` to process a smaller batch
+- `--force` to redownload even when a local asset already exists
+- `--dry-run` to see selections without saving files
+
+The script uses the existing Pixabay API settings from `.env`, fetches the first 20 popular results for each word, and then picks the best candidate using simple semantic heuristics based on tags, source-page text, and image size. This is intentionally a lightweight external-service flow rather than local LLM image generation.
+
 What is still stubbed:
 
 - OCR

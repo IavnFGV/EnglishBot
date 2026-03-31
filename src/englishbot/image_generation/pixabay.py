@@ -18,6 +18,7 @@ class PixabayImageResult:
     source_page_url: str
     width: int | None
     height: int | None
+    tags: tuple[str, ...] = ()
 
 
 class PixabayImageSearchClient:
@@ -160,6 +161,17 @@ class PixabayImageSearchClient:
                 continue
             width = hit.get("imageWidth")
             height = hit.get("imageHeight")
+            raw_tags = hit.get("tags")
+            tags: tuple[str, ...] = ()
+            if isinstance(raw_tags, str):
+                tags = tuple(
+                    normalized
+                    for normalized in (
+                        tag.strip().lower()
+                        for tag in raw_tags.split(",")
+                    )
+                    if normalized
+                )
             results.append(
                 PixabayImageResult(
                     source_id=source_id,
@@ -168,6 +180,7 @@ class PixabayImageSearchClient:
                     source_page_url=source_page_url,
                     width=int(width) if isinstance(width, int) else None,
                     height=int(height) if isinstance(height, int) else None,
+                    tags=tags,
                 )
             )
         logger.debug(
