@@ -219,7 +219,10 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
 
     assert len(message.photo_calls) == 1
     assert message.photo_calls[0][0] == "\x89PNG"
-    assert message.photo_calls[0][1] == "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🎯 Left: 2 • 🔁 About 0 rounds"
+    assert (
+        message.photo_calls[0][1]
+        == "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🧩 Round left: 0 • 🎯 Homework left: 2 • 🔁 About 0 rounds"
+    )
 
     store.update_homework_word_progress(
         user_id=7,
@@ -237,7 +240,10 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
     )
 
     assert len(fake_bot.media_edits) == 1
-    assert fake_bot.media_edits[0][2] == "<b>📘 Homework</b>\n✅ Done: 1/2 words • 🎯 Left: 1 • 🔁 About 0 rounds"
+    assert (
+        fake_bot.media_edits[0][2]
+        == "<b>📘 Homework</b>\n✅ Done: 1/2 words • 🧩 Round left: 0 • 🎯 Homework left: 1 • 🔁 About 0 rounds"
+    )
 
 
 @pytest.mark.anyio
@@ -275,7 +281,10 @@ async def test_send_or_update_assignment_progress_message_falls_back_to_send_pho
     )
 
     assert fake_bot.sent_photos == [
-        (1, "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🎯 Left: 2 • 🔁 About 0 rounds")
+        (
+            1,
+            "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🧩 Round left: 0 • 🎯 Homework left: 2 • 🔁 About 0 rounds",
+        )
     ]
     tracked = registry.list(flow_id="assignment-progress:8:homework", tag="assignment_progress")
     assert len(tracked) == 1
