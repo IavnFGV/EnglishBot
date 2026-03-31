@@ -4233,6 +4233,13 @@ async def image_review_search_handler(
     except ValueError as error:
         await query.edit_message_text(str(error))
         return
+    except Exception:  # noqa: BLE001
+        logger.exception("Image review Pixabay search callback failed for user=%s", user.id)
+        await edit_telegram_text_view(
+            query,
+            _status_view(text=_tg("searching_pixabay_failed", context=context, user=user)),
+        )
+        return
     await edit_telegram_text_view(
         query,
         _status_view(
@@ -4285,6 +4292,13 @@ async def image_review_next_handler(
     except ValueError as error:
         await query.edit_message_text(str(error))
         return
+    except Exception:  # noqa: BLE001
+        logger.exception("Image review next Pixabay page failed for user=%s", user.id)
+        await edit_telegram_text_view(
+            query,
+            _status_view(text=_tg("searching_pixabay_failed", context=context, user=user)),
+        )
+        return
     await edit_telegram_text_view(
         query,
         _status_view(
@@ -4336,6 +4350,13 @@ async def image_review_previous_handler(
         )
     except ValueError as error:
         await query.edit_message_text(str(error))
+        return
+    except Exception:  # noqa: BLE001
+        logger.exception("Image review previous Pixabay page failed for user=%s", user.id)
+        await edit_telegram_text_view(
+            query,
+            _status_view(text=_tg("searching_pixabay_failed", context=context, user=user)),
+        )
         return
     await edit_telegram_text_view(
         query,

@@ -1160,6 +1160,52 @@ async def test_image_review_search_and_next_handlers_show_pixabay_candidates(
 
 
 @pytest.mark.anyio
+async def test_image_review_search_handler_shows_failure_status_on_unexpected_error(
+    tmp_path: Path,
+) -> None:
+    search_flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={"topic": {"id": "fairy-tales", "title": "Fairy Tales"}},
+        items=[
+            ImageReviewItem(
+                item_id="dragon",
+                english_word="Dragon",
+                translation="дракон",
+                prompt="Prompt for Dragon",
+                search_query="Dragon",
+                candidates=[],
+            )
+        ],
+    )
+    message = _FakeCallbackMessage(tmp_path)
+    query = _FakeQuery("words:image_search:review123", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=42),
+    )
+
+    def _raise_execute(*, user_id: int, flow_id: str, query=None):  # noqa: ARG001
+        raise RuntimeError("429")
+
+    context = SimpleNamespace(
+        bot=_FakeBot(),
+        application=SimpleNamespace(
+            bot_data={
+                "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(search_flow),
+                "image_review_search_use_case": SimpleNamespace(execute=_raise_execute),
+                "telegram_flow_message_repository": _FakeTelegramFlowMessageRepository(),
+            }
+        ),
+    )
+
+    await image_review_search_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.edits[0] == "Searching Pixabay 1/1..."
+    assert "Could not search with this query" in query.edits[-1]
+
+
+@pytest.mark.anyio
 async def test_image_review_edit_search_query_flow_runs_search_with_custom_text(
     tmp_path: Path,
 ) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Protocol
@@ -20,6 +21,8 @@ from englishbot.importing.models import CanonicalContentPack, LessonExtractionDr
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.logging_utils import logged_service_call
+
+logger = logging.getLogger(__name__)
 
 
 class ImageCandidateGenerator(Protocol):
@@ -264,15 +267,28 @@ class ImageReviewFlowHarness:
         current_item.candidate_source_type = "pixabay"
         current_item.selected_candidate_index = None
         current_item.skipped = False
-        current_item.candidates = [
-            self._build_pixabay_candidate(
-                topic_id=topic_id,
-                item_id=current_item.item_id,
-                prompt=current_item.prompt,
-                result=result,
-            )
-            for result in results
-        ]
+        candidates: list[ImageCandidate] = []
+        for result in results:
+            try:
+                candidates.append(
+                    self._build_pixabay_candidate(
+                        topic_id=topic_id,
+                        item_id=current_item.item_id,
+                        prompt=current_item.prompt,
+                        result=result,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "Skipping Pixabay preview candidate item_id=%s source_id=%s preview_url=%s",
+                    current_item.item_id,
+                    result.source_id,
+                    result.preview_url,
+                    exc_info=True,
+                )
+        if results and not candidates:
+            raise ValueError("Could not load Pixabay preview images right now. Please try again.")
+        current_item.candidates = candidates
         return updated
 
     def load_next_search_candidates(

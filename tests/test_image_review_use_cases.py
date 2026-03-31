@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from englishbot.application.image_review_flow import ImageReviewFlowHarness
 from englishbot.application.image_review_use_cases import (
     GenerateImageReviewCandidatesUseCase,
@@ -91,6 +93,17 @@ class FakeRemoteImageDownloader:
         self.downloads.append((url, output_path))
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(url.encode("utf-8"))
+
+
+class FlakyRemoteImageDownloader(FakeRemoteImageDownloader):
+    def __init__(self, *, failing_urls: set[str]) -> None:
+        super().__init__()
+        self._failing_urls = failing_urls
+
+    def download(self, *, url: str, output_path: Path) -> None:
+        if url in self._failing_urls:
+            raise RuntimeError("rate limited")
+        super().download(url=url, output_path=output_path)
 
 
 class FallbackImageCandidateGenerator:
@@ -440,6 +453,85 @@ def test_pixabay_previous_page_loads_prior_candidates_and_preserves_query(
         ("Dragon", "Dragon", 2, 6),
         ("Dragon", "Dragon", 1, 6),
     ]
+
+
+def test_pixabay_search_skips_preview_candidates_that_fail_to_download(
+    tmp_path: Path,
+) -> None:
+    repository = InMemoryImageReviewFlowRepository()
+    search_client = FakePixabaySearchClient()
+    downloader = FlakyRemoteImageDownloader(
+        failing_urls={"https://cdn.example/1-0.jpg"}
+    )
+    harness = ImageReviewFlowHarness(
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        candidate_generator=FakeImageCandidateGenerator(),
+        image_search_client=search_client,
+        remote_image_downloader=downloader,
+        assets_dir=tmp_path / "assets",
+    )
+    flow = harness.start_from_content_pack(
+        editor_user_id=7,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "dragon", "english_word": "Dragon", "translation": "дракон"}
+            ],
+        },
+    )
+    repository.save(flow)
+
+    searched_flow = SearchImageReviewCandidatesUseCase(
+        harness=harness,
+        repository=repository,
+    ).execute(user_id=7, flow_id=flow.flow_id)
+
+    assert searched_flow.current_item is not None
+    assert len(searched_flow.current_item.candidates) == 5
+    assert [candidate.source_id for candidate in searched_flow.current_item.candidates] == [
+        "1001",
+        "1002",
+        "1003",
+        "1004",
+        "1005",
+    ]
+
+
+def test_pixabay_search_raises_friendly_error_when_all_previews_fail_to_download(
+    tmp_path: Path,
+) -> None:
+    repository = InMemoryImageReviewFlowRepository()
+    search_client = FakePixabaySearchClient()
+    downloader = FlakyRemoteImageDownloader(
+        failing_urls={f"https://cdn.example/1-{offset}.jpg" for offset in range(6)}
+    )
+    harness = ImageReviewFlowHarness(
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+        candidate_generator=FakeImageCandidateGenerator(),
+        image_search_client=search_client,
+        remote_image_downloader=downloader,
+        assets_dir=tmp_path / "assets",
+    )
+    flow = harness.start_from_content_pack(
+        editor_user_id=7,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "dragon", "english_word": "Dragon", "translation": "дракон"}
+            ],
+        },
+    )
+    repository.save(flow)
+
+    with pytest.raises(ValueError, match="Could not load Pixabay preview images right now"):
+        SearchImageReviewCandidatesUseCase(
+            harness=harness,
+            repository=repository,
+        ).execute(user_id=7, flow_id=flow.flow_id)
 
 
 def test_selecting_pixabay_candidate_downloads_full_image_and_updates_image_source(
