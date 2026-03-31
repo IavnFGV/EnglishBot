@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 from englishbot import bot
 from englishbot.application.homework_progress_use_cases import (
@@ -36,8 +37,12 @@ def _build_store(tmp_path: Path) -> SQLiteContentStore:
 def test_render_assignment_progress_image_writes_png(tmp_path: Path) -> None:
     snapshot = AssignmentProgressSnapshot(
         label="Homework",
+        center_label="done",
+        legend_labels=("start", "warm-up", "almost", "done"),
         completed_word_count=1,
         total_word_count=3,
+        remaining_word_count=2,
+        estimated_round_count=1,
         segments=(
             AssignmentProgressSegment("a", "April", 0.0),
             AssignmentProgressSegment("b", "August", 0.66),
@@ -52,6 +57,8 @@ def test_render_assignment_progress_image_writes_png(tmp_path: Path) -> None:
 
     assert output_path.exists()
     assert output_path.read_bytes().startswith(b"\x89PNG")
+    with Image.open(output_path) as image:
+        assert image.size == (256, 256)
 
 
 def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path: Path) -> None:
@@ -105,6 +112,10 @@ def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path
     assert snapshot is not None
     assert snapshot.total_word_count == 2
     assert snapshot.completed_word_count == 1
+    assert snapshot.remaining_word_count == 1
+    assert snapshot.estimated_round_count == 0
+    assert snapshot.center_label == "done"
+    assert snapshot.legend_labels == ("start", "warm-up", "almost", "done")
     values = {item.word_id: item.progress_value for item in snapshot.segments}
     assert values["april"] == pytest.approx(0.33)
     assert values["august"] == pytest.approx(1.0)
@@ -196,6 +207,7 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
 
     assert len(message.photo_calls) == 1
     assert message.photo_calls[0][0] == "\x89PNG"
+    assert message.photo_calls[0][1] == "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🎯 Left: 2 • 🔁 About 0 rounds"
 
     store.update_homework_word_progress(
         user_id=7,
@@ -213,3 +225,4 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
     )
 
     assert len(fake_bot.media_edits) == 1
+    assert fake_bot.media_edits[0][2] == "<b>📘 Homework</b>\n✅ Done: 1/2 words • 🎯 Left: 1 • 🔁 About 0 rounds"

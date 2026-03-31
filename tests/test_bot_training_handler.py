@@ -43,6 +43,11 @@ class _FakeMessage:
         return SimpleNamespace(message_id=self.message_id, chat_id=self.chat_id)
 
 
+class _FakePhotoCapableMessage(_FakeMessage):
+    async def reply_photo(self, photo, caption=None, reply_markup=None, parse_mode=None):  # noqa: ARG002
+        return SimpleNamespace(message_id=self.message_id + 1, chat_id=self.chat_id)
+
+
 class _FakeEditableMessage(_FakeMessage):
     def __init__(self, text: str) -> None:
         super().__init__(text)
@@ -628,7 +633,7 @@ async def test_medium_answer_callback_handler_uses_backspace_and_repeated_letter
     assert any("A P _ _ _" in text for text, _reply_markup, _parse_mode in query.edit_calls)
     assert any("A P P _ _" in text for text, _reply_markup, _parse_mode in query.edit_calls)
     assert any(
-        any(button.text == "A\u0336" for row in reply_markup.inline_keyboard[:-1] for button in row)
+        any(button.text == "·" for row in reply_markup.inline_keyboard[:-1] for button in row)
         for _text, reply_markup, _parse_mode in query.edit_calls
         if reply_markup is not None
     )
@@ -862,6 +867,54 @@ async def test_process_answer_shows_homework_progress_during_active_round_too() 
         "📘 Homework progress:" in reply and reply_markup is None
         for reply, reply_markup in zip(message.replies, message.reply_markup_calls, strict=False)
     )
+
+
+@pytest.mark.anyio
+async def test_send_feedback_compacts_assignment_feedback_when_progress_image_is_available() -> None:
+    message = _FakePhotoCapableMessage("cloud")
+    user = SimpleNamespace(id=123, language_code="en")
+    message.from_user = user
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "telegram_ui_language": "en",
+                "learner_assignment_launch_summary_use_case": SimpleNamespace(
+                    execute=lambda user_id: [
+                        AssignmentLaunchView(
+                            AssignmentSessionKind.HOMEWORK,
+                            True,
+                            3,
+                            1,
+                            completed_word_count=2,
+                            total_word_count=5,
+                            progress_variant_key="homework-alpha",
+                        )
+                    ]
+                ),
+            }
+        )
+    )
+
+    await bot._send_feedback(
+        message,
+        bot.AnswerOutcome(
+            result=CheckResult(is_correct=True, expected_answer="cloud", normalized_answer="cloud"),
+            summary=None,
+            next_question=None,
+        ),
+        context=context,  # type: ignore[arg-type]
+        active_session=SimpleNamespace(source_tag="assignment:homework", session_id="session-hw-3"),
+        user=user,
+        feedback_update=bot._GoalFeedbackUpdate(
+            weekly_points_delta=6,
+            progressed_goals=(),
+            completed_goals=(),
+        ),
+    )
+
+    assert len(message.replies) == 1
+    assert "Weekly points +6" in message.replies[0]
+    assert "\n" not in message.replies[0]
 
 
 @pytest.mark.anyio

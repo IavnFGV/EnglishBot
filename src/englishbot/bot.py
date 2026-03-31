@@ -1171,10 +1171,31 @@ def _build_assignment_progress_snapshot(
         return None
     segments = tuple(progress_by_word.values())
     completed_word_count = sum(1 for item in segments if item.progress_value >= 1.0)
+    remaining_word_count = max(0, len(segments) - completed_word_count)
+    estimated_round_count = 0
+    launch_summary_use_case = context.application.bot_data.get("learner_assignment_launch_summary_use_case")
+    if launch_summary_use_case is not None:
+        round_progress = _assignment_round_progress_view(
+            context=context,
+            user_id=user_id,
+            kind=kind,
+        )
+        if round_progress is not None:
+            remaining_word_count = round_progress.remaining_word_count
+            estimated_round_count = round_progress.estimated_round_count
     return AssignmentProgressSnapshot(
         label=_assignment_kind_label(kind, context=context, user=user),
+        center_label=_tg("assignment_progress_center_label", context=context, user=user),
+        legend_labels=(
+            _tg("assignment_progress_legend_start", context=context, user=user),
+            _tg("assignment_progress_legend_warmup", context=context, user=user),
+            _tg("assignment_progress_legend_almost", context=context, user=user),
+            _tg("assignment_progress_legend_done", context=context, user=user),
+        ),
         completed_word_count=completed_word_count,
         total_word_count=len(segments),
+        remaining_word_count=remaining_word_count,
+        estimated_round_count=estimated_round_count,
         segments=segments,
     )
 
@@ -1218,9 +1239,40 @@ def _assignment_progress_image_path(*, user_id: int, kind: AssignmentSessionKind
 
 def _assignment_progress_caption(
     *,
+    context: ContextTypes.DEFAULT_TYPE,
     snapshot: AssignmentProgressSnapshot,
+    user,
 ) -> str:
-    return f"<b>{html.escape(snapshot.label)}</b>\n{snapshot.completed_word_count}/{snapshot.total_word_count}"
+    return "\n".join(
+        [
+            f"<b>{html.escape(snapshot.label)}</b>",
+            _tg(
+                "assignment_round_progress_status",
+                context=context,
+                user=user,
+                done=snapshot.completed_word_count,
+                total=snapshot.total_word_count,
+                left=snapshot.remaining_word_count,
+                rounds=snapshot.estimated_round_count,
+            ),
+        ]
+    )
+
+
+def _compact_assignment_feedback_text(
+    *,
+    base_text: str,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    feedback_update: _GoalFeedbackUpdate | None,
+) -> str:
+    compact_text = " ".join(line.strip() for line in base_text.splitlines() if line.strip())
+    if feedback_update is not None and feedback_update.weekly_points_delta > 0:
+        compact_text = (
+            f"{compact_text} "
+            f"{_tg('feedback_weekly_points_delta', context=context, user=user, delta=feedback_update.weekly_points_delta)}"
+        )
+    return compact_text
 
 
 async def _send_or_update_assignment_progress_message(
@@ -1253,7 +1305,11 @@ async def _send_or_update_assignment_progress_message(
         snapshot,
         output_path=_assignment_progress_image_path(user_id=user_id, kind=kind),
     )
-    caption = _assignment_progress_caption(snapshot=snapshot)
+    caption = _assignment_progress_caption(
+        context=context,
+        snapshot=snapshot,
+        user=user,
+    )
     registry = _telegram_flow_messages(context)
     tracked_messages = registry.list(flow_id=flow_id, tag=_ASSIGNMENT_PROGRESS_TAG) if registry is not None else []
     tracked_message = tracked_messages[0] if tracked_messages else None
@@ -5177,6 +5233,7 @@ async def _send_feedback(
     reply_markup = None
     assignment_progress_text = ""
     assignment_kind = _assignment_kind_from_session(active_session) if active_session is not None else None
+    compact_assignment_feedback = assignment_kind is not None and hasattr(message, "reply_photo")
     round_progress = None
     if assignment_kind is not None and feedback_user_id is not None:
         round_progress = _assignment_round_progress_view(
@@ -5204,7 +5261,14 @@ async def _send_feedback(
             language=_telegram_ui_language(context, feedback_user),
         )
     text = view.text
-    if feedback_update is not None:
+    if compact_assignment_feedback:
+        text = _compact_assignment_feedback_text(
+            base_text=view.text,
+            context=context,
+            user=feedback_user,
+            feedback_update=feedback_update,
+        )
+    elif feedback_update is not None:
         update_text = _render_feedback_update_text(
             context=context,
             user=feedback_user,
@@ -5212,7 +5276,7 @@ async def _send_feedback(
         )
         if update_text:
             text = f"{text}\n\n{update_text}"
-    if assignment_progress_text:
+    if assignment_progress_text and not compact_assignment_feedback:
         text = f"{text}\n\n{assignment_progress_text}"
     flow_id = getattr(active_session, "session_id", None)
     if isinstance(flow_id, str):
@@ -5396,9 +5460,7 @@ def _medium_task_keyboard(state: _MediumTaskState) -> InlineKeyboardMarkup:
     selected_indexes = set(state.selected_letter_indexes)
     buttons = [
         InlineKeyboardButton(
-            "".join(f"{character}\u0336" for character in letter)
-            if index in selected_indexes
-            else letter,
+            "·" if index in selected_indexes else letter,
             callback_data=(
                 f"medium:noop:{index}"
                 if index in selected_indexes
