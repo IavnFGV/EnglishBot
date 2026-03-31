@@ -4965,9 +4965,9 @@ async def _send_feedback(
     feedback_update: _GoalFeedbackUpdate | None = None,
 ) -> None:
     feedback_user = getattr(message, "from_user", None)
-    feedback_user_id = getattr(feedback_user, "id", None)
+    feedback_user_id = getattr(active_session, "user_id", None)
     if feedback_user_id is None:
-        feedback_user_id = getattr(active_session, "user_id", None)
+        feedback_user_id = getattr(feedback_user, "id", None)
     view = build_answer_feedback_view(
         outcome,
         translate=_tg,
