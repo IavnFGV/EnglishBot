@@ -1684,6 +1684,7 @@ class SQLiteContentStore:
 
                 if is_correct and mode is TrainingMode.EASY:
                     easy_success_count += 1
+                    easy_mastered = True
                 if is_correct and mode is TrainingMode.MEDIUM:
                     medium_success_count += 1
                     easy_mastered = True
@@ -1698,8 +1699,6 @@ class SQLiteContentStore:
                     if hard_failed_streak >= 2:
                         hard_skipped = True
 
-                if easy_success_count >= 2:
-                    easy_mastered = True
                 if medium_success_count >= 2:
                     medium_mastered = True
                 if current_level >= 2:

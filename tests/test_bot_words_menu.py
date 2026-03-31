@@ -721,7 +721,7 @@ def test_admin_goal_flow_keyboards_include_back_navigation() -> None:
     assert _admin_goal_period_keyboard().inline_keyboard[-1][0].callback_data == "assign:menu"
     assert len(_admin_goal_period_keyboard().inline_keyboard) == 2
     assert _admin_goal_target_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_assign_goal"
-    assert _admin_goal_source_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_goal_target_menu"
+    assert _admin_goal_source_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_assign_goal"
 
 
 def test_admin_goal_manual_keyboard_shows_page_range_indicator() -> None:
@@ -790,9 +790,10 @@ def test_assignment_round_complete_keyboard_offers_next_round_when_available() -
         AssignmentSessionKind.HOMEWORK,
         has_more=True,
         remaining_word_count=3,
+        round_batch_size=5,
     )
 
-    assert [row[0].callback_data for row in keyboard.inline_keyboard] == ["start:launch:homework", "assign:menu", "start:menu"]
+    assert [row[0].callback_data for row in keyboard.inline_keyboard] == ["start:launch:homework:batch:5", "assign:menu", "start:menu"]
     assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
 
 
@@ -991,12 +992,12 @@ async def test_assign_goal_detail_callback_handler_shows_goal_words() -> None:
 @pytest.mark.anyio
 async def test_start_assignment_round_callback_handler_starts_selected_round() -> None:
     query = _RecordingQuery()
-    query.data = "start:launch:homework"
+    query.data = "start:launch:homework:batch:5"
     context = SimpleNamespace(
         application=SimpleNamespace(
             bot_data={
                 "start_assignment_round_use_case": SimpleNamespace(
-                    execute=lambda user_id, kind: SimpleNamespace(
+                    execute_with_batch_size=lambda user_id, kind, batch_size: SimpleNamespace(
                         session_id="s1",
                         item_id="cat",
                         mode=TrainingMode.MEDIUM,
@@ -1030,6 +1031,25 @@ async def test_start_assignment_round_callback_handler_starts_selected_round() -
 
     assert query.edits[0][0] == "📘 Homework round started."
     assert query.edits[1][0] == "Translation: кот"
+
+
+@pytest.mark.anyio
+async def test_start_assignment_round_callback_handler_shows_batch_picker_first() -> None:
+    query = _RecordingQuery()
+    query.data = "start:launch:homework"
+
+    await start_assignment_round_callback_handler(
+        SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=123, language_code="en")),
+        SimpleNamespace(application=SimpleNamespace(bot_data={}), user_data={}),  # type: ignore[arg-type]
+    )
+
+    assert query.edits[-1][0] == "Choose how many words to take in this round."
+    first_row = query.edits[-1][1].inline_keyboard[0]
+    assert [button.callback_data for button in first_row] == [
+        "start:launch:homework:batch:3",
+        "start:launch:homework:batch:5",
+        "start:launch:homework:batch:10",
+    ]
 
 
 @pytest.mark.anyio

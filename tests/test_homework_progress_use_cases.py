@@ -62,7 +62,7 @@ def test_homework_progress_use_case_creates_and_summarizes_goal(tmp_path: Path) 
     )
     summary = use_case.get_summary(user_id=3)
 
-    assert created.target_count == 1
+    assert created.target_count == 2
     assert summary.correct_answers == 1
     assert summary.incorrect_answers == 1
     assert summary.weekly_points > 0
@@ -103,6 +103,7 @@ def test_assign_goal_to_multiple_users_with_topic_source(tmp_path: Path) -> None
 
     assert len(created) == 2
     assert {goal.user_id for goal in created} == {11, 12}
+    assert {goal.target_count for goal in created} == {2}
 
 
 def test_admin_progress_overview_aggregates_users(tmp_path: Path) -> None:
@@ -178,7 +179,8 @@ def test_assign_goal_with_manual_selection_preserves_selected_order(tmp_path: Pa
 
     details = store.list_goal_word_details(goal_id=created[0].id, user_id=31)
 
-    assert {row["word_id"] for row in details} == {"dog", "cat"}
+    assert {row["word_id"] for row in details} == {"dog", "cat", "fox"}
+    assert created[0].target_count == 3
 
 
 def test_admin_goal_detail_returns_words_and_homework_stage(tmp_path: Path) -> None:

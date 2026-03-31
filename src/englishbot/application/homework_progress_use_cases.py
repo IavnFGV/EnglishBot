@@ -219,7 +219,7 @@ class AssignGoalToUsersUseCase:
         user_ids: list[int],
         goal_period: GoalPeriod,
         goal_type: GoalType,
-        target_count: int,
+        target_count: int | None,
         source: GoalWordSource,
         topic_id: str | None = None,
         manual_word_ids: list[str] | None = None,
@@ -228,7 +228,7 @@ class AssignGoalToUsersUseCase:
         deduplicated_user_ids = list(dict.fromkeys(user_ids))
         if not deduplicated_user_ids:
             raise ValueError("At least one user id is required")
-        if target_count <= 0:
+        if source is GoalWordSource.ALL and (target_count is None or target_count <= 0):
             raise ValueError("target_count must be positive")
 
         required_level = 2 if goal_type is GoalType.WORD_LEVEL_HOMEWORK else None
@@ -243,21 +243,26 @@ class AssignGoalToUsersUseCase:
                 topic_id=topic_id,
                 manual_word_ids=manual_word_ids,
             )
-            if source is GoalWordSource.MANUAL:
-                target_word_ids = candidate_word_ids[:target_count]
+            if source in {
+                GoalWordSource.RECENT,
+                GoalWordSource.TOPIC,
+                GoalWordSource.MANUAL,
+            }:
+                target_word_ids = list(candidate_word_ids)
             else:
                 target_word_ids = self._rng.sample(
                     candidate_word_ids,
-                    k=min(target_count, len(candidate_word_ids)),
+                    k=min(int(target_count or 0), len(candidate_word_ids)),
                 )
             if goal_type in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK} and not target_word_ids:
                 raise ValueError(f"No words available for user_id={user_id}")
+            effective_target_count = len(target_word_ids) if target_word_ids else int(target_count or 0)
             created.append(
                 self._store.assign_goal(
                     user_id=user_id,
                     goal_period=goal_period,
                     goal_type=goal_type,
-                    target_count=target_count,
+                    target_count=effective_target_count,
                     deadline_date=effective_deadline_date,
                     required_level=required_level,
                     target_topic_id=topic_id,
@@ -450,17 +455,41 @@ class StartAssignmentRoundUseCase:
         result=lambda value: {"session_id": value.session_id, "item_id": value.item_id},
     )
     def execute(self, *, user_id: int, kind: AssignmentSessionKind) -> TrainingQuestion:
+        return self.execute_with_batch_size(user_id=user_id, kind=kind, batch_size=None)
+
+    @logged_service_call(
+        "StartAssignmentRoundUseCase.execute_with_batch_size",
+        include=("user_id",),
+        transforms={
+            "kind": lambda value: {"kind": value.value},
+            "batch_size": lambda value: {"batch_size": value},
+        },
+        result=lambda value: {"session_id": value.session_id, "item_id": value.item_id},
+    )
+    def execute_with_batch_size(
+        self,
+        *,
+        user_id: int,
+        kind: AssignmentSessionKind,
+        batch_size: int | None,
+    ) -> TrainingQuestion:
         effective_kind = AssignmentSessionKind.HOMEWORK
+        effective_batch_size = batch_size if batch_size is not None and batch_size > 0 else self._batch_size
         remaining_words = _remaining_assignment_words(
             store=self._store,
             user_id=user_id,
             kind=effective_kind,
         )
-        selected_words = remaining_words[: self._batch_size]
+        selected_words = remaining_words[:effective_batch_size]
         if not selected_words:
             raise ValueError("No active assignments available for this section.")
         items = self._resolve_items(selected_words)
-        item_modes = self._build_item_modes(user_id=user_id, selected_words=selected_words, items=items)
+        item_modes = self._build_item_modes(
+            user_id=user_id,
+            selected_words=selected_words,
+            items=items,
+            batch_size=effective_batch_size,
+        )
         session = TrainingSession(
             id=str(uuid.uuid4()),
             user_id=user_id,
@@ -504,6 +533,7 @@ class StartAssignmentRoundUseCase:
         user_id: int,
         selected_words: list[AssignmentWordView],
         items: list[VocabularyItem],
+        batch_size: int,
     ) -> dict[str, TrainingMode]:
         selected_word_map = {item.word_id: item for item in selected_words}
         hard_limit = max(1, len(items) // 4) if items else 0
@@ -517,7 +547,7 @@ class StartAssignmentRoundUseCase:
                 current_level = word_stats.current_level if word_stats is not None else 0
                 mode = choose_word_mode(
                     current_level=current_level,
-                    rng=random.Random(f"assignment:{user_id}:{item.id}:{self._batch_size}"),
+                    rng=random.Random(f"assignment:{user_id}:{item.id}:{batch_size}"),
                     min_required_level=selected_word.required_level,
                 )
             if len(items) < 3 and mode is TrainingMode.EASY:

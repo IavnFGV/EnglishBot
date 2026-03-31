@@ -118,6 +118,7 @@ from englishbot.bot_assignments_ui import admin_goal_period_keyboard as ui_admin
 from englishbot.bot_assignments_ui import admin_goal_source_keyboard as ui_admin_goal_source_keyboard
 from englishbot.bot_assignments_ui import admin_goal_target_keyboard as ui_admin_goal_target_keyboard
 from englishbot.bot_assignments_ui import assign_menu_keyboard as ui_assign_menu_keyboard
+from englishbot.bot_assignments_ui import assignment_round_batch_keyboard as ui_assignment_round_batch_keyboard
 from englishbot.bot_assignments_ui import assignment_kind_label as ui_assignment_kind_label
 from englishbot.bot_assignments_ui import assignment_round_complete_keyboard as ui_assignment_round_complete_keyboard
 from englishbot.bot_assignments_ui import goal_custom_target_keyboard as ui_goal_custom_target_keyboard
@@ -253,6 +254,7 @@ _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW = timedelta(minutes=5)
 _NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD = timedelta(minutes=1)
 _NOTIFICATION_DELAY_AFTER_RECENT_ANSWER = timedelta(minutes=2)
 _DAILY_ASSIGNMENT_REMINDER_TIME = time(hour=13, minute=0, tzinfo=UTC)
+_ASSIGNMENT_ROUND_BATCH_SIZES: tuple[int, ...] = (3, 5, 10)
 _HELP_COMMAND_TEXT: dict[str, str] = {
     "start": "open your personal start menu",
     "help": "show commands",
@@ -1252,6 +1254,7 @@ def _assignment_progress_caption(
     snapshot: AssignmentProgressSnapshot,
     kind: AssignmentSessionKind,
     user,
+    round_left: int,
 ) -> str:
     return "\n".join(
         [
@@ -1262,7 +1265,7 @@ def _assignment_progress_caption(
                 user=user,
                 done=snapshot.completed_word_count,
                 total=snapshot.total_word_count,
-                round_left=0,
+                round_left=round_left,
                 left=snapshot.remaining_word_count,
                 rounds=snapshot.estimated_round_count,
             ),
@@ -1316,11 +1319,19 @@ async def _send_or_update_assignment_progress_message(
         snapshot,
         output_path=_assignment_progress_image_path(user_id=user_id, kind=kind),
     )
+    active_session = _service(context).get_active_session(user_id=user_id)
+    round_progress = _assignment_round_progress_view(
+        context=context,
+        user_id=user_id,
+        kind=kind,
+        active_session=active_session,
+    )
     caption = _assignment_progress_caption(
         context=context,
         snapshot=snapshot,
         kind=kind,
         user=user,
+        round_left=round_progress.remaining_in_round_count if round_progress is not None else 0,
     )
     registry = _telegram_flow_messages(context)
     tracked_messages = registry.list(flow_id=flow_id, tag=_ASSIGNMENT_PROGRESS_TAG) if registry is not None else []
@@ -2497,6 +2508,13 @@ def _admin_goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE)
     return ui_admin_goal_source_keyboard(tg=_tg, language=language)
 
 
+def _assignment_round_batch_keyboard(
+    *,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    return ui_assignment_round_batch_keyboard(tg=_tg, language=language)
+
+
 def _render_progress_text(*, context: ContextTypes.DEFAULT_TYPE, user) -> str:
     summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
     summary = LearnerProgressSummary(
@@ -2709,8 +2727,8 @@ async def admin_goal_period_callback_handler(update: Update, context: ContextTyp
     context.user_data["admin_goal_period"] = raw_period
     context.user_data["admin_goal_type"] = GoalType.WORD_LEVEL_HOMEWORK.value
     await query.edit_message_text(
-        _tg("goal_target_prompt", context=context, user=user),
-        reply_markup=_admin_goal_target_keyboard(language=_telegram_ui_language(context, user)),
+        _tg("goal_source_prompt", context=context, user=user),
+        reply_markup=_admin_goal_source_keyboard(language=_telegram_ui_language(context, user)),
     )
 
 
@@ -2947,7 +2965,7 @@ async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAUL
         user_ids=list(context.user_data.get("admin_goal_recipient_user_ids", [])),
         goal_period=GoalPeriod(str(context.user_data.get("admin_goal_period", GoalPeriod.HOMEWORK.value))),
         goal_type=GoalType(str(context.user_data.get("admin_goal_type", GoalType.WORD_LEVEL_HOMEWORK.value))),
-        target_count=int(context.user_data.get("admin_goal_target_count", 10)),
+        target_count=None,
         source=source,
         topic_id=topic_id,
         manual_word_ids=list(context.user_data.get("admin_goal_manual_word_ids", [])),
@@ -2955,7 +2973,16 @@ async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAUL
     _schedule_assignment_assigned_notifications(context, goals=created)
     for recipient_user_id in {int(goal.user_id) for goal in created}:
         await _flush_pending_notifications_for_user(context, user_id=recipient_user_id)
-    await query.edit_message_text(_tg("admin_goal_created", context=context, user=user, user_count=len(created), target=int(context.user_data.get("admin_goal_target_count", 10))))
+    assigned_word_count = max((int(goal.target_count) for goal in created), default=0)
+    await query.edit_message_text(
+        _tg(
+            "admin_goal_created",
+            context=context,
+            user=user,
+            user_count=len(created),
+            target=assigned_word_count,
+        )
+    )
     for key in (
         "admin_goal_period",
         "admin_goal_type",
@@ -4833,8 +4860,33 @@ async def start_assignment_round_callback_handler(update: Update, context: Conte
         return
     await query.answer()
     kind = AssignmentSessionKind.HOMEWORK
+    batch_size: int | None = None
+    parts = query.data.split(":")
+    if len(parts) >= 5 and parts[-2] == "batch":
+        try:
+            parsed_batch_size = int(parts[-1])
+        except ValueError:
+            parsed_batch_size = None
+        if parsed_batch_size in _ASSIGNMENT_ROUND_BATCH_SIZES:
+            batch_size = parsed_batch_size
+    if batch_size is None:
+        await query.edit_message_text(
+            _tg("assignment_round_batch_prompt", context=context, user=user),
+            reply_markup=_assignment_round_batch_keyboard(
+                language=_telegram_ui_language(context, user)
+            ),
+        )
+        return
     try:
-        question = _start_assignment_round_use_case(context).execute(user_id=user.id, kind=kind)
+        use_case = _start_assignment_round_use_case(context)
+        if hasattr(use_case, "execute_with_batch_size"):
+            question = use_case.execute_with_batch_size(
+                user_id=user.id,
+                kind=kind,
+                batch_size=batch_size,
+            )
+        else:
+            question = use_case.execute(user_id=user.id, kind=kind)
     except ValueError:
         await query.edit_message_text(
             _tg("start_assignment_empty", context=context, user=user),
@@ -5331,6 +5383,7 @@ async def _send_feedback(
                 if round_progress is not None and round_progress.remaining_word_count > 0
                 else None
             ),
+            round_batch_size=getattr(active_session, "total_items", None),
             language=_telegram_ui_language(context, feedback_user),
         )
     text = view.text
@@ -6514,6 +6567,7 @@ def _assignment_round_complete_keyboard(
     *,
     has_more: bool,
     remaining_word_count: int | None = None,
+    round_batch_size: int | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     return ui_assignment_round_complete_keyboard(
@@ -6521,6 +6575,7 @@ def _assignment_round_complete_keyboard(
         tg=_tg,
         has_more=has_more,
         remaining_word_count=remaining_word_count,
+        round_batch_size=round_batch_size,
         language=language,
     )
 

@@ -225,7 +225,6 @@ def goal_source_keyboard(
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton(tg("goal_source_recent", language=language), callback_data="words:goal_source:recent")],
-            [InlineKeyboardButton(tg("goal_source_all", language=language), callback_data="words:goal_source:all")],
             [InlineKeyboardButton(tg("back", language=language), callback_data="assign:goal_target_menu")],
         ]
     )
@@ -328,9 +327,25 @@ def admin_goal_source_keyboard(
         [
             [InlineKeyboardButton(tg("goal_source_recent", language=language), callback_data="words:admin_goal_source:recent")],
             [InlineKeyboardButton(tg("goal_source_topic", language=language), callback_data="words:admin_goal_source:topic")],
-            [InlineKeyboardButton(tg("goal_source_all", language=language), callback_data="words:admin_goal_source:all")],
             [InlineKeyboardButton(tg("goal_source_manual", language=language), callback_data="words:admin_goal_source:manual")],
-            [InlineKeyboardButton(tg("back", language=language), callback_data="assign:admin_goal_target_menu")],
+            [InlineKeyboardButton(tg("back", language=language), callback_data="assign:admin_assign_goal")],
+        ]
+    )
+
+
+def assignment_round_batch_keyboard(
+    *,
+    tg: TelegramTextGetter,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("3", callback_data="start:launch:homework:batch:3"),
+                InlineKeyboardButton("5", callback_data="start:launch:homework:batch:5"),
+                InlineKeyboardButton("10", callback_data="start:launch:homework:batch:10"),
+            ],
+            [InlineKeyboardButton(tg("back", language=language), callback_data="start:menu")],
         ]
     )
 
@@ -388,6 +403,7 @@ def assignment_round_complete_keyboard(
     tg: TelegramTextGetter,
     has_more: bool,
     remaining_word_count: int | None = None,
+    round_batch_size: int | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -402,7 +418,11 @@ def assignment_round_complete_keyboard(
                         )
                         if remaining_word_count is not None and remaining_word_count > 0
                         else tg("assignment_next_round_button", language=language),
-                        callback_data=f"start:launch:{kind.value}",
+                        callback_data=(
+                            f"start:launch:{kind.value}:batch:{round_batch_size}"
+                            if round_batch_size is not None and round_batch_size > 0
+                            else f"start:launch:{kind.value}"
+                        ),
                     )
                 ]]
                 if has_more

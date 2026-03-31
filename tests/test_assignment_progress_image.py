@@ -80,13 +80,6 @@ def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path
     )
     store.update_homework_word_progress(
         user_id=5,
-        word_id="april",
-        mode=TrainingMode.EASY,
-        is_correct=True,
-        current_level=1,
-    )
-    store.update_homework_word_progress(
-        user_id=5,
         word_id="august",
         mode=TrainingMode.MEDIUM,
         is_correct=True,
@@ -203,6 +196,9 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
         application=SimpleNamespace(
             bot_data={
                 "content_store": store,
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(current_position=1, total_items=2)  # noqa: ARG005
+                ),
                 "telegram_flow_message_repository": registry,
                 "telegram_ui_language": "en",
             }
@@ -221,7 +217,7 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
     assert message.photo_calls[0][0] == "\x89PNG"
     assert (
         message.photo_calls[0][1]
-        == "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🧩 Round left: 0 • 🎯 Homework left: 2 • 🔁 About 0 rounds"
+        == "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🧩 Round left: 1 • 🎯 Homework left: 2 • 🔁 About 0 rounds"
     )
 
     store.update_homework_word_progress(
@@ -242,7 +238,7 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
     assert len(fake_bot.media_edits) == 1
     assert (
         fake_bot.media_edits[0][2]
-        == "<b>📘 Homework</b>\n✅ Done: 1/2 words • 🧩 Round left: 0 • 🎯 Homework left: 1 • 🔁 About 0 rounds"
+        == "<b>📘 Homework</b>\n✅ Done: 1/2 words • 🧩 Round left: 1 • 🎯 Homework left: 1 • 🔁 About 0 rounds"
     )
 
 
@@ -266,6 +262,9 @@ async def test_send_or_update_assignment_progress_message_falls_back_to_send_pho
         application=SimpleNamespace(
             bot_data={
                 "content_store": store,
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(current_position=1, total_items=2)  # noqa: ARG005
+                ),
                 "telegram_flow_message_repository": registry,
                 "telegram_ui_language": "en",
             }
@@ -283,7 +282,7 @@ async def test_send_or_update_assignment_progress_message_falls_back_to_send_pho
     assert fake_bot.sent_photos == [
         (
             1,
-            "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🧩 Round left: 0 • 🎯 Homework left: 2 • 🔁 About 0 rounds",
+            "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🧩 Round left: 1 • 🎯 Homework left: 2 • 🔁 About 0 rounds",
         )
     ]
     tracked = registry.list(flow_id="assignment-progress:8:homework", tag="assignment_progress")

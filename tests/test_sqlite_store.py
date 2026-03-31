@@ -793,6 +793,7 @@ def test_sqlite_store_homework_stage_progression_and_autoskip(tmp_path: Path) ->
         is_correct=True,
         current_level=0,
     )
+    assert store.get_homework_stage_mode(user_id=5, item_id="cat") is TrainingMode.MEDIUM
     store.update_homework_word_progress(
         user_id=5,
         word_id="cat",

@@ -195,13 +195,14 @@ Current learner flow:
    - remaining words
    - estimated rounds
    - due date when present
-3. start a homework round
-4. answer assigned words
-5. after each correct answer, watch:
+3. choose how many words to take in this round
+4. start the homework round
+5. answer assigned words
+6. after each correct answer, watch:
    - weekly points feedback
    - homework progress text
    - homework progress image / indicator
-6. continue with `➡️ Continue` until no assigned words remain
+7. continue with `➡️ Continue` until no assigned words remain
 
 Homework completion rules:
 
@@ -209,6 +210,13 @@ Homework completion rules:
 - `word_level_homework` is stricter: the word must reach the target homework level
 - a homework for 10 words is not the same as 10 rounds
 - a deadline helps organize the task, but completion still depends on word progress
+
+Admin homework assignment rules:
+
+- `topic` assigns all words from the chosen topic
+- `manual` assigns all words explicitly selected by the admin
+- `recent` assigns the full recent-word set available for that learner
+- the learner chooses the round batch size when starting homework
 
 For published content, the editor can also:
 

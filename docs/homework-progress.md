@@ -58,6 +58,7 @@ Behavior:
   - remaining words
   - estimated rounds
   - deadline, when present
+- when the learner starts homework, the bot first asks how many words to take into this round
 
 ## Homework rounds
 
@@ -66,7 +67,8 @@ Homework rounds are independent from topics.
 That means:
 
 - the learner does not have to open each topic manually
-- tapping the homework button starts a round from the remaining assigned words
+- tapping the homework button first opens a round-size picker
+- after choosing the round size, the bot starts a round from the remaining assigned words
 - round size is still batched
 - after a round is completed, Telegram offers **Next round** when more homework words remain
 
@@ -109,20 +111,22 @@ Admins are resolved through the runtime role table, with `ADMIN_USER_IDS` only u
 1. Open `/assign`.
 2. Tap **Assign homework**.
 3. Choose the homework format.
-4. Choose target count.
-5. Choose source:
+4. Choose source:
    - `recent`
    - `topic`
-   - `all`
    - `manual`
-6. Select recipients from the known Telegram users list.
-7. Confirm homework for the selected users.
+5. Select recipients from the known Telegram users list.
+6. Confirm homework for the selected users.
 
 Notes:
 
 - admins no longer type raw `user_id` values by hand in the Telegram dialog
 - active learner UX always launches homework
 - if no explicit deadline is provided for homework, the current runtime uses a default deadline
+- `topic` assigns all words from the chosen topic
+- `manual` assigns all explicitly selected words
+- `recent` assigns the full recent-word set available for that learner
+- the learner, not the admin, chooses the round batch size at homework start
 
 ## Admin drill-down
 
