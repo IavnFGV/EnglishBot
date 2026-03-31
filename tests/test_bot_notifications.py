@@ -153,6 +153,32 @@ async def test_deliver_pending_notification_job_requeues_when_user_was_recently_
 
     assert bot.sent_messages == []
     assert job_queue.calls[-1].name == "n1"
+    assert 119.0 <= job_queue.calls[-1].when <= 120.0
+
+
+@pytest.mark.anyio
+async def test_deliver_pending_notification_job_requeues_longer_for_active_session() -> None:
+    context, job_queue, bot = _build_context(active_session=SimpleNamespace(session_id="active"))
+    repository = _FakeNotificationRepository()
+    context.application.bot_data["pending_telegram_notification_repository"] = repository
+    repository.items["n1"] = SimpleNamespace(
+        key="n1",
+        recipient_user_id=77,
+        text="Hello",
+        not_before_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+    )
+    context.application.bot_data["recent_assignment_activity_by_user"][77] = datetime.now(UTC)
+    job_context = SimpleNamespace(
+        application=context.application,
+        bot=bot,
+        job=SimpleNamespace(data={"notification_key": "n1"}),
+    )
+
+    await _deliver_pending_notification_job(job_context)  # type: ignore[arg-type]
+
+    assert bot.sent_messages == []
+    assert job_queue.calls[-1].name == "n1"
     assert 299.0 <= job_queue.calls[-1].when <= 300.0
 
 

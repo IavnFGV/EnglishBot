@@ -237,7 +237,9 @@ _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
 _GAME_STAR_REWARD_CORRECT = 10
 _GAME_CHEST_REWARDS: tuple[int, ...] = (30, 50, 50, 100)
-_NOTIFICATION_RECENT_ASSIGNMENT_ACTIVITY_WINDOW = timedelta(minutes=5)
+_NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW = timedelta(minutes=5)
+_NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD = timedelta(minutes=1)
+_NOTIFICATION_DELAY_AFTER_RECENT_ANSWER = timedelta(minutes=2)
 _DAILY_ASSIGNMENT_REMINDER_TIME = time(hour=13, minute=0, tzinfo=UTC)
 _HELP_COMMAND_TEXT: dict[str, str] = {
     "start": "open your personal start menu",
@@ -5066,9 +5068,16 @@ def _notification_wait_seconds(
     recent_activity_at = _recent_assignment_activity_by_user(context).get(user_id)
     if recent_activity_at is None:
         return 0.0
-    elapsed = datetime.now(UTC) - recent_activity_at
-    remaining = _NOTIFICATION_RECENT_ASSIGNMENT_ACTIVITY_WINDOW - elapsed
-    return max(0.0, remaining.total_seconds())
+    now = datetime.now(UTC)
+    elapsed = now - recent_activity_at
+    active_session = _service(context).get_active_session(user_id=user_id)
+    if active_session is not None and elapsed < _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW:
+        remaining = _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW - elapsed
+        return max(0.0, remaining.total_seconds())
+    if elapsed < _NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD:
+        remaining = _NOTIFICATION_DELAY_AFTER_RECENT_ANSWER - elapsed
+        return max(0.0, remaining.total_seconds())
+    return 0.0
 
 
 def _notification_should_wait(
