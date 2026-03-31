@@ -114,10 +114,10 @@ def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path
     assert values["august"] == pytest.approx(1.0)
 
 
-def test_build_assignment_progress_snapshot_uses_only_active_homework(tmp_path: Path) -> None:
+def test_build_assignment_progress_snapshot_uses_current_goal_when_goal_id_is_provided(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     use_case = HomeworkProgressUseCase(store=store)
-    use_case.create_goal(
+    first_goal = use_case.create_goal(
         user_id=11,
         goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.WORD_LEVEL_HOMEWORK,
@@ -138,7 +138,7 @@ def test_build_assignment_progress_snapshot_uses_only_active_homework(tmp_path: 
         is_correct=True,
         current_level=2,
     )
-    use_case.create_goal(
+    second_goal = use_case.create_goal(
         user_id=11,
         goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.WORD_LEVEL_HOMEWORK,
@@ -160,6 +160,7 @@ def test_build_assignment_progress_snapshot_uses_only_active_homework(tmp_path: 
         user_id=11,
         kind=AssignmentSessionKind.HOMEWORK,
         user=SimpleNamespace(id=11, language_code="en"),
+        goal_id=second_goal.id,
     )
 
     assert snapshot is not None
@@ -253,7 +254,11 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
             bot_data={
                 "content_store": store,
                 "training_service": SimpleNamespace(
-                    get_active_session=lambda user_id: SimpleNamespace(current_position=1, total_items=2)  # noqa: ARG005
+                    get_active_session=lambda user_id: SimpleNamespace(  # noqa: ARG005
+                        current_position=1,
+                        total_items=2,
+                        source_tag="assignment:homework",
+                    )
                 ),
                 "telegram_flow_message_repository": registry,
                 "telegram_ui_language": "en",
@@ -319,7 +324,11 @@ async def test_send_or_update_assignment_progress_message_falls_back_to_send_pho
             bot_data={
                 "content_store": store,
                 "training_service": SimpleNamespace(
-                    get_active_session=lambda user_id: SimpleNamespace(current_position=1, total_items=2)  # noqa: ARG005
+                    get_active_session=lambda user_id: SimpleNamespace(  # noqa: ARG005
+                        current_position=1,
+                        total_items=2,
+                        source_tag="assignment:homework",
+                    )
                 ),
                 "telegram_flow_message_repository": registry,
                 "telegram_ui_language": "en",
@@ -344,3 +353,56 @@ async def test_send_or_update_assignment_progress_message_falls_back_to_send_pho
     tracked = registry.list(flow_id="assignment-progress:8:homework", tag="assignment_progress")
     assert len(tracked) == 1
     assert tracked[0].message_id == 999
+
+
+@pytest.mark.anyio
+async def test_send_or_update_assignment_progress_message_uses_current_goal_from_source_tag(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    first_goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=12,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=2,
+        target_word_ids=["april", "august"],
+    )
+    second_goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=12,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["apricot"],
+    )
+    registry = _FakeFlowRegistry()
+    message = _FakePhotoMessage()
+    fake_bot = _FakeBot()
+    context = SimpleNamespace(
+        bot=fake_bot,
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": store,
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(  # noqa: ARG005
+                        current_position=1,
+                        total_items=1,
+                        source_tag=f"assignment:homework:{second_goal.id}",
+                    )
+                ),
+                "telegram_flow_message_repository": registry,
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+    user = SimpleNamespace(id=12, language_code="en")
+
+    await bot._send_or_update_assignment_progress_message(
+        context,  # type: ignore[arg-type]
+        message=message,
+        user=user,
+        kind=AssignmentSessionKind.HOMEWORK,
+    )
+
+    assert len(message.photo_calls) == 1
+    assert (
+        message.photo_calls[0][1]
+        == "<b>📘 Homework</b>\n✅ Done: 0/1 words • 🧩 Round left: 0 • 🎯 Homework left: 1 • 🔁 About 1 rounds"
+    )

@@ -475,10 +475,18 @@ class StartAssignmentRoundUseCase:
     ) -> TrainingQuestion:
         effective_kind = AssignmentSessionKind.HOMEWORK
         effective_batch_size = batch_size if batch_size is not None and batch_size > 0 else self._batch_size
+        selected_goal = _select_assignment_goal(
+            store=self._store,
+            user_id=user_id,
+            kind=effective_kind,
+        )
+        if selected_goal is None:
+            raise ValueError("No active assignments available for this section.")
         remaining_words = _remaining_assignment_words(
             store=self._store,
             user_id=user_id,
             kind=effective_kind,
+            goal_id=selected_goal.id,
         )
         selected_words = remaining_words[:effective_batch_size]
         if not selected_words:
@@ -495,7 +503,7 @@ class StartAssignmentRoundUseCase:
             user_id=user_id,
             topic_id=self._resolve_session_topic_id(items),
             mode=TrainingMode.MEDIUM,
-            source_tag=f"assignment:{effective_kind.value}",
+            source_tag=f"assignment:{effective_kind.value}:{selected_goal.id}",
             items=[
                 SessionItem(order=index, vocabulary_item_id=item.id, mode=item_modes[item.id])
                 for index, item in enumerate(items)
@@ -565,11 +573,14 @@ def _remaining_assignment_words(
     store: SQLiteContentStore,
     user_id: int,
     kind: AssignmentSessionKind,
+    goal_id: str | None = None,
 ) -> list[AssignmentWordView]:
     goals = store.list_user_goals(user_id=user_id, statuses=(GoalStatus.ACTIVE,))
     periods = _periods_for_kind(kind)
     remaining: OrderedDict[str, AssignmentWordView] = OrderedDict()
     for goal in goals:
+        if goal_id is not None and goal.id != goal_id:
+            continue
         if goal.goal_period not in periods:
             continue
         if goal.goal_type not in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}:
@@ -603,6 +614,31 @@ def _remaining_assignment_words(
                 required_level=required_level,
             )
     return list(remaining.values())
+
+
+def _select_assignment_goal(
+    *,
+    store: SQLiteContentStore,
+    user_id: int,
+    kind: AssignmentSessionKind,
+) -> Goal | None:
+    goals = store.list_user_goals(user_id=user_id, statuses=(GoalStatus.ACTIVE,))
+    periods = _periods_for_kind(kind)
+    relevant_goals = [
+        goal
+        for goal in goals
+        if goal.goal_period in periods
+        and goal.goal_type in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}
+    ]
+    if not relevant_goals:
+        return None
+    return min(
+        relevant_goals,
+        key=lambda goal: (
+            goal.deadline_date or "9999-12-31",
+            -(goal.created_at.timestamp() if goal.created_at is not None else 0.0),
+        ),
+    )
 
 
 def _total_assignment_word_count(

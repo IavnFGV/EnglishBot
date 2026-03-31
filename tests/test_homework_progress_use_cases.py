@@ -281,7 +281,7 @@ def test_homework_goal_defaults_deadline_when_not_provided(tmp_path: Path) -> No
 
 def test_start_assignment_round_use_case_creates_assignment_session(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
-    HomeworkProgressUseCase(store=store).create_goal(
+    goal = HomeworkProgressUseCase(store=store).create_goal(
         user_id=10,
         goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.WORD_LEVEL_HOMEWORK,
@@ -302,7 +302,7 @@ def test_start_assignment_round_use_case_creates_assignment_session(tmp_path: Pa
 
     assert session is not None
     assert question.session_id == session.id
-    assert session.source_tag == "assignment:homework"
+    assert session.source_tag == f"assignment:homework:{goal.id}"
     assert len(session.items) == 2
 
 
@@ -453,6 +453,35 @@ def test_new_words_goal_does_not_reuse_progress_from_previous_goal_assignments(t
     refreshed_second_goal = next(goal for goal in store.list_user_goals(user_id=17) if goal.id == second_goal.id)
     assert refreshed_second_goal.status is GoalStatus.ACTIVE
     assert refreshed_second_goal.progress_count == 0
+
+
+def test_multiple_active_homeworks_can_coexist(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    use_case = HomeworkProgressUseCase(store=store)
+
+    first_goal = use_case.create_goal(
+        user_id=19,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=2,
+        target_word_ids=["cat", "dog"],
+    )
+    second_goal = use_case.create_goal(
+        user_id=19,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["cat"],
+    )
+
+    goals = store.list_user_goals(
+        user_id=19,
+        statuses=(GoalStatus.ACTIVE, GoalStatus.EXPIRED, GoalStatus.COMPLETED),
+    )
+    goals_by_id = {goal.id: goal for goal in goals}
+
+    assert goals_by_id[first_goal.id].status is GoalStatus.ACTIVE
+    assert goals_by_id[second_goal.id].status is GoalStatus.ACTIVE
 
 
 def test_assignment_launch_summary_handles_naive_goal_created_at_from_existing_db(tmp_path: Path) -> None:

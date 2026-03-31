@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import random
 import tempfile
 from dataclasses import dataclass
@@ -1036,8 +1037,60 @@ def _assignment_round_progress_view(
     context: ContextTypes.DEFAULT_TYPE,
     user_id: int,
     kind: AssignmentSessionKind,
+    goal_id: str | None = None,
     active_session=None,
 ) -> _AssignmentRoundProgressView | None:
+    if goal_id is not None and context.application.bot_data.get("content_store") is not None:
+        store = _content_store(context)
+        goals = store.list_user_goals(
+            user_id=user_id,
+            statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED),
+        )
+        goal = next(
+            (
+                item
+                for item in goals
+                if item.id == goal_id
+                and item.goal_period in _assignment_periods_for_kind(kind)
+                and item.goal_type in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}
+            ),
+            None,
+        )
+        if goal is None:
+            return None
+        rows = store.list_goal_word_details(goal_id=goal.id, user_id=user_id)
+        completed_word_count = sum(
+            1
+            for row in rows
+            if _assignment_word_progress_value(
+                store=store,
+                user_id=user_id,
+                goal=goal,
+                row=row,
+            ) >= 1.0
+        )
+        total_word_count = len(rows)
+        remaining_word_count = max(0, total_word_count - completed_word_count)
+        remaining_in_round_count = 0
+        batch_size = None
+        if active_session is not None:
+            total_items = getattr(active_session, "total_items", None)
+            current_position = getattr(active_session, "current_position", None)
+            if isinstance(total_items, int):
+                batch_size = total_items
+            if isinstance(total_items, int) and isinstance(current_position, int):
+                remaining_in_round_count = max(0, total_items - current_position)
+        estimated_round_count = 0
+        if isinstance(batch_size, int) and batch_size > 0:
+            estimated_round_count = math.ceil(remaining_word_count / batch_size) if remaining_word_count > 0 else 0
+        return _AssignmentRoundProgressView(
+            completed_word_count=completed_word_count,
+            total_word_count=total_word_count,
+            remaining_word_count=remaining_word_count,
+            remaining_in_round_count=remaining_in_round_count,
+            estimated_round_count=estimated_round_count,
+            variant_key=goal.id,
+        )
     launch_summary_use_case = context.application.bot_data.get(
         "learner_assignment_launch_summary_use_case"
     )
@@ -1153,17 +1206,20 @@ def _build_assignment_progress_snapshot(
     user_id: int,
     kind: AssignmentSessionKind,
     user,
+    goal_id: str | None = None,
 ) -> AssignmentProgressSnapshot | None:
     if context.application.bot_data.get("content_store") is None:
         return None
     store = _content_store(context)
     goals = store.list_user_goals(
         user_id=user_id,
-        statuses=(GoalStatus.ACTIVE,),
+        statuses=((GoalStatus.ACTIVE, GoalStatus.COMPLETED) if goal_id is not None else (GoalStatus.ACTIVE,)),
     )
     progress_by_word: dict[str, AssignmentProgressSegment] = {}
     relevant_periods = _assignment_periods_for_kind(kind)
     for goal in goals:
+        if goal_id is not None and goal.id != goal_id:
+            continue
         if goal.goal_period not in relevant_periods:
             continue
         if goal.goal_type not in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}:
@@ -1191,7 +1247,7 @@ def _build_assignment_progress_snapshot(
     remaining_word_count = max(0, len(segments) - completed_word_count)
     estimated_round_count = 0
     launch_summary_use_case = context.application.bot_data.get("learner_assignment_launch_summary_use_case")
-    if launch_summary_use_case is not None:
+    if launch_summary_use_case is not None and goal_id is None:
         round_progress = _assignment_round_progress_view(
             context=context,
             user_id=user_id,
@@ -1260,6 +1316,8 @@ def _assignment_progress_caption(
     kind: AssignmentSessionKind,
     user,
     round_left: int,
+    remaining_word_count: int,
+    estimated_round_count: int,
 ) -> str:
     return "\n".join(
         [
@@ -1271,8 +1329,8 @@ def _assignment_progress_caption(
                 done=snapshot.completed_word_count,
                 total=snapshot.total_word_count,
                 round_left=round_left,
-                left=snapshot.remaining_word_count,
-                rounds=snapshot.estimated_round_count,
+                left=remaining_word_count,
+                rounds=estimated_round_count,
             ),
         ]
     )
@@ -1314,11 +1372,16 @@ async def _send_or_update_assignment_progress_message(
         return
     if not hasattr(message, "reply_photo"):
         return
+    active_session = _service(context).get_active_session(user_id=user_id)
+    _, goal_id = _assignment_kind_and_goal_id_from_source_tag(
+        getattr(active_session, "source_tag", None),
+    )
     snapshot = _build_assignment_progress_snapshot(
         context=context,
         user_id=user_id,
         kind=kind,
         user=user,
+        goal_id=goal_id,
     )
     flow_id = _assignment_progress_flow_id(user_id=user_id, kind=kind)
     if snapshot is None:
@@ -1332,23 +1395,32 @@ async def _send_or_update_assignment_progress_message(
         snapshot,
         output_path=_assignment_progress_image_path(user_id=user_id, kind=kind),
     )
-    active_session = _service(context).get_active_session(user_id=user_id)
     round_progress = _assignment_round_progress_view(
         context=context,
         user_id=user_id,
         kind=kind,
+        goal_id=goal_id,
         active_session=active_session,
     )
+    round_left = (
+        round_progress.remaining_in_round_count
+        if round_progress is not None
+        else _active_session_round_left(active_session)
+    )
+    remaining_word_count = snapshot.remaining_word_count
+    estimated_round_count = snapshot.estimated_round_count
+    if goal_id is not None:
+        total_items = getattr(active_session, "total_items", None)
+        if isinstance(total_items, int) and total_items > 0:
+            estimated_round_count = math.ceil(remaining_word_count / total_items) if remaining_word_count > 0 else 0
     caption = _assignment_progress_caption(
         context=context,
         snapshot=snapshot,
         kind=kind,
         user=user,
-        round_left=(
-            round_progress.remaining_in_round_count
-            if round_progress is not None
-            else _active_session_round_left(active_session)
-        ),
+        round_left=round_left,
+        remaining_word_count=remaining_word_count,
+        estimated_round_count=estimated_round_count,
     )
     registry = _telegram_flow_messages(context)
     tracked_messages = registry.list(flow_id=flow_id, tag=_ASSIGNMENT_PROGRESS_TAG) if registry is not None else []
@@ -2583,6 +2655,17 @@ def _assignment_kind_from_value(raw_value: str | None) -> AssignmentSessionKind 
     return None
 
 
+def _assignment_kind_and_goal_id_from_source_tag(
+    source_tag: str | None,
+) -> tuple[AssignmentSessionKind | None, str | None]:
+    if not isinstance(source_tag, str) or not source_tag.startswith("assignment:"):
+        return None, None
+    parts = source_tag.split(":", 2)
+    kind = _assignment_kind_from_value(parts[1] if len(parts) > 1 else None)
+    goal_id = parts[2] if len(parts) > 2 and parts[2] else None
+    return kind, goal_id
+
+
 def _start_assignment_button_label(
     kind: AssignmentSessionKind,
     *,
@@ -2605,10 +2688,9 @@ def _active_session_topic_label(
     source_tag: str | None = None,
     lesson_id: str | None = None,
 ) -> str:
-    if source_tag is not None and source_tag.startswith("assignment:"):
-        kind = _assignment_kind_from_value(source_tag.split(":", 1)[1])
-        if kind is not None:
-            return _assignment_kind_label(kind, context=context, user=user)
+    kind, _ = _assignment_kind_and_goal_id_from_source_tag(source_tag)
+    if kind is not None:
+        return _assignment_kind_label(kind, context=context, user=user)
     if topic_id.startswith("assignment:"):
         kind = _assignment_kind_from_value(topic_id.split(":", 1)[1])
         if kind is not None:
@@ -2631,8 +2713,9 @@ def _active_session_lesson_label(
 
 def _assignment_kind_from_session(active_session) -> AssignmentSessionKind | None:
     source_tag = getattr(active_session, "source_tag", None)
-    if isinstance(source_tag, str) and source_tag.startswith("assignment:"):
-        return _assignment_kind_from_value(source_tag.split(":", 1)[1])
+    kind, _ = _assignment_kind_and_goal_id_from_source_tag(source_tag)
+    if kind is not None:
+        return kind
     topic_id = getattr(active_session, "topic_id", None)
     if isinstance(topic_id, str) and topic_id.startswith("assignment:"):
         return _assignment_kind_from_value(topic_id.split(":", 1)[1])
@@ -5374,6 +5457,11 @@ async def _send_feedback(
     reply_markup = None
     assignment_progress_text = ""
     assignment_kind = _assignment_kind_from_session(active_session) if active_session is not None else None
+    assignment_goal_id = None
+    if active_session is not None:
+        _, assignment_goal_id = _assignment_kind_and_goal_id_from_source_tag(
+            getattr(active_session, "source_tag", None),
+        )
     compact_assignment_feedback = assignment_kind is not None and hasattr(message, "reply_photo")
     round_progress = None
     if assignment_kind is not None and feedback_user_id is not None:
@@ -5381,6 +5469,7 @@ async def _send_feedback(
             context=context,
             user_id=feedback_user_id,
             kind=assignment_kind,
+            goal_id=assignment_goal_id,
             active_session=active_session,
         )
         if round_progress is not None:
