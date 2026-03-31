@@ -4722,12 +4722,14 @@ async def start_assignment_round_callback_handler(update: Update, context: Conte
             label=_assignment_kind_label(kind, context=context, user=user),
         )
     )
-    await _send_or_update_assignment_progress_message(
-        context,
-        message=query.message,
-        user=user,
-        kind=kind,
-    )
+    callback_message = getattr(query, "message", None)
+    if callback_message is not None:
+        await _send_or_update_assignment_progress_message(
+            context,
+            message=callback_message,
+            user=user,
+            kind=kind,
+        )
     await _send_question(update, context, question)
 
 
