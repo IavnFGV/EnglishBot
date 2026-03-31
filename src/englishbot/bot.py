@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import random
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
@@ -18,6 +19,7 @@ from telegram import (
     ForceReply,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InputMediaPhoto,
     ReplyKeyboardMarkup,
     Update,
 )
@@ -46,6 +48,11 @@ from englishbot.application.add_words_use_cases import (
     RegenerateAddWordsDraftUseCase,
     SaveApprovedAddWordsDraftUseCase,
     StartAddWordsFlowUseCase,
+)
+from englishbot.assignment_progress_image import (
+    AssignmentProgressSegment,
+    AssignmentProgressSnapshot,
+    render_assignment_progress_image,
 )
 from englishbot.application.content_pack_image_use_cases import (
     GenerateContentPackImagesUseCase,
@@ -234,6 +241,7 @@ _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
 _TRAINING_QUESTION_TAG = "training_question"
 _TRAINING_FEEDBACK_TAG = "training_feedback"
+_ASSIGNMENT_PROGRESS_TAG = "assignment_progress"
 _CHAT_MENU_TAG = "chat_menu"
 _NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
@@ -1109,6 +1117,183 @@ def _render_assignment_round_progress_text(
                 rounds=progress.estimated_round_count,
             ),
         ]
+    )
+
+
+def _assignment_progress_flow_id(*, user_id: int, kind: AssignmentSessionKind) -> str:
+    return f"assignment-progress:{user_id}:{kind.value}"
+
+
+def _assignment_periods_for_kind(kind: AssignmentSessionKind) -> tuple[GoalPeriod, ...]:
+    if kind is AssignmentSessionKind.ALL:
+        return (GoalPeriod.DAILY, GoalPeriod.WEEKLY, GoalPeriod.HOMEWORK)
+    return (GoalPeriod(kind.value),)
+
+
+def _build_assignment_progress_snapshot(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    kind: AssignmentSessionKind,
+    user,
+) -> AssignmentProgressSnapshot | None:
+    if context.application.bot_data.get("content_store") is None:
+        return None
+    store = _content_store(context)
+    goals = store.list_user_goals(
+        user_id=user_id,
+        statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED),
+    )
+    progress_by_word: dict[str, AssignmentProgressSegment] = {}
+    relevant_periods = _assignment_periods_for_kind(kind)
+    for goal in goals:
+        if goal.goal_period not in relevant_periods:
+            continue
+        if goal.goal_type not in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}:
+            continue
+        for row in store.list_goal_word_details(goal_id=goal.id, user_id=user_id):
+            word_id = str(row["word_id"])
+            label = str(row.get("english_word") or word_id)
+            progress_value = _assignment_word_progress_value(
+                store=store,
+                user_id=user_id,
+                goal=goal,
+                row=row,
+            )
+            existing = progress_by_word.get(word_id)
+            if existing is None or progress_value > existing.progress_value:
+                progress_by_word[word_id] = AssignmentProgressSegment(
+                    word_id=word_id,
+                    label=label,
+                    progress_value=progress_value,
+                )
+    if not progress_by_word:
+        return None
+    segments = tuple(progress_by_word.values())
+    completed_word_count = sum(1 for item in segments if item.progress_value >= 1.0)
+    return AssignmentProgressSnapshot(
+        label=_assignment_kind_label(kind, context=context, user=user),
+        completed_word_count=completed_word_count,
+        total_word_count=len(segments),
+        segments=segments,
+    )
+
+
+def _assignment_word_progress_value(
+    *,
+    store: SQLiteContentStore,
+    user_id: int,
+    goal,
+    row: dict[str, object],
+) -> float:
+    if goal.goal_type is GoalType.WORD_LEVEL_HOMEWORK:
+        required_level = int(goal.required_level or 2)
+        if required_level <= 1 and bool(row.get("easy_mastered")):
+            return 1.0
+        if required_level <= 2 and bool(row.get("medium_mastered")):
+            return 1.0
+        if bool(row.get("hard_mastered")) or bool(row.get("hard_skipped")):
+            return 1.0
+        if bool(row.get("medium_mastered")):
+            return 0.66
+        if bool(row.get("easy_mastered")):
+            return 0.33
+        return 0.0
+
+    word_stats = store.get_word_stats(user_id, str(row["word_id"]))
+    goal_created_at = getattr(goal, "created_at", None)
+    last_correct_at = getattr(word_stats, "last_correct_at", None) if word_stats is not None else None
+    if last_correct_at is not None and goal_created_at is not None and last_correct_at >= goal_created_at:
+        return 1.0
+    return 0.0
+
+
+def _assignment_progress_image_path(*, user_id: int, kind: AssignmentSessionKind) -> Path:
+    return (
+        Path(tempfile.gettempdir())
+        / "englishbot-assignment-progress"
+        / f"user-{user_id}-{kind.value}.png"
+    )
+
+
+def _assignment_progress_caption(
+    *,
+    snapshot: AssignmentProgressSnapshot,
+) -> str:
+    return f"<b>{html.escape(snapshot.label)}</b>\n{snapshot.completed_word_count}/{snapshot.total_word_count}"
+
+
+async def _send_or_update_assignment_progress_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    message,
+    user,
+    kind: AssignmentSessionKind,
+) -> None:
+    user_id = getattr(user, "id", None)
+    if not isinstance(user_id, int):
+        return
+    if not hasattr(message, "reply_photo"):
+        return
+    snapshot = _build_assignment_progress_snapshot(
+        context=context,
+        user_id=user_id,
+        kind=kind,
+        user=user,
+    )
+    flow_id = _assignment_progress_flow_id(user_id=user_id, kind=kind)
+    if snapshot is None:
+        await _delete_tracked_flow_messages(
+            context,
+            flow_id=flow_id,
+            tag=_ASSIGNMENT_PROGRESS_TAG,
+        )
+        return
+    output_path = render_assignment_progress_image(
+        snapshot,
+        output_path=_assignment_progress_image_path(user_id=user_id, kind=kind),
+    )
+    caption = _assignment_progress_caption(snapshot=snapshot)
+    registry = _telegram_flow_messages(context)
+    tracked_messages = registry.list(flow_id=flow_id, tag=_ASSIGNMENT_PROGRESS_TAG) if registry is not None else []
+    tracked_message = tracked_messages[0] if tracked_messages else None
+    bot = getattr(context, "bot", None)
+    if tracked_message is not None and bot is not None and hasattr(bot, "edit_message_media"):
+        try:
+            with output_path.open("rb") as photo_file:
+                await bot.edit_message_media(
+                    chat_id=tracked_message.chat_id,
+                    message_id=tracked_message.message_id,
+                    media=InputMediaPhoto(
+                        media=photo_file,
+                        caption=caption,
+                        parse_mode="HTML",
+                    ),
+                )
+            return
+        except BadRequest:
+            await _delete_tracked_flow_messages(
+                context,
+                flow_id=flow_id,
+                tag=_ASSIGNMENT_PROGRESS_TAG,
+            )
+    await _delete_tracked_flow_messages(
+        context,
+        flow_id=flow_id,
+        tag=_ASSIGNMENT_PROGRESS_TAG,
+    )
+    with output_path.open("rb") as photo_file:
+        sent_message = await message.reply_photo(
+            photo=photo_file,
+            caption=caption,
+            parse_mode="HTML",
+        )
+    _track_flow_message(
+        context,
+        flow_id=flow_id,
+        tag=_ASSIGNMENT_PROGRESS_TAG,
+        message=sent_message,
+        fallback_chat_id=_message_chat_id(message),
     )
 
 
@@ -4537,6 +4722,12 @@ async def start_assignment_round_callback_handler(update: Update, context: Conte
             label=_assignment_kind_label(kind, context=context, user=user),
         )
     )
+    await _send_or_update_assignment_progress_message(
+        context,
+        message=query.message,
+        user=user,
+        kind=kind,
+    )
     await _send_question(update, context, question)
 
 
@@ -4945,6 +5136,14 @@ async def _process_answer(
         user=user,
         feedback_update=feedback_update,
     )
+    assignment_kind = _assignment_kind_from_session(active_session_before_submit)
+    if assignment_kind is not None:
+        await _send_or_update_assignment_progress_message(
+            context,
+            message=message,
+            user=user,
+            kind=assignment_kind,
+        )
     if feedback_update is not None and feedback_update.completed_goals:
         _schedule_goal_completed_notifications(
             context,
