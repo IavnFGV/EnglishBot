@@ -288,6 +288,7 @@ class _AssignmentRoundProgressView:
     completed_word_count: int
     total_word_count: int
     remaining_word_count: int
+    remaining_in_round_count: int
     estimated_round_count: int
     variant_key: str
 
@@ -1033,15 +1034,23 @@ def _assignment_round_progress_view(
     context: ContextTypes.DEFAULT_TYPE,
     user_id: int,
     kind: AssignmentSessionKind,
+    active_session=None,
 ) -> _AssignmentRoundProgressView | None:
     launch_views = _learner_assignment_launch_summary_use_case(context).execute(user_id=user_id)
     launch_view = next((item for item in launch_views if item.kind is kind), None)
     if launch_view is None:
         return None
+    remaining_in_round_count = 0
+    if active_session is not None:
+        total_items = getattr(active_session, "total_items", None)
+        current_position = getattr(active_session, "current_position", None)
+        if isinstance(total_items, int) and isinstance(current_position, int):
+            remaining_in_round_count = max(0, total_items - current_position)
     return _AssignmentRoundProgressView(
         completed_word_count=launch_view.completed_word_count,
         total_word_count=launch_view.total_word_count,
         remaining_word_count=launch_view.remaining_word_count,
+        remaining_in_round_count=remaining_in_round_count,
         estimated_round_count=launch_view.estimated_round_count,
         variant_key=launch_view.progress_variant_key,
     )
@@ -1115,6 +1124,7 @@ def _render_assignment_round_progress_text(
                 user=user,
                 done=progress.completed_word_count,
                 total=progress.total_word_count,
+                round_left=progress.remaining_in_round_count,
                 left=progress.remaining_word_count,
                 rounds=progress.estimated_round_count,
             ),
@@ -1252,6 +1262,7 @@ def _assignment_progress_caption(
                 user=user,
                 done=snapshot.completed_word_count,
                 total=snapshot.total_word_count,
+                round_left=0,
                 left=snapshot.remaining_word_count,
                 rounds=snapshot.estimated_round_count,
             ),
@@ -5301,6 +5312,7 @@ async def _send_feedback(
             context=context,
             user_id=feedback_user_id,
             kind=assignment_kind,
+            active_session=active_session,
         )
         if round_progress is not None:
             assignment_progress_text = _render_assignment_round_progress_text(

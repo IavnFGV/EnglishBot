@@ -811,6 +811,7 @@ async def test_process_answer_shows_homework_progress_track_and_continue_button(
 
     assert any("📘 Homework progress:" in reply for reply in message.replies)
     assert any("✅ Done: 2/5 words" in reply for reply in message.replies)
+    assert any("🧩 Round left: 0" in reply for reply in message.replies)
     assert any("🐣" in reply and "🏁" in reply for reply in message.replies)
     keyboard = message.reply_markup_calls[-1]
     assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
@@ -853,6 +854,7 @@ async def test_process_answer_shows_homework_progress_during_active_round_too() 
 
     assert any("📘 Homework progress:" in reply for reply in message.replies)
     assert any("✅ Done: 2/5 words" in reply for reply in message.replies)
+    assert any("🧩 Round left: 1" in reply for reply in message.replies)
     assert any(
         "📘 Homework progress:" in reply and reply_markup is None
         for reply, reply_markup in zip(message.replies, message.reply_markup_calls, strict=False)
@@ -906,6 +908,7 @@ async def test_send_feedback_keeps_compact_first_line_and_restores_assignment_pr
     first_line, *_rest = message.replies[0].splitlines()
     assert "Weekly points +6" in first_line
     assert "📘 Homework progress:" in message.replies[0]
+    assert "🧩 Round left: 0" in message.replies[0]
     assert "🏁" in message.replies[0]
 
 
@@ -965,7 +968,8 @@ async def test_process_answer_shows_assignment_progress_for_homework_assignment(
     await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
 
     assert any("📘 Homework progress:" in reply for reply in message.replies)
-    assert any("🎯 Left: 4" in reply for reply in message.replies)
+    assert any("🧩 Round left: 0" in reply for reply in message.replies)
+    assert any("🎯 Homework left: 4" in reply for reply in message.replies)
 
 
 @pytest.mark.anyio
@@ -1034,7 +1038,8 @@ async def test_choice_answer_handler_uses_active_session_user_for_homework_progr
     await choice_answer_handler(update, context)  # type: ignore[arg-type]
 
     assert any("📘 Homework progress:" in reply for reply in message.replies)
-    assert any("🎯 Left: 4" in reply for reply in message.replies)
+    assert any("🧩 Round left: 0" in reply for reply in message.replies)
+    assert any("🎯 Homework left: 4" in reply for reply in message.replies)
 
 
 def test_assignment_progress_track_uses_stable_variant_key() -> None:
