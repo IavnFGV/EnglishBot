@@ -25,6 +25,7 @@ from englishbot.bot import (
     _draft_review_markup,
     _draft_review_keyboard,
     _editable_words_keyboard,
+    _goal_list_keyboard,
     _image_review_markup,
     _image_review_keyboard,
     _published_image_topics_keyboard,
@@ -227,6 +228,14 @@ async def test_words_goals_callback_handler_shows_progress_summary() -> None:
                         active_goals=[],
                     )
                 ),
+                "learner_assignment_launch_summary_use_case": SimpleNamespace(
+                    execute=lambda user_id: [
+                        AssignmentLaunchView(AssignmentSessionKind.DAILY, True, 2, 1, total_word_count=5),
+                        AssignmentLaunchView(AssignmentSessionKind.WEEKLY, False, 0, 0, total_word_count=0),
+                        AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, True, 4, 1, total_word_count=10),
+                        AssignmentLaunchView(AssignmentSessionKind.ALL, True, 6, 2, total_word_count=15),
+                    ]
+                ),
             }
         ),
         user_data={},
@@ -235,6 +244,8 @@ async def test_words_goals_callback_handler_shows_progress_summary() -> None:
     await words_goals_callback_handler(update, context)  # type: ignore[arg-type]
 
     assert "Correct: 7" in query.edits[-1][0]
+    assert "What is left in your assignments now:" in query.edits[-1][0]
+    assert "📘 Homework: 4/10 words left" in query.edits[-1][0]
 
 
 @pytest.mark.anyio
@@ -256,6 +267,7 @@ async def test_words_goals_callback_handler_ignores_message_not_modified() -> No
                         active_goals=[],
                     )
                 ),
+                "learner_assignment_launch_summary_use_case": SimpleNamespace(execute=lambda user_id: []),
             }
         ),
         user_data={},
@@ -312,6 +324,17 @@ async def test_words_goals_callback_handler_shows_goal_rules_and_recently_comple
                 "list_user_goals_use_case": SimpleNamespace(
                     execute=lambda user_id, include_history=True: [completed_goal]
                 ),
+                "learner_assignment_launch_summary_use_case": SimpleNamespace(
+                    execute=lambda user_id: [
+                        AssignmentLaunchView(
+                            AssignmentSessionKind.HOMEWORK,
+                            True,
+                            7,
+                            2,
+                            total_word_count=10,
+                        )
+                    ]
+                ),
                 "telegram_ui_language": "en",
             }
         ),
@@ -322,10 +345,13 @@ async def test_words_goals_callback_handler_shows_goal_rules_and_recently_comple
 
     text = query.edits[-1][0]
     assert "Points are added on correct answers" in text
+    assert "What is left in your assignments now:" in text
+    assert "📘 Homework: 7/10 words left" in text
     assert "Counts when an assigned word reaches the homework target level." in text
     assert "Recently completed:" in text
     assert "Weekly/Words: 10/10 (100%)" in text
-    assert query.edits[-1][1].inline_keyboard[0][0].callback_data == "start:launch:homework"
+    assert query.edits[-1][1].inline_keyboard[2][0].callback_data == "start:launch:homework"
+    assert query.edits[-1][1].inline_keyboard[2][1].callback_data == "words:goal_reset:g-active"
 
 
 @pytest.mark.anyio
@@ -688,6 +714,44 @@ def test_assignment_round_complete_keyboard_offers_next_round_when_available() -
 
     assert [row[0].callback_data for row in keyboard.inline_keyboard] == ["start:launch:all", "assign:menu", "start:menu"]
     assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
+
+
+def test_goal_list_keyboard_shows_start_and_reset_per_goal() -> None:
+    active_daily = GoalProgressView(
+        goal=Goal(
+            id="goal-daily",
+            user_id=1,
+            goal_period=GoalPeriod.DAILY,
+            goal_type=GoalType.NEW_WORDS,
+            target_count=5,
+            progress_count=1,
+            status=GoalStatus.ACTIVE,
+        ),
+        progress_percent=20,
+    )
+    active_homework = GoalProgressView(
+        goal=Goal(
+            id="goal-homework",
+            user_id=1,
+            goal_period=GoalPeriod.HOMEWORK,
+            goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+            target_count=10,
+            progress_count=0,
+            status=GoalStatus.ACTIVE,
+        ),
+        progress_percent=0,
+    )
+
+    keyboard = _goal_list_keyboard(goals=[active_daily, active_homework], language="en")
+
+    assert keyboard.inline_keyboard[0][0].callback_data == "assign:progress"
+    assert keyboard.inline_keyboard[1][0].callback_data == "assign:menu"
+    assert keyboard.inline_keyboard[2][0].text == "▶️ 1. Start"
+    assert keyboard.inline_keyboard[2][0].callback_data == "start:launch:daily"
+    assert keyboard.inline_keyboard[2][1].callback_data == "words:goal_reset:goal-daily"
+    assert keyboard.inline_keyboard[3][0].text == "▶️ 2. Start"
+    assert keyboard.inline_keyboard[3][0].callback_data == "start:launch:homework"
+    assert keyboard.inline_keyboard[3][1].callback_data == "words:goal_reset:goal-homework"
 
 
 @pytest.mark.anyio

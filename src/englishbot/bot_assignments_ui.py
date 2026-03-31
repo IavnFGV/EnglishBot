@@ -80,6 +80,7 @@ def render_progress_text(
     user,
     summary: LearnerProgressSummary,
     history: list[GoalProgressView],
+    assignment_summary: list[AssignmentLaunchView],
 ) -> str:
     completed_goals = [item for item in history if item.goal.status is GoalStatus.COMPLETED][:3]
     lines = [
@@ -95,6 +96,25 @@ def render_progress_text(
         ),
         tg("progress_points_rule", context=context, user=user),
     ]
+    current_assignments = [
+        item
+        for item in assignment_summary
+        if item.kind is not AssignmentSessionKind.ALL and item.total_word_count > 0
+    ]
+    if current_assignments:
+        lines.append(tg("progress_assignments_title", context=context, user=user))
+        for item in current_assignments:
+            lines.append(
+                tg(
+                    "progress_assignment_line",
+                    context=context,
+                    user=user,
+                    label=assignment_kind_label(item.kind, tg=tg, context=context, user=user),
+                    left=item.remaining_word_count,
+                    total=item.total_word_count,
+                    rounds=item.estimated_round_count,
+                )
+            )
     if summary.active_goals:
         lines.append(tg("progress_active_goals", context=context, user=user))
         for goal in summary.active_goals:
@@ -244,20 +264,40 @@ def goal_list_keyboard(
     *,
     tg: TelegramTextGetter,
     goals,
-    has_homework_start: bool = False,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = [
-        *(
-            [[InlineKeyboardButton(tg("goal_list_start_homework_button", language=language), callback_data="start:launch:homework")]]
-            if has_homework_start
-            else []
-        ),
         [InlineKeyboardButton(tg("progress_button", language=language), callback_data="assign:progress")],
         [InlineKeyboardButton(tg("back", language=language), callback_data="assign:menu")],
     ]
-    for goal in goals:
-        rows.append([InlineKeyboardButton(tg("goal_reset_button", language=language), callback_data=f"words:goal_reset:{goal.goal.id}")])
+    for index, goal in enumerate(goals, start=1):
+        start_callback = {
+            GoalPeriod.DAILY: "start:launch:daily",
+            GoalPeriod.WEEKLY: "start:launch:weekly",
+            GoalPeriod.HOMEWORK: "start:launch:homework",
+        }.get(goal.goal.goal_period)
+        if start_callback is not None:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        tg("goal_list_start_button", language=language, number=index),
+                        callback_data=start_callback,
+                    ),
+                    InlineKeyboardButton(
+                        tg("goal_list_reset_button", language=language, number=index),
+                        callback_data=f"words:goal_reset:{goal.goal.id}",
+                    ),
+                ]
+            )
+        else:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        tg("goal_list_reset_button", language=language, number=index),
+                        callback_data=f"words:goal_reset:{goal.goal.id}",
+                    )
+                ]
+            )
     return InlineKeyboardMarkup(rows)
 
 

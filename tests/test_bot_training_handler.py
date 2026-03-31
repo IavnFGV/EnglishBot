@@ -577,11 +577,70 @@ async def test_process_answer_shows_homework_progress_track_and_continue_button(
 
     await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
 
-    assert any("Homework progress:" in reply for reply in message.replies)
+    assert any("📘 Homework progress:" in reply for reply in message.replies)
     assert any("Done: 2/5 words" in reply for reply in message.replies)
     assert any("🐣" in reply and "🏁" in reply for reply in message.replies)
     keyboard = message.reply_markup_calls[-1]
     assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
+
+
+@pytest.mark.anyio
+async def test_process_answer_shows_assignment_progress_for_daily_assignment_too() -> None:
+    message = _FakeMessage("cloud")
+    message.from_user = SimpleNamespace(id=123, language_code="en")
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_user=message.from_user,
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot=_FakeBot(),
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(  # noqa: ARG005
+                        session_id="session-daily-1",
+                        user_id=123,
+                        topic_id="weather",
+                        lesson_id=None,
+                        source_tag="assignment:daily",
+                        mode=TrainingMode.MEDIUM,
+                        current_position=1,
+                        total_items=1,
+                    ),
+                    submit_answer=lambda user_id, answer: bot.AnswerOutcome(  # noqa: ARG005
+                        result=CheckResult(
+                            is_correct=True,
+                            expected_answer="cloud",
+                            normalized_answer="cloud",
+                        ),
+                        summary=SessionSummary(total_questions=1, correct_answers=1),
+                        next_question=None,
+                    ),
+                ),
+                "telegram_ui_language": "en",
+                "telegram_flow_message_repository": _FakeTelegramFlowMessageRepository(),
+                "learner_assignment_launch_summary_use_case": SimpleNamespace(
+                    execute=lambda user_id: [  # noqa: ARG005
+                        AssignmentLaunchView(
+                            AssignmentSessionKind.DAILY,
+                            True,
+                            4,
+                            1,
+                            completed_word_count=5,
+                            total_word_count=9,
+                            progress_variant_key="daily-alpha",
+                        )
+                    ]
+                ),
+            }
+        ),
+    )
+
+    await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
+
+    assert any("📅 Daily work progress:" in reply for reply in message.replies)
+    assert any("Left: 4" in reply for reply in message.replies)
 
 
 def test_assignment_progress_track_uses_stable_variant_key() -> None:

@@ -1067,13 +1067,19 @@ def _render_assignment_round_progress_text(
     *,
     context: ContextTypes.DEFAULT_TYPE,
     user,
+    kind: AssignmentSessionKind,
     progress: _AssignmentRoundProgressView,
 ) -> str:
     if progress.total_word_count <= 0:
         return ""
     return "\n".join(
         [
-            _tg("assignment_round_progress_title", context=context, user=user),
+            _tg(
+                "assignment_round_progress_title",
+                context=context,
+                user=user,
+                label=_assignment_kind_label(kind, context=context, user=user),
+            ),
             _render_assignment_progress_track(
                 completed=progress.completed_word_count,
                 total=progress.total_word_count,
@@ -2192,14 +2198,9 @@ def _goal_custom_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE
 
 
 def _goal_list_keyboard(*, goals, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    has_homework_start = any(
-        goal.goal.goal_period is GoalPeriod.HOMEWORK and goal.goal.status is GoalStatus.ACTIVE
-        for goal in goals
-    )
     return ui_goal_list_keyboard(
         tg=_tg,
         goals=goals,
-        has_homework_start=has_homework_start,
         language=language,
     )
 
@@ -2223,12 +2224,14 @@ def _admin_goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE)
 def _render_progress_text(*, context: ContextTypes.DEFAULT_TYPE, user) -> str:
     summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
     history = _list_goal_history(context=context, user_id=user.id, include_history=True)
+    assignment_summary = _learner_assignment_launch_summary_use_case(context).execute(user_id=user.id)
     return ui_render_progress_text(
         tg=_tg,
         context=context,
         user=user,
         summary=summary,
         history=history,
+        assignment_summary=assignment_summary,
     )
 
 
@@ -4917,10 +4920,11 @@ async def _send_feedback(
             ),
             language=_telegram_ui_language(context, feedback_user),
         )
-        if assignment_kind is AssignmentSessionKind.HOMEWORK and round_progress is not None:
+        if round_progress is not None:
             assignment_progress_text = _render_assignment_round_progress_text(
                 context=context,
                 user=feedback_user,
+                kind=assignment_kind,
                 progress=round_progress,
             )
     text = view.text
