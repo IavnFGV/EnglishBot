@@ -1571,13 +1571,12 @@ class SQLiteContentStore:
                 SELECT DISTINCT w.word_id
                 FROM user_goals g
                 JOIN user_goal_words w ON w.goal_id = g.id
-                WHERE g.user_id = ? AND g.status = ? AND g.goal_period IN (?, ?)
+                WHERE g.user_id = ? AND g.status = ? AND g.goal_period = ?
                 """,
                 (
                     user_id,
                     GoalStatus.ACTIVE.value,
-                    GoalPeriod.DAILY.value,
-                    GoalPeriod.WEEKLY.value,
+                    GoalPeriod.HOMEWORK.value,
                 ),
             ).fetchall()
         return {str(row["word_id"]) for row in rows}

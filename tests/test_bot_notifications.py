@@ -7,9 +7,9 @@ import pytest
 
 from englishbot.bot import (
     _create_admin_goal_from_context,
-    _daily_assignment_reminder_job,
     _deliver_pending_notification_job,
     _flush_pending_notifications_for_user,
+    _homework_assignment_reminder_job,
     _post_init,
     _schedule_assignment_assigned_notifications,
     _schedule_goal_completed_notifications,
@@ -119,17 +119,17 @@ def test_schedule_assignment_assigned_notifications_enqueues_user_messages() -> 
             SimpleNamespace(
                 id="goal-1",
                 user_id=77,
-                goal_period=SimpleNamespace(value="daily"),
-                goal_type=SimpleNamespace(value="new_words"),
+                goal_period=SimpleNamespace(value="homework"),
+                goal_type=SimpleNamespace(value="word_level_homework"),
                 target_count=10,
             )
         ],
     )
 
-    assert "assignment-assigned:daily:goal-1:77" in repository.items
+    assert "assignment-assigned:homework:goal-1:77" in repository.items
     assert job_queue.calls[0].when == 0
-    assert "New assignment is ready!" in repository.items["assignment-assigned:daily:goal-1:77"].text
-    assert "Daily" in repository.items["assignment-assigned:daily:goal-1:77"].text
+    assert "New assignment is ready!" in repository.items["assignment-assigned:homework:goal-1:77"].text
+    assert "Homework" in repository.items["assignment-assigned:homework:goal-1:77"].text
 
 
 @pytest.mark.anyio
@@ -344,7 +344,7 @@ def test_schedule_goal_completed_notifications_enqueues_admin_messages() -> None
 
 
 @pytest.mark.anyio
-async def test_daily_assignment_reminder_job_enqueues_notifications_for_users_with_active_goals() -> None:
+async def test_homework_assignment_reminder_job_enqueues_notifications_for_users_with_active_goals() -> None:
     context, job_queue, _ = _build_context()
     repository = _FakeNotificationRepository()
     context.application.bot_data["pending_telegram_notification_repository"] = repository
@@ -362,7 +362,7 @@ async def test_daily_assignment_reminder_job_enqueues_notifications_for_users_wi
         ]
     )
 
-    await _daily_assignment_reminder_job(context)  # type: ignore[arg-type]
+    await _homework_assignment_reminder_job(context)  # type: ignore[arg-type]
 
     keys = set(repository.items)
     assert any(key.endswith(":77") and key.startswith("assignment-reminder:") for key in keys)
@@ -370,9 +370,9 @@ async def test_daily_assignment_reminder_job_enqueues_notifications_for_users_wi
     assert not any(key.endswith(":88") and key.startswith("assignment-reminder:") for key in keys)
     assert len(job_queue.calls) == 2
     reminder_for_77 = next(item for key, item in repository.items.items() if key.endswith(":77"))
-    assert "2 активных целей" in reminder_for_77.text
+    assert "2 активных заданий" in reminder_for_77.text
     reminder_for_99 = next(item for key, item in repository.items.items() if key.endswith(":99"))
-    assert "1 active goal" in reminder_for_99.text
+    assert "1 active assignment" in reminder_for_99.text
 
 
 @pytest.mark.anyio
@@ -405,7 +405,7 @@ async def test_post_init_reschedules_pending_notifications_from_repository() -> 
     assert len(job_queue.calls) == 1
     assert job_queue.calls[0].data == {"notification_key": "n1"}
     assert len(job_queue.daily_calls) == 1
-    assert job_queue.daily_calls[0].name == "daily-assignment-reminder"
+    assert job_queue.daily_calls[0].name == "homework-assignment-reminder"
     assert job_queue.daily_calls[0].time.hour == 13
 
 

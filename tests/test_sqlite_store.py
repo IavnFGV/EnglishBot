@@ -377,7 +377,7 @@ def test_sqlite_content_store_lists_users_goal_overview(tmp_path: Path) -> None:
     )
     store.assign_goal(
         user_id=101,
-        goal_period=GoalPeriod.WEEKLY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=1,
         target_word_ids=["cat"],
@@ -890,7 +890,7 @@ def test_sqlite_store_lists_goals_and_user_metrics(tmp_path: Path) -> None:
     )
     goal = store.assign_goal(
         user_id=1,
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=1,
         target_word_ids=["cat"],

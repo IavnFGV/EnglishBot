@@ -1127,8 +1127,6 @@ def _assignment_progress_flow_id(*, user_id: int, kind: AssignmentSessionKind) -
 
 
 def _assignment_periods_for_kind(kind: AssignmentSessionKind) -> tuple[GoalPeriod, ...]:
-    if kind is AssignmentSessionKind.ALL:
-        return (GoalPeriod.DAILY, GoalPeriod.WEEKLY, GoalPeriod.HOMEWORK)
     return (GoalPeriod(kind.value),)
 
 
@@ -2490,7 +2488,15 @@ def _admin_goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE)
 
 def _render_progress_text(*, context: ContextTypes.DEFAULT_TYPE, user) -> str:
     summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
+    summary = LearnerProgressSummary(
+        correct_answers=summary.correct_answers,
+        incorrect_answers=summary.incorrect_answers,
+        game_streak_days=summary.game_streak_days,
+        weekly_points=summary.weekly_points,
+        active_goals=[item for item in summary.active_goals if item.goal.goal_period is GoalPeriod.HOMEWORK],
+    )
     history = _list_goal_history(context=context, user_id=user.id, include_history=True)
+    history = [item for item in history if item.goal.goal_period is GoalPeriod.HOMEWORK]
     assignment_summary = _learner_assignment_launch_summary_use_case(context).execute(user_id=user.id)
     return ui_render_progress_text(
         tg=_tg,
@@ -2520,6 +2526,17 @@ def _assignment_kind_label(kind: AssignmentSessionKind, *, context: ContextTypes
     return ui_assignment_kind_label(kind, tg=_tg, context=context, user=user)
 
 
+def _assignment_kind_from_value(raw_value: str | None) -> AssignmentSessionKind | None:
+    if raw_value is None:
+        return None
+    normalized = raw_value.strip().lower()
+    if not normalized:
+        return None
+    if normalized == AssignmentSessionKind.HOMEWORK.value:
+        return AssignmentSessionKind.HOMEWORK
+    return None
+
+
 def _start_assignment_button_label(
     kind: AssignmentSessionKind,
     *,
@@ -2543,11 +2560,13 @@ def _active_session_topic_label(
     lesson_id: str | None = None,
 ) -> str:
     if source_tag is not None and source_tag.startswith("assignment:"):
-        kind = AssignmentSessionKind(source_tag.split(":", 1)[1])
-        return _assignment_kind_label(kind, context=context, user=user)
+        kind = _assignment_kind_from_value(source_tag.split(":", 1)[1])
+        if kind is not None:
+            return _assignment_kind_label(kind, context=context, user=user)
     if topic_id.startswith("assignment:"):
-        kind = AssignmentSessionKind(topic_id.split(":", 1)[1])
-        return _assignment_kind_label(kind, context=context, user=user)
+        kind = _assignment_kind_from_value(topic_id.split(":", 1)[1])
+        if kind is not None:
+            return _assignment_kind_label(kind, context=context, user=user)
     return topic_id
 
 
@@ -2567,10 +2586,10 @@ def _active_session_lesson_label(
 def _assignment_kind_from_session(active_session) -> AssignmentSessionKind | None:
     source_tag = getattr(active_session, "source_tag", None)
     if isinstance(source_tag, str) and source_tag.startswith("assignment:"):
-        return AssignmentSessionKind(source_tag.split(":", 1)[1])
+        return _assignment_kind_from_value(source_tag.split(":", 1)[1])
     topic_id = getattr(active_session, "topic_id", None)
     if isinstance(topic_id, str) and topic_id.startswith("assignment:"):
-        return AssignmentSessionKind(topic_id.split(":", 1)[1])
+        return _assignment_kind_from_value(topic_id.split(":", 1)[1])
     return None
 
 
@@ -2581,10 +2600,18 @@ async def words_goals_callback_handler(update: Update, context: ContextTypes.DEF
         return
     await query.answer()
     summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
+    homework_goals = [item for item in summary.active_goals if item.goal.goal_period is GoalPeriod.HOMEWORK]
+    filtered_summary = LearnerProgressSummary(
+        correct_answers=summary.correct_answers,
+        incorrect_answers=summary.incorrect_answers,
+        game_streak_days=summary.game_streak_days,
+        weekly_points=summary.weekly_points,
+        active_goals=homework_goals,
+    )
     try:
         await query.edit_message_text(
             _render_progress_text(context=context, user=user),
-            reply_markup=_goal_list_keyboard(goals=summary.active_goals, language=_telegram_ui_language(context, user)),
+            reply_markup=_goal_list_keyboard(goals=filtered_summary.active_goals, language=_telegram_ui_language(context, user)),
         )
     except BadRequest as error:
         if "Message is not modified" not in str(error):
@@ -2667,11 +2694,9 @@ async def admin_goal_period_callback_handler(update: Update, context: ContextTyp
     if query is None or user is None or query.data is None:
         return
     await query.answer()
-    raw_period = query.data.split(":")[-1]
+    raw_period = GoalPeriod.HOMEWORK.value
     context.user_data["admin_goal_period"] = raw_period
-    context.user_data["admin_goal_type"] = (
-        GoalType.WORD_LEVEL_HOMEWORK.value if raw_period == GoalPeriod.HOMEWORK.value else GoalType.NEW_WORDS.value
-    )
+    context.user_data["admin_goal_type"] = GoalType.WORD_LEVEL_HOMEWORK.value
     await query.edit_message_text(
         _tg("goal_target_prompt", context=context, user=user),
         reply_markup=_admin_goal_target_keyboard(language=_telegram_ui_language(context, user)),
@@ -2909,8 +2934,8 @@ async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAUL
     source = GoalWordSource.TOPIC if topic_id else GoalWordSource(source_raw)
     created = _assign_goal_to_users_use_case(context).execute(
         user_ids=list(context.user_data.get("admin_goal_recipient_user_ids", [])),
-        goal_period=GoalPeriod(str(context.user_data.get("admin_goal_period", GoalPeriod.WEEKLY.value))),
-        goal_type=GoalType(str(context.user_data.get("admin_goal_type", GoalType.NEW_WORDS.value))),
+        goal_period=GoalPeriod(str(context.user_data.get("admin_goal_period", GoalPeriod.HOMEWORK.value))),
+        goal_type=GoalType(str(context.user_data.get("admin_goal_type", GoalType.WORD_LEVEL_HOMEWORK.value))),
         target_count=int(context.user_data.get("admin_goal_target_count", 10)),
         source=source,
         topic_id=topic_id,
@@ -4775,7 +4800,7 @@ async def start_assignment_round_callback_handler(update: Update, context: Conte
     if query is None or user is None or query.data is None:
         return
     await query.answer()
-    kind = AssignmentSessionKind(query.data.rsplit(":", 1)[-1])
+    kind = AssignmentSessionKind.HOMEWORK
     try:
         question = _start_assignment_round_use_case(context).execute(user_id=user.id, kind=kind)
     except ValueError:
@@ -5639,9 +5664,9 @@ async def _post_init(app: Application) -> None:
                 name=notification.key,
             )
         job_queue.run_daily(
-            _daily_assignment_reminder_job,
+            _homework_assignment_reminder_job,
             time=_DAILY_ASSIGNMENT_REMINDER_TIME,
-            name="daily-assignment-reminder",
+            name="homework-assignment-reminder",
         )
 
 
@@ -5904,7 +5929,7 @@ async def _deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) 
     )
 
 
-async def _daily_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _homework_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     rows = _content_store(context).list_users_goal_overview()
     today = datetime.now(UTC).date().isoformat()
     for row in rows:
@@ -5918,9 +5943,9 @@ async def _daily_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> 
                 key=f"assignment-reminder:{today}:{user_id}",
                 recipient_user_id=user_id,
                 text=_tg(
-                    "daily_assignment_reminder"
+                    "homework_assignment_reminder"
                     if active_goals_count != 1
-                    else "daily_assignment_reminder_one",
+                    else "homework_assignment_reminder_one",
                     language=_telegram_ui_language_for_user_id(context, user_id=user_id),
                     goal_count=active_goals_count,
                 ),
@@ -5954,16 +5979,11 @@ def _schedule_assignment_assigned_notifications(
 ) -> None:
     for goal in goals:
         language = _telegram_ui_language_for_user_id(context, user_id=int(goal.user_id))
-        period_key = {
-            GoalPeriod.DAILY.value: "goal_period_daily",
-            GoalPeriod.WEEKLY.value: "goal_period_weekly",
-            GoalPeriod.HOMEWORK.value: "goal_period_homework",
-        }.get(goal.goal_period.value)
         goal_type_key = {
             GoalType.NEW_WORDS.value: "goal_type_new_words",
             GoalType.WORD_LEVEL_HOMEWORK.value: "goal_type_word_level_homework",
         }.get(goal.goal_type.value)
-        period_label = _tg(period_key, language=language) if period_key is not None else goal.goal_period.value
+        period_label = _tg("goal_period_homework", language=language)
         goal_type_label = _tg(goal_type_key, language=language) if goal_type_key is not None else goal.goal_type.value
         emoji = _assignment_assigned_notification_emoji(goal_id=str(goal.id))
         text = "\n".join(

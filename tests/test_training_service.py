@@ -338,7 +338,7 @@ def test_get_current_question_uses_session_item_pool_for_assignment_sessions(
         id="session-assignment",
         user_id=1,
         topic_id="seasons",
-        source_tag="assignment:all",
+        source_tag="assignment:homework",
         mode=TrainingMode.EASY,
         items=[
             SessionItem(order=0, vocabulary_item_id="5", mode=TrainingMode.EASY),

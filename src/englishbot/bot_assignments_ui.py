@@ -19,8 +19,6 @@ TelegramTextGetter = Callable[..., str]
 
 def goal_period_label(*, tg: TelegramTextGetter, context: ContextTypes.DEFAULT_TYPE, user, value: str) -> str:
     key = {
-        GoalPeriod.DAILY.value: "goal_period_daily",
-        GoalPeriod.WEEKLY.value: "goal_period_weekly",
         GoalPeriod.HOMEWORK.value: "goal_period_homework",
     }.get(value)
     return tg(key, context=context, user=user) if key is not None else value
@@ -99,22 +97,23 @@ def render_progress_text(
     current_assignments = [
         item
         for item in assignment_summary
-        if item.kind is not AssignmentSessionKind.ALL and item.total_word_count > 0
+        if item.kind is AssignmentSessionKind.HOMEWORK and item.total_word_count > 0
     ]
     if current_assignments:
         lines.append(tg("progress_assignments_title", context=context, user=user))
         for item in current_assignments:
-            lines.append(
-                tg(
-                    "progress_assignment_line",
-                    context=context,
-                    user=user,
-                    label=assignment_kind_label(item.kind, tg=tg, context=context, user=user),
-                    left=item.remaining_word_count,
-                    total=item.total_word_count,
-                    rounds=item.estimated_round_count,
-                )
+            line = tg(
+                "progress_assignment_line",
+                context=context,
+                user=user,
+                label=assignment_kind_label(item.kind, tg=tg, context=context, user=user),
+                left=item.remaining_word_count,
+                total=item.total_word_count,
+                rounds=item.estimated_round_count,
             )
+            if item.deadline_date:
+                line = f"{line} {_deadline_suffix(tg=tg, context=context, user=user, deadline_date=item.deadline_date)}"
+            lines.append(line)
     if summary.active_goals:
         lines.append(tg("progress_active_goals", context=context, user=user))
         for goal in summary.active_goals:
@@ -143,13 +142,7 @@ def assignment_kind_label(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> str:
-    key_map = {
-        AssignmentSessionKind.DAILY: "start_daily_button",
-        AssignmentSessionKind.WEEKLY: "start_weekly_button",
-        AssignmentSessionKind.HOMEWORK: "start_homework_button",
-        AssignmentSessionKind.ALL: "start_all_assignments_button",
-    }
-    return tg(key_map[kind], context=context, user=user)
+    return tg("start_homework_button", context=context, user=user)
 
 
 def render_start_menu_text(
@@ -159,30 +152,26 @@ def render_start_menu_text(
     user,
     summary: list[AssignmentLaunchView],
 ) -> str:
-    summary_by_kind = {item.kind: item for item in summary}
     lines = [tg("start_menu_title", context=context, user=user), ""]
-    for kind in (
-        AssignmentSessionKind.DAILY,
-        AssignmentSessionKind.WEEKLY,
-        AssignmentSessionKind.HOMEWORK,
-        AssignmentSessionKind.ALL,
-    ):
-        item = summary_by_kind[kind]
-        lines.append(
-            tg(
-                "start_menu_status_line",
-                context=context,
-                user=user,
-                label=assignment_kind_label(kind, tg=tg, context=context, user=user),
-                words=item.remaining_word_count,
-                rounds=item.estimated_round_count,
-                status=(
-                    tg("start_menu_status_ready", context=context, user=user)
-                    if item.available
-                    else tg("start_menu_status_empty", context=context, user=user)
-                ),
-            )
+    for item in summary:
+        if item.kind is not AssignmentSessionKind.HOMEWORK:
+            continue
+        line = tg(
+            "start_menu_status_line",
+            context=context,
+            user=user,
+            label=assignment_kind_label(item.kind, tg=tg, context=context, user=user),
+            words=item.remaining_word_count,
+            rounds=item.estimated_round_count,
+            status=(
+                tg("start_menu_status_ready", context=context, user=user)
+                if item.available
+                else tg("start_menu_status_empty", context=context, user=user)
+            ),
         )
+        if item.deadline_date:
+            line = f"{line} {_deadline_suffix(tg=tg, context=context, user=user, deadline_date=item.deadline_date)}"
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -193,14 +182,8 @@ def start_assignment_button_label(
     available: bool,
     language: str,
 ) -> str:
-    key_map = {
-        AssignmentSessionKind.DAILY: "start_daily_button",
-        AssignmentSessionKind.WEEKLY: "start_weekly_button",
-        AssignmentSessionKind.HOMEWORK: "start_homework_button",
-        AssignmentSessionKind.ALL: "start_all_assignments_button",
-    }
     prefix = "" if available else f"{tg('start_disabled_prefix', language=language)} "
-    return f"{prefix}{tg(key_map[kind], language=language)}"
+    return f"{prefix}{tg('start_homework_button', language=language)}"
 
 
 def goal_setup_keyboard(
@@ -210,8 +193,6 @@ def goal_setup_keyboard(
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton(tg("goal_period_daily", language=language), callback_data="words:goal_period:daily")],
-            [InlineKeyboardButton(tg("goal_period_weekly", language=language), callback_data="words:goal_period:weekly")],
             [InlineKeyboardButton(tg("goal_period_homework", language=language), callback_data="words:goal_period:homework")],
             [InlineKeyboardButton(tg("back", language=language), callback_data="assign:menu")],
         ]
@@ -271,11 +252,7 @@ def goal_list_keyboard(
         [InlineKeyboardButton(tg("back", language=language), callback_data="assign:menu")],
     ]
     for index, goal in enumerate(goals, start=1):
-        start_callback = {
-            GoalPeriod.DAILY: "start:launch:daily",
-            GoalPeriod.WEEKLY: "start:launch:weekly",
-            GoalPeriod.HOMEWORK: "start:launch:homework",
-        }.get(goal.goal.goal_period)
+        start_callback = "start:launch:homework" if goal.goal.goal_period is GoalPeriod.HOMEWORK else None
         if start_callback is not None:
             rows.append(
                 [
@@ -308,8 +285,6 @@ def admin_goal_period_keyboard(
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton(tg("goal_period_daily", language=language), callback_data="words:admin_goal_period:daily")],
-            [InlineKeyboardButton(tg("goal_period_weekly", language=language), callback_data="words:admin_goal_period:weekly")],
             [InlineKeyboardButton(tg("goal_period_homework", language=language), callback_data="words:admin_goal_period:homework")],
             [InlineKeyboardButton(tg("back", language=language), callback_data="assign:menu")],
         ]
@@ -368,66 +343,24 @@ def start_menu_keyboard(
     admin_web_app_url: str | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    summary_by_kind = {item.kind: item for item in summary}
+    homework_summary = next(
+        (item for item in summary if item.kind is AssignmentSessionKind.HOMEWORK),
+        AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, False, 0, 0),
+    )
     rows = [
         [InlineKeyboardButton(tg("start_game_button", language=language), callback_data="start:game")],
         [
             InlineKeyboardButton(
                 start_assignment_button_label(
-                    AssignmentSessionKind.DAILY,
-                    tg=tg,
-                    available=summary_by_kind[AssignmentSessionKind.DAILY].available,
-                    language=language,
-                ),
-                callback_data=(
-                    "start:launch:daily"
-                    if summary_by_kind[AssignmentSessionKind.DAILY].available
-                    else "start:disabled:daily"
-                ),
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                start_assignment_button_label(
-                    AssignmentSessionKind.WEEKLY,
-                    tg=tg,
-                    available=summary_by_kind[AssignmentSessionKind.WEEKLY].available,
-                    language=language,
-                ),
-                callback_data=(
-                    "start:launch:weekly"
-                    if summary_by_kind[AssignmentSessionKind.WEEKLY].available
-                    else "start:disabled:weekly"
-                ),
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                start_assignment_button_label(
                     AssignmentSessionKind.HOMEWORK,
                     tg=tg,
-                    available=summary_by_kind[AssignmentSessionKind.HOMEWORK].available,
+                    available=homework_summary.available,
                     language=language,
                 ),
                 callback_data=(
                     "start:launch:homework"
-                    if summary_by_kind[AssignmentSessionKind.HOMEWORK].available
+                    if homework_summary.available
                     else "start:disabled:homework"
-                ),
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                start_assignment_button_label(
-                    AssignmentSessionKind.ALL,
-                    tg=tg,
-                    available=summary_by_kind[AssignmentSessionKind.ALL].available,
-                    language=language,
-                ),
-                callback_data=(
-                    "start:launch:all"
-                    if summary_by_kind[AssignmentSessionKind.ALL].available
-                    else "start:disabled:all"
                 ),
             )
         ],
@@ -437,6 +370,16 @@ def start_menu_keyboard(
     if admin_web_app_url:
         rows.append([InlineKeyboardButton("Admin Panel", url=admin_web_app_url)])
     return InlineKeyboardMarkup(rows)
+
+
+def _deadline_suffix(
+    *,
+    tg: TelegramTextGetter,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    deadline_date: str,
+) -> str:
+    return tg("assignment_due_suffix", context=context, user=user, date=deadline_date)
 
 
 def assignment_round_complete_keyboard(

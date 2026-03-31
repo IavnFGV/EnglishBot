@@ -310,10 +310,14 @@ async def test_words_goals_callback_handler_shows_progress_summary() -> None:
                 ),
                 "learner_assignment_launch_summary_use_case": SimpleNamespace(
                     execute=lambda user_id: [
-                        AssignmentLaunchView(AssignmentSessionKind.DAILY, True, 2, 1, total_word_count=5),
-                        AssignmentLaunchView(AssignmentSessionKind.WEEKLY, False, 0, 0, total_word_count=0),
-                        AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, True, 4, 1, total_word_count=10),
-                        AssignmentLaunchView(AssignmentSessionKind.ALL, True, 6, 2, total_word_count=15),
+                        AssignmentLaunchView(
+                            AssignmentSessionKind.HOMEWORK,
+                            True,
+                            4,
+                            1,
+                            total_word_count=10,
+                            deadline_date="2026-04-07",
+                        ),
                     ]
                 ),
             }
@@ -377,7 +381,7 @@ async def test_words_goals_callback_handler_shows_goal_rules_and_recently_comple
         goal=Goal(
             id="g-done",
             user_id=123,
-            goal_period=GoalPeriod.WEEKLY,
+            goal_period=GoalPeriod.HOMEWORK,
             goal_type=GoalType.NEW_WORDS,
             target_count=10,
             progress_count=10,
@@ -429,7 +433,8 @@ async def test_words_goals_callback_handler_shows_goal_rules_and_recently_comple
     assert "📘 Homework: 7/10 words left" in text
     assert "Counts when an assigned word reaches the homework target level." in text
     assert "Recently completed:" in text
-    assert "Weekly/Words: 10/10 (100%)" in text
+    assert "• Homework/Words: 10/10 (100%)" in text
+    assert "Weekly/Words: 10/10 (100%)" not in text
     assert query.edits[-1][1].inline_keyboard[2][0].callback_data == "start:launch:homework"
     assert query.edits[-1][1].inline_keyboard[2][1].callback_data == "words:goal_reset:g-active"
 
@@ -662,27 +667,9 @@ def test_start_menu_keyboard_exposes_personal_launch_actions() -> None:
     keyboard = _start_menu_keyboard(
         summary=[
             AssignmentLaunchView(
-                kind=AssignmentSessionKind.DAILY,
-                available=True,
-                remaining_word_count=4,
-                estimated_round_count=1,
-            ),
-            AssignmentLaunchView(
-                kind=AssignmentSessionKind.WEEKLY,
-                available=False,
-                remaining_word_count=0,
-                estimated_round_count=0,
-            ),
-            AssignmentLaunchView(
                 kind=AssignmentSessionKind.HOMEWORK,
                 available=True,
                 remaining_word_count=6,
-                estimated_round_count=2,
-            ),
-            AssignmentLaunchView(
-                kind=AssignmentSessionKind.ALL,
-                available=True,
-                remaining_word_count=10,
                 estimated_round_count=2,
             ),
         ]
@@ -690,20 +677,14 @@ def test_start_menu_keyboard_exposes_personal_launch_actions() -> None:
 
     assert [row[0].callback_data for row in keyboard.inline_keyboard] == [
         "start:game",
-        "start:launch:daily",
-        "start:disabled:weekly",
         "start:launch:homework",
-        "start:launch:all",
     ]
 
 
 def test_start_menu_keyboard_exposes_assignment_guide_web_app() -> None:
     keyboard = _start_menu_keyboard(
         summary=[
-            AssignmentLaunchView(AssignmentSessionKind.DAILY, True, 4, 1),
-            AssignmentLaunchView(AssignmentSessionKind.WEEKLY, False, 0, 0),
             AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, True, 6, 2),
-            AssignmentLaunchView(AssignmentSessionKind.ALL, True, 10, 2),
         ],
         guide_web_app_url="https://admin.example.com/webapp/help?lang=en",
     )
@@ -717,15 +698,17 @@ def test_render_start_menu_text_uses_assigned_status_for_available_assignments()
         context=SimpleNamespace(application=SimpleNamespace(bot_data={"telegram_ui_language": "en"})),
         user=SimpleNamespace(id=123, language_code="en"),
         summary=[
-            AssignmentLaunchView(AssignmentSessionKind.DAILY, True, 4, 1),
-            AssignmentLaunchView(AssignmentSessionKind.WEEKLY, False, 0, 0),
-            AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, True, 6, 2),
-            AssignmentLaunchView(AssignmentSessionKind.ALL, True, 10, 2),
+            AssignmentLaunchView(
+                AssignmentSessionKind.HOMEWORK,
+                True,
+                6,
+                2,
+                deadline_date="2026-04-07",
+            ),
         ],
     )
 
-    assert "📅 Daily work: assigned • 4 words • 1 rounds" in text
-    assert "🗓️ Weekly work: not assigned • 0 words • 0 rounds" in text
+    assert "📘 Homework: assigned • 6 words • 2 rounds • due 2026-04-07" in text
 
 
 def test_goal_flow_keyboards_include_back_navigation() -> None:
@@ -736,6 +719,7 @@ def test_goal_flow_keyboards_include_back_navigation() -> None:
 
 def test_admin_goal_flow_keyboards_include_back_navigation() -> None:
     assert _admin_goal_period_keyboard().inline_keyboard[-1][0].callback_data == "assign:menu"
+    assert len(_admin_goal_period_keyboard().inline_keyboard) == 2
     assert _admin_goal_target_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_assign_goal"
     assert _admin_goal_source_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_goal_target_menu"
 
@@ -803,28 +787,16 @@ def test_mode_keyboard_no_longer_contains_game_mode_entry() -> None:
 
 def test_assignment_round_complete_keyboard_offers_next_round_when_available() -> None:
     keyboard = _assignment_round_complete_keyboard(
-        AssignmentSessionKind.ALL,
+        AssignmentSessionKind.HOMEWORK,
         has_more=True,
         remaining_word_count=3,
     )
 
-    assert [row[0].callback_data for row in keyboard.inline_keyboard] == ["start:launch:all", "assign:menu", "start:menu"]
+    assert [row[0].callback_data for row in keyboard.inline_keyboard] == ["start:launch:homework", "assign:menu", "start:menu"]
     assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
 
 
 def test_goal_list_keyboard_shows_start_and_reset_per_goal() -> None:
-    active_daily = GoalProgressView(
-        goal=Goal(
-            id="goal-daily",
-            user_id=1,
-            goal_period=GoalPeriod.DAILY,
-            goal_type=GoalType.NEW_WORDS,
-            target_count=5,
-            progress_count=1,
-            status=GoalStatus.ACTIVE,
-        ),
-        progress_percent=20,
-    )
     active_homework = GoalProgressView(
         goal=Goal(
             id="goal-homework",
@@ -838,16 +810,13 @@ def test_goal_list_keyboard_shows_start_and_reset_per_goal() -> None:
         progress_percent=0,
     )
 
-    keyboard = _goal_list_keyboard(goals=[active_daily, active_homework], language="en")
+    keyboard = _goal_list_keyboard(goals=[active_homework], language="en")
 
     assert keyboard.inline_keyboard[0][0].callback_data == "assign:progress"
     assert keyboard.inline_keyboard[1][0].callback_data == "assign:menu"
     assert keyboard.inline_keyboard[2][0].text == "▶️ 1. Start"
-    assert keyboard.inline_keyboard[2][0].callback_data == "start:launch:daily"
-    assert keyboard.inline_keyboard[2][1].callback_data == "words:goal_reset:goal-daily"
-    assert keyboard.inline_keyboard[3][0].text == "▶️ 2. Start"
-    assert keyboard.inline_keyboard[3][0].callback_data == "start:launch:homework"
-    assert keyboard.inline_keyboard[3][1].callback_data == "words:goal_reset:goal-homework"
+    assert keyboard.inline_keyboard[2][0].callback_data == "start:launch:homework"
+    assert keyboard.inline_keyboard[2][1].callback_data == "words:goal_reset:goal-homework"
 
 
 @pytest.mark.anyio
@@ -1092,15 +1061,12 @@ async def test_game_mode_placeholder_callback_handler_shows_stub_message() -> No
 def test_start_menu_keyboard_marks_unavailable_assignments() -> None:
     keyboard = _start_menu_keyboard(
         summary=[
-            AssignmentLaunchView(AssignmentSessionKind.DAILY, True, 2, 1),
-            AssignmentLaunchView(AssignmentSessionKind.WEEKLY, False, 0, 0),
             AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, False, 0, 0),
-            AssignmentLaunchView(AssignmentSessionKind.ALL, True, 4, 1),
         ]
     )
 
-    assert keyboard.inline_keyboard[2][0].text.startswith("🚫")
-    assert keyboard.inline_keyboard[2][0].callback_data == "start:disabled:weekly"
+    assert keyboard.inline_keyboard[1][0].text.startswith("🚫")
+    assert keyboard.inline_keyboard[1][0].callback_data == "start:disabled:homework"
 
 
 def test_image_review_keyboard_uses_russian_labels_when_requested() -> None:

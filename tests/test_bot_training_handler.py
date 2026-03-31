@@ -331,12 +331,7 @@ async def test_start_handler_records_telegram_username(monkeypatch: pytest.Monke
                 "editor_user_ids": set(),
                 "admin_user_ids": set(),
                 "learner_assignment_launch_summary_use_case": SimpleNamespace(
-                    execute=lambda user_id: [
-                        AssignmentLaunchView(AssignmentSessionKind.DAILY, False, 0, 0),
-                        AssignmentLaunchView(AssignmentSessionKind.WEEKLY, False, 0, 0),
-                        AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, False, 0, 0),
-                        AssignmentLaunchView(AssignmentSessionKind.ALL, False, 0, 0),
-                    ]
+                    execute=lambda user_id: [AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, False, 0, 0)]
                 ),
             }
         ),
@@ -383,12 +378,7 @@ async def test_start_handler_shows_admin_panel_link_when_configured(
                 "admin_user_ids": {321},
                 "web_app_base_url": "https://admin.example.com",
                 "learner_assignment_launch_summary_use_case": SimpleNamespace(
-                    execute=lambda user_id: [
-                        AssignmentLaunchView(AssignmentSessionKind.DAILY, False, 0, 0),
-                        AssignmentLaunchView(AssignmentSessionKind.WEEKLY, False, 0, 0),
-                        AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, False, 0, 0),
-                        AssignmentLaunchView(AssignmentSessionKind.ALL, False, 0, 0),
-                    ]
+                    execute=lambda user_id: [AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, False, 0, 0)]
                 ),
             }
         ),
@@ -718,7 +708,7 @@ async def test_process_answer_reports_weekly_points_and_completed_goal() -> None
         goal=Goal(
             id="goal-1",
             user_id=123,
-            goal_period=GoalPeriod.DAILY,
+            goal_period=GoalPeriod.HOMEWORK,
             goal_type=GoalType.NEW_WORDS,
             target_count=1,
             progress_count=0,
@@ -730,7 +720,7 @@ async def test_process_answer_reports_weekly_points_and_completed_goal() -> None
         goal=Goal(
             id="goal-1",
             user_id=123,
-            goal_period=GoalPeriod.DAILY,
+            goal_period=GoalPeriod.HOMEWORK,
             goal_type=GoalType.NEW_WORDS,
             target_count=1,
             progress_count=1,
@@ -781,7 +771,7 @@ async def test_process_answer_reports_weekly_points_and_completed_goal() -> None
 
     assert any("Weekly points +11" in reply for reply in message.replies)
     assert any("Completed goals:" in reply for reply in message.replies)
-    assert any("Daily/Words: 1/1 (100%)" in reply for reply in message.replies)
+    assert not any("Daily/Words: 1/1 (100%)" in reply for reply in message.replies)
 
 
 @pytest.mark.anyio
@@ -920,7 +910,7 @@ async def test_send_feedback_keeps_compact_first_line_and_restores_assignment_pr
 
 
 @pytest.mark.anyio
-async def test_process_answer_shows_assignment_progress_for_daily_assignment_too() -> None:
+async def test_process_answer_shows_assignment_progress_for_homework_assignment() -> None:
     message = _FakeMessage("cloud")
     message.from_user = SimpleNamespace(id=123, language_code="en")
     update = SimpleNamespace(
@@ -934,11 +924,11 @@ async def test_process_answer_shows_assignment_progress_for_daily_assignment_too
             bot_data={
                 "training_service": SimpleNamespace(
                     get_active_session=lambda user_id: SimpleNamespace(  # noqa: ARG005
-                        session_id="session-daily-1",
+                        session_id="session-homework-1",
                         user_id=123,
                         topic_id="weather",
                         lesson_id=None,
-                        source_tag="assignment:daily",
+                        source_tag="assignment:homework",
                         mode=TrainingMode.MEDIUM,
                         current_position=1,
                         total_items=1,
@@ -958,13 +948,13 @@ async def test_process_answer_shows_assignment_progress_for_daily_assignment_too
                 "learner_assignment_launch_summary_use_case": SimpleNamespace(
                     execute=lambda user_id: [  # noqa: ARG005
                         AssignmentLaunchView(
-                            AssignmentSessionKind.DAILY,
+                            AssignmentSessionKind.HOMEWORK,
                             True,
                             4,
                             1,
                             completed_word_count=5,
                             total_word_count=9,
-                            progress_variant_key="daily-alpha",
+                            progress_variant_key="homework-alpha",
                         )
                     ]
                 ),
@@ -974,12 +964,12 @@ async def test_process_answer_shows_assignment_progress_for_daily_assignment_too
 
     await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
 
-    assert any("📅 Daily work progress:" in reply for reply in message.replies)
+    assert any("📘 Homework progress:" in reply for reply in message.replies)
     assert any("🎯 Left: 4" in reply for reply in message.replies)
 
 
 @pytest.mark.anyio
-async def test_choice_answer_handler_uses_active_session_user_for_assignment_progress() -> None:
+async def test_choice_answer_handler_uses_active_session_user_for_homework_progress() -> None:
     message = _FakeCallbackMessage("question")
     query = _FakeQuery("answer:cloud", _FakeEditableMessage("question"))
     query.message = message
@@ -995,11 +985,11 @@ async def test_choice_answer_handler_uses_active_session_user_for_assignment_pro
             bot_data={
                 "training_service": SimpleNamespace(
                     get_active_session=lambda user_id: SimpleNamespace(  # noqa: ARG005
-                        session_id="session-daily-2",
+                        session_id="session-homework-2",
                         user_id=123,
                         topic_id="weather",
                         lesson_id=None,
-                        source_tag="assignment:daily",
+                        source_tag="assignment:homework",
                         mode=TrainingMode.EASY,
                         current_position=1,
                         total_items=1,
@@ -1012,7 +1002,7 @@ async def test_choice_answer_handler_uses_active_session_user_for_assignment_pro
                         ),
                         summary=None,
                         next_question=TrainingQuestion(
-                            session_id="session-daily-2",
+                            session_id="session-homework-2",
                             item_id="sun",
                             mode=TrainingMode.EASY,
                             prompt="sun",
@@ -1027,13 +1017,13 @@ async def test_choice_answer_handler_uses_active_session_user_for_assignment_pro
                 "learner_assignment_launch_summary_use_case": SimpleNamespace(
                     execute=lambda user_id: [  # noqa: ARG005
                         AssignmentLaunchView(
-                            AssignmentSessionKind.DAILY,
+                            AssignmentSessionKind.HOMEWORK,
                             True,
                             4,
                             1,
                             completed_word_count=5,
                             total_word_count=9,
-                            progress_variant_key="daily-alpha",
+                            progress_variant_key="homework-alpha",
                         )
                     ]
                 ),
@@ -1043,7 +1033,7 @@ async def test_choice_answer_handler_uses_active_session_user_for_assignment_pro
 
     await choice_answer_handler(update, context)  # type: ignore[arg-type]
 
-    assert any("📅 Daily work progress:" in reply for reply in message.replies)
+    assert any("📘 Homework progress:" in reply for reply in message.replies)
     assert any("🎯 Left: 4" in reply for reply in message.replies)
 
 

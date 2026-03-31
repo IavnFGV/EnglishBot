@@ -5,7 +5,7 @@ import random
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from math import ceil
 
@@ -66,10 +66,7 @@ class AdminGoalDetailView:
 
 
 class AssignmentSessionKind(StrEnum):
-    DAILY = "daily"
-    WEEKLY = "weekly"
     HOMEWORK = "homework"
-    ALL = "all"
 
 
 @dataclass(slots=True, frozen=True)
@@ -81,6 +78,7 @@ class AssignmentLaunchView:
     completed_word_count: int = 0
     total_word_count: int = 0
     progress_variant_key: str = ""
+    deadline_date: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -225,6 +223,7 @@ class AssignGoalToUsersUseCase:
         source: GoalWordSource,
         topic_id: str | None = None,
         manual_word_ids: list[str] | None = None,
+        deadline_date: str | None = None,
     ) -> list[Goal]:
         deduplicated_user_ids = list(dict.fromkeys(user_ids))
         if not deduplicated_user_ids:
@@ -233,6 +232,9 @@ class AssignGoalToUsersUseCase:
             raise ValueError("target_count must be positive")
 
         required_level = 2 if goal_type is GoalType.WORD_LEVEL_HOMEWORK else None
+        effective_deadline_date = deadline_date
+        if effective_deadline_date is None and goal_period is GoalPeriod.HOMEWORK:
+            effective_deadline_date = (datetime.now(UTC).date() + timedelta(days=7)).isoformat()
         created: list[Goal] = []
         for user_id in deduplicated_user_ids:
             candidate_word_ids = self._word_candidates.execute(
@@ -256,6 +258,7 @@ class AssignGoalToUsersUseCase:
                     goal_period=goal_period,
                     goal_type=goal_type,
                     target_count=target_count,
+                    deadline_date=effective_deadline_date,
                     required_level=required_level,
                     target_topic_id=topic_id,
                     target_word_ids=target_word_ids or None,
@@ -363,6 +366,7 @@ class HomeworkProgressUseCase:
         goal_type: GoalType,
         target_count: int,
         target_word_ids: list[str] | None = None,
+        deadline_date: str | None = None,
     ) -> Goal:
         source = GoalWordSource.MANUAL if target_word_ids else GoalWordSource.RECENT
         return self._assign.execute(
@@ -372,6 +376,7 @@ class HomeworkProgressUseCase:
             target_count=target_count,
             source=source,
             manual_word_ids=target_word_ids,
+            deadline_date=deadline_date,
         )[0]
 
     @logged_service_call(
@@ -398,15 +403,7 @@ class GetLearnerAssignmentLaunchSummaryUseCase:
         result=lambda value: {"option_count": len(value)},
     )
     def execute(self, *, user_id: int) -> list[AssignmentLaunchView]:
-        return [
-            self._build_launch_view(user_id=user_id, kind=kind)
-            for kind in (
-                AssignmentSessionKind.DAILY,
-                AssignmentSessionKind.WEEKLY,
-                AssignmentSessionKind.HOMEWORK,
-                AssignmentSessionKind.ALL,
-            )
-        ]
+        return [self._build_launch_view(user_id=user_id, kind=AssignmentSessionKind.HOMEWORK)]
 
     def _build_launch_view(self, *, user_id: int, kind: AssignmentSessionKind) -> AssignmentLaunchView:
         remaining_words = _remaining_assignment_words(store=self._store, user_id=user_id, kind=kind)
@@ -424,6 +421,7 @@ class GetLearnerAssignmentLaunchSummaryUseCase:
                 user_id=user_id,
                 kind=kind,
             ),
+            deadline_date=_assignment_deadline_date(store=self._store, user_id=user_id, kind=kind),
         )
 
 
@@ -452,7 +450,12 @@ class StartAssignmentRoundUseCase:
         result=lambda value: {"session_id": value.session_id, "item_id": value.item_id},
     )
     def execute(self, *, user_id: int, kind: AssignmentSessionKind) -> TrainingQuestion:
-        remaining_words = _remaining_assignment_words(store=self._store, user_id=user_id, kind=kind)
+        effective_kind = AssignmentSessionKind.HOMEWORK
+        remaining_words = _remaining_assignment_words(
+            store=self._store,
+            user_id=user_id,
+            kind=effective_kind,
+        )
         selected_words = remaining_words[: self._batch_size]
         if not selected_words:
             raise ValueError("No active assignments available for this section.")
@@ -463,7 +466,7 @@ class StartAssignmentRoundUseCase:
             user_id=user_id,
             topic_id=self._resolve_session_topic_id(items),
             mode=TrainingMode.MEDIUM,
-            source_tag=f"assignment:{kind.value}",
+            source_tag=f"assignment:{effective_kind.value}",
             items=[
                 SessionItem(order=index, vocabulary_item_id=item.id, mode=item_modes[item.id])
                 for index, item in enumerate(items)
@@ -619,6 +622,26 @@ def _assignment_progress_variant_key(
 
 
 def _periods_for_kind(kind: AssignmentSessionKind) -> tuple[GoalPeriod, ...]:
-    if kind is AssignmentSessionKind.ALL:
-        return (GoalPeriod.DAILY, GoalPeriod.WEEKLY, GoalPeriod.HOMEWORK)
-    return (GoalPeriod(kind.value),)
+    return (GoalPeriod.HOMEWORK,)
+
+
+def _assignment_deadline_date(
+    *,
+    store: SQLiteContentStore,
+    user_id: int,
+    kind: AssignmentSessionKind,
+) -> str | None:
+    goals = store.list_user_goals(
+        user_id=user_id,
+        statuses=(GoalStatus.ACTIVE,),
+    )
+    deadlines = [
+        goal.deadline_date
+        for goal in goals
+        if goal.goal_period in _periods_for_kind(kind)
+        and goal.goal_type in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}
+        and goal.deadline_date
+    ]
+    if not deadlines:
+        return None
+    return min(deadlines)

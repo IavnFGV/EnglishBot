@@ -56,7 +56,7 @@ def test_homework_progress_use_case_creates_and_summarizes_goal(tmp_path: Path) 
 
     created = use_case.create_goal(
         user_id=3,
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=1,
     )
@@ -94,7 +94,7 @@ def test_assign_goal_to_multiple_users_with_topic_source(tmp_path: Path) -> None
 
     created = use_case.execute(
         user_ids=[11, 12],
-        goal_period=GoalPeriod.WEEKLY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=1,
         source=GoalWordSource.TOPIC,
@@ -110,7 +110,7 @@ def test_admin_progress_overview_aggregates_users(tmp_path: Path) -> None:
     assign = AssignGoalToUsersUseCase(store=store)
     assign.execute(
         user_ids=[20, 21],
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=1,
         source=GoalWordSource.ALL,
@@ -140,7 +140,7 @@ def test_assign_goal_without_manual_selection_uses_random_word_subset(tmp_path: 
 
     created = use_case.execute(
         user_ids=[30],
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=2,
         source=GoalWordSource.ALL,
@@ -169,7 +169,7 @@ def test_assign_goal_with_manual_selection_preserves_selected_order(tmp_path: Pa
 
     created = use_case.execute(
         user_ids=[31],
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=2,
         source=GoalWordSource.MANUAL,
@@ -204,7 +204,7 @@ def test_admin_user_goals_returns_history(tmp_path: Path) -> None:
     use_case = HomeworkProgressUseCase(store=store)
     goal = use_case.create_goal(
         user_id=8,
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=1,
     )
@@ -216,36 +216,24 @@ def test_admin_user_goals_returns_history(tmp_path: Path) -> None:
     assert goals[0].goal.status.value == "expired"
 
 
-def test_assignment_launch_summary_aggregates_daily_homework_and_all(tmp_path: Path) -> None:
+def test_assignment_launch_summary_returns_homework_only(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     use_case = HomeworkProgressUseCase(store=store)
-    use_case.create_goal(
-        user_id=9,
-        goal_period=GoalPeriod.DAILY,
-        goal_type=GoalType.NEW_WORDS,
-        target_count=1,
-        target_word_ids=["cat"],
-    )
     use_case.create_goal(
         user_id=9,
         goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.WORD_LEVEL_HOMEWORK,
         target_count=1,
         target_word_ids=["dog"],
+        deadline_date="2026-04-07",
     )
     summary = GetLearnerAssignmentLaunchSummaryUseCase(store=store, batch_size=1).execute(user_id=9)
-    summary_by_kind = {item.kind: item for item in summary}
-
-    assert summary_by_kind[AssignmentSessionKind.DAILY].available is True
-    assert summary_by_kind[AssignmentSessionKind.DAILY].remaining_word_count == 1
-    assert summary_by_kind[AssignmentSessionKind.DAILY].completed_word_count == 0
-    assert summary_by_kind[AssignmentSessionKind.DAILY].total_word_count == 1
-    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].remaining_word_count == 1
-    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].completed_word_count == 0
-    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].total_word_count == 1
-    assert summary_by_kind[AssignmentSessionKind.ALL].remaining_word_count == 2
-    assert summary_by_kind[AssignmentSessionKind.ALL].completed_word_count == 0
-    assert summary_by_kind[AssignmentSessionKind.ALL].total_word_count == 2
+    assert len(summary) == 1
+    assert summary[0].kind is AssignmentSessionKind.HOMEWORK
+    assert summary[0].remaining_word_count == 1
+    assert summary[0].completed_word_count == 0
+    assert summary[0].total_word_count == 1
+    assert summary[0].deadline_date == "2026-04-07"
 
 
 def test_assignment_launch_summary_counts_completed_homework_words(tmp_path: Path) -> None:
@@ -275,12 +263,26 @@ def test_assignment_launch_summary_counts_completed_homework_words(tmp_path: Pat
     assert summary_by_kind[AssignmentSessionKind.HOMEWORK].total_word_count == 2
 
 
+def test_homework_goal_defaults_deadline_when_not_provided(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=30,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["cat"],
+    )
+
+    assert goal.deadline_date is not None
+
+
 def test_start_assignment_round_use_case_creates_assignment_session(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     HomeworkProgressUseCase(store=store).create_goal(
         user_id=10,
-        goal_period=GoalPeriod.WEEKLY,
-        goal_type=GoalType.NEW_WORDS,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
         target_count=2,
         target_word_ids=["cat", "dog"],
     )
@@ -293,12 +295,12 @@ def test_start_assignment_round_use_case_creates_assignment_session(tmp_path: Pa
         batch_size=2,
     )
 
-    question = use_case.execute(user_id=10, kind=AssignmentSessionKind.WEEKLY)
+    question = use_case.execute(user_id=10, kind=AssignmentSessionKind.HOMEWORK)
     session = SQLiteSessionRepository(store).get_active_by_user(10)
 
     assert session is not None
     assert question.session_id == session.id
-    assert session.source_tag == "assignment:weekly"
+    assert session.source_tag == "assignment:homework"
     assert len(session.items) == 2
 
 
@@ -306,7 +308,7 @@ def test_new_words_goal_progress_counts_unique_completed_words(tmp_path: Path) -
     store = _build_store(tmp_path)
     goal = HomeworkProgressUseCase(store=store).create_goal(
         user_id=15,
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=2,
         target_word_ids=["cat", "dog"],
@@ -349,15 +351,15 @@ def test_new_words_goal_progress_counts_unique_completed_words(tmp_path: Path) -
     assert refreshed_goal.id == goal.id
     assert refreshed_goal.progress_count == 1
     assert refreshed_goal.status.value == "active"
-    assert summary_by_kind[AssignmentSessionKind.DAILY].available is True
-    assert summary_by_kind[AssignmentSessionKind.DAILY].remaining_word_count == 1
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].available is True
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].remaining_word_count == 1
 
 
 def test_list_user_goals_refreshes_stale_new_words_progress_from_existing_db(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     goal = HomeworkProgressUseCase(store=store).create_goal(
         user_id=16,
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=2,
         target_word_ids=["cat", "dog"],
@@ -388,8 +390,8 @@ def test_list_user_goals_refreshes_stale_new_words_progress_from_existing_db(tmp
 
     assert refreshed_goal.progress_count == 1
     assert refreshed_goal.status.value == "active"
-    assert summary_by_kind[AssignmentSessionKind.DAILY].available is True
-    assert summary_by_kind[AssignmentSessionKind.DAILY].remaining_word_count == 1
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].available is True
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].remaining_word_count == 1
 
 
 def test_new_words_goal_does_not_reuse_progress_from_previous_goal_assignments(tmp_path: Path) -> None:
@@ -398,7 +400,7 @@ def test_new_words_goal_does_not_reuse_progress_from_previous_goal_assignments(t
 
     first_goal = use_case.create_goal(
         user_id=17,
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=2,
         target_word_ids=["cat", "dog"],
@@ -434,7 +436,7 @@ def test_new_words_goal_does_not_reuse_progress_from_previous_goal_assignments(t
 
     second_goal = use_case.create_goal(
         user_id=17,
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=2,
         target_word_ids=["cat", "dog"],
@@ -455,7 +457,7 @@ def test_assignment_launch_summary_handles_naive_goal_created_at_from_existing_d
     store = _build_store(tmp_path)
     goal = HomeworkProgressUseCase(store=store).create_goal(
         user_id=18,
-        goal_period=GoalPeriod.DAILY,
+        goal_period=GoalPeriod.HOMEWORK,
         goal_type=GoalType.NEW_WORDS,
         target_count=1,
         target_word_ids=["cat"],
@@ -478,5 +480,5 @@ def test_assignment_launch_summary_handles_naive_goal_created_at_from_existing_d
     summary = GetLearnerAssignmentLaunchSummaryUseCase(store=store, batch_size=5).execute(user_id=18)
     summary_by_kind = {item.kind: item for item in summary}
 
-    assert summary_by_kind[AssignmentSessionKind.DAILY].remaining_word_count == 0
-    assert summary_by_kind[AssignmentSessionKind.DAILY].available is False
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].remaining_word_count == 0
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].available is False
