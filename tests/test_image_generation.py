@@ -442,9 +442,20 @@ async def test_bot_rendering_uses_compact_text_prompt_for_text_mode() -> None:
 
     await _send_question(update, None, question)  # type: ignore[arg-type]
 
-    assert message.text_calls == [
-        ("<b>дракон</b>\n\n<b>agrnod</b>", None, "HTML")
+    assert len(message.text_calls) == 1
+    text, reply_markup, parse_mode = message.text_calls[0]
+    assert text == "🧩 <b>дракон</b>\n\n<b>_ _ _ _ _ _</b>"
+    assert parse_mode == "HTML"
+    assert reply_markup is not None
+    assert [button.text for row in reply_markup.inline_keyboard[:-1] for button in row] == [
+        "a",
+        "g",
+        "r",
+        "n",
+        "o",
+        "d",
     ]
+    assert reply_markup.inline_keyboard[-1][0].text == "⌫"
 
 
 def test_comfyui_client_generates_image_via_http_protocol(

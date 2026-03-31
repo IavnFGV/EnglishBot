@@ -36,6 +36,7 @@ from englishbot.bot import (
     _words_menu_keyboard,
     _editable_topics_keyboard,
     game_mode_placeholder_callback_handler,
+    mode_selected_handler,
     start_assignment_round_callback_handler,
     start_assignment_unavailable_callback_handler,
     words_add_words_callback_handler,
@@ -98,6 +99,40 @@ class _RecordingQuery:
         self.edits.append((text, reply_markup))
 
 
+class _ModeSelectionService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def start_session(
+        self,
+        *,
+        user_id: int,
+        topic_id: str,
+        lesson_id: str | None,
+        mode: TrainingMode,
+        adaptive_per_word: bool = False,
+    ):
+        self.calls.append(
+            {
+                "user_id": user_id,
+                "topic_id": topic_id,
+                "lesson_id": lesson_id,
+                "mode": mode,
+                "adaptive_per_word": adaptive_per_word,
+            }
+        )
+        return SimpleNamespace(
+            session_id="session-1",
+            item_id="word-1",
+            mode=mode,
+            prompt="Translation: cat",
+            image_ref=None,
+            correct_answer="cat",
+            options=["cat", "dog", "sun"] if mode is TrainingMode.EASY else None,
+            letter_hint=None,
+        )
+
+
 @pytest.mark.anyio
 async def test_words_topics_callback_handler_opens_topic_list() -> None:
     query = _RecordingQuery()
@@ -128,6 +163,50 @@ async def test_words_topics_callback_handler_opens_topic_list() -> None:
     assert query.edits[-1][1] is not None
     assert query.edits[-1][1].inline_keyboard[0][0].text == "Weather (3)"
     assert query.edits[-1][1].inline_keyboard[1][0].text == "School (2)"
+
+
+@pytest.mark.anyio
+async def test_mode_selected_handler_keeps_explicit_selected_difficulty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent_questions: list[object] = []
+
+    async def _fake_send_question(update, context, question) -> None:  # noqa: ARG001
+        sent_questions.append(question)
+
+    monkeypatch.setattr("englishbot.bot._send_question", _fake_send_question)
+
+    service = _ModeSelectionService()
+    query = _RecordingQuery()
+    query.data = "mode:weather:all:medium"
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": service,
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    await mode_selected_handler(update, context)  # type: ignore[arg-type]
+
+    assert service.calls == [
+        {
+            "user_id": 123,
+            "topic_id": "weather",
+            "lesson_id": None,
+            "mode": TrainingMode.MEDIUM,
+            "adaptive_per_word": False,
+        }
+    ]
+    assert context.user_data["awaiting_text_answer"] is False
+    assert query.edits[-1][0] == "Session started."
+    assert len(sent_questions) == 1
 
 
 @pytest.mark.anyio
