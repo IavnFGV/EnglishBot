@@ -1068,6 +1068,19 @@ def test_assignment_progress_track_uses_stable_variant_key() -> None:
     assert first != third
 
 
+def test_assignment_progress_track_marks_completed_cells_separately() -> None:
+    track = bot._render_assignment_progress_track(
+        completed=3,
+        total=10,
+        variant_key="goal-mouse",
+    )
+
+    assert len(track) >= 18
+    assert "🏠" in track or "🏁" in track or "🌼" in track
+    assert "🐭" in track or "🐣" in track or "🚗" in track or "🐛" in track
+    assert "▫️" in track or "🟨" in track or "🟩" in track or "🍂" in track
+
+
 @pytest.mark.anyio
 async def test_process_answer_replaces_previous_feedback_message() -> None:
     message = _FakeMessage("cloud")

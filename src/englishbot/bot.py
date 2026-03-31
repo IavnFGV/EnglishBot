@@ -1059,7 +1059,7 @@ def _render_assignment_progress_track(
     completed: int,
     total: int,
     variant_key: str,
-    steps: int = 25,
+    steps: int = 17,
 ) -> str:
     if total <= 0:
         return ""
@@ -1069,18 +1069,20 @@ def _render_assignment_progress_track(
     else:
         runner_index = round((bounded_completed / total) * (steps - 1))
     variants = (
-        ("🐣", "⬜", "🏁"),
-        ("🚗", "🛣️", "🏁"),
-        ("🐛", "🍃", "🌼"),
-        ("🐭", "🧀", "🏠"),
+        ("🐣", "🟨", "⬜", "🏁"),
+        ("🚗", "🟩", "⬜", "🏁"),
+        ("🐛", "🍂", "🍃", "🌼"),
+        ("🐭", "▫️", "🧀", "🏠"),
     )
-    runner, trail, finish = variants[
+    runner, completed_cell, remaining_cell, finish = variants[
         _assignment_progress_variant_index(
             variant_key=variant_key,
             variant_count=len(variants),
         )
     ]
-    cells = [trail] * steps
+    cells = [remaining_cell] * steps
+    for index in range(runner_index):
+        cells[index] = completed_cell
     cells[runner_index] = runner
     return "".join(cells) + finish
 
