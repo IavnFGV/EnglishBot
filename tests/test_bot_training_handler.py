@@ -183,6 +183,35 @@ class _CompletingHomeworkAssignmentService:
         )
 
 
+class _InProgressHomeworkAssignmentService:
+    def get_active_session(self, *, user_id: int):  # noqa: ARG002
+        return SimpleNamespace(
+            session_id="session-hw-2",
+            user_id=123,
+            topic_id="weather",
+            lesson_id=None,
+            source_tag="assignment:homework",
+            mode=TrainingMode.MEDIUM,
+            current_position=1,
+            total_items=2,
+        )
+
+    def submit_answer(self, *, user_id: int, answer: str):  # noqa: ARG002
+        return bot.AnswerOutcome(
+            result=CheckResult(is_correct=True, expected_answer="cloud", normalized_answer="cloud"),
+            summary=None,
+            next_question=TrainingQuestion(
+                session_id="session-hw-2",
+                item_id="sun",
+                mode=TrainingMode.MEDIUM,
+                prompt="Translation: солнце",
+                image_ref=None,
+                correct_answer="sun",
+                letter_hint="nus",
+            ),
+        )
+
+
 class _SummarySequenceUseCase:
     def __init__(self, summaries: list[object]) -> None:
         self._summaries = list(summaries)
@@ -778,6 +807,49 @@ async def test_process_answer_shows_homework_progress_track_and_continue_button(
     assert any("🐣" in reply and "🏁" in reply for reply in message.replies)
     keyboard = message.reply_markup_calls[-1]
     assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
+
+
+@pytest.mark.anyio
+async def test_process_answer_shows_homework_progress_during_active_round_too() -> None:
+    message = _FakeMessage("cloud")
+    message.from_user = SimpleNamespace(id=123, language_code="en")
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_user=message.from_user,
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot=_FakeBot(),
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _InProgressHomeworkAssignmentService(),
+                "telegram_ui_language": "en",
+                "telegram_flow_message_repository": _FakeTelegramFlowMessageRepository(),
+                "learner_assignment_launch_summary_use_case": SimpleNamespace(
+                    execute=lambda user_id: [
+                        AssignmentLaunchView(
+                            AssignmentSessionKind.HOMEWORK,
+                            True,
+                            3,
+                            1,
+                            completed_word_count=2,
+                            total_word_count=5,
+                            progress_variant_key="homework-alpha",
+                        )
+                    ]
+                ),
+            }
+        ),
+    )
+
+    await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
+
+    assert any("📘 Homework progress:" in reply for reply in message.replies)
+    assert any("Done: 2/5 words" in reply for reply in message.replies)
+    assert any(
+        "📘 Homework progress:" in reply and reply_markup is None
+        for reply, reply_markup in zip(message.replies, message.reply_markup_calls, strict=False)
+    )
 
 
 @pytest.mark.anyio

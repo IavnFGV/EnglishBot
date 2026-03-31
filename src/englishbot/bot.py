@@ -4974,12 +4974,21 @@ async def _send_feedback(
     reply_markup = None
     assignment_progress_text = ""
     assignment_kind = _assignment_kind_from_session(active_session) if active_session is not None else None
-    if outcome.summary is not None and assignment_kind is not None and feedback_user_id is not None:
+    round_progress = None
+    if assignment_kind is not None and feedback_user_id is not None:
         round_progress = _assignment_round_progress_view(
             context=context,
             user_id=feedback_user_id,
             kind=assignment_kind,
         )
+        if round_progress is not None:
+            assignment_progress_text = _render_assignment_round_progress_text(
+                context=context,
+                user=feedback_user,
+                kind=assignment_kind,
+                progress=round_progress,
+            )
+    if outcome.summary is not None and assignment_kind is not None and feedback_user_id is not None:
         has_more = bool(round_progress is not None and round_progress.remaining_word_count > 0)
         reply_markup = _assignment_round_complete_keyboard(
             assignment_kind,
@@ -4991,13 +5000,6 @@ async def _send_feedback(
             ),
             language=_telegram_ui_language(context, feedback_user),
         )
-        if round_progress is not None:
-            assignment_progress_text = _render_assignment_round_progress_text(
-                context=context,
-                user=feedback_user,
-                kind=assignment_kind,
-                progress=round_progress,
-            )
     text = view.text
     if feedback_update is not None:
         update_text = _render_feedback_update_text(
