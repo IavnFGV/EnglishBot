@@ -40,7 +40,7 @@ from englishbot.bot import (
     words_add_words_callback_handler,
     words_goals_callback_handler,
     words_menu_handler,
-    goal_target_preset_callback_handler,
+    goal_setup_disabled_callback_handler,
     goal_text_handler,
     admin_users_progress_callback_handler,
     admin_goal_period_callback_handler,
@@ -349,79 +349,60 @@ async def test_admin_goal_period_callback_handler_uses_homework_goal_type_for_ho
 
 
 @pytest.mark.anyio
-async def test_goal_target_custom_text_flow_accepts_manual_target() -> None:
+async def test_goal_setup_disabled_callback_handler_returns_to_assignments_menu() -> None:
     query = _RecordingQuery()
-    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={}))
+    context = SimpleNamespace(user_data={"goal_period": "daily"}, application=SimpleNamespace(bot_data={}))
 
-    await goal_target_preset_callback_handler(
-        SimpleNamespace(callback_query=SimpleNamespace(answer=query.answer, edit_message_text=query.edit_message_text, data="words:goal_target:custom"), effective_user=SimpleNamespace(id=123)),
+    await goal_setup_disabled_callback_handler(
+        SimpleNamespace(
+            callback_query=SimpleNamespace(
+                answer=query.answer,
+                edit_message_text=query.edit_message_text,
+                data="words:goal_target:custom",
+            ),
+            effective_user=SimpleNamespace(id=123, language_code="en"),
+        ),
         context,  # type: ignore[arg-type]
     )
-    assert context.user_data["words_flow_mode"] == "awaiting_goal_target_text"
 
-    class _Message:
-        async def reply_text(self, *args, **kwargs) -> None:  # noqa: ARG002
-            return None
-
-    message = SimpleNamespace(
-        text="12",
-        reply_text=_Message().reply_text,
-    )
-    await goal_text_handler(
-        SimpleNamespace(effective_message=message, effective_user=SimpleNamespace(id=123)),
-        context,  # type: ignore[arg-type]
-    )
-    assert context.user_data["goal_target_count"] == 12
+    assert query.edits[-1][0] == "Self-managed goals are disabled. Ask an admin to assign work."
+    assert "goal_period" not in context.user_data
+    assert context.user_data["telegram_ui_language"] == "en"
 
 
 @pytest.mark.anyio
-async def test_goal_target_custom_text_flow_edits_existing_prompt_message_when_available() -> None:
-    class _Bot:
-        def __init__(self) -> None:
-            self.edits: list[tuple[int, int, str, object]] = []
-            self.deletes: list[tuple[int, int]] = []
+async def test_goal_text_handler_disables_legacy_self_goal_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    sent_views: list[object] = []
 
-        async def edit_message_text(self, *, chat_id, message_id, text, reply_markup=None):  # noqa: ANN001
-            self.edits.append((chat_id, message_id, text, reply_markup))
+    async def _fake_send_telegram_view(message, view):  # noqa: ARG001
+        sent_views.append(view)
 
-        async def delete_message(self, *, chat_id, message_id):  # noqa: ANN001
-            self.deletes.append((chat_id, message_id))
+    monkeypatch.setattr("englishbot.bot.send_telegram_view", _fake_send_telegram_view)
 
-    class _Message:
-        def __init__(self) -> None:
-            self.reply_calls = 0
-
-        async def reply_text(self, *args, **kwargs) -> None:  # noqa: ARG002
-            self.reply_calls += 1
-
-    bot = _Bot()
-    message = _Message()
     context = SimpleNamespace(
         user_data={
             "words_flow_mode": "awaiting_goal_target_text",
             "expected_user_input_state": {"chat_id": 77, "message_id": 88},
         },
         application=SimpleNamespace(bot_data={}),
-        bot=bot,
     )
 
     await goal_text_handler(
         SimpleNamespace(
             effective_message=SimpleNamespace(
                 text="12",
-                reply_text=message.reply_text,
+                reply_text=lambda *args, **kwargs: None,
                 chat_id=55,
                 message_id=66,
             ),
-            effective_user=SimpleNamespace(id=123),
+            effective_user=SimpleNamespace(id=123, language_code="en"),
         ),
         context,  # type: ignore[arg-type]
     )
 
-    assert context.user_data["goal_target_count"] == 12
-    assert bot.edits[-1][0:3] == (77, 88, "Choose a word source:")
-    assert bot.deletes == [(55, 66)]
-    assert message.reply_calls == 0
+    assert len(sent_views) == 1
+    assert sent_views[0].text == "Self-managed goals are disabled. Ask an admin to assign work."
+    assert "words_flow_mode" not in context.user_data
 
 
 def test_topic_keyboards_show_item_counts_when_provided() -> None:

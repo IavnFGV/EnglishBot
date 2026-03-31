@@ -614,12 +614,12 @@ def build_application(
     app.add_handler(CallbackQueryHandler(notification_dismiss_callback_handler, pattern=rf"^{_NOTIFICATION_DISMISS_CALLBACK}$"))
     app.add_handler(CallbackQueryHandler(words_goals_callback_handler, pattern=r"^assign:goals$"))
     app.add_handler(CallbackQueryHandler(words_progress_callback_handler, pattern=r"^assign:progress$"))
-    app.add_handler(CallbackQueryHandler(goal_setup_start_callback_handler, pattern=r"^assign:goal_setup$"))
-    app.add_handler(CallbackQueryHandler(goal_target_menu_callback_handler, pattern=r"^assign:goal_target_menu$"))
-    app.add_handler(CallbackQueryHandler(goal_period_callback_handler, pattern=r"^words:goal_period:"))
+    app.add_handler(CallbackQueryHandler(goal_setup_disabled_callback_handler, pattern=r"^assign:goal_setup$"))
+    app.add_handler(CallbackQueryHandler(goal_setup_disabled_callback_handler, pattern=r"^assign:goal_target_menu$"))
+    app.add_handler(CallbackQueryHandler(goal_setup_disabled_callback_handler, pattern=r"^words:goal_period:"))
     app.add_handler(CallbackQueryHandler(goal_type_callback_handler, pattern=r"^words:goal_type:"))
-    app.add_handler(CallbackQueryHandler(goal_target_preset_callback_handler, pattern=r"^words:goal_target:"))
-    app.add_handler(CallbackQueryHandler(goal_source_callback_handler, pattern=r"^words:goal_source:"))
+    app.add_handler(CallbackQueryHandler(goal_setup_disabled_callback_handler, pattern=r"^words:goal_target:"))
+    app.add_handler(CallbackQueryHandler(goal_setup_disabled_callback_handler, pattern=r"^words:goal_source:"))
     app.add_handler(CallbackQueryHandler(goal_reset_callback_handler, pattern=r"^words:goal_reset:"))
     app.add_handler(CallbackQueryHandler(admin_assign_goal_start_handler, pattern=r"^assign:admin_assign_goal$"))
     app.add_handler(CallbackQueryHandler(admin_goal_target_menu_callback_handler, pattern=r"^assign:admin_goal_target_menu$"))
@@ -2218,99 +2218,33 @@ async def words_progress_callback_handler(update: Update, context: ContextTypes.
     await words_goals_callback_handler(update, context)
 
 
-async def goal_setup_start_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def _clear_self_goal_setup_state(context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop("goal_period", None)
+    context.user_data.pop("goal_type", None)
+    context.user_data.pop("goal_target_count", None)
+    if context.user_data.get("words_flow_mode") == _GOAL_AWAITING_TARGET_TEXT:
+        context.user_data.pop("words_flow_mode", None)
+
+
+async def goal_setup_disabled_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
         return
     await query.answer()
+    _clear_self_goal_setup_state(context)
     await query.edit_message_text(
-        _tg("goal_setup_intro", context=context, user=user),
-        reply_markup=_goal_setup_keyboard(language=_telegram_ui_language(context, user)),
-    )
-
-
-async def goal_target_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    await query.edit_message_text(
-        _tg("goal_target_prompt", context=context, user=user),
-        reply_markup=_goal_target_keyboard(language=_telegram_ui_language(context, user)),
-    )
-
-
-async def goal_period_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    raw_period = query.data.split(":")[-1]
-    context.user_data["goal_period"] = raw_period
-    context.user_data["goal_type"] = (
-        GoalType.WORD_LEVEL_HOMEWORK.value if raw_period == GoalPeriod.HOMEWORK.value else GoalType.NEW_WORDS.value
-    )
-    await query.edit_message_text(
-        _tg("goal_target_prompt", context=context, user=user),
-        reply_markup=_goal_target_keyboard(language=_telegram_ui_language(context, user)),
+        _tg("self_goal_setup_disabled", context=context, user=user),
+        reply_markup=_assign_menu_view(
+            text=_tg("assign_menu_title", context=context, user=user),
+            context=context,
+            user=user,
+        ).reply_markup,
     )
 
 
 async def goal_type_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     return
-
-
-async def goal_target_preset_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    target = query.data.split(":")[-1]
-    if target == "custom":
-        context.user_data["words_flow_mode"] = _GOAL_AWAITING_TARGET_TEXT
-        _remember_expected_user_input(
-            context,
-            chat_id=getattr(getattr(query, "message", None), "chat_id", None),
-            message_id=getattr(getattr(query, "message", None), "message_id", None),
-        )
-        await query.edit_message_text(
-            _tg("goal_target_custom_prompt", context=context, user=user),
-            reply_markup=_goal_custom_target_keyboard(language=_telegram_ui_language(context, user)),
-        )
-        return
-    context.user_data["goal_target_count"] = int(target)
-    await query.edit_message_text(
-        _tg("goal_source_prompt", context=context, user=user),
-        reply_markup=_goal_source_keyboard(language=_telegram_ui_language(context, user)),
-    )
-
-
-async def goal_source_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    try:
-        goal = _homework_progress_use_case(context).create_goal(
-            user_id=user.id,
-            goal_period=GoalPeriod(context.user_data["goal_period"]),
-            goal_type=GoalType(context.user_data["goal_type"]),
-            target_count=int(context.user_data["goal_target_count"]),
-        )
-    except ValueError:
-        await query.edit_message_text(_tg("goal_creation_failed", context=context, user=user))
-        return
-    context.user_data.pop("goal_period", None)
-    context.user_data.pop("goal_type", None)
-    context.user_data.pop("goal_target_count", None)
-    await query.edit_message_text(
-        _tg("goal_created", context=context, user=user, period=goal.goal_period.value, goal_type=goal.goal_type.value, target=goal.target_count),
-    )
 
 
 async def goal_reset_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3262,15 +3196,26 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if message is None or message.text is None or user is None:
         return
     flow_mode = context.user_data.get("words_flow_mode")
+    if flow_mode == _GOAL_AWAITING_TARGET_TEXT:
+        _clear_self_goal_setup_state(context)
+        await send_telegram_view(
+            message,
+            build_status_view(
+                text=_tg("self_goal_setup_disabled", context=context, user=user),
+                reply_markup=_assign_menu_view(
+                    text=_tg("assign_menu_title", context=context, user=user),
+                    context=context,
+                    user=user,
+                ).reply_markup,
+            ),
+        )
+        return
     if flow_mode not in {
-        _GOAL_AWAITING_TARGET_TEXT,
         _ADMIN_GOAL_AWAITING_TARGET_TEXT,
     }:
         return
     prompt_reply_markup = (
-        _goal_custom_target_keyboard(language=_telegram_ui_language(context, user))
-        if flow_mode == _GOAL_AWAITING_TARGET_TEXT
-        else _admin_goal_custom_target_keyboard(language=_telegram_ui_language(context, user))
+        _admin_goal_custom_target_keyboard(language=_telegram_ui_language(context, user))
     )
     try:
         target_count = int(message.text.strip())
@@ -3298,14 +3243,9 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 reply_markup=prompt_reply_markup,
             )
         return
-    key = "goal_target_count" if flow_mode == _GOAL_AWAITING_TARGET_TEXT else "admin_goal_target_count"
-    context.user_data[key] = target_count
+    context.user_data["admin_goal_target_count"] = target_count
     context.user_data.pop("words_flow_mode", None)
-    next_reply_markup = (
-        _goal_source_keyboard(language=_telegram_ui_language(context, user))
-        if flow_mode == _GOAL_AWAITING_TARGET_TEXT
-        else _admin_goal_source_keyboard(language=_telegram_ui_language(context, user))
-    )
+    next_reply_markup = _admin_goal_source_keyboard(language=_telegram_ui_language(context, user))
     edited = await _edit_expected_user_input_prompt(
         context,
         text=_tg("goal_source_prompt", context=context, user=user),

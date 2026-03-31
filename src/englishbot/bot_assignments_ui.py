@@ -247,7 +247,6 @@ def goal_list_keyboard(
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = [
-        [InlineKeyboardButton(tg("goal_setup_button", language=language), callback_data="assign:goal_setup")],
         [InlineKeyboardButton(tg("progress_button", language=language), callback_data="assign:progress")],
         [InlineKeyboardButton(tg("back", language=language), callback_data="assign:menu")],
     ]
