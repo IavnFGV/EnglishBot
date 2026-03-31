@@ -58,7 +58,7 @@ def test_render_assignment_progress_image_writes_png(tmp_path: Path) -> None:
     assert output_path.exists()
     assert output_path.read_bytes().startswith(b"\x89PNG")
     with Image.open(output_path) as image:
-        assert image.size == (256, 256)
+        assert image.size == (512, 512)
 
 
 def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path: Path) -> None:

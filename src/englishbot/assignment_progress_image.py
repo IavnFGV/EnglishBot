@@ -29,7 +29,7 @@ def render_assignment_progress_image(
     snapshot: AssignmentProgressSnapshot,
     *,
     output_path: Path,
-    size: int = 256,
+    size: int = 512,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image = Image.new("RGB", (size, size), "#fff8ef")

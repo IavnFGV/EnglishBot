@@ -1059,7 +1059,7 @@ def _render_assignment_progress_track(
     completed: int,
     total: int,
     variant_key: str,
-    steps: int = 6,
+    steps: int = 25,
 ) -> str:
     if total <= 0:
         return ""
@@ -5276,7 +5276,7 @@ async def _send_feedback(
         )
         if update_text:
             text = f"{text}\n\n{update_text}"
-    if assignment_progress_text and not compact_assignment_feedback:
+    if assignment_progress_text:
         text = f"{text}\n\n{assignment_progress_text}"
     flow_id = getattr(active_session, "session_id", None)
     if isinstance(flow_id, str):

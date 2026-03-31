@@ -870,7 +870,7 @@ async def test_process_answer_shows_homework_progress_during_active_round_too() 
 
 
 @pytest.mark.anyio
-async def test_send_feedback_compacts_assignment_feedback_when_progress_image_is_available() -> None:
+async def test_send_feedback_keeps_compact_first_line_and_restores_assignment_progress_track() -> None:
     message = _FakePhotoCapableMessage("cloud")
     user = SimpleNamespace(id=123, language_code="en")
     message.from_user = user
@@ -913,8 +913,10 @@ async def test_send_feedback_compacts_assignment_feedback_when_progress_image_is
     )
 
     assert len(message.replies) == 1
-    assert "Weekly points +6" in message.replies[0]
-    assert "\n" not in message.replies[0]
+    first_line, *_rest = message.replies[0].splitlines()
+    assert "Weekly points +6" in first_line
+    assert "📘 Homework progress:" in message.replies[0]
+    assert "🏁" in message.replies[0]
 
 
 @pytest.mark.anyio
