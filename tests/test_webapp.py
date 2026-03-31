@@ -60,8 +60,9 @@ def test_webapp_help_page_uses_query_language_without_session(tmp_path: Path) ->
     response = _request(app, "GET", "/webapp/help?lang=ru")
 
     assert response.status_code == 200
-    assert "Как работают задания" in response.body
+    assert "Как работает домашка" in response.body
     assert "Как начисляются недельные очки" in response.body
+    assert "Дедлайн показывает" in response.body
 
 
 def test_webapp_head_request_returns_success_for_html_entrypoint(tmp_path: Path) -> None:

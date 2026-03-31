@@ -258,7 +258,7 @@ _HELP_COMMAND_TEXT: dict[str, str] = {
     "help": "show commands",
     "version": "show the current bot version",
     "words": "open the words menu",
-    "assign": "open the assignments menu",
+    "assign": "open the homework menu",
     "add_words": "send raw lesson text for draft extraction",
     "cancel": "cancel the current add-words flow",
 }

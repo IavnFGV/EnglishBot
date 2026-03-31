@@ -52,7 +52,7 @@ async def test_post_init_sets_public_and_scoped_commands() -> None:
         ("help", "Show commands"),
         ("version", "Show bot version"),
         ("words", "Open words menu"),
-        ("assign", "Open assignments menu"),
+        ("assign", "Open homework menu"),
     ]
     scoped_calls = bot.calls[1:]
     assert len(scoped_calls) == 2

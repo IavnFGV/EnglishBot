@@ -152,11 +152,11 @@ Current editor flow:
 
 ## Learner Goals + Progress (Telegram UI)
 
-Learners now have a dedicated flow in `/words`:
+Learners now have a dedicated goals flow in `/words`:
 
 1. open `/words`
 2. tap `🎯 Goals` to view active goals and create a new one
-3. choose period (`daily`, `weekly`, `homework`)
+3. choose period (`homework`)
 4. choose `target_count` (preset or manual number)
 5. pick `Recent words` as source and save
 6. tap `📊 Progress` to see:
@@ -171,10 +171,44 @@ Supported callback routes:
 - `words:goals`
 - `words:progress`
 - `words:goal_setup`
-- `words:goal_period:<daily|weekly|homework>`
+- `words:goal_period:homework`
 - `words:goal_target:<n|custom>`
 - `words:goal_source:recent`
 - `words:goal_reset:<goal_id>`
+
+## Homework Flow (Telegram UI)
+
+`/assign` is now the dedicated homework area.
+
+What changed in `0.8.x`:
+
+- learners no longer choose between `daily`, `weekly`, and `all assignments`
+- the bot shows one homework entry point and one active homework summary
+- each homework can have a deadline shown directly in the menu
+- homework progress is word-based: assigned words stay active until they reach the required homework level
+
+Current learner flow:
+
+1. open `/assign` or tap `📘 Homework` from `/start`
+2. review the homework summary:
+   - assigned / not assigned
+   - remaining words
+   - estimated rounds
+   - due date when present
+3. start a homework round
+4. answer assigned words
+5. after each correct answer, watch:
+   - weekly points feedback
+   - homework progress text
+   - homework progress image / indicator
+6. continue with `➡️ Continue` until no assigned words remain
+
+Homework completion rules:
+
+- `new_words` homework counts a word when the learner answers that assigned word correctly
+- `word_level_homework` is stricter: the word must reach the target homework level
+- a homework for 10 words is not the same as 10 rounds
+- a deadline helps organize the task, but completion still depends on word progress
 
 For published content, the editor can also:
 

@@ -1,19 +1,34 @@
-# Assignments + Progress in Telegram
+# Homework + Progress in Telegram
+
+## Overview
+
+The learner-facing assignment flow is now homework-only.
+
+The old split between `daily`, `weekly`, and `all assignments` was removed from the active Telegram UX. The bot now presents one clear homework flow with:
+
+- one homework entry point
+- one homework summary
+- one homework round launcher
+- one homework progress model
+- an optional deadline shown directly in the menu
+
+This keeps the learner experience simpler while preserving the existing training, scoring, weekly points, and word-level business rules.
 
 ## `/words`
 
-`/words` is now only for vocabulary work:
+`/words` stays focused on vocabulary work:
 
 - start training by topic
 - add words
 - edit published words
 - edit published images
+- manage personal goals
 
-Homework, challenges, assignment review, and user overview are no longer mixed into this menu.
+Homework is no longer mixed into this menu as separate daily or weekly sections.
 
 ## `/assign`
 
-`/assign` is the dedicated assignments area.
+`/assign` is the dedicated homework area.
 
 All users can open it and see:
 
@@ -21,89 +36,79 @@ All users can open it and see:
 - **📈 My progress**
 - **👥 Users**
 
-### Visible users
+Admins additionally see:
 
-- A regular user sees only themself in **Users**.
-- An admin sees all known users from the Telegram user login table, including:
-  - other admins
-  - editors
-  - regular users
-
-The user list also shows compact role and progress data.
-
-Role resolution now comes from the SQLite runtime table `telegram_user_roles`.
-
-- `ADMIN_USER_IDS` and `EDITOR_USER_IDS` are kept only as bootstrap inputs
-- on startup, those bootstrap ids are written into the role table if missing
-- after that, Telegram access checks read effective roles from the database-backed memberships
+- **🛠 Assign homework**
 
 ## `/start`
 
-`/start` is now a personal launch screen instead of a direct topic picker.
+`/start` is the personal launch screen.
 
 It shows:
 
-- **🎮 Start game** as a placeholder for future game mode
-- **📅 Daily**
-- **🗓️ Weekly**
+- **🎮 Start game**
 - **📘 Homework**
-- **🧩 All assignments**
 
 Behavior:
 
-- assignment buttons are enabled only when that section still has remaining words
-- disabled sections stay visible but do not start a round
-- `All assignments` deduplicates remaining words across daily, weekly, and homework goals
-- the status text on the screen shows how many words remain and the estimated number of rounds
+- the homework button is enabled only when there are remaining assigned words
+- disabled homework stays visible but does not start a round
+- the status line shows:
+  - assigned / not assigned
+  - remaining words
+  - estimated rounds
+  - deadline, when present
 
-## Assignment rounds
+## Homework rounds
 
-Assignment rounds are now independent from topics.
+Homework rounds are independent from topics.
 
 That means:
 
-- a learner no longer has to open each topic manually to close a mixed assignment
-- pressing one of the assignment buttons starts a round from the remaining assigned words
-- round size is batched
-- after a round is completed, Telegram offers **Next round** when more assigned words remain
+- the learner does not have to open each topic manually
+- tapping the homework button starts a round from the remaining assigned words
+- round size is still batched
+- after a round is completed, Telegram offers **Next round** when more homework words remain
 
-The current implementation treats progress per word, not per topic:
+## How homework progress works
 
-- `new_words` goals treat a word as remaining until the learner answers it correctly at least once
-- `word_level_homework` treats a word as remaining until the homework flow reaches its required mastered stage
+Progress is tracked per assigned word, not per topic.
 
-### Admin drill-down
+Current rules:
 
-Admins can now inspect assignments in depth:
+- `new_words` homework treats a word as completed when the learner answers that assigned word correctly
+- `word_level_homework` treats a word as completed only when it reaches the required homework level
+- one successful round may still leave homework active if some words need more progress
+- a homework for 10 words is not the same as 10 rounds
 
-1. Open **Users**.
-2. Choose a visible user.
-3. Review that user's assignment list, including active/history status.
-4. Open a specific assignment.
-5. Review assignment details:
-   - period
-   - goal type
-   - status
-   - progress
-   - attached words
-   - homework stage status for each word when the assignment is a real homework goal
+Difficulty progress inside homework is intentionally stricter than plain topic practice:
 
-## Admin assignment flow
+- easy answers warm the word up
+- medium answers move it further
+- hard answers can finish the word faster
+
+The deadline helps organize the task, but homework is finished only when the assigned words actually reach their required state.
+
+## Homework feedback in chat
+
+During a homework round, the learner now sees:
+
+- the regular answer feedback
+- weekly points feedback
+- a homework progress line with remaining words and estimated rounds
+- a homework progress visual message that is updated across the flow
+
+This feedback is shown without creating a separate scoring path. The existing answer validation and scoring logic remain the source of truth.
+
+## Admin homework flow
 
 Admins are resolved through the runtime role table, with `ADMIN_USER_IDS` only used to bootstrap the first elevated users into that table.
-
-In `/assign`, admins also see:
-
-- **🛠 Assign homework**
 
 ### Assign homework
 
 1. Open `/assign`.
 2. Tap **Assign homework**.
-3. Choose period:
-   - `daily`
-   - `weekly`
-   - `homework`
+3. Choose the homework format.
 4. Choose target count.
 5. Choose source:
    - `recent`
@@ -111,14 +116,30 @@ In `/assign`, admins also see:
    - `all`
    - `manual`
 6. Select recipients from the known Telegram users list.
-7. Confirm assignment to the selected users.
+7. Confirm homework for the selected users.
 
 Notes:
 
-- Admins no longer type raw `user_id` values by hand in the Telegram dialog.
-- If period is `homework`, the admin flow now creates `word_level_homework` goals, not plain `new_words` goals.
+- admins no longer type raw `user_id` values by hand in the Telegram dialog
+- active learner UX always launches homework
+- if no explicit deadline is provided for homework, the current runtime uses a default deadline
 
-## Added callback routes
+## Admin drill-down
+
+Admins can inspect homework in depth:
+
+1. Open **Users**.
+2. Choose a visible user.
+3. Review that user's homework list, including active/history status.
+4. Open a specific homework.
+5. Review homework details:
+   - type
+   - status
+   - progress
+   - attached words
+   - homework stage status for each word when relevant
+
+## Callback routes in active use
 
 - `assign:menu`
 - `assign:goals`
@@ -130,11 +151,12 @@ Notes:
 - `assign:admin_goal_recipients:toggle:*`
 - `assign:admin_goal_recipients:page:*`
 - `assign:admin_goal_recipients:done`
-- `words:goal_period:*`
+- `start:launch:homework`
+- `words:goal_period:homework`
 - `words:goal_target:*`
 - `words:goal_source:*`
 - `words:goal_reset:*`
-- `words:admin_goal_period:*`
+- `words:admin_goal_period:homework`
 - `words:admin_goal_target:*`
 - `words:admin_goal_source:*`
 - `words:admin_goal_manual:toggle:*`
