@@ -1038,7 +1038,12 @@ def _assignment_round_progress_view(
     kind: AssignmentSessionKind,
     active_session=None,
 ) -> _AssignmentRoundProgressView | None:
-    launch_views = _learner_assignment_launch_summary_use_case(context).execute(user_id=user_id)
+    launch_summary_use_case = context.application.bot_data.get(
+        "learner_assignment_launch_summary_use_case"
+    )
+    if launch_summary_use_case is None:
+        return None
+    launch_views = launch_summary_use_case.execute(user_id=user_id)
     launch_view = next((item for item in launch_views if item.kind is kind), None)
     if launch_view is None:
         return None
@@ -1273,6 +1278,14 @@ def _assignment_progress_caption(
     )
 
 
+def _active_session_round_left(active_session) -> int:
+    total_items = getattr(active_session, "total_items", None)
+    current_position = getattr(active_session, "current_position", None)
+    if isinstance(total_items, int) and isinstance(current_position, int):
+        return max(0, total_items - current_position)
+    return 0
+
+
 def _compact_assignment_feedback_text(
     *,
     base_text: str,
@@ -1331,7 +1344,11 @@ async def _send_or_update_assignment_progress_message(
         snapshot=snapshot,
         kind=kind,
         user=user,
-        round_left=round_progress.remaining_in_round_count if round_progress is not None else 0,
+        round_left=(
+            round_progress.remaining_in_round_count
+            if round_progress is not None
+            else _active_session_round_left(active_session)
+        ),
     )
     registry = _telegram_flow_messages(context)
     tracked_messages = registry.list(flow_id=flow_id, tag=_ASSIGNMENT_PROGRESS_TAG) if registry is not None else []
