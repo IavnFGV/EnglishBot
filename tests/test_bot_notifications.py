@@ -126,9 +126,10 @@ def test_schedule_assignment_assigned_notifications_enqueues_user_messages() -> 
         ],
     )
 
-    assert "assignment-assigned:goal-1:77" in repository.items
+    assert "assignment-assigned:daily:goal-1:77" in repository.items
     assert job_queue.calls[0].when == 0
-    assert "New assignment added" in repository.items["assignment-assigned:goal-1:77"].text
+    assert "New assignment is ready!" in repository.items["assignment-assigned:daily:goal-1:77"].text
+    assert "Daily" in repository.items["assignment-assigned:daily:goal-1:77"].text
 
 
 @pytest.mark.anyio
@@ -167,7 +168,8 @@ async def test_create_admin_goal_from_context_sends_assignment_notification_imme
 
     assert len(bot.sent_messages) == 1
     assert bot.sent_messages[0].chat_id == 77
-    assert "New assignment added" in bot.sent_messages[0].text
+    assert "New assignment is ready!" in bot.sent_messages[0].text
+    assert bot.sent_messages[0].reply_markup.inline_keyboard[0][0].callback_data == "start:launch:homework"
     assert repository.items == {}
 
 
@@ -292,6 +294,25 @@ async def test_flush_pending_assignment_completed_notification_uses_admin_progre
     assert len(bot.sent_messages) == 1
     assert bot.sent_messages[0].reply_markup.inline_keyboard[0][0].callback_data == "assign:users"
     assert bot.sent_messages[0].reply_markup.inline_keyboard[0][1].callback_data == "notification:dismiss"
+
+
+@pytest.mark.anyio
+async def test_flush_pending_homework_assignment_notification_uses_direct_start_button() -> None:
+    context, _, bot = _build_context()
+    repository = _FakeNotificationRepository()
+    context.application.bot_data["pending_telegram_notification_repository"] = repository
+    repository.items["assignment-assigned:homework:goal-1:77"] = SimpleNamespace(
+        key="assignment-assigned:homework:goal-1:77",
+        recipient_user_id=77,
+        text="Homework is ready",
+        not_before_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+    )
+
+    await _flush_pending_notifications_for_user(context, user_id=77)  # type: ignore[arg-type]
+
+    assert len(bot.sent_messages) == 1
+    assert bot.sent_messages[0].reply_markup.inline_keyboard[0][0].callback_data == "start:launch:homework"
 
 
 def test_schedule_goal_completed_notifications_enqueues_admin_messages() -> None:

@@ -273,8 +273,8 @@ async def test_words_goals_callback_handler_shows_goal_rules_and_recently_comple
         goal=Goal(
             id="g-active",
             user_id=123,
-            goal_period=GoalPeriod.DAILY,
-            goal_type=GoalType.NEW_WORDS,
+            goal_period=GoalPeriod.HOMEWORK,
+            goal_type=GoalType.WORD_LEVEL_HOMEWORK,
             target_count=10,
             progress_count=3,
             status=GoalStatus.ACTIVE,
@@ -322,9 +322,10 @@ async def test_words_goals_callback_handler_shows_goal_rules_and_recently_comple
 
     text = query.edits[-1][0]
     assert "Points are added on correct answers" in text
-    assert "Counts when you answer correctly on one of the assigned words." in text
+    assert "Counts when an assigned word reaches the homework target level." in text
     assert "Recently completed:" in text
     assert "Weekly/Words: 10/10 (100%)" in text
+    assert query.edits[-1][1].inline_keyboard[0][0].callback_data == "start:launch:homework"
 
 
 @pytest.mark.anyio

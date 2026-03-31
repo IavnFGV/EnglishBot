@@ -244,9 +244,15 @@ def goal_list_keyboard(
     *,
     tg: TelegramTextGetter,
     goals,
+    has_homework_start: bool = False,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = [
+        *(
+            [[InlineKeyboardButton(tg("goal_list_start_homework_button", language=language), callback_data="start:launch:homework")]]
+            if has_homework_start
+            else []
+        ),
         [InlineKeyboardButton(tg("progress_button", language=language), callback_data="assign:progress")],
         [InlineKeyboardButton(tg("back", language=language), callback_data="assign:menu")],
     ]

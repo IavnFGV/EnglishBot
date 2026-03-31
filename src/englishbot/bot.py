@@ -2192,7 +2192,16 @@ def _goal_custom_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE
 
 
 def _goal_list_keyboard(*, goals, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return ui_goal_list_keyboard(tg=_tg, goals=goals, language=language)
+    has_homework_start = any(
+        goal.goal.goal_period is GoalPeriod.HOMEWORK and goal.goal.status is GoalStatus.ACTIVE
+        for goal in goals
+    )
+    return ui_goal_list_keyboard(
+        tg=_tg,
+        goals=goals,
+        has_homework_start=has_homework_start,
+        language=language,
+    )
 
 
 def _admin_goal_period_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
@@ -5130,6 +5139,12 @@ def _message_chat_id(message) -> int | None:
     return None
 
 
+def _assignment_assigned_notification_emoji(*, goal_id: str) -> str:
+    emojis = ("🎒", "✨", "🚀", "🌟", "📚", "🧠")
+    digest = hashlib.sha256(goal_id.encode("utf-8")).digest()
+    return emojis[int.from_bytes(digest[:2], "big") % len(emojis)]
+
+
 def _pending_notifications(context: ContextTypes.DEFAULT_TYPE) -> dict[str, _PendingNotification]:
     stored = context.application.bot_data.setdefault("pending_notifications", {})
     if isinstance(stored, dict):
@@ -5164,14 +5179,52 @@ def _recent_assignment_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> d
 def _notification_action_button(notification_key: str) -> InlineKeyboardButton:
     if notification_key.startswith("assignment-completed:"):
         return InlineKeyboardButton("Open users progress", callback_data="assign:users")
+    if notification_key.startswith("assignment-assigned:homework:"):
+        return InlineKeyboardButton("Start homework", callback_data="start:launch:homework")
     return InlineKeyboardButton("Open assignments", callback_data="assign:menu")
 
 
-def _dismiss_notification_keyboard(notification_key: str) -> InlineKeyboardMarkup:
+def _notification_action_button_for_user(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    notification_key: str,
+    user_id: int,
+) -> InlineKeyboardButton:
+    language = _telegram_ui_language_for_user_id(context, user_id=user_id)
+    if notification_key.startswith("assignment-completed:"):
+        return InlineKeyboardButton(
+            _tg("notification_open_users_progress", language=language),
+            callback_data="assign:users",
+        )
+    if notification_key.startswith("assignment-assigned:homework:"):
+        return InlineKeyboardButton(
+            _tg("notification_start_homework", language=language),
+            callback_data="start:launch:homework",
+        )
+    return InlineKeyboardButton(
+        _tg("notification_open_assignments", language=language),
+        callback_data="assign:menu",
+    )
+
+
+def _dismiss_notification_keyboard(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    notification_key: str,
+    user_id: int,
+) -> InlineKeyboardMarkup:
+    language = _telegram_ui_language_for_user_id(context, user_id=user_id)
     return InlineKeyboardMarkup(
         [[
-            _notification_action_button(notification_key),
-            InlineKeyboardButton("Dismiss", callback_data=_NOTIFICATION_DISMISS_CALLBACK),
+            _notification_action_button_for_user(
+                context,
+                notification_key=notification_key,
+                user_id=user_id,
+            ),
+            InlineKeyboardButton(
+                _tg("notification_dismiss", language=language),
+                callback_data=_NOTIFICATION_DISMISS_CALLBACK,
+            ),
         ]]
     )
 
@@ -5263,7 +5316,11 @@ async def _deliver_notification_now(
         await context.bot.send_message(
             chat_id=notification.recipient_user_id,
             text=notification.text,
-            reply_markup=_dismiss_notification_keyboard(notification.key),
+            reply_markup=_dismiss_notification_keyboard(
+                context,
+                notification_key=notification.key,
+                user_id=notification.recipient_user_id,
+            ),
         )
     except BadRequest:
         logger.debug("Failed to deliver notification key=%s", notification.key, exc_info=True)
@@ -5357,14 +5414,39 @@ def _schedule_assignment_assigned_notifications(
     goals: list,
 ) -> None:
     for goal in goals:
+        language = _telegram_ui_language_for_user_id(context, user_id=int(goal.user_id))
+        period_key = {
+            GoalPeriod.DAILY.value: "goal_period_daily",
+            GoalPeriod.WEEKLY.value: "goal_period_weekly",
+            GoalPeriod.HOMEWORK.value: "goal_period_homework",
+        }.get(goal.goal_period.value)
+        goal_type_key = {
+            GoalType.NEW_WORDS.value: "goal_type_new_words",
+            GoalType.WORD_LEVEL_HOMEWORK.value: "goal_type_word_level_homework",
+        }.get(goal.goal_type.value)
+        period_label = _tg(period_key, language=language) if period_key is not None else goal.goal_period.value
+        goal_type_label = _tg(goal_type_key, language=language) if goal_type_key is not None else goal.goal_type.value
+        emoji = _assignment_assigned_notification_emoji(goal_id=str(goal.id))
+        text = "\n".join(
+            [
+                _tg("assignment_assigned_title", language=language, emoji=emoji),
+                _tg(
+                    (
+                        "assignment_assigned_word_level_homework"
+                        if goal.goal_type.value == GoalType.WORD_LEVEL_HOMEWORK.value
+                        else "assignment_assigned_new_words"
+                    ),
+                    language=language,
+                    period=period_label,
+                    goal_type=goal_type_label,
+                    target=int(goal.target_count),
+                ),
+            ]
+        )
         notification = _PendingNotification(
-            key=f"assignment-assigned:{goal.id}:{goal.user_id}",
+            key=f"assignment-assigned:{goal.goal_period.value}:{goal.id}:{goal.user_id}",
             recipient_user_id=goal.user_id,
-            text=(
-                "New assignment added: "
-                f"{goal.goal_period.value}/{goal.goal_type.value} "
-                f"{goal.target_count}."
-            ),
+            text=text,
         )
         _schedule_notification(context, notification=notification)
 
