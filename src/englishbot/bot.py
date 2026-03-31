@@ -4742,6 +4742,8 @@ async def medium_answer_callback_handler(update: Update, context: ContextTypes.D
             selected_letter_indexes=state.selected_letter_indexes[:-1],
             message_id=state.message_id,
         )
+    elif query.data.startswith("medium:noop:"):
+        return
     elif query.data.startswith("medium:pick:"):
         if _medium_task_is_complete(state):
             return
@@ -5191,15 +5193,23 @@ def _medium_task_answer_text(state: _MediumTaskState) -> str:
 
 def _medium_task_keyboard(state: _MediumTaskState) -> InlineKeyboardMarkup:
     selected_indexes = set(state.selected_letter_indexes)
-    available_buttons = [
-        InlineKeyboardButton(letter, callback_data=f"medium:pick:{index}")
+    buttons = [
+        InlineKeyboardButton(
+            "".join(f"{character}\u0336" for character in letter)
+            if index in selected_indexes
+            else letter,
+            callback_data=(
+                f"medium:noop:{index}"
+                if index in selected_indexes
+                else f"medium:pick:{index}"
+            ),
+        )
         for index, letter in enumerate(state.shuffled_letters)
-        if index not in selected_indexes
     ]
     rows: list[list[InlineKeyboardButton]] = []
     row_width = 4
-    for start in range(0, len(available_buttons), row_width):
-        rows.append(available_buttons[start : start + row_width])
+    for start in range(0, len(buttons), row_width):
+        rows.append(buttons[start : start + row_width])
     rows.append([InlineKeyboardButton("⌫", callback_data="medium:backspace")])
     return InlineKeyboardMarkup(rows)
 

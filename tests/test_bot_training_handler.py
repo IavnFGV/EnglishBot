@@ -620,6 +620,11 @@ async def test_medium_answer_callback_handler_uses_backspace_and_repeated_letter
     assert processed_answers == ["APPLE"]
     assert any("A P _ _ _" in text for text, _reply_markup, _parse_mode in query.edit_calls)
     assert any("A P P _ _" in text for text, _reply_markup, _parse_mode in query.edit_calls)
+    assert any(
+        any(button.text == "A\u0336" for row in reply_markup.inline_keyboard[:-1] for button in row)
+        for _text, reply_markup, _parse_mode in query.edit_calls
+        if reply_markup is not None
+    )
 
 
 @pytest.mark.anyio
@@ -803,7 +808,7 @@ async def test_process_answer_shows_homework_progress_track_and_continue_button(
     await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
 
     assert any("📘 Homework progress:" in reply for reply in message.replies)
-    assert any("Done: 2/5 words" in reply for reply in message.replies)
+    assert any("✅ Done: 2/5 words" in reply for reply in message.replies)
     assert any("🐣" in reply and "🏁" in reply for reply in message.replies)
     keyboard = message.reply_markup_calls[-1]
     assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
@@ -845,7 +850,7 @@ async def test_process_answer_shows_homework_progress_during_active_round_too() 
     await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
 
     assert any("📘 Homework progress:" in reply for reply in message.replies)
-    assert any("Done: 2/5 words" in reply for reply in message.replies)
+    assert any("✅ Done: 2/5 words" in reply for reply in message.replies)
     assert any(
         "📘 Homework progress:" in reply and reply_markup is None
         for reply, reply_markup in zip(message.replies, message.reply_markup_calls, strict=False)
@@ -908,7 +913,7 @@ async def test_process_answer_shows_assignment_progress_for_daily_assignment_too
     await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
 
     assert any("📅 Daily work progress:" in reply for reply in message.replies)
-    assert any("Left: 4" in reply for reply in message.replies)
+    assert any("🎯 Left: 4" in reply for reply in message.replies)
 
 
 def test_assignment_progress_track_uses_stable_variant_key() -> None:
