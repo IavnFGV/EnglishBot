@@ -201,9 +201,10 @@ class GetUserProgressSummaryUseCase:
 
 
 class AssignGoalToUsersUseCase:
-    def __init__(self, *, store: SQLiteContentStore) -> None:
+    def __init__(self, *, store: SQLiteContentStore, rng: random.Random | None = None) -> None:
         self._store = store
         self._word_candidates = GetGoalWordCandidatesUseCase(store=store)
+        self._rng = rng or random.Random()
 
     @logged_service_call(
         "AssignGoalToUsersUseCase.execute",
@@ -240,7 +241,13 @@ class AssignGoalToUsersUseCase:
                 topic_id=topic_id,
                 manual_word_ids=manual_word_ids,
             )
-            target_word_ids = candidate_word_ids[:target_count]
+            if source is GoalWordSource.MANUAL:
+                target_word_ids = candidate_word_ids[:target_count]
+            else:
+                target_word_ids = self._rng.sample(
+                    candidate_word_ids,
+                    k=min(target_count, len(candidate_word_ids)),
+                )
             if goal_type in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK} and not target_word_ids:
                 raise ValueError(f"No words available for user_id={user_id}")
             created.append(

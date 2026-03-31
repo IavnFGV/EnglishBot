@@ -9,6 +9,7 @@ from englishbot.application.homework_progress_use_cases import (
 )
 from englishbot import bot
 from englishbot.bot import (
+    choice_answer_handler,
     _process_answer,
     _send_question,
     makeadmin_handler,
@@ -68,6 +69,12 @@ class _FakeQuery:
         self.edit_calls.append((text, reply_markup, parse_mode))
         self.message.edits.append(text)
         self.message.edit_reply_markup_calls.append(reply_markup)
+
+
+class _FakeCallbackMessage(_FakeMessage):
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
+        self.from_user = SimpleNamespace(id=999, is_bot=True, language_code="en")
 
 
 class _FakeTelegramFlowMessageRepository:
@@ -911,6 +918,75 @@ async def test_process_answer_shows_assignment_progress_for_daily_assignment_too
     )
 
     await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
+
+    assert any("📅 Daily work progress:" in reply for reply in message.replies)
+    assert any("🎯 Left: 4" in reply for reply in message.replies)
+
+
+@pytest.mark.anyio
+async def test_choice_answer_handler_uses_active_session_user_for_assignment_progress() -> None:
+    message = _FakeCallbackMessage("question")
+    query = _FakeQuery("answer:cloud", _FakeEditableMessage("question"))
+    query.message = message
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+        effective_message=message,
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot=_FakeBot(),
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(  # noqa: ARG005
+                        session_id="session-daily-2",
+                        user_id=123,
+                        topic_id="weather",
+                        lesson_id=None,
+                        source_tag="assignment:daily",
+                        mode=TrainingMode.EASY,
+                        current_position=1,
+                        total_items=1,
+                    ),
+                    submit_answer=lambda user_id, answer: bot.AnswerOutcome(  # noqa: ARG005
+                        result=CheckResult(
+                            is_correct=True,
+                            expected_answer="cloud",
+                            normalized_answer="cloud",
+                        ),
+                        summary=None,
+                        next_question=TrainingQuestion(
+                            session_id="session-daily-2",
+                            item_id="sun",
+                            mode=TrainingMode.EASY,
+                            prompt="sun",
+                            image_ref=None,
+                            correct_answer="sun",
+                            options=["sun", "moon", "book"],
+                        ),
+                    ),
+                ),
+                "telegram_ui_language": "en",
+                "telegram_flow_message_repository": _FakeTelegramFlowMessageRepository(),
+                "learner_assignment_launch_summary_use_case": SimpleNamespace(
+                    execute=lambda user_id: [  # noqa: ARG005
+                        AssignmentLaunchView(
+                            AssignmentSessionKind.DAILY,
+                            True,
+                            4,
+                            1,
+                            completed_word_count=5,
+                            total_word_count=9,
+                            progress_variant_key="daily-alpha",
+                        )
+                    ]
+                ),
+            }
+        ),
+    )
+
+    await choice_answer_handler(update, context)  # type: ignore[arg-type]
 
     assert any("📅 Daily work progress:" in reply for reply in message.replies)
     assert any("🎯 Left: 4" in reply for reply in message.replies)

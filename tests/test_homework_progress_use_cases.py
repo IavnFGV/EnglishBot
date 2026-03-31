@@ -122,6 +122,65 @@ def test_admin_progress_overview_aggregates_users(tmp_path: Path) -> None:
     assert overview[0].active_goals_count >= 1
 
 
+def test_assign_goal_without_manual_selection_uses_random_word_subset(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+                {"id": "dog", "english_word": "Dog", "translation": "собака"},
+                {"id": "fox", "english_word": "Fox", "translation": "лиса"},
+                {"id": "owl", "english_word": "Owl", "translation": "сова"},
+            ],
+        }
+    )
+    use_case = AssignGoalToUsersUseCase(store=store, rng=random.Random(7))
+
+    created = use_case.execute(
+        user_ids=[30],
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=2,
+        source=GoalWordSource.ALL,
+    )
+
+    details = store.list_goal_word_details(goal_id=created[0].id, user_id=30)
+
+    assert {row["word_id"] for row in details} == {"fox", "cat"}
+    assert {row["word_id"] for row in details} != {"cat", "dog"}
+
+
+def test_assign_goal_with_manual_selection_preserves_selected_order(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+                {"id": "dog", "english_word": "Dog", "translation": "собака"},
+                {"id": "fox", "english_word": "Fox", "translation": "лиса"},
+            ],
+        }
+    )
+    use_case = AssignGoalToUsersUseCase(store=store, rng=random.Random(7))
+
+    created = use_case.execute(
+        user_ids=[31],
+        goal_period=GoalPeriod.DAILY,
+        goal_type=GoalType.NEW_WORDS,
+        target_count=2,
+        source=GoalWordSource.MANUAL,
+        manual_word_ids=["dog", "cat", "fox"],
+    )
+
+    details = store.list_goal_word_details(goal_id=created[0].id, user_id=31)
+
+    assert {row["word_id"] for row in details} == {"dog", "cat"}
+
+
 def test_admin_goal_detail_returns_words_and_homework_stage(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     goal = HomeworkProgressUseCase(store=store).create_goal(
