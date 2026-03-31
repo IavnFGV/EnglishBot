@@ -35,6 +35,7 @@ from englishbot.bot import (
     _published_image_items_keyboard,
     _words_menu_keyboard,
     _editable_topics_keyboard,
+    _render_start_menu_text,
     game_mode_placeholder_callback_handler,
     mode_selected_handler,
     start_assignment_round_callback_handler,
@@ -709,6 +710,22 @@ def test_start_menu_keyboard_exposes_assignment_guide_web_app() -> None:
 
     assert keyboard.inline_keyboard[-1][0].text == "📚 How it works"
     assert keyboard.inline_keyboard[-1][0].url == "https://admin.example.com/webapp/help?lang=en"
+
+
+def test_render_start_menu_text_uses_assigned_status_for_available_assignments() -> None:
+    text = _render_start_menu_text(
+        context=SimpleNamespace(application=SimpleNamespace(bot_data={"telegram_ui_language": "en"})),
+        user=SimpleNamespace(id=123, language_code="en"),
+        summary=[
+            AssignmentLaunchView(AssignmentSessionKind.DAILY, True, 4, 1),
+            AssignmentLaunchView(AssignmentSessionKind.WEEKLY, False, 0, 0),
+            AssignmentLaunchView(AssignmentSessionKind.HOMEWORK, True, 6, 2),
+            AssignmentLaunchView(AssignmentSessionKind.ALL, True, 10, 2),
+        ],
+    )
+
+    assert "📅 Daily work: assigned • 4 words • 1 rounds" in text
+    assert "🗓️ Weekly work: not assigned • 0 words • 0 rounds" in text
 
 
 def test_goal_flow_keyboards_include_back_navigation() -> None:
