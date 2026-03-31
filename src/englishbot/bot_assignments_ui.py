@@ -398,12 +398,24 @@ def assignment_round_complete_keyboard(
     *,
     tg: TelegramTextGetter,
     has_more: bool,
+    remaining_word_count: int | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             *(
-                [[InlineKeyboardButton(tg("assignment_next_round_button", language=language), callback_data=f"start:launch:{kind.value}")]]
+                [[
+                    InlineKeyboardButton(
+                        tg(
+                            "assignment_next_round_button_with_count",
+                            language=language,
+                            words=remaining_word_count,
+                        )
+                        if remaining_word_count is not None and remaining_word_count > 0
+                        else tg("assignment_next_round_button", language=language),
+                        callback_data=f"start:launch:{kind.value}",
+                    )
+                ]]
                 if has_more
                 else []
             ),

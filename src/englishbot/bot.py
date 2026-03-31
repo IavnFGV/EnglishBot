@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -269,6 +270,15 @@ class _GoalFeedbackUpdate:
     weekly_points_delta: int
     progressed_goals: tuple[GoalProgressView, ...]
     completed_goals: tuple[GoalProgressView, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _AssignmentRoundProgressView:
+    completed_word_count: int
+    total_word_count: int
+    remaining_word_count: int
+    estimated_round_count: int
+    variant_key: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -994,6 +1004,92 @@ def _render_feedback_update_text(
         for goal in update.completed_goals:
             lines.append(_render_goal_progress_line(context=context, user=user, goal_view=goal))
     return "\n".join(lines)
+
+
+def _assignment_round_progress_view(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    kind: AssignmentSessionKind,
+) -> _AssignmentRoundProgressView | None:
+    launch_views = _learner_assignment_launch_summary_use_case(context).execute(user_id=user_id)
+    launch_view = next((item for item in launch_views if item.kind is kind), None)
+    if launch_view is None:
+        return None
+    return _AssignmentRoundProgressView(
+        completed_word_count=launch_view.completed_word_count,
+        total_word_count=launch_view.total_word_count,
+        remaining_word_count=launch_view.remaining_word_count,
+        estimated_round_count=launch_view.estimated_round_count,
+        variant_key=launch_view.progress_variant_key,
+    )
+
+
+def _assignment_progress_variant_index(*, variant_key: str, variant_count: int) -> int:
+    if variant_count <= 0:
+        return 0
+    digest = hashlib.sha256(variant_key.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % variant_count
+
+
+def _render_assignment_progress_track(
+    *,
+    completed: int,
+    total: int,
+    variant_key: str,
+    steps: int = 6,
+) -> str:
+    if total <= 0:
+        return ""
+    bounded_completed = min(max(completed, 0), total)
+    if total == 1:
+        runner_index = 0 if bounded_completed < total else steps - 1
+    else:
+        runner_index = round((bounded_completed / total) * (steps - 1))
+    variants = (
+        ("🐣", "⬜", "🏁"),
+        ("🚗", "🛣️", "🏁"),
+        ("🐛", "🍃", "🌼"),
+        ("🐭", "🧀", "🏠"),
+    )
+    runner, trail, finish = variants[
+        _assignment_progress_variant_index(
+            variant_key=variant_key,
+            variant_count=len(variants),
+        )
+    ]
+    cells = [trail] * steps
+    cells[runner_index] = runner
+    return "".join(cells) + finish
+
+
+def _render_assignment_round_progress_text(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    progress: _AssignmentRoundProgressView,
+) -> str:
+    if progress.total_word_count <= 0:
+        return ""
+    return "\n".join(
+        [
+            _tg("assignment_round_progress_title", context=context, user=user),
+            _render_assignment_progress_track(
+                completed=progress.completed_word_count,
+                total=progress.total_word_count,
+                variant_key=progress.variant_key,
+            ),
+            _tg(
+                "assignment_round_progress_status",
+                context=context,
+                user=user,
+                done=progress.completed_word_count,
+                total=progress.total_word_count,
+                left=progress.remaining_word_count,
+                rounds=progress.estimated_round_count,
+            ),
+        ]
+    )
 
 
 def _start_assignment_round_use_case(
@@ -4781,34 +4877,52 @@ async def _send_feedback(
     active_session=None,
     feedback_update: _GoalFeedbackUpdate | None = None,
 ) -> None:
+    feedback_user = getattr(message, "from_user", None)
+    feedback_user_id = getattr(feedback_user, "id", None)
+    if feedback_user_id is None:
+        feedback_user_id = getattr(active_session, "user_id", None)
     view = build_answer_feedback_view(
         outcome,
         translate=_tg,
-        user=getattr(message, "from_user", None),
+        user=feedback_user,
     )
     reply_markup = None
+    assignment_progress_text = ""
     assignment_kind = _assignment_kind_from_session(active_session) if active_session is not None else None
-    if outcome.summary is not None and assignment_kind is not None:
-        has_more = any(
-            item.kind is assignment_kind and item.available
-            for item in _learner_assignment_launch_summary_use_case(context).execute(
-                user_id=message.from_user.id
-            )
+    if outcome.summary is not None and assignment_kind is not None and feedback_user_id is not None:
+        round_progress = _assignment_round_progress_view(
+            context=context,
+            user_id=feedback_user_id,
+            kind=assignment_kind,
         )
+        has_more = bool(round_progress is not None and round_progress.remaining_word_count > 0)
         reply_markup = _assignment_round_complete_keyboard(
             assignment_kind,
             has_more=has_more,
-            language=_telegram_ui_language(context, getattr(message, "from_user", None)),
+            remaining_word_count=(
+                round_progress.remaining_word_count
+                if round_progress is not None and round_progress.remaining_word_count > 0
+                else None
+            ),
+            language=_telegram_ui_language(context, feedback_user),
         )
+        if assignment_kind is AssignmentSessionKind.HOMEWORK and round_progress is not None:
+            assignment_progress_text = _render_assignment_round_progress_text(
+                context=context,
+                user=feedback_user,
+                progress=round_progress,
+            )
     text = view.text
     if feedback_update is not None:
         update_text = _render_feedback_update_text(
             context=context,
-            user=getattr(message, "from_user", None),
+            user=feedback_user,
             update=feedback_update,
         )
         if update_text:
             text = f"{text}\n\n{update_text}"
+    if assignment_progress_text:
+        text = f"{text}\n\n{assignment_progress_text}"
     flow_id = getattr(active_session, "session_id", None)
     if isinstance(flow_id, str):
         await _delete_tracked_flow_messages(
@@ -5723,12 +5837,14 @@ def _assignment_round_complete_keyboard(
     kind: AssignmentSessionKind,
     *,
     has_more: bool,
+    remaining_word_count: int | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     return ui_assignment_round_complete_keyboard(
         kind,
         tg=_tg,
         has_more=has_more,
+        remaining_word_count=remaining_word_count,
         language=language,
     )
 

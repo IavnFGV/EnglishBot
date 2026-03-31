@@ -31,11 +31,13 @@ class _FakeMessage:
     def __init__(self, text: str) -> None:
         self.text = text
         self.replies: list[str] = []
+        self.reply_markup_calls: list[object | None] = []
         self.chat_id = 1
         self.message_id = 10
 
     async def reply_text(self, text: str, reply_markup=None, parse_mode=None) -> None:  # noqa: ARG002
         self.replies.append(text)
+        self.reply_markup_calls.append(reply_markup)
         self.message_id += 1
         return SimpleNamespace(message_id=self.message_id, chat_id=self.chat_id)
 
@@ -101,6 +103,27 @@ class _CompletingService:
             lesson_id=None,
             source_tag=None,
             mode=TrainingMode.EASY,
+            current_position=1,
+            total_items=1,
+        )
+
+    def submit_answer(self, *, user_id: int, answer: str):  # noqa: ARG002
+        return bot.AnswerOutcome(
+            result=CheckResult(is_correct=True, expected_answer="cloud", normalized_answer="cloud"),
+            summary=SessionSummary(total_questions=1, correct_answers=1),
+            next_question=None,
+        )
+
+
+class _CompletingHomeworkAssignmentService:
+    def get_active_session(self, *, user_id: int):  # noqa: ARG002
+        return SimpleNamespace(
+            session_id="session-hw-1",
+            user_id=123,
+            topic_id="weather",
+            lesson_id=None,
+            source_tag="assignment:homework",
+            mode=TrainingMode.MEDIUM,
             current_position=1,
             total_items=1,
         )
@@ -517,6 +540,69 @@ async def test_process_answer_reports_weekly_points_and_completed_goal() -> None
     assert any("Weekly points +11" in reply for reply in message.replies)
     assert any("Completed goals:" in reply for reply in message.replies)
     assert any("Daily/Words: 1/1 (100%)" in reply for reply in message.replies)
+
+
+@pytest.mark.anyio
+async def test_process_answer_shows_homework_progress_track_and_continue_button() -> None:
+    message = _FakeMessage("cloud")
+    message.from_user = SimpleNamespace(id=123, language_code="en")
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_user=message.from_user,
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot=_FakeBot(),
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _CompletingHomeworkAssignmentService(),
+                "telegram_ui_language": "en",
+                "telegram_flow_message_repository": _FakeTelegramFlowMessageRepository(),
+                "learner_assignment_launch_summary_use_case": SimpleNamespace(
+                    execute=lambda user_id: [
+                        AssignmentLaunchView(
+                            AssignmentSessionKind.HOMEWORK,
+                            True,
+                            3,
+                            1,
+                            completed_word_count=2,
+                            total_word_count=5,
+                            progress_variant_key="homework-alpha",
+                        )
+                    ]
+                ),
+            }
+        ),
+    )
+
+    await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
+
+    assert any("Homework progress:" in reply for reply in message.replies)
+    assert any("Done: 2/5 words" in reply for reply in message.replies)
+    assert any("🐣" in reply and "🏁" in reply for reply in message.replies)
+    keyboard = message.reply_markup_calls[-1]
+    assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
+
+
+def test_assignment_progress_track_uses_stable_variant_key() -> None:
+    first = bot._render_assignment_progress_track(
+        completed=2,
+        total=5,
+        variant_key="goal-a",
+    )
+    second = bot._render_assignment_progress_track(
+        completed=2,
+        total=5,
+        variant_key="goal-a",
+    )
+    third = bot._render_assignment_progress_track(
+        completed=2,
+        total=5,
+        variant_key="goal-b",
+    )
+
+    assert first == second
+    assert first != third
 
 
 @pytest.mark.anyio

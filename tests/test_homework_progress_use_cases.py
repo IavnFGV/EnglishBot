@@ -179,8 +179,41 @@ def test_assignment_launch_summary_aggregates_daily_homework_and_all(tmp_path: P
 
     assert summary_by_kind[AssignmentSessionKind.DAILY].available is True
     assert summary_by_kind[AssignmentSessionKind.DAILY].remaining_word_count == 1
+    assert summary_by_kind[AssignmentSessionKind.DAILY].completed_word_count == 0
+    assert summary_by_kind[AssignmentSessionKind.DAILY].total_word_count == 1
     assert summary_by_kind[AssignmentSessionKind.HOMEWORK].remaining_word_count == 1
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].completed_word_count == 0
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].total_word_count == 1
     assert summary_by_kind[AssignmentSessionKind.ALL].remaining_word_count == 2
+    assert summary_by_kind[AssignmentSessionKind.ALL].completed_word_count == 0
+    assert summary_by_kind[AssignmentSessionKind.ALL].total_word_count == 2
+
+
+def test_assignment_launch_summary_counts_completed_homework_words(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    use_case = HomeworkProgressUseCase(store=store)
+    goal = use_case.create_goal(
+        user_id=21,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=2,
+        target_word_ids=["cat", "dog"],
+    )
+    store.update_homework_word_progress(
+        user_id=21,
+        word_id="cat",
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=2,
+    )
+
+    summary = GetLearnerAssignmentLaunchSummaryUseCase(store=store, batch_size=1).execute(user_id=21)
+    summary_by_kind = {item.kind: item for item in summary}
+
+    assert goal.required_level == 2
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].remaining_word_count == 1
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].completed_word_count == 1
+    assert summary_by_kind[AssignmentSessionKind.HOMEWORK].total_word_count == 2
 
 
 def test_start_assignment_round_use_case_creates_assignment_session(tmp_path: Path) -> None:

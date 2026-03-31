@@ -679,13 +679,14 @@ def test_mode_keyboard_no_longer_contains_game_mode_entry() -> None:
 
 
 def test_assignment_round_complete_keyboard_offers_next_round_when_available() -> None:
-    keyboard = _assignment_round_complete_keyboard(AssignmentSessionKind.ALL, has_more=True)
+    keyboard = _assignment_round_complete_keyboard(
+        AssignmentSessionKind.ALL,
+        has_more=True,
+        remaining_word_count=3,
+    )
 
-    assert [row[0].callback_data for row in keyboard.inline_keyboard] == [
-        "start:launch:all",
-        "assign:menu",
-        "start:menu",
-    ]
+    assert [row[0].callback_data for row in keyboard.inline_keyboard] == ["start:launch:all", "assign:menu", "start:menu"]
+    assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
 
 
 @pytest.mark.anyio

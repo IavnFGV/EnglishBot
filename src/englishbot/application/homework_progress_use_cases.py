@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import random
 import uuid
 from collections import OrderedDict
@@ -77,6 +78,9 @@ class AssignmentLaunchView:
     available: bool
     remaining_word_count: int
     estimated_round_count: int
+    completed_word_count: int = 0
+    total_word_count: int = 0
+    progress_variant_key: str = ""
 
 
 @dataclass(slots=True, frozen=True)
@@ -400,11 +404,19 @@ class GetLearnerAssignmentLaunchSummaryUseCase:
     def _build_launch_view(self, *, user_id: int, kind: AssignmentSessionKind) -> AssignmentLaunchView:
         remaining_words = _remaining_assignment_words(store=self._store, user_id=user_id, kind=kind)
         remaining_count = len(remaining_words)
+        total_count = _total_assignment_word_count(store=self._store, user_id=user_id, kind=kind)
         return AssignmentLaunchView(
             kind=kind,
             available=remaining_count > 0,
             remaining_word_count=remaining_count,
             estimated_round_count=(ceil(remaining_count / self._batch_size) if remaining_count > 0 else 0),
+            completed_word_count=max(0, total_count - remaining_count),
+            total_word_count=total_count,
+            progress_variant_key=_assignment_progress_variant_key(
+                store=self._store,
+                user_id=user_id,
+                kind=kind,
+            ),
         )
 
 
@@ -551,6 +563,52 @@ def _remaining_assignment_words(
                 required_level=required_level,
             )
     return list(remaining.values())
+
+
+def _total_assignment_word_count(
+    *,
+    store: SQLiteContentStore,
+    user_id: int,
+    kind: AssignmentSessionKind,
+) -> int:
+    goals = store.list_user_goals(
+        user_id=user_id,
+        statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED),
+    )
+    periods = _periods_for_kind(kind)
+    word_ids: OrderedDict[str, None] = OrderedDict()
+    for goal in goals:
+        if goal.goal_period not in periods:
+            continue
+        if goal.goal_type not in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}:
+            continue
+        for row in store.list_goal_word_details(goal_id=goal.id, user_id=user_id):
+            word_ids[str(row["word_id"])] = None
+    return len(word_ids)
+
+
+def _assignment_progress_variant_key(
+    *,
+    store: SQLiteContentStore,
+    user_id: int,
+    kind: AssignmentSessionKind,
+) -> str:
+    goals = store.list_user_goals(
+        user_id=user_id,
+        statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED),
+    )
+    periods = _periods_for_kind(kind)
+    relevant_goal_ids = [
+        goal.id
+        for goal in goals
+        if goal.goal_period in periods
+        and goal.goal_type in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}
+    ]
+    if not relevant_goal_ids:
+        return f"{kind.value}:empty"
+    joined_ids = "|".join(sorted(relevant_goal_ids))
+    digest = hashlib.sha256(joined_ids.encode("utf-8")).hexdigest()[:12]
+    return f"{kind.value}:{digest}"
 
 
 def _periods_for_kind(kind: AssignmentSessionKind) -> tuple[GoalPeriod, ...]:
