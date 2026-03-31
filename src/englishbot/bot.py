@@ -289,7 +289,6 @@ class _GoalFeedbackUpdate:
 @dataclass(frozen=True, slots=True)
 class _AssignmentRoundProgressView:
     completed_word_count: int
-    progressed_word_count: int
     total_word_count: int
     remaining_word_count: int
     remaining_in_round_count: int
@@ -1071,16 +1070,6 @@ def _assignment_round_progress_view(
                 row=row,
             ) >= 1.0
         )
-        progressed_word_count = sum(
-            1
-            for row in rows
-            if 0.0 < _assignment_word_progress_value(
-                store=store,
-                user_id=user_id,
-                goal=goal,
-                row=row,
-            ) < 1.0
-        )
         total_word_count = len(rows)
         remaining_word_count = max(0, total_word_count - completed_word_count)
         remaining_in_round_count = 0
@@ -1097,7 +1086,6 @@ def _assignment_round_progress_view(
             estimated_round_count = math.ceil(remaining_word_count / batch_size) if remaining_word_count > 0 else 0
         return _AssignmentRoundProgressView(
             completed_word_count=completed_word_count,
-            progressed_word_count=progressed_word_count,
             total_word_count=total_word_count,
             remaining_word_count=remaining_word_count,
             remaining_in_round_count=remaining_in_round_count,
@@ -1121,7 +1109,6 @@ def _assignment_round_progress_view(
             remaining_in_round_count = max(0, total_items - current_position)
     return _AssignmentRoundProgressView(
         completed_word_count=launch_view.completed_word_count,
-        progressed_word_count=0,
         total_word_count=launch_view.total_word_count,
         remaining_word_count=launch_view.remaining_word_count,
         remaining_in_round_count=remaining_in_round_count,
@@ -1197,7 +1184,6 @@ def _render_assignment_round_progress_text(
                 context=context,
                 user=user,
                 done=progress.completed_word_count,
-                progressed=progress.progressed_word_count,
                 total=progress.total_word_count,
                 round_left=progress.remaining_in_round_count,
                 left=progress.remaining_word_count,
@@ -1348,7 +1334,6 @@ def _assignment_progress_caption(
                 context=context,
                 user=user,
                 done=snapshot.completed_word_count,
-                progressed=sum(1 for item in snapshot.segments if 0.0 < item.progress_value < 1.0),
                 total=snapshot.total_word_count,
                 round_left=round_left,
                 left=remaining_word_count,
