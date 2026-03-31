@@ -2638,6 +2638,8 @@ async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAUL
         manual_word_ids=list(context.user_data.get("admin_goal_manual_word_ids", [])),
     )
     _schedule_assignment_assigned_notifications(context, goals=created)
+    for recipient_user_id in {int(goal.user_id) for goal in created}:
+        await _flush_pending_notifications_for_user(context, user_id=recipient_user_id)
     await query.edit_message_text(_tg("admin_goal_created", context=context, user=user, user_count=len(created), target=int(context.user_data.get("admin_goal_target_count", 10))))
     for key in (
         "admin_goal_period",

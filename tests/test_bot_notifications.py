@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from englishbot.bot import (
+    _create_admin_goal_from_context,
     _daily_assignment_reminder_job,
     _deliver_pending_notification_job,
     _flush_pending_notifications_for_user,
@@ -128,6 +129,46 @@ def test_schedule_assignment_assigned_notifications_enqueues_user_messages() -> 
     assert "assignment-assigned:goal-1:77" in repository.items
     assert job_queue.calls[0].when == 0
     assert "New assignment added" in repository.items["assignment-assigned:goal-1:77"].text
+
+
+@pytest.mark.anyio
+async def test_create_admin_goal_from_context_sends_assignment_notification_immediately() -> None:
+    context, _, bot = _build_context()
+    repository = _FakeNotificationRepository()
+    context.application.bot_data["pending_telegram_notification_repository"] = repository
+    context.application.bot_data["assign_goal_to_users_use_case"] = SimpleNamespace(
+        execute=lambda **kwargs: [  # noqa: ARG005
+            SimpleNamespace(
+                id="goal-1",
+                user_id=77,
+                goal_period=SimpleNamespace(value="homework"),
+                goal_type=SimpleNamespace(value="word_level_homework"),
+                target_count=10,
+            )
+        ]
+    )
+    context.user_data = {
+        "admin_goal_recipient_user_ids": [77],
+    }
+    query = SimpleNamespace(
+        edits=[],
+    )
+
+    async def _edit_message_text(text: str) -> None:
+        query.edits.append(text)
+
+    query.edit_message_text = _edit_message_text
+
+    await _create_admin_goal_from_context(
+        query=query,
+        context=context,  # type: ignore[arg-type]
+        user=SimpleNamespace(id=101, language_code="en"),
+    )
+
+    assert len(bot.sent_messages) == 1
+    assert bot.sent_messages[0].chat_id == 77
+    assert "New assignment added" in bot.sent_messages[0].text
+    assert repository.items == {}
 
 
 @pytest.mark.anyio
