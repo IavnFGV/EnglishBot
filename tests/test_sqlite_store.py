@@ -22,7 +22,16 @@ from englishbot.domain.image_review_models import (
     ImageReviewItem,
 )
 from englishbot.bootstrap import build_training_service
-from englishbot.domain.models import GoalPeriod, GoalType, TrainingMode
+from englishbot.domain.models import (
+    GoalPeriod,
+    GoalStatus,
+    GoalType,
+    SessionItem,
+    TrainingMode,
+    TrainingSession,
+    UserProgress,
+    WordStats,
+)
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtractionDraft
 from englishbot.importing.pipeline import LessonImportPipeline
@@ -388,6 +397,74 @@ def test_sqlite_content_store_lists_users_goal_overview(tmp_path: Path) -> None:
     assert len(overview) == 1
     assert overview[0]["user_id"] == 101
     assert overview[0]["active_goals_count"] == 1
+
+
+def test_sqlite_content_store_clears_only_user_learning_data(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+            ],
+        }
+    )
+    store.record_telegram_user_login(
+        user_id=55,
+        username="learner55",
+        first_name="Learner",
+        last_name=None,
+        language_code="en",
+    )
+    store.replace_telegram_user_roles(user_id=55, roles=("admin",))
+    store.save_progress(UserProgress(user_id=55, item_id="cat", times_seen=3, correct_answers=2))
+    store.save_word_stats(WordStats(user_id=55, word_id="cat", success_easy=2, current_level=1))
+    store.update_game_streak(user_id=55, played_at=datetime(2026, 3, 31, tzinfo=UTC))
+    store.award_weekly_points(
+        user_id=55,
+        word_id="cat",
+        mode=TrainingMode.MEDIUM,
+        level_up_delta=1,
+        awarded_at=datetime(2026, 3, 31, tzinfo=UTC),
+    )
+    goal = store.assign_goal(
+        user_id=55,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["cat"],
+    )
+    session = TrainingSession(
+        id="session-55",
+        user_id=55,
+        topic_id="animals",
+        mode=TrainingMode.EASY,
+        items=[SessionItem(order=0, vocabulary_item_id="cat", mode=TrainingMode.EASY)],
+    )
+    store.save_session(session)
+    store.save_pending_telegram_notification(
+        notification_key="notify-55",
+        recipient_user_id=55,
+        text="Homework reminder",
+        not_before_at=datetime(2026, 3, 31, tzinfo=UTC),
+    )
+
+    cleared = store.clear_user_learning_data(user_id=55)
+
+    assert cleared["goals"] == 1
+    assert cleared["sessions"] == 1
+    assert cleared["word_stats"] == 1
+    assert store.list_user_goals(user_id=55, statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED, GoalStatus.EXPIRED)) == []
+    assert store.list_progress_by_user(55) == []
+    assert store.get_word_stats(55, "cat") is None
+    assert store.get_weekly_points(user_id=55) == 0
+    assert store.get_active_session_by_user(55) is None
+    assert store.list_pending_telegram_notifications(recipient_user_id=55) == []
+    assert any(login.user_id == 55 for login in store.list_telegram_user_logins())
+    assert any(item.user_id == 55 and item.role == "admin" for item in store.list_telegram_user_role_assignments())
 
 
 def test_initialize_drops_legacy_vocabulary_items_table_after_learning_items_exists(

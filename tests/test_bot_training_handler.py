@@ -12,6 +12,7 @@ from englishbot.bot import (
     choice_answer_handler,
     _process_answer,
     _send_question,
+    clear_user_handler,
     makeadmin_handler,
     start_handler,
     text_answer_handler,
@@ -489,6 +490,93 @@ async def test_makeadmin_handler_does_not_show_success_when_admin_role_was_not_p
 
     assert role_repository.grants == [(777, "admin")]
     assert sent_views[0].text == "Failed to grant the admin role."
+
+
+@pytest.mark.anyio
+async def test_clear_user_handler_clears_learning_data_for_admin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent_views: list[object] = []
+
+    async def _fake_send_telegram_view(message, view):  # noqa: ARG001
+        sent_views.append(view)
+
+    monkeypatch.setattr(bot, "send_telegram_view", _fake_send_telegram_view)
+
+    discarded_user_ids: list[int] = []
+    cleared_user_ids: list[int] = []
+    cancelled_add_words_user_ids: list[int] = []
+
+    update = SimpleNamespace(
+        effective_message=SimpleNamespace(),
+        effective_user=SimpleNamespace(id=321),
+    )
+    context = SimpleNamespace(
+        args=["777", "SECRETWORD"],
+        application=SimpleNamespace(
+            bot_data={
+                "admin_user_ids": {321},
+                "training_service": SimpleNamespace(
+                    discard_active_session=lambda user_id: discarded_user_ids.append(user_id)
+                ),
+                "content_store": SimpleNamespace(
+                    clear_user_learning_data=lambda user_id: (
+                        cleared_user_ids.append(user_id)
+                        or {"goals": 2, "sessions": 1, "word_stats": 3}
+                    )
+                ),
+                "recent_assignment_activity_by_user": {777: "recent"},
+                "word_import_preview_message_ids": {777: 55},
+                "add_words_cancel_use_case": SimpleNamespace(
+                    execute=lambda user_id: cancelled_add_words_user_ids.append(user_id)
+                ),
+            }
+        ),
+    )
+
+    await clear_user_handler(update, context)  # type: ignore[arg-type]
+
+    assert discarded_user_ids == [777]
+    assert cleared_user_ids == [777]
+    assert cancelled_add_words_user_ids == [777]
+    assert context.application.bot_data["recent_assignment_activity_by_user"] == {}
+    assert context.application.bot_data["word_import_preview_message_ids"] == {}
+    assert sent_views[0].text == "Learning data cleared for Telegram user 777. Goals: 2, sessions: 1, stats: 3."
+
+
+@pytest.mark.anyio
+async def test_clear_user_handler_rejects_invalid_confirmation_word(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent_views: list[object] = []
+
+    async def _fake_send_telegram_view(message, view):  # noqa: ARG001
+        sent_views.append(view)
+
+    monkeypatch.setattr(bot, "send_telegram_view", _fake_send_telegram_view)
+
+    update = SimpleNamespace(
+        effective_message=SimpleNamespace(),
+        effective_user=SimpleNamespace(id=321),
+    )
+    context = SimpleNamespace(
+        args=["777", "WRONG"],
+        application=SimpleNamespace(
+            bot_data={
+                "admin_user_ids": {321},
+                "training_service": SimpleNamespace(
+                    discard_active_session=lambda user_id: (_ for _ in ()).throw(AssertionError("must not discard"))
+                ),
+                "content_store": SimpleNamespace(
+                    clear_user_learning_data=lambda user_id: (_ for _ in ()).throw(AssertionError("must not clear"))
+                ),
+            }
+        ),
+    )
+
+    await clear_user_handler(update, context)  # type: ignore[arg-type]
+
+    assert sent_views[0].text == "Access denied. The confirmation word is invalid."
 
 
 @pytest.mark.anyio

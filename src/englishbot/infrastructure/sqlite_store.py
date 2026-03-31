@@ -1538,6 +1538,88 @@ class SQLiteContentStore:
             )
         return result
 
+    def clear_user_learning_data(self, *, user_id: int) -> dict[str, int]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            session_ids = [
+                str(row["id"])
+                for row in connection.execute(
+                    "SELECT id FROM training_sessions WHERE user_id = ?",
+                    (user_id,),
+                ).fetchall()
+            ]
+            deleted_sessions = connection.execute(
+                "DELETE FROM training_sessions WHERE user_id = ?",
+                (user_id,),
+            ).rowcount
+            deleted_progress = connection.execute(
+                "DELETE FROM user_progress WHERE user_id = ?",
+                (user_id,),
+            ).rowcount
+            deleted_game_profile = connection.execute(
+                "DELETE FROM user_game_profile WHERE user_id = ?",
+                (user_id,),
+            ).rowcount
+            deleted_word_stats = connection.execute(
+                "DELETE FROM user_word_stats WHERE user_id = ?",
+                (user_id,),
+            ).rowcount
+            deleted_weekly_points = connection.execute(
+                "DELETE FROM user_weekly_points WHERE user_id = ?",
+                (user_id,),
+            ).rowcount
+            deleted_weekly_awards = connection.execute(
+                "DELETE FROM user_weekly_word_awards WHERE user_id = ?",
+                (user_id,),
+            ).rowcount
+            deleted_pending_notifications = connection.execute(
+                "DELETE FROM pending_telegram_notifications WHERE recipient_user_id = ?",
+                (user_id,),
+            ).rowcount
+            deleted_add_words_flows = connection.execute(
+                "DELETE FROM add_words_flows WHERE editor_user_id = ?",
+                (user_id,),
+            ).rowcount
+            deleted_image_review_flows = connection.execute(
+                "DELETE FROM image_review_flows WHERE editor_user_id = ?",
+                (user_id,),
+            ).rowcount
+            goal_ids = [
+                str(row["id"])
+                for row in connection.execute(
+                    "SELECT id FROM user_goals WHERE user_id = ?",
+                    (user_id,),
+                ).fetchall()
+            ]
+            deleted_goals = connection.execute(
+                "DELETE FROM user_goals WHERE user_id = ?",
+                (user_id,),
+            ).rowcount
+            deleted_flow_messages = 0
+            for session_id in session_ids:
+                deleted_flow_messages += connection.execute(
+                    "DELETE FROM telegram_flow_messages WHERE flow_id = ?",
+                    (session_id,),
+                ).rowcount
+            for goal_id in goal_ids:
+                deleted_flow_messages += connection.execute(
+                    "DELETE FROM telegram_flow_messages WHERE flow_id = ?",
+                    (f"assignment-progress:{user_id}:homework:{goal_id}",),
+                ).rowcount
+        return {
+            "sessions": deleted_sessions,
+            "progress_rows": deleted_progress,
+            "game_profiles": deleted_game_profile,
+            "word_stats": deleted_word_stats,
+            "weekly_points": deleted_weekly_points,
+            "weekly_awards": deleted_weekly_awards,
+            "goals": deleted_goals,
+            "pending_notifications": deleted_pending_notifications,
+            "add_words_flows": deleted_add_words_flows,
+            "image_review_flows": deleted_image_review_flows,
+            "flow_messages": deleted_flow_messages,
+        }
+
     def list_active_homework_words(self, *, user_id: int) -> dict[str, int]:
         self.initialize()
         with _connect(self._db_path) as connection:

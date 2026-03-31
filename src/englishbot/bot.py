@@ -246,6 +246,7 @@ _TRAINING_FEEDBACK_TAG = "training_feedback"
 _ASSIGNMENT_PROGRESS_TAG = "assignment_progress"
 _CHAT_MENU_TAG = "chat_menu"
 _NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
+_CLEAR_USER_MAGIC_WORD = "SECRETWORD"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
 _MEDIUM_TASK_STATE_KEY = "medium_task_state"
@@ -630,6 +631,7 @@ def build_application(
     app.add_handler(CommandHandler("add_words", add_words_start_handler))
     app.add_handler(CommandHandler("cancel", add_words_cancel_handler))
     app.add_handler(CommandHandler("makeadmin", makeadmin_handler))
+    app.add_handler(CommandHandler("clear_user", clear_user_handler))
     app.add_handler(ChatMemberHandler(chat_member_logger_handler, ChatMemberHandler.ANY_CHAT_MEMBER))
     app.add_handler(CallbackQueryHandler(continue_session_handler, pattern=r"^session:continue$"))
     app.add_handler(CallbackQueryHandler(restart_session_handler, pattern=r"^session:restart$"))
@@ -1192,8 +1194,14 @@ def _render_assignment_round_progress_text(
     )
 
 
-def _assignment_progress_flow_id(*, user_id: int, kind: AssignmentSessionKind) -> str:
-    return f"assignment-progress:{user_id}:{kind.value}"
+def _assignment_progress_flow_id(
+    *,
+    user_id: int,
+    kind: AssignmentSessionKind,
+    goal_id: str | None = None,
+) -> str:
+    suffix = f":{goal_id}" if goal_id else ""
+    return f"assignment-progress:{user_id}:{kind.value}{suffix}"
 
 
 def _assignment_periods_for_kind(kind: AssignmentSessionKind) -> tuple[GoalPeriod, ...]:
@@ -1383,7 +1391,7 @@ async def _send_or_update_assignment_progress_message(
         user=user,
         goal_id=goal_id,
     )
-    flow_id = _assignment_progress_flow_id(user_id=user_id, kind=kind)
+    flow_id = _assignment_progress_flow_id(user_id=user_id, kind=kind, goal_id=goal_id)
     if snapshot is None:
         await _delete_tracked_flow_messages(
             context,
@@ -2456,6 +2464,84 @@ async def makeadmin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         message,
         build_status_view(
             text=f"Admin role granted to Telegram user {target_user_id}."
+        ),
+    )
+
+
+async def clear_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    user = update.effective_user
+    if message is None or user is None:
+        return
+
+    if not _is_admin(user.id, context):
+        await send_telegram_view(
+            message,
+            build_status_view(text="Access denied. Only admins can use /clear_user."),
+        )
+        return
+
+    if len(context.args) != 2:
+        await send_telegram_view(
+            message,
+            build_status_view(text="Usage: /clear_user <telegram_id> SECRETWORD"),
+        )
+        return
+
+    try:
+        target_user_id = int(context.args[0])
+    except ValueError:
+        await send_telegram_view(
+            message,
+            build_status_view(text="The target telegram_id must be an integer."),
+        )
+        return
+
+    provided_magic_word = str(context.args[1]).strip()
+    if not hmac.compare_digest(provided_magic_word, _CLEAR_USER_MAGIC_WORD):
+        await send_telegram_view(
+            message,
+            build_status_view(text="Access denied. The confirmation word is invalid."),
+        )
+        return
+
+    try:
+        _service(context).discard_active_session(user_id=target_user_id)
+        cleared = _content_store(context).clear_user_learning_data(user_id=target_user_id)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Failed to clear learning data target_user_id=%s requester_user_id=%s",
+            target_user_id,
+            user.id,
+        )
+        await send_telegram_view(
+            message,
+            build_status_view(text="Failed to clear the user's learning data."),
+        )
+        return
+
+    recent_activity = context.application.bot_data.get("recent_assignment_activity_by_user")
+    if isinstance(recent_activity, dict):
+        recent_activity.pop(target_user_id, None)
+    preview_ids = context.application.bot_data.get("word_import_preview_message_ids")
+    if isinstance(preview_ids, dict):
+        preview_ids.pop(target_user_id, None)
+    cancel_add_words = context.application.bot_data.get("add_words_cancel_use_case")
+    execute_cancel = getattr(cancel_add_words, "execute", None)
+    if callable(execute_cancel):
+        try:
+            execute_cancel(user_id=target_user_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to discard add-words flow target_user_id=%s", target_user_id)
+
+    await send_telegram_view(
+        message,
+        build_status_view(
+            text=(
+                f"Learning data cleared for Telegram user {target_user_id}. "
+                f"Goals: {cleared['goals']}, sessions: {cleared['sessions']}, "
+                f"stats: {cleared['word_stats']}."
+            )
         ),
     )
 
