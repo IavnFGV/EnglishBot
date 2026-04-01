@@ -24,7 +24,7 @@ from telegram import (
     ReplyKeyboardMarkup,
     Update,
 )
-from telegram.error import BadRequest
+from telegram.error import BadRequest, NetworkError, RetryAfter
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -6120,7 +6120,18 @@ async def _send_question(
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.exception("Unhandled Telegram update error. Update=%r", update, exc_info=context.error)
+    error = context.error
+    if isinstance(error, RetryAfter):
+        logger.warning(
+            "Telegram flood control requested retry_after=%s. Update=%r",
+            getattr(error, "retry_after", None),
+            update,
+        )
+        return
+    if isinstance(error, NetworkError):
+        logger.warning("Temporary Telegram network error. Update=%r error=%s", update, error)
+        return
+    logger.exception("Unhandled Telegram update error. Update=%r", update, exc_info=error)
 
 
 async def _post_init(app: Application) -> None:
