@@ -873,7 +873,7 @@ def test_sqlite_store_homework_stage_progression_and_bonus_hard_skip(tmp_path: P
     assert store.get_homework_stage_mode(user_id=5, item_id="cat") is TrainingMode.MEDIUM
 
 
-def test_sqlite_store_can_skip_bonus_hard_explicitly(tmp_path: Path) -> None:
+def test_sqlite_store_does_not_unlock_extra_hard_stage_after_medium_completion(tmp_path: Path) -> None:
     from englishbot.domain.models import GoalPeriod, GoalType
 
     store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
@@ -909,7 +909,6 @@ def test_sqlite_store_can_skip_bonus_hard_explicitly(tmp_path: Path) -> None:
         is_correct=True,
         current_level=1,
         goal_id=goal.id,
-        offer_bonus_hard=False,
     )
     store.update_homework_word_progress(
         user_id=6,
@@ -918,15 +917,9 @@ def test_sqlite_store_can_skip_bonus_hard_explicitly(tmp_path: Path) -> None:
         is_correct=True,
         current_level=1,
         goal_id=goal.id,
-        offer_bonus_hard=True,
     )
 
-    assert store.get_homework_stage_mode(user_id=6, item_id="cat", goal_id=goal.id) is TrainingMode.HARD
-
-    store.skip_homework_bonus_hard(user_id=6, word_id="cat", goal_id=goal.id)
-
     assert store.get_homework_stage_mode(user_id=6, item_id="cat", goal_id=goal.id) is TrainingMode.MEDIUM
-    assert store.list_goal_word_details(goal_id=goal.id, user_id=6)[0]["hard_skipped"] is True
 
 
 def test_sqlite_store_new_homework_goal_for_same_word_does_not_inherit_old_goal_mastery(tmp_path: Path) -> None:
@@ -965,7 +958,6 @@ def test_sqlite_store_new_homework_goal_for_same_word_does_not_inherit_old_goal_
         is_correct=True,
         current_level=2,
         goal_id=first_goal.id,
-        offer_bonus_hard=False,
     )
     store.update_homework_word_progress(
         user_id=9,
@@ -974,7 +966,6 @@ def test_sqlite_store_new_homework_goal_for_same_word_does_not_inherit_old_goal_
         is_correct=True,
         current_level=2,
         goal_id=first_goal.id,
-        offer_bonus_hard=False,
     )
 
     second_goal = store.assign_goal(

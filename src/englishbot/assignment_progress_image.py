@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,8 +11,7 @@ class AssignmentProgressSegment:
     word_id: str
     label: str
     progress_value: float
-    bonus_hard_pending: bool = False
-    bonus_hard_completed: bool = False
+    hard_clear: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +49,6 @@ def render_assignment_progress_image(
     start_angle = -90.0
     sweep_angle = 360.0 / segment_count
     gap = min(4.0, sweep_angle * 0.12)
-    pending_bonus_angles: list[float] = []
 
     for index, segment in enumerate(snapshot.segments):
         segment_start = start_angle + index * sweep_angle + gap / 2
@@ -80,8 +77,6 @@ def render_assignment_progress_image(
             end=segment_end,
             fill=fill_color,
         )
-        if segment.bonus_hard_pending:
-            pending_bonus_angles.append((segment_start + segment_end) / 2)
 
     draw.ellipse(
         [
@@ -107,17 +102,6 @@ def render_assignment_progress_image(
         stroke_width=max(2, size // 180),
         stroke_fill="#fff8ef",
     )
-
-    for angle_degrees in pending_bonus_angles:
-        _draw_bonus_hard_arrow(
-            draw,
-            center_x=center_x,
-            center_y=center_y,
-            inner_radius=inner_radius,
-            outer_radius=outer_radius,
-            angle_degrees=angle_degrees,
-            size=size,
-        )
 
     _draw_combo_streak_indicator(
         draw,
@@ -146,7 +130,7 @@ def _bottom_grid(size: int) -> tuple[int, int, int]:
 
 
 def _segment_color(segment: AssignmentProgressSegment) -> str:
-    if segment.bonus_hard_completed:
+    if segment.hard_clear:
         return "#167a6c"
     progress_value = segment.progress_value
     if progress_value >= 1.0:
@@ -156,56 +140,6 @@ def _segment_color(segment: AssignmentProgressSegment) -> str:
     if progress_value > 0:
         return "#f7d36a"
     return "#dde7ef"
-
-
-def _draw_bonus_hard_arrow(
-    draw: ImageDraw.ImageDraw,
-    *,
-    center_x: int,
-    center_y: int,
-    inner_radius: int,
-    outer_radius: int,
-    angle_degrees: float,
-    size: int,
-) -> None:
-    angle = math.radians(angle_degrees)
-    shaft_start = max(2, size // 128)
-    shaft_end = outer_radius - max(26, size // 16)
-    shaft_width = max(10, size // 36)
-    head_length = max(20, size // 14)
-    head_width = max(16, size // 18)
-
-    perp_x = -math.sin(angle)
-    perp_y = math.cos(angle)
-    dir_x = math.cos(angle)
-    dir_y = math.sin(angle)
-
-    start_x = center_x + dir_x * shaft_start
-    start_y = center_y + dir_y * shaft_start
-    end_x = center_x + dir_x * shaft_end
-    end_y = center_y + dir_y * shaft_end
-    tip_x = center_x + dir_x * (shaft_end + head_length)
-    tip_y = center_y + dir_y * (shaft_end + head_length)
-
-    shaft = [
-        (start_x + perp_x * shaft_width / 2, start_y + perp_y * shaft_width / 2),
-        (end_x + perp_x * shaft_width / 2, end_y + perp_y * shaft_width / 2),
-        (end_x - perp_x * shaft_width / 2, end_y - perp_y * shaft_width / 2),
-        (start_x - perp_x * shaft_width / 2, start_y - perp_y * shaft_width / 2),
-    ]
-    head = [
-        (tip_x, tip_y),
-        (end_x + perp_x * head_width / 2, end_y + perp_y * head_width / 2),
-        (end_x - perp_x * head_width / 2, end_y - perp_y * head_width / 2),
-    ]
-
-    draw.polygon(shaft, fill="#ff9b3d")
-    draw.polygon(head, fill="#ff6b1a")
-    draw.line(
-        [(start_x, start_y), (tip_x, tip_y)],
-        fill="#ffd36b",
-        width=max(2, size // 128),
-    )
 
 
 def _draw_combo_streak_indicator(

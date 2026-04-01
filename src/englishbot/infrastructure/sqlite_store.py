@@ -1788,9 +1788,7 @@ class SQLiteContentStore:
             return TrainingMode.EASY
         if not bool(row["medium_mastered"]):
             return TrainingMode.MEDIUM
-        if bool(row["hard_skipped"]) or bool(row["hard_mastered"]):
-            return TrainingMode.MEDIUM
-        return TrainingMode.HARD
+        return TrainingMode.MEDIUM
 
     def update_homework_word_progress(
         self,
@@ -1848,8 +1846,6 @@ class SQLiteContentStore:
                 hard_mastered = bool(row["hard_mastered"])
                 hard_skipped = bool(row["hard_skipped"])
                 hard_failed_streak = int(row["hard_failed_streak"])
-                medium_was_mastered = medium_mastered
-
                 if is_correct and mode is TrainingMode.EASY:
                     easy_success_count += 1
                     easy_mastered = True
@@ -1869,11 +1865,6 @@ class SQLiteContentStore:
 
                 if medium_success_count >= 2:
                     medium_mastered = True
-                if medium_mastered and not medium_was_mastered and not hard_mastered and not hard_skipped:
-                    if offer_bonus_hard:
-                        bonus_hard_unlocked = True
-                    else:
-                        hard_skipped = True
                 if hard_mastered:
                     hard_skipped = False
 

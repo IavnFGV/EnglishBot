@@ -416,11 +416,9 @@ def test_submit_answer_refuses_extra_answer_after_completion(
         service.submit_answer(user_id=88, answer=question.correct_answer)
 
 
-def test_submit_answer_can_insert_bonus_hard_without_changing_session_total(
+def test_submit_answer_completes_medium_only_session_without_extra_bonus_hard(
     vocabulary_items: list[VocabularyItem],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("englishbot.application.training_use_cases.random.random", lambda: 0.0)
     session_repository = InMemorySessionRepository()
     progress_repository = _HomeworkBonusProgressRepository()
     vocabulary_repository = InMemoryVocabularyRepository(vocabulary_items)
@@ -450,21 +448,9 @@ def test_submit_answer_can_insert_bonus_hard_without_changing_session_total(
 
     first_outcome = submit_answer.execute(user_id=15, answer="summer")
 
-    assert first_outcome.summary is None
-    assert first_outcome.next_question is not None
-    assert first_outcome.next_question.mode is TrainingMode.HARD
-    assert first_outcome.next_question.letter_hint == "S"
-    active_session = session_repository.get_active_by_user(15)
-    assert active_session is not None
-    assert active_session.total_items == 1
-    assert active_session.current_index == 1
-    assert active_session.bonus_item_id == "7"
-    assert progress_repository.homework_calls[-1] == (15, "7", TrainingMode.MEDIUM, True, "goal-1", True)
-
-    second_outcome = submit_answer.execute(user_id=15, answer="summer")
-
-    assert second_outcome.next_question is None
-    assert second_outcome.summary == SessionSummary(total_questions=1, correct_answers=1)
+    assert first_outcome.next_question is None
+    assert first_outcome.summary == SessionSummary(total_questions=1, correct_answers=1)
+    assert progress_repository.homework_calls[-1] == (15, "7", TrainingMode.MEDIUM, True, "goal-1", False)
     assert session_repository.get_active_by_user(15) is None
 
 
@@ -532,11 +518,9 @@ def test_submit_answer_activates_combo_hard_after_four_correct_and_resets_after_
     assert active_session.combo_hard_active is False
 
 
-def test_submit_answer_keeps_combo_hard_for_next_word_after_bonus_hard_on_same_word(
+def test_submit_answer_keeps_combo_hard_for_next_words_without_extra_bonus_layer(
     vocabulary_items: list[VocabularyItem],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("englishbot.application.training_use_cases.random.random", lambda: 0.0)
     session_repository = InMemorySessionRepository()
     progress_repository = _HomeworkBonusProgressRepository()
     vocabulary_repository = InMemoryVocabularyRepository(vocabulary_items)
@@ -579,20 +563,18 @@ def test_submit_answer_keeps_combo_hard_for_next_word_after_bonus_hard_on_same_w
 
     assert fourth_outcome.next_question is not None
     assert fourth_outcome.next_question.mode is TrainingMode.HARD
-    assert fourth_outcome.next_question.item_id == "4"
+    assert fourth_outcome.next_question.item_id == "5"
 
-    fifth_outcome = submit_answer.execute(user_id=23, answer="wind")
+    fifth_outcome = submit_answer.execute(user_id=23, answer="spring")
 
     assert fifth_outcome.next_question is not None
     assert fifth_outcome.next_question.mode is TrainingMode.HARD
-    assert fifth_outcome.next_question.item_id == "5"
+    assert fifth_outcome.next_question.item_id == "6"
 
-    sixth_outcome = submit_answer.execute(user_id=23, answer="spring")
+    sixth_outcome = submit_answer.execute(user_id=23, answer="winter")
 
-    assert sixth_outcome.summary is None
-    assert sixth_outcome.next_question is not None
-    assert sixth_outcome.next_question.mode is TrainingMode.HARD
-    assert sixth_outcome.next_question.item_id == "6"
+    assert sixth_outcome.summary == SessionSummary(total_questions=6, correct_answers=6)
+    assert sixth_outcome.next_question is None
 
 
 def test_training_flow_integration_for_medium_mode_and_unique_session_ids(

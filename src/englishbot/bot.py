@@ -641,7 +641,7 @@ def build_application(
     app.add_handler(CallbackQueryHandler(game_next_round_handler, pattern=r"^game:next_round$"))
     app.add_handler(CallbackQueryHandler(game_repeat_handler, pattern=r"^game:repeat$"))
     app.add_handler(CallbackQueryHandler(mode_selected_handler, pattern=r"^mode:"))
-    app.add_handler(CallbackQueryHandler(bonus_hard_skip_handler, pattern=r"^bonus:skip:"))
+    app.add_handler(CallbackQueryHandler(hard_skip_handler, pattern=r"^hard:skip:"))
     app.add_handler(CallbackQueryHandler(medium_answer_callback_handler, pattern=r"^medium:"))
     app.add_handler(CallbackQueryHandler(choice_answer_handler, pattern=r"^answer:"))
     app.add_handler(CallbackQueryHandler(words_menu_callback_handler, pattern=r"^words:menu$"))
@@ -1236,12 +1236,7 @@ def _build_assignment_progress_snapshot(
                     word_id=word_id,
                     label=label,
                     progress_value=progress_value,
-                    bonus_hard_pending=(
-                        bool(row.get("medium_mastered"))
-                        and not bool(row.get("hard_mastered"))
-                        and not bool(row.get("hard_skipped"))
-                    ),
-                    bonus_hard_completed=bool(row.get("hard_mastered")),
+                    hard_clear=bool(row.get("hard_mastered")),
                 )
     if not progress_by_word:
         return None
@@ -5323,11 +5318,11 @@ async def game_repeat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
-def _bonus_hard_skip_callback_data(*, session_id: str, item_id: str) -> str:
-    return f"bonus:skip:{session_id}:{item_id}"
+def _hard_skip_callback_data(*, session_id: str, item_id: str) -> str:
+    return f"hard:skip:{session_id}:{item_id}"
 
 
-def _bonus_hard_skip_keyboard(
+def _hard_skip_keyboard(
     *,
     context: ContextTypes.DEFAULT_TYPE,
     user,
@@ -5338,15 +5333,15 @@ def _bonus_hard_skip_keyboard(
         [
             [
                 InlineKeyboardButton(
-                    _tg("bonus_hard_skip_button", context=context, user=user),
-                    callback_data=_bonus_hard_skip_callback_data(session_id=session_id, item_id=item_id),
+                    _tg("hard_skip_button", context=context, user=user),
+                    callback_data=_hard_skip_callback_data(session_id=session_id, item_id=item_id),
                 )
             ]
         ]
     )
 
 
-async def bonus_hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None or query.data is None:
@@ -5357,104 +5352,19 @@ async def bonus_hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_
         return
     _, _, session_id, item_id = parts
     active_session = _active_training_session(context, user_id=user.id)
+    if active_session is None or active_session.id != session_id:
+        return
+    try:
+        current_question = _service(context).get_current_question(user_id=user.id)
+    except InvalidSessionStateError:
+        return
     if (
-        active_session is None
-        or active_session.id != session_id
-        or active_session.bonus_item_id != item_id
-        or active_session.bonus_mode is not TrainingMode.HARD
+        current_question.session_id != session_id
+        or current_question.item_id != item_id
+        or current_question.mode is not TrainingMode.HARD
     ):
         return
-    _, goal_id = _assignment_kind_and_goal_id_from_source_tag(getattr(active_session, "source_tag", None))
-    _content_store(context).skip_homework_bonus_hard(
-        user_id=user.id,
-        word_id=item_id,
-        goal_id=goal_id,
-    )
-    active_session.record_answer(answer="__skip_bonus__", is_correct=False)
-    _content_store(context).save_session(active_session)
-    context.user_data["awaiting_text_answer"] = False
-    flow_id = active_session.id
-    await _delete_tracked_flow_messages(context, flow_id=flow_id, tag=_TRAINING_QUESTION_TAG)
-
-    summary_suffix = ""
-    reply_markup = None
-    assignment_kind = _assignment_kind_from_session(active_session)
-    if active_session.completed:
-        correct_answers = sum(
-            1
-            for answer in active_session.answer_history
-            if answer.is_correct and answer.counts_toward_summary
-        )
-        summary_suffix = _tg(
-            "session_complete",
-            context=context,
-            user=user,
-            correct_answers=correct_answers,
-            total_questions=active_session.total_items,
-        )
-    assignment_progress_text = ""
-    if assignment_kind is not None:
-        active_session_view = type(
-            "_ActiveSessionView",
-            (),
-            {
-                "total_items": active_session.total_items,
-                "current_position": active_session.current_index + 1,
-            },
-        )()
-        round_progress = _assignment_round_progress_view(
-            context=context,
-            user_id=user.id,
-            kind=assignment_kind,
-            goal_id=goal_id,
-            active_session=active_session_view,
-        )
-        if round_progress is not None:
-            assignment_progress_text = _render_assignment_round_progress_text(
-                context=context,
-                user=user,
-                kind=assignment_kind,
-                progress=round_progress,
-            )
-            if active_session.completed:
-                reply_markup = _assignment_round_complete_keyboard(
-                    assignment_kind,
-                    has_more=False,
-                    remaining_word_count=None,
-                    round_batch_size=None,
-                    language=_telegram_ui_language(context, user),
-                )
-    lines = [_tg("bonus_hard_skipped", context=context, user=user)]
-    if summary_suffix:
-        lines[-1] = f"{lines[-1]}{summary_suffix}"
-    if assignment_progress_text:
-        lines.append("")
-        lines.append(assignment_progress_text)
-    sent_message = await query.message.reply_text(
-        "\n".join(lines),
-        reply_markup=reply_markup,
-        parse_mode="HTML",
-    )
-    _track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=_TRAINING_FEEDBACK_TAG,
-        message=sent_message,
-        fallback_chat_id=_message_chat_id(query.message),
-    )
-    if assignment_kind is not None:
-        await _send_or_update_assignment_progress_message(
-            context,
-            message=query.message,
-            user=user,
-            kind=assignment_kind,
-        )
-    if active_session.completed:
-        await _flush_pending_notifications_for_user(context, user_id=user.id)
-        return
-    next_question = _service(context).get_current_question(user_id=user.id)
-    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(next_question)
-    await _send_question(update, context, next_question)
+    await _process_answer(update, context, "__skip_hard__")
 
 
 async def medium_answer_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -6214,10 +6124,9 @@ async def _send_question(
             user is not None
             and active_session is not None
             and active_session.id == question.session_id
-            and active_session.bonus_item_id == question.item_id
-            and active_session.bonus_mode is TrainingMode.HARD
+            and question.mode is TrainingMode.HARD
         ):
-            reply_markup = _bonus_hard_skip_keyboard(
+            reply_markup = _hard_skip_keyboard(
                 context=context,
                 user=user,
                 session_id=question.session_id,

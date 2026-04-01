@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import random
 import uuid
 from dataclasses import dataclass
 
@@ -280,14 +279,7 @@ class SubmitAnswerUseCase:
     def execute(self, *, user_id: int, answer: str) -> AnswerOutcome:
         session = self._require_active_session(user_id)
         question = self._get_current_question.execute(user_id=user_id)
-        is_bonus_question = (
-            session.bonus_item_id == question.item_id and session.bonus_mode is not None
-        )
-        is_combo_hard_question = (
-            not is_bonus_question
-            and session.combo_hard_active
-            and question.mode is TrainingMode.HARD
-        )
+        is_combo_hard_question = session.combo_hard_active and question.mode is TrainingMode.HARD
         result = self._answer_checker.check(question=question, answer=answer)
         progress = self._progress_repository.get(user_id, question.item_id) or UserProgress(
             user_id=user_id,
@@ -297,7 +289,6 @@ class SubmitAnswerUseCase:
         progress.last_seen_at = self._clock.now()
         self._progress_repository.save(progress)
         level_up_delta = 0
-        bonus_hard_started = False
         assignment_goal_id = _homework_goal_id_from_source_tag(session.source_tag)
         if hasattr(self._progress_repository, "get_word_stats") and hasattr(
             self._progress_repository, "save_word_stats"
@@ -330,48 +321,32 @@ class SubmitAnswerUseCase:
                     current_level=word_stats.current_level,
                 )
             if hasattr(self._progress_repository, "update_homework_word_progress"):
-                progress_update = self._progress_repository.update_homework_word_progress(
+                self._progress_repository.update_homework_word_progress(
                     user_id=user_id,
                     word_id=question.item_id,
                     mode=question.mode,
                     is_correct=result.is_correct,
                     current_level=word_stats.current_level,
                     goal_id=assignment_goal_id,
-                    offer_bonus_hard=(
-                        bool(result.is_correct)
-                        and question.mode is TrainingMode.MEDIUM
-                        and assignment_goal_id is not None
-                        and random.random() < 0.25
-                    ),
+                    offer_bonus_hard=False,
                 )
-                bonus_hard_started = bool(getattr(progress_update, "bonus_hard_unlocked", False))
-        if not is_bonus_question:
-            if result.is_correct:
-                if is_combo_hard_question:
-                    session.combo_hard_active = True
-                    session.combo_correct_streak = _COMBO_HARD_TRIGGER_STREAK
-                else:
-                    session.combo_correct_streak = min(
-                        _COMBO_HARD_TRIGGER_STREAK,
-                        session.combo_correct_streak + 1,
-                    )
-                    session.combo_hard_active = (
-                        session.combo_correct_streak >= _COMBO_HARD_TRIGGER_STREAK
-                    )
+        if result.is_correct:
+            if is_combo_hard_question:
+                session.combo_hard_active = True
+                session.combo_correct_streak = _COMBO_HARD_TRIGGER_STREAK
             else:
-                session.combo_correct_streak = 0
-                session.combo_hard_active = False
+                session.combo_correct_streak = min(
+                    _COMBO_HARD_TRIGGER_STREAK,
+                    session.combo_correct_streak + 1,
+                )
+                session.combo_hard_active = (
+                    session.combo_correct_streak >= _COMBO_HARD_TRIGGER_STREAK
+                )
+        else:
+            session.combo_correct_streak = 0
+            session.combo_hard_active = False
         try:
-            session.record_answer(
-                answer=answer,
-                is_correct=result.is_correct,
-                start_bonus_for_item_id=(
-                    question.item_id
-                    if bonus_hard_started and result.is_correct and question.mode is TrainingMode.MEDIUM
-                    else None
-                ),
-                bonus_mode=(TrainingMode.HARD if bonus_hard_started else None),
-            )
+            session.record_answer(answer=answer, is_correct=result.is_correct)
         except ValueError as error:
             raise InvalidSessionStateError(str(error)) from error
         self._session_repository.save(session)

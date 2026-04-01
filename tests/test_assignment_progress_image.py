@@ -64,43 +64,6 @@ def test_render_assignment_progress_image_writes_png(tmp_path: Path) -> None:
         assert image.size == (512, 512)
 
 
-def test_render_assignment_progress_image_draws_pending_bonus_arrow_over_counter(tmp_path: Path) -> None:
-    snapshot = AssignmentProgressSnapshot(
-        center_label="done",
-        legend_labels=("start", "warm-up", "almost", "done"),
-        hard_legend_label="hard clear",
-        completed_word_count=0,
-        total_word_count=2,
-        remaining_word_count=2,
-        estimated_round_count=1,
-        segments=(
-            AssignmentProgressSegment(
-                "a",
-                "April",
-                1.0,
-                bonus_hard_pending=True,
-            ),
-            AssignmentProgressSegment("b", "August", 0.0),
-        ),
-    )
-
-    output_path = render_assignment_progress_image(
-        snapshot,
-        output_path=tmp_path / "progress" / "bonus-arrow.png",
-    )
-
-    with Image.open(output_path) as image:
-        center_x = image.size[0] // 2
-        center_y = int(image.size[1] * 0.41)
-        sampled_pixels = [
-            image.getpixel((x, y))
-            for x in range(center_x + 18, center_x + 70)
-            for y in range(center_y - 6, center_y + 7)
-        ]
-
-    assert any(red > 220 and green > 90 and green < 210 and blue < 140 for red, green, blue in sampled_pixels)
-
-
 def test_render_assignment_progress_image_draws_combo_streak_dots(tmp_path: Path) -> None:
     snapshot = AssignmentProgressSnapshot(
         center_label="done",
@@ -173,20 +136,17 @@ def test_segment_color_uses_distinct_teal_for_completed_bonus_hard() -> None:
             "word",
             "Word",
             1.0,
-            bonus_hard_pending=False,
-            bonus_hard_completed=True,
+            hard_clear=True,
         )
     ) == "#167a6c"
 
 
-def test_segment_color_keeps_orange_for_pending_bonus_hard_progress_stage() -> None:
+def test_segment_color_keeps_orange_for_almost_stage() -> None:
     assert _segment_color(
         AssignmentProgressSegment(
             "word",
             "Word",
             0.66,
-            bonus_hard_pending=True,
-            bonus_hard_completed=False,
         )
     ) == "#ffaf5f"
 
@@ -260,9 +220,6 @@ def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path
     values = {item.word_id: item.progress_value for item in snapshot.segments}
     assert values["april"] == pytest.approx(0.33)
     assert values["august"] == pytest.approx(1.0)
-    markers = {item.word_id: item.bonus_hard_pending for item in snapshot.segments}
-    assert markers["april"] is False
-    assert markers["august"] is False
 
 
 def test_build_assignment_progress_snapshot_shows_almost_after_first_medium(tmp_path: Path) -> None:
@@ -289,7 +246,6 @@ def test_build_assignment_progress_snapshot_shows_almost_after_first_medium(tmp_
         is_correct=True,
         current_level=1,
         goal_id=goal.id,
-        offer_bonus_hard=False,
     )
     context = SimpleNamespace(
         application=SimpleNamespace(
@@ -312,7 +268,7 @@ def test_build_assignment_progress_snapshot_shows_almost_after_first_medium(tmp_
     assert snapshot.segments[0].progress_value == pytest.approx(0.66)
 
 
-def test_build_assignment_progress_snapshot_marks_bonus_hard_pending_and_completed(tmp_path: Path) -> None:
+def test_build_assignment_progress_snapshot_marks_hard_clear_when_hard_is_mastered(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     goal = HomeworkProgressUseCase(store=store).create_goal(
         user_id=12,
@@ -336,7 +292,6 @@ def test_build_assignment_progress_snapshot_marks_bonus_hard_pending_and_complet
         is_correct=True,
         current_level=1,
         goal_id=goal.id,
-        offer_bonus_hard=False,
     )
     store.update_homework_word_progress(
         user_id=12,
@@ -345,7 +300,6 @@ def test_build_assignment_progress_snapshot_marks_bonus_hard_pending_and_complet
         is_correct=True,
         current_level=1,
         goal_id=goal.id,
-        offer_bonus_hard=True,
     )
     context = SimpleNamespace(
         application=SimpleNamespace(
@@ -355,19 +309,6 @@ def test_build_assignment_progress_snapshot_marks_bonus_hard_pending_and_complet
             }
         )
     )
-
-    pending_snapshot = bot._build_assignment_progress_snapshot(
-        context=context,  # type: ignore[arg-type]
-        user_id=12,
-        kind=AssignmentSessionKind.HOMEWORK,
-        user=SimpleNamespace(id=12, language_code="en"),
-        goal_id=goal.id,
-    )
-
-    assert pending_snapshot is not None
-    assert pending_snapshot.segments[0].progress_value == pytest.approx(1.0)
-    assert pending_snapshot.segments[0].bonus_hard_pending is True
-    assert pending_snapshot.segments[0].bonus_hard_completed is False
 
     store.update_homework_word_progress(
         user_id=12,
@@ -387,8 +328,7 @@ def test_build_assignment_progress_snapshot_marks_bonus_hard_pending_and_complet
     )
 
     assert completed_snapshot is not None
-    assert completed_snapshot.segments[0].bonus_hard_pending is False
-    assert completed_snapshot.segments[0].bonus_hard_completed is True
+    assert completed_snapshot.segments[0].hard_clear is True
 
 
 def test_build_assignment_progress_snapshot_includes_combo_arrow_state(tmp_path: Path) -> None:
