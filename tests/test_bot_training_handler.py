@@ -1019,9 +1019,9 @@ async def test_send_feedback_keeps_compact_first_line_and_restores_assignment_pr
     assert len(message.replies) == 1
     first_line, *_rest = message.replies[0].splitlines()
     assert "Weekly points +6" in first_line
-    assert "📘 Homework progress:" in message.replies[0]
-    assert "🧩 Round left: 0" in message.replies[0]
-    assert "🏁" in message.replies[0]
+    assert "📘 Homework progress:" not in message.replies[0]
+    assert "🧩 Round left: 0" not in message.replies[0]
+    assert "🏁" not in message.replies[0]
 
 
 @pytest.mark.anyio

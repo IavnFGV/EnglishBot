@@ -555,3 +555,122 @@ async def test_send_or_update_assignment_progress_message_tracks_different_homew
         flow_id=f"assignment-progress:13:homework:{second_goal.id}",
         tag="assignment_progress",
     )
+
+
+@pytest.mark.anyio
+async def test_send_or_update_assignment_progress_message_keeps_same_flow_id_after_round_completion(
+    tmp_path: Path,
+) -> None:
+    store = _build_store(tmp_path)
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=14,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["april"],
+    )
+    registry = _FakeFlowRegistry()
+    message = _FakePhotoMessage()
+    fake_bot = _FakeBot()
+    active_session = SimpleNamespace(
+        current_position=1,
+        total_items=1,
+        source_tag=f"assignment:homework:{goal.id}",
+    )
+    context = SimpleNamespace(
+        bot=fake_bot,
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": store,
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: None,  # noqa: ARG005
+                ),
+                "telegram_flow_message_repository": registry,
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+    user = SimpleNamespace(id=14, language_code="en")
+
+    await bot._send_or_update_assignment_progress_message(
+        context,  # type: ignore[arg-type]
+        message=message,
+        user=user,
+        kind=AssignmentSessionKind.HOMEWORK,
+        active_session=active_session,
+    )
+
+    assert len(message.photo_calls) == 1
+    tracked = registry.list(
+        flow_id=f"assignment-progress:14:homework:{goal.id}",
+        tag="assignment_progress",
+    )
+    assert len(tracked) == 1
+
+
+@pytest.mark.anyio
+async def test_send_or_update_assignment_progress_message_updates_latest_tracked_image_and_cleans_older_duplicates(
+    tmp_path: Path,
+) -> None:
+    store = _build_store(tmp_path)
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=15,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["april"],
+    )
+    registry = _FakeFlowRegistry()
+    registry.track(
+        flow_id=f"assignment-progress:15:homework:{goal.id}",
+        chat_id=1,
+        message_id=10,
+        tag="assignment_progress",
+    )
+    registry.track(
+        flow_id=f"assignment-progress:15:homework:{goal.id}",
+        chat_id=1,
+        message_id=11,
+        tag="assignment_progress",
+    )
+    message = _FakePhotoMessage()
+    fake_bot = _FakeBot()
+    context = SimpleNamespace(
+        bot=fake_bot,
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": store,
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(  # noqa: ARG005
+                        current_position=1,
+                        total_items=1,
+                        source_tag=f"assignment:homework:{goal.id}",
+                    )
+                ),
+                "telegram_flow_message_repository": registry,
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+    user = SimpleNamespace(id=15, language_code="en")
+
+    await bot._send_or_update_assignment_progress_message(
+        context,  # type: ignore[arg-type]
+        message=message,
+        user=user,
+        kind=AssignmentSessionKind.HOMEWORK,
+    )
+
+    assert fake_bot.media_edits == [
+        (
+            1,
+            11,
+            "<b>📘 Homework</b>\n✅ Done: 0/1 words • 🧩 Round left: 0 • 🎯 Homework left: 1 • 🔁 About 1 rounds",
+        )
+    ]
+    assert fake_bot.deleted_messages == [(1, 10)]
+    tracked = registry.list(
+        flow_id=f"assignment-progress:15:homework:{goal.id}",
+        tag="assignment_progress",
+    )
+    assert [item.message_id for item in tracked] == [11]

@@ -1385,13 +1385,15 @@ async def _send_or_update_assignment_progress_message(
     message,
     user,
     kind: AssignmentSessionKind,
+    active_session=None,
 ) -> None:
     user_id = getattr(user, "id", None)
     if not isinstance(user_id, int):
         return
     if not hasattr(message, "reply_photo"):
         return
-    active_session = _service(context).get_active_session(user_id=user_id)
+    if active_session is None:
+        active_session = _service(context).get_active_session(user_id=user_id)
     _, goal_id = _assignment_kind_and_goal_id_from_source_tag(
         getattr(active_session, "source_tag", None),
     )
@@ -1443,7 +1445,8 @@ async def _send_or_update_assignment_progress_message(
     )
     registry = _telegram_flow_messages(context)
     tracked_messages = registry.list(flow_id=flow_id, tag=_ASSIGNMENT_PROGRESS_TAG) if registry is not None else []
-    tracked_message = tracked_messages[0] if tracked_messages else None
+    tracked_message = tracked_messages[-1] if tracked_messages else None
+    stale_tracked_messages = tracked_messages[:-1] if len(tracked_messages) > 1 else []
     bot = getattr(context, "bot", None)
     fallback_chat_id = _message_chat_id(message)
     if tracked_message is not None and bot is not None and hasattr(bot, "edit_message_media"):
@@ -1457,6 +1460,11 @@ async def _send_or_update_assignment_progress_message(
                         caption=caption,
                         parse_mode="HTML",
                     ),
+                )
+            if stale_tracked_messages:
+                await _delete_tracked_messages(
+                    context,
+                    tracked_messages=stale_tracked_messages,
                 )
             return
         except BadRequest:
@@ -5666,6 +5674,7 @@ async def _process_answer(
             message=message,
             user=user,
             kind=assignment_kind,
+            active_session=active_session_for_feedback or active_session_before_submit,
         )
     if feedback_update is not None and feedback_update.completed_goals:
         _schedule_goal_completed_notifications(
@@ -5749,7 +5758,7 @@ async def _send_feedback(
         )
         if update_text:
             text = f"{text}\n\n{update_text}"
-    if assignment_progress_text:
+    if assignment_progress_text and not compact_assignment_feedback:
         text = f"{text}\n\n{assignment_progress_text}"
     flow_id = getattr(active_session, "session_id", None)
     if isinstance(flow_id, str):
