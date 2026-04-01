@@ -38,6 +38,7 @@ from englishbot.bot import (
     _render_start_menu_text,
     game_mode_placeholder_callback_handler,
     mode_selected_handler,
+    continue_session_handler,
     start_assignment_round_callback_handler,
     start_assignment_unavailable_callback_handler,
     words_add_words_callback_handler,
@@ -92,6 +93,7 @@ class _RecordingQuery:
     def __init__(self) -> None:
         self.answered = False
         self.edits: list[tuple[str, object]] = []
+        self.message = SimpleNamespace(chat_id=1, message_id=10)
 
     async def answer(self) -> None:
         self.answered = True
@@ -1029,8 +1031,7 @@ async def test_start_assignment_round_callback_handler_starts_selected_round() -
     finally:
         bot_module._send_question = original
 
-    assert query.edits[0][0] == "📘 Homework round started."
-    assert query.edits[1][0] == "Translation: кот"
+    assert query.edits == [("Translation: кот", None)]
 
 
 @pytest.mark.anyio
@@ -1050,6 +1051,67 @@ async def test_start_assignment_round_callback_handler_shows_batch_picker_first(
         "start:launch:homework:batch:5",
         "start:launch:homework:batch:10",
     ]
+
+
+@pytest.mark.anyio
+async def test_continue_session_handler_resends_assignment_progress_for_homework_session() -> None:
+    query = _RecordingQuery()
+    sent_progress: list[str] = []
+    sent_questions: list[str] = []
+
+    async def _fake_send_progress(context, *, message, user, kind, active_session=None):  # noqa: ANN001
+        sent_progress.append(kind.value)
+
+    async def _fake_send_question(update, context, question):  # noqa: ANN001
+        sent_questions.append(question.prompt)
+
+    import englishbot.bot as bot_module
+
+    original_send_progress = bot_module._send_or_update_assignment_progress_message
+    original_send_question = bot_module._send_question
+    bot_module._send_or_update_assignment_progress_message = _fake_send_progress
+    bot_module._send_question = _fake_send_question
+    try:
+        await continue_session_handler(
+            SimpleNamespace(
+                callback_query=query,
+                effective_user=SimpleNamespace(id=123, language_code="en"),
+            ),
+            SimpleNamespace(
+                application=SimpleNamespace(
+                    bot_data={
+                        "training_service": SimpleNamespace(
+                            get_current_question=lambda user_id: SimpleNamespace(  # noqa: ARG005
+                                session_id="s1",
+                                item_id="cat",
+                                mode=TrainingMode.MEDIUM,
+                                prompt="Translation: кот",
+                                image_ref=None,
+                                correct_answer="Cat",
+                                options=None,
+                                input_hint=None,
+                                letter_hint="a c t",
+                            ),
+                            get_active_session=lambda user_id: SimpleNamespace(  # noqa: ARG005
+                                session_id="s1",
+                                source_tag="assignment:homework:goal-1",
+                                mode=TrainingMode.MEDIUM,
+                                current_position=1,
+                                total_items=5,
+                            ),
+                        )
+                    }
+                ),
+                user_data={},
+            ),  # type: ignore[arg-type]
+        )
+    finally:
+        bot_module._send_or_update_assignment_progress_message = original_send_progress
+        bot_module._send_question = original_send_question
+
+    assert query.edits[0][0] == "Continuing your current session."
+    assert sent_progress == ["homework"]
+    assert sent_questions == ["Translation: кот"]
 
 
 @pytest.mark.anyio

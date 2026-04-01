@@ -5035,6 +5035,17 @@ async def continue_session_handler(update: Update, context: ContextTypes.DEFAULT
     _record_assignment_activity(context, user_id=user.id)
     context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
     await query.edit_message_text(_tg("continue_current_session", context=context, user=user))
+    active_session = _service(context).get_active_session(user_id=user.id)
+    assignment_kind = _assignment_kind_from_session(active_session)
+    callback_message = getattr(query, "message", None)
+    if assignment_kind is not None and callback_message is not None:
+        await _send_or_update_assignment_progress_message(
+            context,
+            message=callback_message,
+            user=user,
+            kind=assignment_kind,
+            active_session=active_session,
+        )
     await _send_question(update, context, question)
 
 
@@ -5105,14 +5116,6 @@ async def start_assignment_round_callback_handler(update: Update, context: Conte
         )
         return
     context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
-    await query.edit_message_text(
-        _tg(
-            "assignment_round_started",
-            context=context,
-            user=user,
-            label=_assignment_kind_label(kind, context=context, user=user),
-        )
-    )
     callback_message = getattr(query, "message", None)
     if callback_message is not None:
         await _send_or_update_assignment_progress_message(
