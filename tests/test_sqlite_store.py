@@ -840,7 +840,7 @@ def test_sqlite_content_store_word_stats_weekly_points_and_homework_goals(tmp_pa
     assert store.list_active_homework_words(user_id=1) == {"cat": 2}
 
 
-def test_sqlite_store_homework_stage_progression_and_autoskip(tmp_path: Path) -> None:
+def test_sqlite_store_homework_stage_progression_and_bonus_hard_skip(tmp_path: Path) -> None:
     from englishbot.domain.models import GoalPeriod, GoalType
 
     store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
@@ -871,37 +871,62 @@ def test_sqlite_store_homework_stage_progression_and_autoskip(tmp_path: Path) ->
         current_level=0,
     )
     assert store.get_homework_stage_mode(user_id=5, item_id="cat") is TrainingMode.MEDIUM
+
+
+def test_sqlite_store_can_skip_bonus_hard_explicitly(tmp_path: Path) -> None:
+    from englishbot.domain.models import GoalPeriod, GoalType
+
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+            ],
+        }
+    )
+    goal = store.assign_goal(
+        user_id=6,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        required_level=2,
+        target_word_ids=["cat"],
+    )
     store.update_homework_word_progress(
-        user_id=5,
+        user_id=6,
         word_id="cat",
         mode=TrainingMode.EASY,
         is_correct=True,
         current_level=0,
+        goal_id=goal.id,
     )
-    assert store.get_homework_stage_mode(user_id=5, item_id="cat") is TrainingMode.MEDIUM
     store.update_homework_word_progress(
-        user_id=5,
+        user_id=6,
         word_id="cat",
         mode=TrainingMode.MEDIUM,
         is_correct=True,
-        current_level=2,
-    )
-    assert store.get_homework_stage_mode(user_id=5, item_id="cat") is TrainingMode.HARD
-    store.update_homework_word_progress(
-        user_id=5,
-        word_id="cat",
-        mode=TrainingMode.HARD,
-        is_correct=False,
-        current_level=2,
+        current_level=1,
+        goal_id=goal.id,
+        offer_bonus_hard=False,
     )
     store.update_homework_word_progress(
-        user_id=5,
+        user_id=6,
         word_id="cat",
-        mode=TrainingMode.HARD,
-        is_correct=False,
-        current_level=2,
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=1,
+        goal_id=goal.id,
+        offer_bonus_hard=True,
     )
-    assert store.get_homework_stage_mode(user_id=5, item_id="cat") is TrainingMode.MEDIUM
+
+    assert store.get_homework_stage_mode(user_id=6, item_id="cat", goal_id=goal.id) is TrainingMode.HARD
+
+    store.skip_homework_bonus_hard(user_id=6, word_id="cat", goal_id=goal.id)
+
+    assert store.get_homework_stage_mode(user_id=6, item_id="cat", goal_id=goal.id) is TrainingMode.MEDIUM
+    assert store.list_goal_word_details(goal_id=goal.id, user_id=6)[0]["hard_skipped"] is True
 
 
 def test_sqlite_store_tracks_recent_session_words(tmp_path: Path) -> None:

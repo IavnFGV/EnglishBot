@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from types import SimpleNamespace
 
 import pytest
 
@@ -32,6 +33,7 @@ from englishbot.domain.models import (
     TrainingSession,
     UserProgress,
     VocabularyItem,
+    WordStats,
 )
 from englishbot.infrastructure.repositories import (
     InMemoryLessonRepository,
@@ -40,6 +42,42 @@ from englishbot.infrastructure.repositories import (
     InMemoryUserProgressRepository,
     InMemoryVocabularyRepository,
 )
+
+
+class _HomeworkBonusProgressRepository(InMemoryUserProgressRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self._word_stats: dict[tuple[int, str], WordStats] = {}
+        self.homework_calls: list[tuple[int, str, TrainingMode, bool, str | None, bool]] = []
+
+    def get_word_stats(self, user_id: int, item_id: str):
+        return self._word_stats.get((user_id, item_id))
+
+    def save_word_stats(self, stats) -> None:
+        self._word_stats[(stats.user_id, stats.word_id)] = stats
+
+    def update_goals_progress(self, *, user_id: int, word_id: str, topic_id: str, is_correct: bool, current_level: int) -> None:  # noqa: ARG002
+        return None
+
+    def award_weekly_points(self, *, user_id: int, word_id: str, mode: TrainingMode, level_up_delta: int, awarded_at) -> int:  # noqa: ANN001, ARG002
+        return 0
+
+    def update_homework_word_progress(
+        self,
+        *,
+        user_id: int,
+        word_id: str,
+        mode: TrainingMode,
+        is_correct: bool,
+        current_level: int,
+        goal_id: str | None = None,
+        offer_bonus_hard: bool = False,
+    ):
+        self.homework_calls.append((user_id, word_id, mode, is_correct, goal_id, offer_bonus_hard))
+        bonus_hard_unlocked = (
+            mode is TrainingMode.MEDIUM and is_correct and offer_bonus_hard
+        )
+        return SimpleNamespace(bonus_hard_unlocked=bonus_hard_unlocked)
 
 
 def build_service(
@@ -376,6 +414,58 @@ def test_submit_answer_refuses_extra_answer_after_completion(
     assert outcome.summary is not None
     with pytest.raises(InvalidSessionStateError):
         service.submit_answer(user_id=88, answer=question.correct_answer)
+
+
+def test_submit_answer_can_insert_bonus_hard_without_changing_session_total(
+    vocabulary_items: list[VocabularyItem],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("englishbot.application.training_use_cases.random.random", lambda: 0.0)
+    session_repository = InMemorySessionRepository()
+    progress_repository = _HomeworkBonusProgressRepository()
+    vocabulary_repository = InMemoryVocabularyRepository(vocabulary_items)
+    question_factory = QuestionFactory(random.Random(1))
+    get_current_question = GetCurrentQuestionUseCase(
+        vocabulary_repository=vocabulary_repository,
+        session_repository=session_repository,
+        question_factory=question_factory,
+    )
+    submit_answer = SubmitAnswerUseCase(
+        progress_repository=progress_repository,
+        session_repository=session_repository,
+        get_current_question=get_current_question,
+        answer_checker=AnswerChecker(),
+        summary_calculator=SessionSummaryCalculator(),
+    )
+    session = TrainingSession(
+        id="session-hw-bonus",
+        user_id=15,
+        topic_id="seasons",
+        source_tag="assignment:homework:goal-1",
+        mode=TrainingMode.MEDIUM,
+        items=[SessionItem(order=0, vocabulary_item_id="7", mode=TrainingMode.MEDIUM)],
+    )
+    session_repository.save(session)
+    progress_repository.save_word_stats(WordStats(user_id=15, word_id="7"))
+
+    first_outcome = submit_answer.execute(user_id=15, answer="summer")
+
+    assert first_outcome.summary is None
+    assert first_outcome.next_question is not None
+    assert first_outcome.next_question.mode is TrainingMode.HARD
+    assert first_outcome.next_question.letter_hint == "S"
+    active_session = session_repository.get_active_by_user(15)
+    assert active_session is not None
+    assert active_session.total_items == 1
+    assert active_session.current_index == 1
+    assert active_session.bonus_item_id == "7"
+    assert progress_repository.homework_calls[-1] == (15, "7", TrainingMode.MEDIUM, True, "goal-1", True)
+
+    second_outcome = submit_answer.execute(user_id=15, answer="summer")
+
+    assert second_outcome.next_question is None
+    assert second_outcome.summary == SessionSummary(total_questions=1, correct_answers=1)
+    assert session_repository.get_active_by_user(15) is None
 
 
 def test_training_flow_integration_for_medium_mode_and_unique_session_ids(

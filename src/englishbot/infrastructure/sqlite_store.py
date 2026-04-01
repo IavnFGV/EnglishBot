@@ -95,6 +95,11 @@ class PendingTelegramNotification:
     created_at: datetime
 
 
+@dataclass(slots=True, frozen=True)
+class HomeworkProgressUpdateOutcome:
+    bonus_hard_unlocked: bool = False
+
+
 def _optional_json_str(value: object) -> str | None:
     if value is None:
         return None
@@ -297,6 +302,8 @@ class SQLiteContentStore:
                     source_tag TEXT,
                     mode TEXT NOT NULL,
                     current_index INTEGER NOT NULL DEFAULT 0,
+                    bonus_item_id TEXT REFERENCES learning_items(id) ON DELETE SET NULL,
+                    bonus_mode TEXT,
                     completed INTEGER NOT NULL DEFAULT 0
                 );
 
@@ -314,6 +321,7 @@ class SQLiteContentStore:
                     item_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
                     submitted_answer TEXT NOT NULL,
                     is_correct INTEGER NOT NULL,
+                    counts_toward_summary INTEGER NOT NULL DEFAULT 1,
                     PRIMARY KEY (session_id, sort_order)
                 );
 
@@ -481,6 +489,17 @@ class SQLiteContentStore:
             }
             if "source_tag" not in session_columns:
                 connection.execute("ALTER TABLE training_sessions ADD COLUMN source_tag TEXT")
+            if "bonus_item_id" not in session_columns:
+                connection.execute("ALTER TABLE training_sessions ADD COLUMN bonus_item_id TEXT")
+            if "bonus_mode" not in session_columns:
+                connection.execute("ALTER TABLE training_sessions ADD COLUMN bonus_mode TEXT")
+            session_answer_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(training_session_answers)").fetchall()
+            }
+            if "counts_toward_summary" not in session_answer_columns:
+                connection.execute(
+                    "ALTER TABLE training_session_answers ADD COLUMN counts_toward_summary INTEGER NOT NULL DEFAULT 1"
+                )
             telegram_login_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(telegram_user_logins)").fetchall()
             }
@@ -1703,22 +1722,48 @@ class SQLiteContentStore:
             ).fetchall()
         return {str(row["word_id"]) for row in rows}
 
-    def get_homework_stage_mode(self, *, user_id: int, item_id: str) -> TrainingMode | None:
+    def get_homework_stage_mode(
+        self,
+        *,
+        user_id: int,
+        item_id: str,
+        goal_id: str | None = None,
+    ) -> TrainingMode | None:
         self.initialize()
         with _connect(self._db_path) as connection:
+            goal_filter = "AND p.goal_id = ?" if goal_id is not None else ""
+            status_filter = "AND g.status IN (?, ?)" if goal_id is not None else "AND g.status = ?"
+            parameters: tuple[object, ...]
+            if goal_id is not None:
+                parameters = (
+                    user_id,
+                    item_id,
+                    GoalStatus.ACTIVE.value,
+                    GoalStatus.COMPLETED.value,
+                    GoalPeriod.HOMEWORK.value,
+                    goal_id,
+                )
+            else:
+                parameters = (
+                    user_id,
+                    item_id,
+                    GoalStatus.ACTIVE.value,
+                    GoalPeriod.HOMEWORK.value,
+                )
             row = connection.execute(
-                """
+                f"""
                 SELECT p.*
                 FROM user_homework_word_progress p
                 JOIN user_goals g ON g.id = p.goal_id
                 WHERE p.user_id = ?
                   AND p.word_id = ?
-                  AND g.status = ?
+                  {status_filter}
                   AND g.goal_period = ?
+                  {goal_filter}
                 ORDER BY g.created_at DESC
                 LIMIT 1
                 """,
-                (user_id, item_id, GoalStatus.ACTIVE.value, GoalPeriod.HOMEWORK.value),
+                parameters,
             ).fetchone()
         if row is None:
             return None
@@ -1738,21 +1783,44 @@ class SQLiteContentStore:
         mode: TrainingMode,
         is_correct: bool,
         current_level: int,
-    ) -> None:
+        goal_id: str | None = None,
+        offer_bonus_hard: bool = False,
+    ) -> HomeworkProgressUpdateOutcome:
         self.initialize()
+        bonus_hard_unlocked = False
         with _connect(self._db_path) as connection:
+            goal_filter = "AND p.goal_id = ?" if goal_id is not None else ""
+            status_filter = "AND g.status IN (?, ?)" if goal_id is not None else "AND g.status = ?"
+            parameters: tuple[object, ...]
+            if goal_id is not None:
+                parameters = (
+                    user_id,
+                    word_id,
+                    GoalStatus.ACTIVE.value,
+                    GoalStatus.COMPLETED.value,
+                    GoalPeriod.HOMEWORK.value,
+                    goal_id,
+                )
+            else:
+                parameters = (
+                    user_id,
+                    word_id,
+                    GoalStatus.ACTIVE.value,
+                    GoalPeriod.HOMEWORK.value,
+                )
             rows = connection.execute(
-                """
+                f"""
                 SELECT p.goal_id, p.easy_success_count, p.medium_success_count, p.hard_success_count,
                        p.easy_mastered, p.medium_mastered, p.hard_mastered, p.hard_skipped, p.hard_failed_streak
                 FROM user_homework_word_progress p
                 JOIN user_goals g ON g.id = p.goal_id
                 WHERE p.user_id = ?
                   AND p.word_id = ?
-                  AND g.status = ?
+                  {status_filter}
                   AND g.goal_period = ?
+                  {goal_filter}
                 """,
-                (user_id, word_id, GoalStatus.ACTIVE.value, GoalPeriod.HOMEWORK.value),
+                parameters,
             ).fetchall()
             for row in rows:
                 easy_success_count = int(row["easy_success_count"])
@@ -1763,6 +1831,7 @@ class SQLiteContentStore:
                 hard_mastered = bool(row["hard_mastered"])
                 hard_skipped = bool(row["hard_skipped"])
                 hard_failed_streak = int(row["hard_failed_streak"])
+                medium_was_mastered = medium_mastered
 
                 if is_correct and mode is TrainingMode.EASY:
                     easy_success_count += 1
@@ -1774,18 +1843,23 @@ class SQLiteContentStore:
                     hard_success_count += 1
                     easy_mastered = True
                     medium_mastered = True
-                    hard_mastered = hard_success_count >= 2
+                    hard_mastered = True
                     hard_failed_streak = 0
+                    hard_skipped = False
                 elif mode is TrainingMode.HARD and not is_correct:
                     hard_failed_streak += 1
-                    if hard_failed_streak >= 2:
-                        hard_skipped = True
+                    hard_skipped = True
 
                 if medium_success_count >= 2:
                     medium_mastered = True
                 if current_level >= 2:
                     easy_mastered = True
                     medium_mastered = True
+                if medium_mastered and not medium_was_mastered and not hard_mastered and not hard_skipped:
+                    if offer_bonus_hard:
+                        bonus_hard_unlocked = True
+                    else:
+                        hard_skipped = True
                 if hard_mastered:
                     hard_skipped = False
 
@@ -1839,6 +1913,54 @@ class SQLiteContentStore:
                     """,
                     (mastered, status, row["goal_id"]),
                 )
+        return HomeworkProgressUpdateOutcome(bonus_hard_unlocked=bonus_hard_unlocked)
+
+    def skip_homework_bonus_hard(
+        self,
+        *,
+        user_id: int,
+        word_id: str,
+        goal_id: str | None = None,
+    ) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            goal_filter = "AND p.goal_id = ?" if goal_id is not None else ""
+            status_filter = "AND g.status IN (?, ?)" if goal_id is not None else "AND g.status = ?"
+            parameters: tuple[object, ...]
+            if goal_id is not None:
+                parameters = (
+                    user_id,
+                    word_id,
+                    GoalStatus.ACTIVE.value,
+                    GoalStatus.COMPLETED.value,
+                    GoalPeriod.HOMEWORK.value,
+                    goal_id,
+                )
+            else:
+                parameters = (
+                    user_id,
+                    word_id,
+                    GoalStatus.ACTIVE.value,
+                    GoalPeriod.HOMEWORK.value,
+                )
+            connection.execute(
+                f"""
+                UPDATE user_homework_word_progress AS p
+                SET hard_skipped = 1,
+                    hard_failed_streak = 0
+                WHERE p.user_id = ?
+                  AND p.word_id = ?
+                  AND EXISTS (
+                      SELECT 1
+                      FROM user_goals g
+                      WHERE g.id = p.goal_id
+                        {status_filter}
+                        AND g.goal_period = ?
+                  )
+                  {goal_filter}
+                """,
+                parameters,
+            )
 
     def update_goals_progress(
         self,
@@ -2006,8 +2128,8 @@ class SQLiteContentStore:
             connection.execute(
                 """
                 INSERT INTO training_sessions (
-                    id, user_id, topic_id, lesson_id, source_tag, mode, current_index, completed
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    id, user_id, topic_id, lesson_id, source_tag, mode, current_index, bonus_item_id, bonus_mode, completed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     user_id=excluded.user_id,
                     topic_id=excluded.topic_id,
@@ -2015,6 +2137,8 @@ class SQLiteContentStore:
                     source_tag=excluded.source_tag,
                     mode=excluded.mode,
                     current_index=excluded.current_index,
+                    bonus_item_id=excluded.bonus_item_id,
+                    bonus_mode=excluded.bonus_mode,
                     completed=excluded.completed
                 """,
                 (
@@ -2025,6 +2149,8 @@ class SQLiteContentStore:
                     session.source_tag,
                     session.mode.value,
                     session.current_index,
+                    session.bonus_item_id,
+                    session.bonus_mode.value if session.bonus_mode is not None else None,
                     1 if session.completed else 0,
                 ),
             )
@@ -2054,10 +2180,24 @@ class SQLiteContentStore:
             for sort_order, answer in enumerate(session.answer_history):
                 connection.execute(
                     """
-                    INSERT INTO training_session_answers (session_id, sort_order, item_id, submitted_answer, is_correct)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO training_session_answers (
+                        session_id,
+                        sort_order,
+                        item_id,
+                        submitted_answer,
+                        is_correct,
+                        counts_toward_summary
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (session.id, sort_order, answer.item_id, answer.submitted_answer, 1 if answer.is_correct else 0),
+                    (
+                        session.id,
+                        sort_order,
+                        answer.item_id,
+                        answer.submitted_answer,
+                        1 if answer.is_correct else 0,
+                        1 if answer.counts_toward_summary else 0,
+                    ),
                 )
             if not session.completed:
                 connection.execute(
@@ -2087,7 +2227,17 @@ class SQLiteContentStore:
         with _connect(self._db_path) as connection:
             session_row = connection.execute(
                 """
-                SELECT id, user_id, topic_id, lesson_id, source_tag, mode, current_index, completed
+                SELECT
+                    id,
+                    user_id,
+                    topic_id,
+                    lesson_id,
+                    source_tag,
+                    mode,
+                    current_index,
+                    bonus_item_id,
+                    bonus_mode,
+                    completed
                 FROM training_sessions
                 WHERE id = ?
                 """,
@@ -2106,7 +2256,7 @@ class SQLiteContentStore:
             ).fetchall()
             answer_rows = connection.execute(
                 """
-                SELECT sort_order, item_id, submitted_answer, is_correct
+                SELECT sort_order, item_id, submitted_answer, is_correct, counts_toward_summary
                 FROM training_session_answers
                 WHERE session_id = ?
                 ORDER BY sort_order
@@ -2121,6 +2271,12 @@ class SQLiteContentStore:
             source_tag=session_row["source_tag"],
             mode=TrainingMode(session_row["mode"]),
             current_index=session_row["current_index"],
+            bonus_item_id=session_row["bonus_item_id"],
+            bonus_mode=(
+                TrainingMode(session_row["bonus_mode"])
+                if session_row["bonus_mode"] is not None
+                else None
+            ),
             completed=bool(session_row["completed"]),
             items=[
                 SessionItem(order=row["sort_order"], vocabulary_item_id=row["vocabulary_item_id"])
@@ -2137,6 +2293,7 @@ class SQLiteContentStore:
                     item_id=row["item_id"],
                     submitted_answer=row["submitted_answer"],
                     is_correct=bool(row["is_correct"]),
+                    counts_toward_summary=bool(row["counts_toward_summary"]),
                 )
                 for row in answer_rows
             ],
@@ -2979,8 +3136,14 @@ class SQLiteUserProgressRepository:
     def list_due_review_words(self, *, user_id: int) -> set[str]:
         return self._store.list_due_review_words(user_id=user_id)
 
-    def get_homework_stage_mode(self, *, user_id: int, item_id: str) -> TrainingMode | None:
-        return self._store.get_homework_stage_mode(user_id=user_id, item_id=item_id)
+    def get_homework_stage_mode(
+        self,
+        *,
+        user_id: int,
+        item_id: str,
+        goal_id: str | None = None,
+    ) -> TrainingMode | None:
+        return self._store.get_homework_stage_mode(user_id=user_id, item_id=item_id, goal_id=goal_id)
 
     def update_homework_word_progress(
         self,
@@ -2990,14 +3153,27 @@ class SQLiteUserProgressRepository:
         mode: TrainingMode,
         is_correct: bool,
         current_level: int,
-    ) -> None:
-        self._store.update_homework_word_progress(
+        goal_id: str | None = None,
+        offer_bonus_hard: bool = False,
+    ) -> HomeworkProgressUpdateOutcome:
+        return self._store.update_homework_word_progress(
             user_id=user_id,
             word_id=word_id,
             mode=mode,
             is_correct=is_correct,
             current_level=current_level,
+            goal_id=goal_id,
+            offer_bonus_hard=offer_bonus_hard,
         )
+
+    def skip_homework_bonus_hard(
+        self,
+        *,
+        user_id: int,
+        word_id: str,
+        goal_id: str | None = None,
+    ) -> None:
+        self._store.skip_homework_bonus_hard(user_id=user_id, word_id=word_id, goal_id=goal_id)
 
 
 class SQLiteSessionRepository:

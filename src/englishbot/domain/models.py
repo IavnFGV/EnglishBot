@@ -101,6 +101,7 @@ class SessionAnswer:
     item_id: str
     submitted_answer: str
     is_correct: bool
+    counts_toward_summary: bool = True
 
 
 @dataclass(slots=True)
@@ -113,6 +114,8 @@ class TrainingSession:
     lesson_id: str | None = None
     source_tag: str | None = None
     current_index: int = 0
+    bonus_item_id: str | None = None
+    bonus_mode: TrainingMode | None = None
     answer_history: list[SessionAnswer] = field(default_factory=list)
     completed: bool = False
 
@@ -123,13 +126,36 @@ class TrainingSession:
     def current_item_id(self) -> str:
         if self.completed:
             raise ValueError("Session is already completed.")
+        if self.bonus_item_id is not None:
+            return self.bonus_item_id
         if self.current_index >= len(self.items):
             raise ValueError("Session has no current item.")
         return self.items[self.current_index].vocabulary_item_id
 
-    def record_answer(self, *, answer: str, is_correct: bool) -> None:
+    def record_answer(
+        self,
+        *,
+        answer: str,
+        is_correct: bool,
+        start_bonus_for_item_id: str | None = None,
+        bonus_mode: TrainingMode | None = None,
+    ) -> None:
         if self.completed:
             raise ValueError("Session is already completed.")
+        if self.bonus_item_id is not None:
+            self.answer_history.append(
+                SessionAnswer(
+                    item_id=self.bonus_item_id,
+                    submitted_answer=answer.strip(),
+                    is_correct=is_correct,
+                    counts_toward_summary=False,
+                )
+            )
+            self.bonus_item_id = None
+            self.bonus_mode = None
+            if self.current_index >= len(self.items):
+                self.completed = True
+            return
         if self.current_index >= len(self.items):
             raise ValueError("Session index is out of bounds.")
         self.answer_history.append(
@@ -140,6 +166,11 @@ class TrainingSession:
             )
         )
         self.current_index += 1
+        if start_bonus_for_item_id is not None:
+            self.bonus_item_id = start_bonus_for_item_id
+            self.bonus_mode = bonus_mode
+            self.completed = False
+            return
         if self.current_index >= len(self.items):
             self.completed = True
 

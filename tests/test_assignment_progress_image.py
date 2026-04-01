@@ -112,6 +112,88 @@ def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path
     values = {item.word_id: item.progress_value for item in snapshot.segments}
     assert values["april"] == pytest.approx(0.33)
     assert values["august"] == pytest.approx(1.0)
+    markers = {item.word_id: item.bonus_hard_pending for item in snapshot.segments}
+    assert markers["april"] is False
+    assert markers["august"] is False
+
+
+def test_build_assignment_progress_snapshot_marks_bonus_hard_pending_and_completed(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=12,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["august"],
+    )
+    store.update_homework_word_progress(
+        user_id=12,
+        word_id="august",
+        mode=TrainingMode.EASY,
+        is_correct=True,
+        current_level=0,
+        goal_id=goal.id,
+    )
+    store.update_homework_word_progress(
+        user_id=12,
+        word_id="august",
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=1,
+        goal_id=goal.id,
+        offer_bonus_hard=False,
+    )
+    store.update_homework_word_progress(
+        user_id=12,
+        word_id="august",
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=1,
+        goal_id=goal.id,
+        offer_bonus_hard=True,
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": store,
+                "telegram_ui_language": "en",
+            }
+        )
+    )
+
+    pending_snapshot = bot._build_assignment_progress_snapshot(
+        context=context,  # type: ignore[arg-type]
+        user_id=12,
+        kind=AssignmentSessionKind.HOMEWORK,
+        user=SimpleNamespace(id=12, language_code="en"),
+        goal_id=goal.id,
+    )
+
+    assert pending_snapshot is not None
+    assert pending_snapshot.segments[0].progress_value == pytest.approx(1.0)
+    assert pending_snapshot.segments[0].bonus_hard_pending is True
+    assert pending_snapshot.segments[0].bonus_hard_completed is False
+
+    store.update_homework_word_progress(
+        user_id=12,
+        word_id="august",
+        mode=TrainingMode.HARD,
+        is_correct=True,
+        current_level=1,
+        goal_id=goal.id,
+    )
+
+    completed_snapshot = bot._build_assignment_progress_snapshot(
+        context=context,  # type: ignore[arg-type]
+        user_id=12,
+        kind=AssignmentSessionKind.HOMEWORK,
+        user=SimpleNamespace(id=12, language_code="en"),
+        goal_id=goal.id,
+    )
+
+    assert completed_snapshot is not None
+    assert completed_snapshot.segments[0].bonus_hard_pending is False
+    assert completed_snapshot.segments[0].bonus_hard_completed is True
 
 
 def test_build_assignment_progress_snapshot_uses_current_goal_when_goal_id_is_provided(tmp_path: Path) -> None:

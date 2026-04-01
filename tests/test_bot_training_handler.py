@@ -23,9 +23,11 @@ from englishbot.domain.models import (
     GoalPeriod,
     GoalStatus,
     GoalType,
+    SessionItem,
     SessionSummary,
     TrainingMode,
     TrainingQuestion,
+    TrainingSession,
 )
 
 
@@ -118,6 +120,23 @@ class _FakeBot:
 
     async def delete_message(self, *, chat_id: int, message_id: int) -> None:
         self.deleted_messages.append((chat_id, message_id))
+
+
+class _BonusSkipStore:
+    def __init__(self, session: TrainingSession) -> None:
+        self.session = session
+        self.skipped: list[tuple[int, str, str | None]] = []
+        self.saved_sessions: list[TrainingSession] = []
+
+    def get_active_session_by_user(self, user_id: int):  # noqa: ARG002
+        return None if self.session.completed else self.session
+
+    def skip_homework_bonus_hard(self, *, user_id: int, word_id: str, goal_id: str | None = None) -> None:
+        self.skipped.append((user_id, word_id, goal_id))
+
+    def save_session(self, session: TrainingSession) -> None:
+        self.session = session
+        self.saved_sessions.append(session)
 
 
 class _ExplodingService:
@@ -1003,6 +1022,45 @@ async def test_send_feedback_keeps_compact_first_line_and_restores_assignment_pr
     assert "📘 Homework progress:" in message.replies[0]
     assert "🧩 Round left: 0" in message.replies[0]
     assert "🏁" in message.replies[0]
+
+
+@pytest.mark.anyio
+async def test_bonus_hard_skip_handler_completes_bonus_without_counting_extra_round_item() -> None:
+    message = _FakeEditableMessage("bonus")
+    query = _FakeQuery("bonus:skip:session-bonus:cat", message)
+    store = _BonusSkipStore(
+        TrainingSession(
+            id="session-bonus",
+            user_id=123,
+            topic_id="animals",
+            mode=TrainingMode.MEDIUM,
+            current_index=1,
+            bonus_item_id="cat",
+            bonus_mode=TrainingMode.HARD,
+            items=[SessionItem(order=0, vocabulary_item_id="cat", mode=TrainingMode.MEDIUM)],
+        )
+    )
+    context = SimpleNamespace(
+        bot=_FakeBot(),
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _IdleService(),
+                "content_store": store,
+                "telegram_ui_language": "en",
+            }
+        ),
+        user_data={},
+    )
+
+    await bot.bonus_hard_skip_handler(
+        SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=123, language_code="en")),
+        context,  # type: ignore[arg-type]
+    )
+
+    assert store.skipped == [(123, "cat", None)]
+    assert store.session.completed is True
+    assert store.session.bonus_item_id is None
+    assert message.replies == ["🔥 Bonus skipped.\nSession complete: 0/1 correct."]
 
 
 @pytest.mark.anyio

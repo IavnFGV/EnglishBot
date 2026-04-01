@@ -85,9 +85,11 @@ Current rules:
 
 Difficulty progress inside homework is intentionally stricter than plain topic practice:
 
-- easy answers warm the word up
-- medium answers move it further
-- hard answers can finish the word faster
+- one correct `easy` answer warms the word up
+- two correct `medium` answers finish the base homework path for the word
+- after that, the bot may occasionally offer one optional bonus `hard` step
+- the bonus `hard` step does not add to homework-left or round-left counters
+- when bonus `hard` is ready or cleared, the progress circle marks that word with `🔥`
 
 The deadline helps organize the task, but homework is finished only when the assigned words actually reach their required state.
 

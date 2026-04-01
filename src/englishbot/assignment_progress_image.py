@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,8 @@ class AssignmentProgressSegment:
     word_id: str
     label: str
     progress_value: float
+    bonus_hard_pending: bool = False
+    bonus_hard_completed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +75,24 @@ def render_assignment_progress_image(
             end=segment_end,
             fill=fill_color,
         )
+        if segment.bonus_hard_pending or segment.bonus_hard_completed:
+            marker_angle = math.radians((segment_start + segment_end) / 2)
+            marker_radius = int(outer_radius * 0.82)
+            marker_x = int(center_x + math.cos(marker_angle) * marker_radius)
+            marker_y = int(center_y + math.sin(marker_angle) * marker_radius)
+            marker_font = _load_font(max(18, size // 18))
+            marker_text = "🔥"
+            marker_box = draw.textbbox((0, 0), marker_text, font=marker_font)
+            marker_width = marker_box[2] - marker_box[0]
+            marker_height = marker_box[3] - marker_box[1]
+            draw.text(
+                (marker_x - marker_width / 2, marker_y - marker_height / 2),
+                marker_text,
+                font=marker_font,
+                fill="#d35400" if segment.bonus_hard_pending else "#b03a2e",
+                stroke_width=2,
+                stroke_fill="#fff8ef",
+            )
 
     draw.ellipse(
         [

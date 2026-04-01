@@ -42,6 +42,25 @@ class QuestionFactory:
             if session_item.vocabulary_item_id == item.id and session_item.mode is not None:
                 question_mode = session_item.mode
                 break
+        if session.bonus_item_id == item.id and session.bonus_mode is not None:
+            question_mode = session.bonus_mode
+            first_letter = next((char for char in item.english_word if char.isalpha()), item.english_word[:1]).upper()
+            prompt = (
+                f"Translation: {item.translation}\n"
+                f"Visual clue: {'Image is shown above.' if item.image_ref else 'No image yet. Use the translation clue.'}\n"
+                f"First letter: {first_letter}\n"
+                "Bonus challenge. Type the English word."
+            )
+            return TrainingQuestion(
+                session_id=session.id,
+                item_id=item.id,
+                mode=question_mode,
+                prompt=prompt,
+                image_ref=item.image_ref,
+                correct_answer=item.english_word,
+                input_hint="Type the word or skip this bonus challenge.",
+                letter_hint=first_letter,
+            )
         image_line = (
             "Image is shown above."
             if item.image_ref

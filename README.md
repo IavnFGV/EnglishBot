@@ -208,6 +208,12 @@ Homework completion rules:
 
 - `new_words` homework counts a word when the learner answers that assigned word correctly
 - `word_level_homework` is stricter: the word must reach the target homework level
+- current word-level path is:
+  - `1 easy`
+  - `2 medium`
+  - then, with a small random chance, one optional bonus `hard` step
+- the bonus `hard` step does not increase homework remaining counters or round size
+- when a bonus `hard` step appears, the homework progress circle marks that word with `🔥`
 - a homework for 10 words is not the same as 10 rounds
 - a deadline helps organize the task, but completion still depends on word progress
 

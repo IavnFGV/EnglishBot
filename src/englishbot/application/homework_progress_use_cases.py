@@ -494,6 +494,7 @@ class StartAssignmentRoundUseCase:
         items = self._resolve_items(selected_words)
         item_modes = self._build_item_modes(
             user_id=user_id,
+            goal_id=selected_goal.id,
             selected_words=selected_words,
             items=items,
             batch_size=effective_batch_size,
@@ -539,6 +540,7 @@ class StartAssignmentRoundUseCase:
         self,
         *,
         user_id: int,
+        goal_id: str,
         selected_words: list[AssignmentWordView],
         items: list[VocabularyItem],
         batch_size: int,
@@ -549,7 +551,11 @@ class StartAssignmentRoundUseCase:
         item_modes: dict[str, TrainingMode] = {}
         for item in items:
             selected_word = selected_word_map[item.id]
-            mode = self._progress_repository.get_homework_stage_mode(user_id=user_id, item_id=item.id)
+            mode = self._progress_repository.get_homework_stage_mode(
+                user_id=user_id,
+                item_id=item.id,
+                goal_id=goal_id,
+            )
             if mode is None:
                 word_stats = self._progress_repository.get_word_stats(user_id, item.id)
                 current_level = word_stats.current_level if word_stats is not None else 0

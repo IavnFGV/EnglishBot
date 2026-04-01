@@ -25,6 +25,10 @@ class SessionSummaryCalculator:
     def calculate(self, session: TrainingSession) -> SessionSummary:
         summary = SessionSummary(
             total_questions=session.total_items,
-            correct_answers=sum(1 for answer in session.answer_history if answer.is_correct),
+            correct_answers=sum(
+                1
+                for answer in session.answer_history
+                if answer.is_correct and answer.counts_toward_summary
+            ),
         )
         return summary

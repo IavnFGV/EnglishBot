@@ -38,6 +38,13 @@ from englishbot.logging_utils import logged_service_call
 logger = logging.getLogger(__name__)
 
 
+def _homework_goal_id_from_source_tag(source_tag: str | None) -> str | None:
+    if source_tag is None or not source_tag.startswith("assignment:homework:"):
+        return None
+    _, _, goal_id = source_tag.partition("assignment:homework:")
+    return goal_id or None
+
+
 @dataclass(slots=True, frozen=True)
 class AnswerOutcome:
     result: CheckResult
@@ -278,6 +285,8 @@ class SubmitAnswerUseCase:
         progress.last_seen_at = self._clock.now()
         self._progress_repository.save(progress)
         level_up_delta = 0
+        bonus_hard_started = False
+        assignment_goal_id = _homework_goal_id_from_source_tag(session.source_tag)
         if hasattr(self._progress_repository, "get_word_stats") and hasattr(
             self._progress_repository, "save_word_stats"
         ):
@@ -309,15 +318,32 @@ class SubmitAnswerUseCase:
                     current_level=word_stats.current_level,
                 )
             if hasattr(self._progress_repository, "update_homework_word_progress"):
-                self._progress_repository.update_homework_word_progress(
+                progress_update = self._progress_repository.update_homework_word_progress(
                     user_id=user_id,
                     word_id=question.item_id,
                     mode=question.mode,
                     is_correct=result.is_correct,
                     current_level=word_stats.current_level,
+                    goal_id=assignment_goal_id,
+                    offer_bonus_hard=(
+                        bool(result.is_correct)
+                        and question.mode is TrainingMode.MEDIUM
+                        and assignment_goal_id is not None
+                        and random.random() < 0.25
+                    ),
                 )
+                bonus_hard_started = bool(getattr(progress_update, "bonus_hard_unlocked", False))
         try:
-            session.record_answer(answer=answer, is_correct=result.is_correct)
+            session.record_answer(
+                answer=answer,
+                is_correct=result.is_correct,
+                start_bonus_for_item_id=(
+                    question.item_id
+                    if bonus_hard_started and result.is_correct and question.mode is TrainingMode.MEDIUM
+                    else None
+                ),
+                bonus_mode=(TrainingMode.HARD if bonus_hard_started else None),
+            )
         except ValueError as error:
             raise InvalidSessionStateError(str(error)) from error
         self._session_repository.save(session)
@@ -352,13 +378,14 @@ class GetActiveSessionUseCase:
         session = self._session_repository.get_active_by_user(user_id)
         if session is None:
             return None
+        current_position = min(session.current_index + 1, session.total_items) if session.total_items > 0 else 0
         return ActiveSessionInfo(
             session_id=session.id,
             topic_id=session.topic_id,
             lesson_id=session.lesson_id,
             source_tag=session.source_tag,
             mode=session.mode,
-            current_position=session.current_index + 1,
+            current_position=current_position,
             total_items=session.total_items,
         )
 
