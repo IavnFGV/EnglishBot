@@ -1302,11 +1302,12 @@ def _assignment_word_progress_value(
 ) -> float:
     if goal.goal_type is GoalType.WORD_LEVEL_HOMEWORK:
         required_level = int(goal.required_level or 2)
+        medium_success_count = int(row.get("medium_success_count") or 0)
         if required_level <= 1 and bool(row.get("easy_mastered")):
             return 1.0
         if required_level <= 2 and bool(row.get("medium_mastered")):
             return 1.0
-        if bool(row.get("medium_mastered")):
+        if medium_success_count >= 1:
             return 0.66
         if bool(row.get("easy_mastered")):
             return 0.33

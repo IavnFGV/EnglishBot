@@ -1453,6 +1453,8 @@ class SQLiteContentStore:
                         WHEN p.hard_skipped = 1 OR p.hard_mastered = 1 THEN ?
                         ELSE ?
                     END AS homework_mode,
+                    p.easy_success_count AS easy_success_count,
+                    p.medium_success_count AS medium_success_count,
                     p.easy_mastered AS easy_mastered,
                     p.medium_mastered AS medium_mastered,
                     p.hard_mastered AS hard_mastered,
@@ -1481,6 +1483,8 @@ class SQLiteContentStore:
                 "english_word": str(row["english_word"] or row["word_id"]),
                 "translation": str(row["translation"] or ""),
                 "homework_mode": row["homework_mode"],
+                "easy_success_count": int(row["easy_success_count"] or 0),
+                "medium_success_count": int(row["medium_success_count"] or 0),
                 "easy_mastered": bool(row["easy_mastered"]) if row["easy_mastered"] is not None else False,
                 "medium_mastered": bool(row["medium_mastered"]) if row["medium_mastered"] is not None else False,
                 "hard_mastered": bool(row["hard_mastered"]) if row["hard_mastered"] is not None else False,

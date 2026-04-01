@@ -117,6 +117,53 @@ def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path
     assert markers["august"] is False
 
 
+def test_build_assignment_progress_snapshot_shows_almost_after_first_medium(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=16,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["april"],
+    )
+    store.update_homework_word_progress(
+        user_id=16,
+        word_id="april",
+        mode=TrainingMode.EASY,
+        is_correct=True,
+        current_level=0,
+        goal_id=goal.id,
+    )
+    store.update_homework_word_progress(
+        user_id=16,
+        word_id="april",
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=1,
+        goal_id=goal.id,
+        offer_bonus_hard=False,
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": store,
+                "telegram_ui_language": "en",
+            }
+        )
+    )
+
+    snapshot = bot._build_assignment_progress_snapshot(
+        context=context,  # type: ignore[arg-type]
+        user_id=16,
+        kind=AssignmentSessionKind.HOMEWORK,
+        user=SimpleNamespace(id=16, language_code="en"),
+        goal_id=goal.id,
+    )
+
+    assert snapshot is not None
+    assert snapshot.segments[0].progress_value == pytest.approx(0.66)
+
+
 def test_build_assignment_progress_snapshot_marks_bonus_hard_pending_and_completed(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     goal = HomeworkProgressUseCase(store=store).create_goal(
