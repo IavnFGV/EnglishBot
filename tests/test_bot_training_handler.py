@@ -742,7 +742,9 @@ async def test_medium_answer_callback_handler_uses_backspace_and_repeated_letter
 
 
 @pytest.mark.anyio
-async def test_medium_answer_callback_handler_ignores_stale_message_callbacks() -> None:
+async def test_medium_answer_callback_handler_ignores_stale_message_callbacks(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     question = TrainingQuestion(
         session_id="session-medium-3",
         item_id="apple",
@@ -779,11 +781,60 @@ async def test_medium_answer_callback_handler_ignores_stale_message_callbacks() 
         ),
     )
 
-    await bot.medium_answer_callback_handler(update, context)  # type: ignore[arg-type]
+    with caplog.at_level("DEBUG", logger="englishbot.bot"):
+        await bot.medium_answer_callback_handler(update, context)  # type: ignore[arg-type]
 
     assert query.answers == 1
     assert query.edit_calls == []
     assert context.user_data["medium_task_state"].selected_letter_indexes == ()
+    assert "Medium callback ignored: stale message" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_medium_answer_callback_handler_logs_reused_letter_press(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    question = TrainingQuestion(
+        session_id="session-medium-4",
+        item_id="apple",
+        mode=TrainingMode.MEDIUM,
+        prompt="Translation: яблоко\nVisual clue: Image is shown above.\nShuffled letters hint: APLEP\nType the English word.",
+        image_ref=None,
+        correct_answer="APPLE",
+        letter_hint="APLEP",
+    )
+    message = _FakeEditableMessage("medium")
+    message.message_id = 77
+    query = _FakeQuery("medium:pick:0", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+        effective_message=message,
+    )
+    context = SimpleNamespace(
+        user_data={
+            "medium_task_state": bot._MediumTaskState(
+                session_id=question.session_id,
+                item_id=question.item_id,
+                target_word=question.correct_answer,
+                shuffled_letters=("A", "P", "L", "E", "P"),
+                selected_letter_indexes=(0,),
+                message_id=77,
+            )
+        },
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _MediumQuestionService(question),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    with caplog.at_level("DEBUG", logger="englishbot.bot"):
+        await bot.medium_answer_callback_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.edit_calls == []
+    assert "Medium callback ignored: letter already used" in caplog.text
 
 
 @pytest.mark.anyio

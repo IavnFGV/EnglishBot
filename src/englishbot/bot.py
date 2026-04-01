@@ -5469,12 +5469,24 @@ async def medium_answer_callback_handler(update: Update, context: ContextTypes.D
     state = _get_medium_task_state(context)
     message = getattr(query, "message", None)
     message_id = getattr(message, "message_id", None)
-    if (
-        state is None
-        or state.message_id is None
-        or message_id != state.message_id
-        or _service(context).get_active_session(user_id=user.id) is None
-    ):
+    if state is None:
+        logger.debug("Medium callback ignored: no medium state user_id=%s data=%s", user.id, query.data)
+        return
+    if state.message_id is None:
+        logger.debug("Medium callback ignored: state has no message_id user_id=%s data=%s", user.id, query.data)
+        return
+    if message_id != state.message_id:
+        logger.debug(
+            "Medium callback ignored: stale message user_id=%s data=%s callback_message_id=%s state_message_id=%s",
+            user.id,
+            query.data,
+            message_id,
+            state.message_id,
+        )
+        return
+    active_session = _service(context).get_active_session(user_id=user.id)
+    if active_session is None:
+        logger.debug("Medium callback ignored: no active session user_id=%s data=%s", user.id, query.data)
         return
     current_question = _service(context).get_current_question(user_id=user.id)
     if (
@@ -5482,10 +5494,21 @@ async def medium_answer_callback_handler(update: Update, context: ContextTypes.D
         or current_question.session_id != state.session_id
         or current_question.item_id != state.item_id
     ):
+        logger.debug(
+            "Medium callback ignored: question mismatch user_id=%s data=%s current_mode=%s current_session_id=%s state_session_id=%s current_item_id=%s state_item_id=%s",
+            user.id,
+            query.data,
+            current_question.mode.value,
+            current_question.session_id,
+            state.session_id,
+            current_question.item_id,
+            state.item_id,
+        )
         _clear_medium_task_state(context)
         return
     if query.data == "medium:backspace":
         if not state.selected_letter_indexes:
+            logger.debug("Medium callback ignored: backspace on empty answer user_id=%s", user.id)
             return
         state = _MediumTaskState(
             session_id=state.session_id,
@@ -5496,17 +5519,33 @@ async def medium_answer_callback_handler(update: Update, context: ContextTypes.D
             message_id=state.message_id,
         )
     elif query.data.startswith("medium:noop:"):
+        logger.debug("Medium callback ignored: noop button user_id=%s data=%s", user.id, query.data)
         return
     elif query.data.startswith("medium:pick:"):
         if _medium_task_is_complete(state):
+            logger.debug("Medium callback ignored: answer already complete user_id=%s data=%s", user.id, query.data)
             return
         try:
             picked_index = int(query.data.rsplit(":", 1)[-1])
         except ValueError:
+            logger.debug("Medium callback ignored: invalid pick payload user_id=%s data=%s", user.id, query.data)
             return
         if picked_index < 0 or picked_index >= len(state.shuffled_letters):
+            logger.debug(
+                "Medium callback ignored: pick index out of range user_id=%s data=%s index=%s letter_count=%s",
+                user.id,
+                query.data,
+                picked_index,
+                len(state.shuffled_letters),
+            )
             return
         if picked_index in state.selected_letter_indexes:
+            logger.debug(
+                "Medium callback ignored: letter already used user_id=%s data=%s index=%s",
+                user.id,
+                query.data,
+                picked_index,
+            )
             return
         state = _MediumTaskState(
             session_id=state.session_id,
@@ -5517,6 +5556,7 @@ async def medium_answer_callback_handler(update: Update, context: ContextTypes.D
             message_id=state.message_id,
         )
     else:
+        logger.debug("Medium callback ignored: unsupported payload user_id=%s data=%s", user.id, query.data)
         return
     _set_medium_task_state(context, state)
     if _medium_task_is_complete(state):
