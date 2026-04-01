@@ -5318,8 +5318,8 @@ async def game_repeat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
-def _hard_skip_callback_data(*, session_id: str, item_id: str) -> str:
-    return f"hard:skip:{session_id}:{item_id}"
+def _hard_skip_callback_data(*, session_id: str) -> str:
+    return f"hard:skip:{session_id}"
 
 
 def _hard_skip_keyboard(
@@ -5327,14 +5327,13 @@ def _hard_skip_keyboard(
     context: ContextTypes.DEFAULT_TYPE,
     user,
     session_id: str,
-    item_id: str,
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
                     _tg("hard_skip_button", context=context, user=user),
-                    callback_data=_hard_skip_callback_data(session_id=session_id, item_id=item_id),
+                    callback_data=_hard_skip_callback_data(session_id=session_id),
                 )
             ]
         ]
@@ -5347,10 +5346,10 @@ async def hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if query is None or user is None or query.data is None:
         return
     await query.answer()
-    parts = query.data.split(":", 3)
-    if len(parts) != 4:
+    parts = query.data.split(":", 2)
+    if len(parts) != 3:
         return
-    _, _, session_id, item_id = parts
+    _, _, session_id = parts
     active_session = _active_training_session(context, user_id=user.id)
     if active_session is None or active_session.id != session_id:
         return
@@ -5360,7 +5359,6 @@ async def hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     if (
         current_question.session_id != session_id
-        or current_question.item_id != item_id
         or current_question.mode is not TrainingMode.HARD
     ):
         return
@@ -6149,7 +6147,6 @@ async def _send_question(
                 context=context,
                 user=user,
                 session_id=question.session_id,
-                item_id=question.item_id,
             )
         image_path = resolve_existing_image_path(question.image_ref)
         view = build_training_question_view(

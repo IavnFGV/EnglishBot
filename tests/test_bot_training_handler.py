@@ -1229,7 +1229,7 @@ async def test_hard_skip_handler_downgrades_homework_hard_to_same_word_on_medium
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     message = _FakeEditableMessage("bonus")
-    query = _FakeQuery("hard:skip:session-hard:cat", message)
+    query = _FakeQuery("hard:skip:session-hard", message)
     sent_questions: list[TrainingQuestion] = []
     saved_sessions: list[TrainingSession] = []
 
@@ -1298,7 +1298,7 @@ async def test_hard_skip_handler_uses_existing_answer_flow_outside_homework(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     message = _FakeEditableMessage("hard")
-    query = _FakeQuery("hard:skip:session-hard:cat", message)
+    query = _FakeQuery("hard:skip:session-hard", message)
     handled: list[str] = []
 
     async def _fake_process_answer(update, context, answer):  # noqa: ANN001
