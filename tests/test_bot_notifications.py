@@ -410,6 +410,22 @@ async def test_post_init_reschedules_pending_notifications_from_repository() -> 
 
 
 @pytest.mark.anyio
+async def test_post_init_skips_job_queue_setup_when_job_queue_is_missing() -> None:
+    async def _set_my_commands(*args, **kwargs) -> None:  # noqa: ANN002, ARG001
+        return None
+
+    app = SimpleNamespace(
+        bot=SimpleNamespace(set_my_commands=_set_my_commands),
+        bot_data={
+            "pending_telegram_notification_repository": _FakeNotificationRepository(),
+        },
+        _job_queue=None,
+    )
+
+    await _post_init(app)  # type: ignore[arg-type]
+
+
+@pytest.mark.anyio
 async def test_notification_dismiss_callback_handler_deletes_message() -> None:
     bot = _FakeBot()
     query = SimpleNamespace(

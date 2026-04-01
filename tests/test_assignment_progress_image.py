@@ -124,8 +124,8 @@ def test_render_assignment_progress_image_draws_combo_streak_dots(tmp_path: Path
     with Image.open(output_path) as image:
         sampled_pixels = [
             image.getpixel((x, y))
-            for x in range(320, 470)
-            for y in range(175, 225)
+            for x in range(425, 475)
+            for y in range(250, 390)
         ]
 
     assert any(blue > 220 and red < 180 and green > 170 for red, green, blue in sampled_pixels)
@@ -175,9 +175,26 @@ def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path
     store.update_homework_word_progress(
         user_id=5,
         word_id="august",
+        mode=TrainingMode.EASY,
+        is_correct=True,
+        current_level=0,
+        goal_id=goal.id,
+    )
+    store.update_homework_word_progress(
+        user_id=5,
+        word_id="august",
         mode=TrainingMode.MEDIUM,
         is_correct=True,
-        current_level=2,
+        current_level=1,
+        goal_id=goal.id,
+    )
+    store.update_homework_word_progress(
+        user_id=5,
+        word_id="august",
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=1,
+        goal_id=goal.id,
     )
 
     context = SimpleNamespace(
@@ -554,9 +571,26 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
     store.update_homework_word_progress(
         user_id=7,
         word_id="april",
+        mode=TrainingMode.EASY,
+        is_correct=True,
+        current_level=0,
+        goal_id=goal.id,
+    )
+    store.update_homework_word_progress(
+        user_id=7,
+        word_id="april",
         mode=TrainingMode.MEDIUM,
         is_correct=True,
-        current_level=2,
+        current_level=1,
+        goal_id=goal.id,
+    )
+    store.update_homework_word_progress(
+        user_id=7,
+        word_id="april",
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=1,
+        goal_id=goal.id,
     )
 
     await bot._send_or_update_assignment_progress_message(

@@ -251,9 +251,26 @@ def test_assignment_launch_summary_counts_completed_homework_words(tmp_path: Pat
     store.update_homework_word_progress(
         user_id=21,
         word_id="cat",
+        mode=TrainingMode.EASY,
+        is_correct=True,
+        current_level=0,
+        goal_id=goal.id,
+    )
+    store.update_homework_word_progress(
+        user_id=21,
+        word_id="cat",
         mode=TrainingMode.MEDIUM,
         is_correct=True,
-        current_level=2,
+        current_level=1,
+        goal_id=goal.id,
+    )
+    store.update_homework_word_progress(
+        user_id=21,
+        word_id="cat",
+        mode=TrainingMode.MEDIUM,
+        is_correct=True,
+        current_level=1,
+        goal_id=goal.id,
     )
 
     summary = GetLearnerAssignmentLaunchSummaryUseCase(store=store, batch_size=1).execute(user_id=21)

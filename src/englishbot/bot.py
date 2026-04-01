@@ -862,6 +862,15 @@ def _active_training_session(context: ContextTypes.DEFAULT_TYPE, *, user_id: int
     return store.get_active_session_by_user(user_id)
 
 
+def _job_queue_or_none(application) -> object | None:
+    if application is None:
+        return None
+    raw_job_queue = getattr(application, "_job_queue", None)
+    if raw_job_queue is not None:
+        return raw_job_queue
+    return getattr(application, "job_queue", None)
+
+
 def _telegram_user_login_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserLoginRepository:
     return context.application.bot_data["telegram_user_login_repository"]
 
@@ -6196,7 +6205,7 @@ async def _post_init(app: Application) -> None:
         ]
         await app.bot.set_my_commands(scoped_commands, scope=BotCommandScopeChat(chat_id=user_id))
     notification_repository = app.bot_data.get("pending_telegram_notification_repository")
-    job_queue = getattr(app, "job_queue", None)
+    job_queue = _job_queue_or_none(app)
     if notification_repository is not None and job_queue is not None:
         now = datetime.now(UTC)
         for notification in notification_repository.list():
@@ -6393,7 +6402,7 @@ def _schedule_notification(
             not_before_at=not_before_at,
             created_at=datetime.now(UTC),
         )
-    job_queue = getattr(context.application, "job_queue", None)
+    job_queue = _job_queue_or_none(context.application)
     if job_queue is None:
         return
     job_queue.run_once(
@@ -6455,7 +6464,7 @@ async def _deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) 
             return
     elif notification_key not in _pending_notifications(context):
         return
-    job_queue = getattr(context.application, "job_queue", None)
+    job_queue = _job_queue_or_none(context.application)
     if job_queue is None:
         return
     job_queue.run_once(

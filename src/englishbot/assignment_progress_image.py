@@ -230,18 +230,19 @@ def _draw_combo_streak_indicator(
         return
     dot_size = max(14, size // 24)
     gap = max(8, size // 40)
-    total_width = dot_size * 4 + gap * 3
-    start_x = size - int(size * 0.12) - total_width
-    y = int(size * 0.37)
+    total_height = dot_size * 4 + gap * 3
+    x = size - int(size * 0.10) - dot_size
+    start_y = size - int(size * 0.20) - total_height
     active_fill = "#2f7df6" if combo_hard_active else "#85b6ff"
     active_outline = "#1f5fcc"
     inactive_fill = "#edf4ff"
     inactive_outline = "#bfd5f5"
 
     for index in range(4):
-        x = start_x + index * (dot_size + gap)
-        fill = active_fill if index < filled_count else inactive_fill
-        outline = active_outline if index < filled_count else inactive_outline
+        y = start_y + index * (dot_size + gap)
+        reverse_index = 3 - index
+        fill = active_fill if reverse_index < filled_count else inactive_fill
+        outline = active_outline if reverse_index < filled_count else inactive_outline
         draw.ellipse(
             [x, y, x + dot_size, y + dot_size],
             fill=fill,

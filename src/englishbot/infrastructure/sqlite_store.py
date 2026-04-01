@@ -1866,9 +1866,6 @@ class SQLiteContentStore:
 
                 if medium_success_count >= 2:
                     medium_mastered = True
-                if current_level >= 2:
-                    easy_mastered = True
-                    medium_mastered = True
                 if medium_mastered and not medium_was_mastered and not hard_mastered and not hard_skipped:
                     if offer_bonus_hard:
                         bonus_hard_unlocked = True
