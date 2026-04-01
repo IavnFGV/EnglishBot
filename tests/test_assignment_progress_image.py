@@ -41,6 +41,7 @@ def test_render_assignment_progress_image_writes_png(tmp_path: Path) -> None:
     snapshot = AssignmentProgressSnapshot(
         center_label="done",
         legend_labels=("start", "warm-up", "almost", "done"),
+        hard_legend_label="hard clear",
         completed_word_count=1,
         total_word_count=3,
         remaining_word_count=2,
@@ -67,6 +68,7 @@ def test_render_assignment_progress_image_draws_pending_bonus_arrow_over_counter
     snapshot = AssignmentProgressSnapshot(
         center_label="done",
         legend_labels=("start", "warm-up", "almost", "done"),
+        hard_legend_label="hard clear",
         completed_word_count=0,
         total_word_count=2,
         remaining_word_count=2,
@@ -103,6 +105,7 @@ def test_render_assignment_progress_image_draws_combo_streak_dots(tmp_path: Path
     snapshot = AssignmentProgressSnapshot(
         center_label="done",
         legend_labels=("start", "warm-up", "almost", "done"),
+        hard_legend_label="hard clear",
         completed_word_count=1,
         total_word_count=3,
         remaining_word_count=2,
@@ -125,7 +128,7 @@ def test_render_assignment_progress_image_draws_combo_streak_dots(tmp_path: Path
         sampled_pixels = [
             image.getpixel((x, y))
             for x in range(425, 475)
-            for y in range(250, 390)
+            for y in range(330, 470)
         ]
 
     assert any(blue > 220 and red < 180 and green > 170 for red, green, blue in sampled_pixels)
@@ -140,7 +143,7 @@ def test_segment_color_uses_distinct_teal_for_completed_bonus_hard() -> None:
             bonus_hard_pending=False,
             bonus_hard_completed=True,
         )
-    ) == "#1f9d8b"
+    ) == "#167a6c"
 
 
 def test_segment_color_keeps_orange_for_pending_bonus_hard_progress_stage() -> None:
@@ -220,6 +223,7 @@ def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path
     assert snapshot.estimated_round_count == 0
     assert snapshot.center_label == "done"
     assert snapshot.legend_labels == ("start", "warm-up", "almost", "done")
+    assert snapshot.hard_legend_label == "hard clear"
     values = {item.word_id: item.progress_value for item in snapshot.segments}
     assert values["april"] == pytest.approx(0.33)
     assert values["august"] == pytest.approx(1.0)
@@ -565,7 +569,7 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
     assert message.photo_calls[0][0] == "\x89PNG"
     assert (
         message.photo_calls[0][1]
-        == "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🧩 Round left: 1 • 🎯 Homework left: 2 • 🔁 About 1 rounds"
+        == "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🎯 Homework left: 2"
     )
 
     store.update_homework_word_progress(
@@ -603,7 +607,7 @@ async def test_send_or_update_assignment_progress_message_sends_then_updates(tmp
     assert len(fake_bot.media_edits) == 1
     assert (
         fake_bot.media_edits[0][2]
-        == "<b>📘 Homework</b>\n✅ Done: 1/2 words • 🧩 Round left: 1 • 🎯 Homework left: 1 • 🔁 About 1 rounds"
+        == "<b>📘 Homework</b>\n✅ Done: 1/2 words • 🎯 Homework left: 1"
     )
 
 
@@ -651,7 +655,7 @@ async def test_send_or_update_assignment_progress_message_falls_back_to_send_pho
     assert fake_bot.sent_photos == [
         (
             1,
-            "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🧩 Round left: 1 • 🎯 Homework left: 2 • 🔁 About 1 rounds",
+            "<b>📘 Homework</b>\n✅ Done: 0/2 words • 🎯 Homework left: 2",
         )
     ]
     tracked = registry.list(flow_id=f"assignment-progress:8:homework:{goal.id}", tag="assignment_progress")
@@ -708,7 +712,7 @@ async def test_send_or_update_assignment_progress_message_uses_current_goal_from
     assert len(message.photo_calls) == 1
     assert (
         message.photo_calls[0][1]
-        == "<b>📘 Homework</b>\n✅ Done: 0/1 words • 🧩 Round left: 0 • 🎯 Homework left: 1 • 🔁 About 1 rounds"
+        == "<b>📘 Homework</b>\n✅ Done: 0/1 words • 🎯 Homework left: 1"
     )
 
 
@@ -887,7 +891,7 @@ async def test_send_or_update_assignment_progress_message_updates_latest_tracked
         (
             1,
             11,
-            "<b>📘 Homework</b>\n✅ Done: 0/1 words • 🧩 Round left: 0 • 🎯 Homework left: 1 • 🔁 About 1 rounds",
+            "<b>📘 Homework</b>\n✅ Done: 0/1 words • 🎯 Homework left: 1",
         )
     ]
     assert fake_bot.deleted_messages == [(1, 10)]

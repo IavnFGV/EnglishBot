@@ -80,7 +80,14 @@ def render_progress_text(
     history: list[GoalProgressView],
     assignment_summary: list[AssignmentLaunchView],
 ) -> str:
-    completed_goals = [item for item in history if item.goal.status is GoalStatus.COMPLETED][:3]
+    visible_active_goals = [
+        item for item in summary.active_goals if item.goal.goal_period is not GoalPeriod.HOMEWORK
+    ]
+    completed_goals = [
+        item
+        for item in history
+        if item.goal.status is GoalStatus.COMPLETED and item.goal.goal_period is not GoalPeriod.HOMEWORK
+    ][:3]
     lines = [
         tg("progress_summary_title", context=context, user=user),
         tg(
@@ -114,9 +121,9 @@ def render_progress_text(
             if item.deadline_date:
                 line = f"{line} {_deadline_suffix(tg=tg, context=context, user=user, deadline_date=item.deadline_date)}"
             lines.append(line)
-    if summary.active_goals:
+    if visible_active_goals:
         lines.append(tg("progress_active_goals", context=context, user=user))
-        for goal in summary.active_goals:
+        for goal in visible_active_goals:
             lines.append(render_goal_progress_line(tg=tg, context=context, user=user, goal_view=goal))
             lines.append(
                 tg(
@@ -126,7 +133,7 @@ def render_progress_text(
                     rule=goal_rule_text(tg=tg, context=context, user=user, goal_type=goal.goal.goal_type),
                 )
             )
-    else:
+    elif not current_assignments:
         lines.append(tg("progress_no_goals", context=context, user=user))
     if completed_goals:
         lines.append(tg("progress_completed_goals", context=context, user=user))

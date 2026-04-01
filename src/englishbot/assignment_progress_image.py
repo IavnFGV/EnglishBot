@@ -20,6 +20,7 @@ class AssignmentProgressSegment:
 class AssignmentProgressSnapshot:
     center_label: str
     legend_labels: tuple[str, str, str, str]
+    hard_legend_label: str | None
     completed_word_count: int
     total_word_count: int
     remaining_word_count: int
@@ -125,42 +126,31 @@ def render_assignment_progress_image(
         size=size,
     )
 
-    legend_items = [
-        ("#dde7ef", snapshot.legend_labels[0]),
-        ("#f7d36a", snapshot.legend_labels[1]),
-        ("#ffaf5f", snapshot.legend_labels[2]),
-        ("#5ec27f", snapshot.legend_labels[3]),
-    ]
-    legend_rows = [legend_items[:2], legend_items[2:]]
-    row_gap = max(20, size // 13)
-    base_y = int(size * 0.83)
-    for row_index, row in enumerate(legend_rows):
-        legend_y = base_y + row_index * row_gap
-        legend_x = int(size * 0.12)
-        for color, label in row:
-            dot_size = max(14, size // 18)
-            draw.ellipse(
-                [legend_x, legend_y, legend_x + dot_size, legend_y + dot_size],
-                fill=color,
-            )
-            draw.text(
-                (legend_x + dot_size + 6, legend_y - 3),
-                label,
-                fill="#415364",
-                font=detail_font,
-            )
-            legend_x += int(size * 0.44)
+    _draw_legend(
+        draw,
+        legend_labels=snapshot.legend_labels,
+        hard_legend_label=snapshot.hard_legend_label,
+        font=detail_font,
+        size=size,
+    )
 
     image.save(output_path, format="PNG")
     return output_path
 
 
+def _bottom_grid(size: int) -> tuple[int, int, int]:
+    bottom_padding = max(7, size // 73)
+    block_height = max(100, size // 5)
+    top = size - bottom_padding - block_height
+    return top, max(33, size // 15), bottom_padding
+
+
 def _segment_color(segment: AssignmentProgressSegment) -> str:
     if segment.bonus_hard_completed:
-        return "#1f9d8b"
+        return "#167a6c"
     progress_value = segment.progress_value
     if progress_value >= 1.0:
-        return "#5ec27f"
+        return "#79d99a"
     if progress_value >= 0.66:
         return "#ffaf5f"
     if progress_value > 0:
@@ -228,27 +218,88 @@ def _draw_combo_streak_indicator(
     filled_count = 4 if combo_hard_active else max(0, min(4, combo_charge_streak))
     if filled_count <= 0:
         return
-    dot_size = max(14, size // 24)
-    gap = max(8, size // 40)
-    total_height = dot_size * 4 + gap * 3
-    x = size - int(size * 0.10) - dot_size
-    start_y = size - int(size * 0.20) - total_height
+    legend_top, row_gap, _ = _bottom_grid(size)
+    dot_size = min(max(18, size // 21), row_gap - 5)
+    x = int(size * 0.87)
+    start_y = legend_top + row_gap * 2
     active_fill = "#2f7df6" if combo_hard_active else "#85b6ff"
     active_outline = "#1f5fcc"
     inactive_fill = "#edf4ff"
     inactive_outline = "#bfd5f5"
 
     for index in range(4):
-        y = start_y + index * (dot_size + gap)
-        reverse_index = 3 - index
-        fill = active_fill if reverse_index < filled_count else inactive_fill
-        outline = active_outline if reverse_index < filled_count else inactive_outline
+        y = start_y - index * row_gap
+        fill = active_fill if index < filled_count else inactive_fill
+        outline = active_outline if index < filled_count else inactive_outline
         draw.ellipse(
             [x, y, x + dot_size, y + dot_size],
             fill=fill,
             outline=outline,
             width=max(2, size // 180),
         )
+
+
+def _draw_legend(
+    draw: ImageDraw.ImageDraw,
+    *,
+    legend_labels: tuple[str, str, str, str],
+    hard_legend_label: str | None,
+    font,
+    size: int,
+) -> None:
+    left_x = int(size * 0.12)
+    right_x = int(size * 0.57)
+    base_y, row_gap, _ = _bottom_grid(size)
+    swatch_size = min(max(18, size // 21), row_gap - 5)
+    legend_entries = [
+        (left_x, base_y, "#dde7ef", legend_labels[0]),
+        (right_x, base_y, "#f7d36a", legend_labels[1]),
+        (left_x, base_y + row_gap, "#ffaf5f", legend_labels[2]),
+        (right_x, base_y + row_gap, "#79d99a", legend_labels[3]),
+    ]
+    if hard_legend_label:
+        legend_entries.append((left_x, base_y + row_gap * 2, "#167a6c", hard_legend_label))
+
+    for x, y, color, label in legend_entries:
+        outline = "#0f5d52" if color == "#167a6c" else None
+        draw.ellipse(
+            [x, y, x + swatch_size, y + swatch_size],
+            fill=color,
+            outline=outline,
+            width=max(2, size // 180) if outline is not None else 0,
+        )
+        draw.text(
+            (x + swatch_size + 8, y - 2),
+            label,
+            fill="#415364",
+            font=font,
+        )
+
+
+def _draw_hard_legend_marker(
+    draw: ImageDraw.ImageDraw,
+    *,
+    label: str,
+    font,
+    size: int,
+) -> None:
+    # Backward-compatible shim for tests/imports; legend now renders through _draw_legend.
+    x = int(size * 0.12)
+    base_y, row_gap, _ = _bottom_grid(size)
+    swatch_size = min(max(18, size // 21), row_gap - 5)
+    y = base_y + row_gap * 2
+    draw.ellipse(
+        [x, y, x + swatch_size, y + swatch_size],
+        fill="#167a6c",
+        outline="#0f5d52",
+        width=max(2, size // 180),
+    )
+    draw.text(
+        (x + swatch_size + 8, y - 2),
+        label,
+        fill="#415364",
+        font=font,
+    )
 
 
 def _load_font(size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:

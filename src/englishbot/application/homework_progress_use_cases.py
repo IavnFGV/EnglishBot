@@ -451,11 +451,33 @@ class StartAssignmentRoundUseCase:
     @logged_service_call(
         "StartAssignmentRoundUseCase.execute",
         include=("user_id",),
-        transforms={"kind": lambda value: {"kind": value.value}},
+        transforms={
+            "kind": lambda value: {"kind": value.value},
+            "goal_id": lambda value: {"goal_id": value},
+            "combo_correct_streak": lambda value: {"combo_correct_streak": value},
+            "combo_hard_active": lambda value: {"combo_hard_active": value},
+        },
         result=lambda value: {"session_id": value.session_id, "item_id": value.item_id},
     )
-    def execute(self, *, user_id: int, kind: AssignmentSessionKind) -> TrainingQuestion:
-        return self.execute_with_batch_size(user_id=user_id, kind=kind, batch_size=None)
+    def execute(
+        self,
+        *,
+        user_id: int,
+        kind: AssignmentSessionKind,
+        goal_id: str | None = None,
+        combo_correct_streak: int = 0,
+        combo_hard_active: bool = False,
+        ui_language: str | None = None,
+    ) -> TrainingQuestion:
+        return self.execute_with_batch_size(
+            user_id=user_id,
+            kind=kind,
+            batch_size=None,
+            goal_id=goal_id,
+            combo_correct_streak=combo_correct_streak,
+            combo_hard_active=combo_hard_active,
+            ui_language=ui_language,
+        )
 
     @logged_service_call(
         "StartAssignmentRoundUseCase.execute_with_batch_size",
@@ -463,6 +485,9 @@ class StartAssignmentRoundUseCase:
         transforms={
             "kind": lambda value: {"kind": value.value},
             "batch_size": lambda value: {"batch_size": value},
+            "goal_id": lambda value: {"goal_id": value},
+            "combo_correct_streak": lambda value: {"combo_correct_streak": value},
+            "combo_hard_active": lambda value: {"combo_hard_active": value},
         },
         result=lambda value: {"session_id": value.session_id, "item_id": value.item_id},
     )
@@ -472,14 +497,32 @@ class StartAssignmentRoundUseCase:
         user_id: int,
         kind: AssignmentSessionKind,
         batch_size: int | None,
+        goal_id: str | None = None,
+        combo_correct_streak: int = 0,
+        combo_hard_active: bool = False,
+        ui_language: str | None = None,
     ) -> TrainingQuestion:
         effective_kind = AssignmentSessionKind.HOMEWORK
-        effective_batch_size = batch_size if batch_size is not None and batch_size > 0 else self._batch_size
-        selected_goal = _select_assignment_goal(
-            store=self._store,
-            user_id=user_id,
-            kind=effective_kind,
-        )
+        if goal_id is None:
+            selected_goal = _select_assignment_goal(
+                store=self._store,
+                user_id=user_id,
+                kind=effective_kind,
+            )
+        else:
+            selected_goal = next(
+                (
+                    goal
+                    for goal in self._store.list_user_goals(
+                        user_id=user_id,
+                        statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED),
+                    )
+                    if goal.id == goal_id
+                    and goal.goal_period in _periods_for_kind(effective_kind)
+                    and goal.goal_type in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}
+                ),
+                None,
+            )
         if selected_goal is None:
             raise ValueError("No active assignments available for this section.")
         remaining_words = _remaining_assignment_words(
@@ -488,7 +531,7 @@ class StartAssignmentRoundUseCase:
             kind=effective_kind,
             goal_id=selected_goal.id,
         )
-        selected_words = remaining_words[:effective_batch_size]
+        selected_words = remaining_words
         if not selected_words:
             raise ValueError("No active assignments available for this section.")
         items = self._resolve_items(selected_words)
@@ -497,7 +540,7 @@ class StartAssignmentRoundUseCase:
             goal_id=selected_goal.id,
             selected_words=selected_words,
             items=items,
-            batch_size=effective_batch_size,
+            batch_size=len(selected_words),
         )
         session = TrainingSession(
             id=str(uuid.uuid4()),
@@ -505,6 +548,9 @@ class StartAssignmentRoundUseCase:
             topic_id=self._resolve_session_topic_id(items),
             mode=TrainingMode.MEDIUM,
             source_tag=f"assignment:{effective_kind.value}:{selected_goal.id}",
+            ui_language=ui_language,
+            combo_correct_streak=max(0, combo_correct_streak),
+            combo_hard_active=combo_hard_active,
             items=[
                 SessionItem(order=index, vocabulary_item_id=item.id, mode=item_modes[item.id])
                 for index, item in enumerate(items)

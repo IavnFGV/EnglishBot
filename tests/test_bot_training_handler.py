@@ -245,6 +245,27 @@ class _InProgressHomeworkAssignmentService:
         )
 
 
+class _CompletingHomeworkAssignmentServiceWithGoal:
+    def get_active_session(self, *, user_id: int):  # noqa: ARG002
+        return SimpleNamespace(
+            session_id="session-hw-goal-1",
+            user_id=123,
+            topic_id="weather",
+            lesson_id=None,
+            source_tag="assignment:homework:goal-1",
+            mode=TrainingMode.MEDIUM,
+            current_position=1,
+            total_items=1,
+        )
+
+    def submit_answer(self, *, user_id: int, answer: str):  # noqa: ARG002
+        return bot.AnswerOutcome(
+            result=CheckResult(is_correct=True, expected_answer="cloud", normalized_answer="cloud"),
+            summary=SessionSummary(total_questions=1, correct_answers=1),
+            next_question=None,
+        )
+
+
 class _SummarySequenceUseCase:
     def __init__(self, summaries: list[object]) -> None:
         self._summaries = list(summaries)
@@ -1120,10 +1141,10 @@ async def test_process_answer_shows_homework_progress_track_and_continue_button(
 
     assert any("📘 Homework progress:" in reply for reply in message.replies)
     assert any("✅ Done: 2/5 words" in reply for reply in message.replies)
-    assert any("🧩 Round left: 0" in reply for reply in message.replies)
+    assert any("🎯 Homework left: 3" in reply for reply in message.replies)
     assert any("🐣" in reply and "🏁" in reply for reply in message.replies)
     keyboard = message.reply_markup_calls[-1]
-    assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
+    assert [row[0].callback_data for row in keyboard.inline_keyboard] == ["assign:menu", "start:menu"]
 
 
 @pytest.mark.anyio
@@ -1163,7 +1184,7 @@ async def test_process_answer_shows_homework_progress_during_active_round_too() 
 
     assert any("📘 Homework progress:" in reply for reply in message.replies)
     assert any("✅ Done: 2/5 words" in reply for reply in message.replies)
-    assert any("🧩 Round left: 1" in reply for reply in message.replies)
+    assert any("🎯 Homework left: 3" in reply for reply in message.replies)
     assert any(
         "📘 Homework progress:" in reply and reply_markup is None
         for reply, reply_markup in zip(message.replies, message.reply_markup_calls, strict=False)
@@ -1217,7 +1238,6 @@ async def test_send_feedback_keeps_compact_first_line_and_restores_assignment_pr
     first_line, *_rest = message.replies[0].splitlines()
     assert "Weekly points +6" in first_line
     assert "📘 Homework progress:" not in message.replies[0]
-    assert "🧩 Round left: 0" not in message.replies[0]
     assert "🏁" not in message.replies[0]
 
 
@@ -1316,8 +1336,84 @@ async def test_process_answer_shows_assignment_progress_for_homework_assignment(
     await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
 
     assert any("📘 Homework progress:" in reply for reply in message.replies)
-    assert any("🧩 Round left: 0" in reply for reply in message.replies)
     assert any("🎯 Homework left: 4" in reply for reply in message.replies)
+
+
+@pytest.mark.anyio
+async def test_process_answer_autocontinues_homework_after_session_complete_when_words_remain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = _FakeMessage("cloud")
+    user = SimpleNamespace(id=123, language_code="en")
+    message.from_user = user
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_user=user,
+    )
+    start_calls: list[tuple[int, str | None, int, bool]] = []
+    sent_questions: list[str] = []
+    feedback_summaries: list[SessionSummary | None] = []
+
+    async def _fake_send_question(update, context, question):  # noqa: ANN001
+        sent_questions.append(question.prompt)
+
+    async def _fake_send_assignment_progress(context, *, message, user, kind, active_session=None):  # noqa: ANN001
+        return None
+
+    async def _fake_send_feedback(message, outcome, *, context, active_session=None, user=None, feedback_update=None):  # noqa: ANN001
+        feedback_summaries.append(outcome.summary)
+        return None
+
+    monkeypatch.setattr(bot, "_send_question", _fake_send_question)
+    monkeypatch.setattr(bot, "_send_or_update_assignment_progress_message", _fake_send_assignment_progress)
+    monkeypatch.setattr(bot, "_send_feedback", _fake_send_feedback)
+
+    context = SimpleNamespace(
+        user_data={},
+        bot=_FakeBot(),
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _CompletingHomeworkAssignmentServiceWithGoal(),
+                "telegram_ui_language": "en",
+                "telegram_flow_message_repository": _FakeTelegramFlowMessageRepository(),
+                "content_store": SimpleNamespace(
+                    get_session_by_id=lambda session_id: TrainingSession(
+                        id="session-hw-goal-1",
+                        user_id=123,
+                        topic_id="weather",
+                        mode=TrainingMode.MEDIUM,
+                        source_tag="assignment:homework:goal-1",
+                        current_index=1,
+                        combo_correct_streak=4,
+                        combo_hard_active=True,
+                        completed=True,
+                        items=[SessionItem(order=0, vocabulary_item_id="cloud", mode=TrainingMode.MEDIUM)],
+                    )
+                ),
+                "start_assignment_round_use_case": SimpleNamespace(
+                    execute=lambda user_id, kind, goal_id=None, combo_correct_streak=0, combo_hard_active=False: (
+                        start_calls.append((user_id, goal_id, combo_correct_streak, combo_hard_active))
+                        or TrainingQuestion(
+                            session_id="session-hw-goal-2",
+                            item_id="rain",
+                            mode=TrainingMode.HARD,
+                            prompt="Translation: дождь",
+                            image_ref=None,
+                            correct_answer="rain",
+                            input_hint="Type it",
+                        )
+                    )
+                ),
+            }
+        ),
+    )
+
+    await _process_answer(update, context, "cloud")  # type: ignore[arg-type]
+
+    assert start_calls == [(123, "goal-1", 4, True)]
+    assert sent_questions == ["Translation: дождь"]
+    assert feedback_summaries == [None]
+    assert context.user_data["awaiting_text_answer"] is True
 
 
 @pytest.mark.anyio
@@ -1386,7 +1482,6 @@ async def test_choice_answer_handler_uses_active_session_user_for_homework_progr
     await choice_answer_handler(update, context)  # type: ignore[arg-type]
 
     assert any("📘 Homework progress:" in reply for reply in message.replies)
-    assert any("🧩 Round left: 0" in reply for reply in message.replies)
     assert any("🎯 Homework left: 4" in reply for reply in message.replies)
 
 

@@ -113,6 +113,7 @@ class TrainingSession:
     items: list[SessionItem]
     lesson_id: str | None = None
     source_tag: str | None = None
+    ui_language: str | None = None
     current_index: int = 0
     bonus_item_id: str | None = None
     bonus_mode: TrainingMode | None = None

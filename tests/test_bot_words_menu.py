@@ -433,9 +433,9 @@ async def test_words_goals_callback_handler_shows_goal_rules_and_recently_comple
     assert "Points are added on correct answers" in text
     assert "What is left in your assignments now:" in text
     assert "📘 Homework: 7/10 words left" in text
-    assert "Counts when an assigned word reaches the homework target level." in text
-    assert "Recently completed:" in text
-    assert "• Homework/Words: 10/10 (100%)" in text
+    assert "Counts when an assigned word reaches the homework target level." not in text
+    assert "Recently completed:" not in text
+    assert "• Homework/Words: 10/10 (100%)" not in text
     assert "Weekly/Words: 10/10 (100%)" not in text
     assert query.edits[-1][1].inline_keyboard[2][0].callback_data == "start:launch:homework"
     assert query.edits[-1][1].inline_keyboard[2][1].callback_data == "words:goal_reset:g-active"
@@ -710,7 +710,7 @@ def test_render_start_menu_text_uses_assigned_status_for_available_assignments()
         ],
     )
 
-    assert "📘 Homework: assigned • 6 words • 2 rounds • due 2026-04-07" in text
+    assert "📘 Homework: assigned • 6 words • due 2026-04-07" in text
 
 
 def test_goal_flow_keyboards_include_back_navigation() -> None:
@@ -787,16 +787,15 @@ def test_mode_keyboard_no_longer_contains_game_mode_entry() -> None:
     ]
 
 
-def test_assignment_round_complete_keyboard_offers_next_round_when_available() -> None:
+def test_assignment_round_complete_keyboard_can_hide_continue_button() -> None:
     keyboard = _assignment_round_complete_keyboard(
         AssignmentSessionKind.HOMEWORK,
-        has_more=True,
-        remaining_word_count=3,
-        round_batch_size=5,
+        has_more=False,
+        remaining_word_count=None,
+        round_batch_size=None,
     )
 
-    assert [row[0].callback_data for row in keyboard.inline_keyboard] == ["start:launch:homework:batch:5", "assign:menu", "start:menu"]
-    assert keyboard.inline_keyboard[0][0].text == "➡️ Continue • 3 left"
+    assert [row[0].callback_data for row in keyboard.inline_keyboard] == ["assign:menu", "start:menu"]
 
 
 def test_goal_list_keyboard_shows_start_and_reset_per_goal() -> None:
@@ -994,12 +993,12 @@ async def test_assign_goal_detail_callback_handler_shows_goal_words() -> None:
 @pytest.mark.anyio
 async def test_start_assignment_round_callback_handler_starts_selected_round() -> None:
     query = _RecordingQuery()
-    query.data = "start:launch:homework:batch:5"
+    query.data = "start:launch:homework"
     context = SimpleNamespace(
         application=SimpleNamespace(
             bot_data={
                 "start_assignment_round_use_case": SimpleNamespace(
-                    execute_with_batch_size=lambda user_id, kind, batch_size: SimpleNamespace(
+                    execute=lambda user_id, kind: SimpleNamespace(
                         session_id="s1",
                         item_id="cat",
                         mode=TrainingMode.MEDIUM,
@@ -1035,22 +1034,25 @@ async def test_start_assignment_round_callback_handler_starts_selected_round() -
 
 
 @pytest.mark.anyio
-async def test_start_assignment_round_callback_handler_shows_batch_picker_first() -> None:
+async def test_start_assignment_round_callback_handler_shows_empty_state_when_no_homework_words() -> None:
     query = _RecordingQuery()
     query.data = "start:launch:homework"
 
     await start_assignment_round_callback_handler(
         SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=123, language_code="en")),
-        SimpleNamespace(application=SimpleNamespace(bot_data={}), user_data={}),  # type: ignore[arg-type]
+        SimpleNamespace(
+            application=SimpleNamespace(
+                bot_data={
+                    "start_assignment_round_use_case": SimpleNamespace(
+                        execute=lambda user_id, kind: (_ for _ in ()).throw(ValueError("empty"))
+                    )
+                }
+            ),
+            user_data={},
+        ),  # type: ignore[arg-type]
     )
 
-    assert query.edits[-1][0] == "Choose how many words to take in this round."
-    first_row = query.edits[-1][1].inline_keyboard[0]
-    assert [button.callback_data for button in first_row] == [
-        "start:launch:homework:batch:3",
-        "start:launch:homework:batch:5",
-        "start:launch:homework:batch:10",
-    ]
+    assert query.edits[-1][0] == "No active assignments in this section right now."
 
 
 @pytest.mark.anyio

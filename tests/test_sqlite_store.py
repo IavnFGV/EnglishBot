@@ -1082,6 +1082,35 @@ def test_sqlite_store_persists_session_combo_hard_state(tmp_path: Path) -> None:
     assert session.combo_hard_active is True
 
 
+def test_sqlite_store_persists_session_ui_language(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+            ],
+        }
+    )
+
+    store.save_session(
+        TrainingSession(
+            id="lang-session",
+            user_id=4,
+            topic_id="animals",
+            mode=TrainingMode.HARD,
+            ui_language="ru",
+            items=[SessionItem(order=0, vocabulary_item_id="cat")],
+        )
+    )
+
+    session = store.get_active_session_by_user(4)
+
+    assert session is not None
+    assert session.ui_language == "ru"
+
+
 def test_sqlite_store_lists_goals_and_user_metrics(tmp_path: Path) -> None:
     from datetime import UTC, datetime
 

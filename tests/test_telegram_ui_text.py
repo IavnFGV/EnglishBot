@@ -28,3 +28,9 @@ def test_telegram_ui_text_returns_localized_assignment_progress_legend() -> None
     assert telegram_ui_text("assignment_progress_legend_warmup", language="en") == "warm-up"
     assert telegram_ui_text("assignment_progress_legend_warmup", language="ru") == "разминка"
     assert telegram_ui_text("assignment_progress_legend_warmup", language="uk") == "розігрів"
+
+
+def test_telegram_ui_text_returns_localized_assignment_progress_hard_note() -> None:
+    assert telegram_ui_text("assignment_progress_legend_hard_note", language="en") == "hard clear"
+    assert telegram_ui_text("assignment_progress_legend_hard_note", language="ru") == "hard пройден"
+    assert telegram_ui_text("assignment_progress_legend_hard_note", language="uk") == "hard пройдено"

@@ -8,7 +8,7 @@ The old split between `daily`, `weekly`, and `all assignments` was removed from 
 
 - one homework entry point
 - one homework summary
-- one homework round launcher
+- one continuous homework session
 - one homework progress model
 - an optional deadline shown directly in the menu
 
@@ -52,25 +52,24 @@ It shows:
 Behavior:
 
 - the homework button is enabled only when there are remaining assigned words
-- disabled homework stays visible but does not start a round
+- disabled homework stays visible but does not start a session
 - the status line shows:
   - assigned / not assigned
   - remaining words
-  - estimated rounds
   - deadline, when present
-- when the learner starts homework, the bot first asks how many words to take into this round
+- when the learner starts homework, the bot immediately continues the assigned words
 
-## Homework rounds
+## Homework session
 
-Homework rounds are independent from topics.
+Homework is independent from topics.
 
 That means:
 
 - the learner does not have to open each topic manually
-- tapping the homework button first opens a round-size picker
-- after choosing the round size, the bot starts a round from the remaining assigned words
-- round size is still batched
-- after a round is completed, Telegram offers **Next round** when more homework words remain
+- tapping the homework button starts or resumes one continuous homework session
+- the bot works through the remaining assigned words of the current homework goal
+- there is no separate round-size picker
+- there is no separate **Next round** step in the learner UX
 
 ## How homework progress works
 
@@ -80,18 +79,18 @@ Current rules:
 
 - `new_words` homework treats a word as completed when the learner answers that assigned word correctly
 - `word_level_homework` treats a word as completed only when it reaches the required homework level
-- one successful round may still leave homework active if some words need more progress
-- a homework for 10 words is not the same as 10 rounds
+- one successful pass may still leave homework active if some words need more progress
+- a homework for 10 words means those 10 assigned words remain active until they reach the homework target
 
 Difficulty progress inside homework is intentionally stricter than plain topic practice:
 
 - one correct `easy` answer warms the word up
 - two correct `medium` answers finish the base homework path for the word
 - after that, the bot may occasionally offer one optional bonus `hard` step
-- the bonus `hard` step does not add to homework-left or round-left counters
+- the bonus `hard` step does not add to homework-left counters
 - when bonus `hard` is ready or cleared, the progress circle marks that word with `🔥`
 
-Round flow also has a separate combo mechanic:
+Homework flow also has a separate combo mechanic:
 
 - after `4` correct answers in a row, the next base homework word is asked in `hard`
 - every additional correct combo-hard answer keeps the next base homework word in `hard`
@@ -105,11 +104,11 @@ The deadline helps organize the task, but homework is finished only when the ass
 
 ## Homework feedback in chat
 
-During a homework round, the learner now sees:
+During homework, the learner now sees:
 
 - the regular answer feedback
 - weekly points feedback
-- a homework progress line with remaining words and estimated rounds
+- a homework progress line with completed and remaining words
 - a homework progress visual message that is updated across the flow
 
 This feedback is shown without creating a separate scoring path. The existing answer validation and scoring logic remain the source of truth.
@@ -138,7 +137,6 @@ Notes:
 - `topic` assigns all words from the chosen topic
 - `manual` assigns all explicitly selected words
 - `recent` assigns the full recent-word set available for that learner
-- the learner, not the admin, chooses the round batch size at homework start
 
 ## Admin drill-down
 

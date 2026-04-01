@@ -107,6 +107,7 @@ class StartTrainingSessionUseCase:
         session_size: int = 5,
         lesson_id: str | None = None,
         adaptive_per_word: bool = False,
+        ui_language: str | None = None,
     ) -> TrainingQuestion:
         topic = self._topic_repository.get_by_id(topic_id)
         if topic is None:
@@ -172,6 +173,7 @@ class StartTrainingSessionUseCase:
             user_id=user_id,
             topic_id=topic_id,
             lesson_id=lesson_id,
+            ui_language=ui_language,
             mode=mode,
             items=[
                 SessionItem(order=index, vocabulary_item_id=item.id, mode=item_modes.get(item.id))
@@ -468,6 +470,7 @@ class TrainingFacade:
         session_size: int = 5,
         lesson_id: str | None = None,
         adaptive_per_word: bool = False,
+        ui_language: str | None = None,
     ) -> TrainingQuestion:
         return self._start_training_session.execute(
             user_id=user_id,
@@ -476,6 +479,7 @@ class TrainingFacade:
             session_size=session_size,
             lesson_id=lesson_id,
             adaptive_per_word=adaptive_per_word,
+            ui_language=ui_language,
         )
 
     def get_current_question(self, *, user_id: int) -> TrainingQuestion:

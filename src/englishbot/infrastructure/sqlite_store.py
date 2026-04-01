@@ -300,6 +300,7 @@ class SQLiteContentStore:
                     topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
                     lesson_id TEXT REFERENCES lessons(id) ON DELETE SET NULL,
                     source_tag TEXT,
+                    ui_language TEXT,
                     mode TEXT NOT NULL,
                     current_index INTEGER NOT NULL DEFAULT 0,
                     bonus_item_id TEXT REFERENCES learning_items(id) ON DELETE SET NULL,
@@ -491,6 +492,8 @@ class SQLiteContentStore:
             }
             if "source_tag" not in session_columns:
                 connection.execute("ALTER TABLE training_sessions ADD COLUMN source_tag TEXT")
+            if "ui_language" not in session_columns:
+                connection.execute("ALTER TABLE training_sessions ADD COLUMN ui_language TEXT")
             if "bonus_item_id" not in session_columns:
                 connection.execute("ALTER TABLE training_sessions ADD COLUMN bonus_item_id TEXT")
             if "bonus_mode" not in session_columns:
@@ -2139,14 +2142,15 @@ class SQLiteContentStore:
             connection.execute(
                 """
                 INSERT INTO training_sessions (
-                    id, user_id, topic_id, lesson_id, source_tag, mode, current_index, bonus_item_id, bonus_mode,
+                    id, user_id, topic_id, lesson_id, source_tag, ui_language, mode, current_index, bonus_item_id, bonus_mode,
                     combo_correct_streak, combo_hard_active, completed
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     user_id=excluded.user_id,
                     topic_id=excluded.topic_id,
                     lesson_id=excluded.lesson_id,
                     source_tag=excluded.source_tag,
+                    ui_language=excluded.ui_language,
                     mode=excluded.mode,
                     current_index=excluded.current_index,
                     bonus_item_id=excluded.bonus_item_id,
@@ -2161,6 +2165,7 @@ class SQLiteContentStore:
                     session.topic_id,
                     session.lesson_id,
                     session.source_tag,
+                    session.ui_language,
                     session.mode.value,
                     session.current_index,
                     session.bonus_item_id,
@@ -2249,6 +2254,7 @@ class SQLiteContentStore:
                     topic_id,
                     lesson_id,
                     source_tag,
+                    ui_language,
                     mode,
                     current_index,
                     bonus_item_id,
@@ -2287,6 +2293,7 @@ class SQLiteContentStore:
             topic_id=session_row["topic_id"],
             lesson_id=session_row["lesson_id"],
             source_tag=session_row["source_tag"],
+            ui_language=session_row["ui_language"],
             mode=TrainingMode(session_row["mode"]),
             current_index=session_row["current_index"],
             bonus_item_id=session_row["bonus_item_id"],

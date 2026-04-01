@@ -7,6 +7,10 @@ import re
 from englishbot.application.errors import NotEnoughOptionsError
 from englishbot.domain.models import TrainingMode, TrainingQuestion, TrainingSession, VocabularyItem
 from englishbot.logging_utils import logged_service_call
+from englishbot.presentation.telegram_ui_text import (
+    DEFAULT_TELEGRAM_UI_LANGUAGE,
+    telegram_ui_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,7 @@ class QuestionFactory:
         item: VocabularyItem,
         all_topic_items: list[VocabularyItem],
     ) -> TrainingQuestion:
+        language = session.ui_language or DEFAULT_TELEGRAM_UI_LANGUAGE
         is_bonus_hard = session.bonus_item_id == item.id and session.bonus_mode is not None
         question_mode = session.mode
         for session_item in session.items:
@@ -47,10 +52,10 @@ class QuestionFactory:
             question_mode = session.bonus_mode
             first_letter = next((char for char in item.english_word if char.isalpha()), item.english_word[:1]).upper()
             prompt = (
-                f"Translation: {item.translation}\n"
-                f"Visual clue: {'Image is shown above.' if item.image_ref else 'No image yet. Use the translation clue.'}\n"
-                f"First letter: {first_letter}\n"
-                "Bonus challenge. Type the English word."
+                f"{telegram_ui_text('question_translation_line', language=language, translation=item.translation)}\n"
+                f"{telegram_ui_text('question_visual_line', language=language, clue=self._image_line(item, language=language))}\n"
+                f"{telegram_ui_text('question_first_letter_line', language=language, first_letter=first_letter)}\n"
+                f"{telegram_ui_text('question_bonus_prompt', language=language)}"
             )
             return TrainingQuestion(
                 session_id=session.id,
@@ -59,22 +64,17 @@ class QuestionFactory:
                 prompt=prompt,
                 image_ref=item.image_ref,
                 correct_answer=item.english_word,
-                input_hint="Type the word or skip this bonus challenge.",
+                input_hint=telegram_ui_text("question_bonus_input_hint", language=language),
                 letter_hint=first_letter,
             )
         if session.combo_hard_active:
             question_mode = TrainingMode.HARD
-        image_line = (
-            "Image is shown above."
-            if item.image_ref
-            else "No image yet. Use the translation clue."
-        )
         if question_mode is TrainingMode.EASY:
             options = self._build_choice_options(item, all_topic_items)
             prompt = (
-                f"Translation: {item.translation}\n"
-                f"Visual clue: {image_line}\n"
-                "Choose the correct English word."
+                f"{telegram_ui_text('question_translation_line', language=language, translation=item.translation)}\n"
+                f"{telegram_ui_text('question_visual_line', language=language, clue=self._image_line(item, language=language))}\n"
+                f"{telegram_ui_text('question_easy_prompt', language=language)}"
             )
             return TrainingQuestion(
                 session_id=session.id,
@@ -88,10 +88,10 @@ class QuestionFactory:
         if question_mode is TrainingMode.MEDIUM:
             scrambled = self._scramble_word(item.english_word)
             prompt = (
-                f"Translation: {item.translation}\n"
-                f"Visual clue: {image_line}\n"
-                f"Shuffled letters hint: {scrambled}\n"
-                "Type the English word."
+                f"{telegram_ui_text('question_translation_line', language=language, translation=item.translation)}\n"
+                f"{telegram_ui_text('question_visual_line', language=language, clue=self._image_line(item, language=language))}\n"
+                f"{telegram_ui_text('question_shuffled_letters_line', language=language, letters=scrambled)}\n"
+                f"{telegram_ui_text('question_medium_prompt', language=language)}"
             )
             return TrainingQuestion(
                 session_id=session.id,
@@ -100,13 +100,15 @@ class QuestionFactory:
                 prompt=prompt,
                 image_ref=item.image_ref,
                 correct_answer=item.english_word,
-                input_hint="Use the shuffled letters as a hint and type the word.",
+                input_hint=telegram_ui_text("question_medium_input_hint", language=language),
                 letter_hint=scrambled,
             )
+        first_letter = next((char for char in item.english_word if char.isalpha()), item.english_word[:1]).upper()
         prompt = (
-            f"Translation: {item.translation}\n"
-            f"Visual clue: {image_line}\n"
-            "Type the English word."
+            f"{telegram_ui_text('question_translation_line', language=language, translation=item.translation)}\n"
+            f"{telegram_ui_text('question_visual_line', language=language, clue=self._image_line(item, language=language))}\n"
+            f"{telegram_ui_text('question_first_letter_line', language=language, first_letter=first_letter)}\n"
+            f"{telegram_ui_text('question_hard_prompt', language=language)}"
         )
         return TrainingQuestion(
             session_id=session.id,
@@ -115,7 +117,14 @@ class QuestionFactory:
             prompt=prompt,
             image_ref=item.image_ref,
             correct_answer=item.english_word,
-            input_hint="Type the word in English.",
+            input_hint=telegram_ui_text("question_hard_input_hint", language=language),
+            letter_hint=first_letter,
+        )
+
+    def _image_line(self, item: VocabularyItem, *, language: str) -> str:
+        return telegram_ui_text(
+            "question_visual_image_shown" if item.image_ref else "question_visual_no_image",
+            language=language,
         )
 
     def _build_choice_options(

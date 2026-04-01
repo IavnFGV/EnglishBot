@@ -193,16 +193,14 @@ Current learner flow:
 2. review the homework summary:
    - assigned / not assigned
    - remaining words
-   - estimated rounds
    - due date when present
-3. choose how many words to take in this round
-4. start the homework round
-5. answer assigned words
-6. after each correct answer, watch:
+3. start homework
+4. answer assigned words
+5. after each correct answer, watch:
    - weekly points feedback
    - homework progress text
    - homework progress image / indicator
-7. continue with `➡️ Continue` until no assigned words remain
+6. continue the same homework later if needed until no assigned words remain
 
 Homework completion rules:
 
@@ -216,12 +214,12 @@ Homework completion rules:
   - after `4` correct answers in a row, the next base word is asked in `hard`
   - each additional correct combo-hard answer keeps the next base word in `hard`
   - one mistake resets the combo
-- the bonus `hard` step does not increase homework remaining counters or round size
+- the bonus `hard` step does not increase homework remaining counters
 - when a bonus `hard` step appears, the homework progress circle marks that word with `🔥`
 - the homework progress circle also shows a small `4-dot` combo indicator:
   - the dots fill as the learner builds the `4-answer` streak
   - when the combo is active, all `4` dots light up
-- a homework for 10 words is not the same as 10 rounds
+- a homework for 10 words means those 10 assigned words stay active until they really reach the homework target
 - a deadline helps organize the task, but completion still depends on word progress
 
 Admin homework assignment rules:

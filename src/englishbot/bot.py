@@ -6,7 +6,6 @@ import hashlib
 import hmac
 import json
 import logging
-import math
 import random
 import tempfile
 from dataclasses import dataclass
@@ -119,7 +118,6 @@ from englishbot.bot_assignments_ui import admin_goal_period_keyboard as ui_admin
 from englishbot.bot_assignments_ui import admin_goal_source_keyboard as ui_admin_goal_source_keyboard
 from englishbot.bot_assignments_ui import admin_goal_target_keyboard as ui_admin_goal_target_keyboard
 from englishbot.bot_assignments_ui import assign_menu_keyboard as ui_assign_menu_keyboard
-from englishbot.bot_assignments_ui import assignment_round_batch_keyboard as ui_assignment_round_batch_keyboard
 from englishbot.bot_assignments_ui import assignment_kind_label as ui_assignment_kind_label
 from englishbot.bot_assignments_ui import assignment_round_complete_keyboard as ui_assignment_round_complete_keyboard
 from englishbot.bot_assignments_ui import goal_custom_target_keyboard as ui_goal_custom_target_keyboard
@@ -256,7 +254,6 @@ _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW = timedelta(minutes=5)
 _NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD = timedelta(minutes=1)
 _NOTIFICATION_DELAY_AFTER_RECENT_ANSWER = timedelta(minutes=2)
 _DAILY_ASSIGNMENT_REMINDER_TIME = time(hour=13, minute=0, tzinfo=UTC)
-_ASSIGNMENT_ROUND_BATCH_SIZES: tuple[int, ...] = (3, 5, 10)
 _HELP_COMMAND_TEXT: dict[str, str] = {
     "start": "open your personal start menu",
     "help": "show commands",
@@ -292,8 +289,6 @@ class _AssignmentRoundProgressView:
     completed_word_count: int
     total_word_count: int
     remaining_word_count: int
-    remaining_in_round_count: int
-    estimated_round_count: int
     variant_key: str
 
 
@@ -1090,24 +1085,10 @@ def _assignment_round_progress_view(
         )
         total_word_count = len(rows)
         remaining_word_count = max(0, total_word_count - completed_word_count)
-        remaining_in_round_count = 0
-        batch_size = None
-        if active_session is not None:
-            total_items = getattr(active_session, "total_items", None)
-            current_position = getattr(active_session, "current_position", None)
-            if isinstance(total_items, int):
-                batch_size = total_items
-            if isinstance(total_items, int) and isinstance(current_position, int):
-                remaining_in_round_count = max(0, total_items - current_position)
-        estimated_round_count = 0
-        if isinstance(batch_size, int) and batch_size > 0:
-            estimated_round_count = math.ceil(remaining_word_count / batch_size) if remaining_word_count > 0 else 0
         return _AssignmentRoundProgressView(
             completed_word_count=completed_word_count,
             total_word_count=total_word_count,
             remaining_word_count=remaining_word_count,
-            remaining_in_round_count=remaining_in_round_count,
-            estimated_round_count=estimated_round_count,
             variant_key=goal.id,
         )
     launch_summary_use_case = context.application.bot_data.get(
@@ -1119,18 +1100,10 @@ def _assignment_round_progress_view(
     launch_view = next((item for item in launch_views if item.kind is kind), None)
     if launch_view is None:
         return None
-    remaining_in_round_count = 0
-    if active_session is not None:
-        total_items = getattr(active_session, "total_items", None)
-        current_position = getattr(active_session, "current_position", None)
-        if isinstance(total_items, int) and isinstance(current_position, int):
-            remaining_in_round_count = max(0, total_items - current_position)
     return _AssignmentRoundProgressView(
         completed_word_count=launch_view.completed_word_count,
         total_word_count=launch_view.total_word_count,
         remaining_word_count=launch_view.remaining_word_count,
-        remaining_in_round_count=remaining_in_round_count,
-        estimated_round_count=launch_view.estimated_round_count,
         variant_key=launch_view.progress_variant_key,
     )
 
@@ -1203,9 +1176,7 @@ def _render_assignment_round_progress_text(
                 user=user,
                 done=progress.completed_word_count,
                 total=progress.total_word_count,
-                round_left=progress.remaining_in_round_count,
                 left=progress.remaining_word_count,
-                rounds=progress.estimated_round_count,
             ),
         ]
     )
@@ -1277,17 +1248,6 @@ def _build_assignment_progress_snapshot(
     segments = tuple(progress_by_word.values())
     completed_word_count = sum(1 for item in segments if item.progress_value >= 1.0)
     remaining_word_count = max(0, len(segments) - completed_word_count)
-    estimated_round_count = 0
-    launch_summary_use_case = context.application.bot_data.get("learner_assignment_launch_summary_use_case")
-    if launch_summary_use_case is not None and goal_id is None:
-        round_progress = _assignment_round_progress_view(
-            context=context,
-            user_id=user_id,
-            kind=kind,
-        )
-        if round_progress is not None:
-            remaining_word_count = round_progress.remaining_word_count
-            estimated_round_count = round_progress.estimated_round_count
     return AssignmentProgressSnapshot(
         center_label=_tg("assignment_progress_center_label", context=context, user=user),
         legend_labels=(
@@ -1296,10 +1256,11 @@ def _build_assignment_progress_snapshot(
             _tg("assignment_progress_legend_almost", context=context, user=user),
             _tg("assignment_progress_legend_done", context=context, user=user),
         ),
+        hard_legend_label=_tg("assignment_progress_legend_hard_note", context=context, user=user),
         completed_word_count=completed_word_count,
         total_word_count=len(segments),
         remaining_word_count=remaining_word_count,
-        estimated_round_count=estimated_round_count,
+        estimated_round_count=0,
         segments=segments,
         combo_charge_streak=max(0, min(4, int(getattr(active_session, "combo_correct_streak", 0) or 0))),
         combo_hard_active=bool(getattr(active_session, "combo_hard_active", False)),
@@ -1371,9 +1332,7 @@ def _assignment_progress_caption(
     snapshot: AssignmentProgressSnapshot,
     kind: AssignmentSessionKind,
     user,
-    round_left: int,
     remaining_word_count: int,
-    estimated_round_count: int,
 ) -> str:
     return "\n".join(
         [
@@ -1384,20 +1343,10 @@ def _assignment_progress_caption(
                 user=user,
                 done=snapshot.completed_word_count,
                 total=snapshot.total_word_count,
-                round_left=round_left,
                 left=remaining_word_count,
-                rounds=estimated_round_count,
             ),
         ]
     )
-
-
-def _active_session_round_left(active_session) -> int:
-    total_items = getattr(active_session, "total_items", None)
-    current_position = getattr(active_session, "current_position", None)
-    if isinstance(total_items, int) and isinstance(current_position, int):
-        return max(0, total_items - current_position)
-    return 0
 
 
 def _compact_assignment_feedback_text(
@@ -1455,32 +1404,13 @@ async def _send_or_update_assignment_progress_message(
         snapshot,
         output_path=_assignment_progress_image_path(user_id=user_id, kind=kind),
     )
-    round_progress = _assignment_round_progress_view(
-        context=context,
-        user_id=user_id,
-        kind=kind,
-        goal_id=goal_id,
-        active_session=active_session,
-    )
-    round_left = (
-        round_progress.remaining_in_round_count
-        if round_progress is not None
-        else _active_session_round_left(active_session)
-    )
     remaining_word_count = snapshot.remaining_word_count
-    estimated_round_count = snapshot.estimated_round_count
-    if goal_id is not None:
-        total_items = getattr(active_session, "total_items", None)
-        if isinstance(total_items, int) and total_items > 0:
-            estimated_round_count = math.ceil(remaining_word_count / total_items) if remaining_word_count > 0 else 0
     caption = _assignment_progress_caption(
         context=context,
         snapshot=snapshot,
         kind=kind,
         user=user,
-        round_left=round_left,
         remaining_word_count=remaining_word_count,
-        estimated_round_count=estimated_round_count,
     )
     registry = _telegram_flow_messages(context)
     tracked_messages = registry.list(flow_id=flow_id, tag=_ASSIGNMENT_PROGRESS_TAG) if registry is not None else []
@@ -1547,6 +1477,76 @@ def _start_assignment_round_use_case(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> StartAssignmentRoundUseCase:
     return context.application.bot_data["start_assignment_round_use_case"]
+
+
+def _start_assignment_round_use_case_or_none(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> StartAssignmentRoundUseCase | None:
+    return context.application.bot_data.get("start_assignment_round_use_case")
+
+
+def _execute_assignment_start_use_case(
+    use_case,
+    *,
+    user_id: int,
+    kind: AssignmentSessionKind,
+    ui_language: str,
+    goal_id: str | None = None,
+    combo_correct_streak: int = 0,
+    combo_hard_active: bool = False,
+):
+    try:
+        return use_case.execute(
+            user_id=user_id,
+            kind=kind,
+            goal_id=goal_id,
+            combo_correct_streak=combo_correct_streak,
+            combo_hard_active=combo_hard_active,
+            ui_language=ui_language,
+        )
+    except TypeError:
+        try:
+            return use_case.execute(
+                user_id=user_id,
+                kind=kind,
+                goal_id=goal_id,
+                combo_correct_streak=combo_correct_streak,
+                combo_hard_active=combo_hard_active,
+            )
+        except TypeError:
+            return use_case.execute(
+                user_id=user_id,
+                kind=kind,
+            )
+
+
+def _start_training_session_with_ui_language(
+    service,
+    *,
+    user_id: int,
+    topic_id: str,
+    mode: TrainingMode,
+    ui_language: str,
+    lesson_id: str | None = None,
+    adaptive_per_word: bool = False,
+):
+    try:
+        return service.start_session(
+            user_id=user_id,
+            topic_id=topic_id,
+            lesson_id=lesson_id,
+            mode=mode,
+            adaptive_per_word=adaptive_per_word,
+            ui_language=ui_language,
+        )
+    except TypeError:
+        return service.start_session(
+            user_id=user_id,
+            topic_id=topic_id,
+            lesson_id=lesson_id,
+            mode=mode,
+            adaptive_per_word=adaptive_per_word,
+        )
 
 
 def _assign_goal_to_users_use_case(context: ContextTypes.DEFAULT_TYPE) -> AssignGoalToUsersUseCase:
@@ -2746,13 +2746,6 @@ def _admin_goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE)
     return ui_admin_goal_source_keyboard(tg=_tg, language=language)
 
 
-def _assignment_round_batch_keyboard(
-    *,
-    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
-) -> InlineKeyboardMarkup:
-    return ui_assignment_round_batch_keyboard(tg=_tg, language=language)
-
-
 def _render_progress_text(*, context: ContextTypes.DEFAULT_TYPE, user) -> str:
     summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
     summary = LearnerProgressSummary(
@@ -2869,6 +2862,19 @@ def _assignment_kind_from_session(active_session) -> AssignmentSessionKind | Non
     if isinstance(topic_id, str) and topic_id.startswith("assignment:"):
         return _assignment_kind_from_value(topic_id.split(":", 1)[1])
     return None
+
+
+def _raw_training_session_by_id(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    session_id: str | None,
+):
+    if not isinstance(session_id, str):
+        return None
+    store = context.application.bot_data.get("content_store")
+    if store is None or not hasattr(store, "get_session_by_id"):
+        return None
+    return store.get_session_by_id(session_id)
 
 
 async def words_goals_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -5120,33 +5126,14 @@ async def start_assignment_round_callback_handler(update: Update, context: Conte
         return
     await query.answer()
     kind = AssignmentSessionKind.HOMEWORK
-    batch_size: int | None = None
-    parts = query.data.split(":")
-    if len(parts) >= 5 and parts[-2] == "batch":
-        try:
-            parsed_batch_size = int(parts[-1])
-        except ValueError:
-            parsed_batch_size = None
-        if parsed_batch_size in _ASSIGNMENT_ROUND_BATCH_SIZES:
-            batch_size = parsed_batch_size
-    if batch_size is None:
-        await query.edit_message_text(
-            _tg("assignment_round_batch_prompt", context=context, user=user),
-            reply_markup=_assignment_round_batch_keyboard(
-                language=_telegram_ui_language(context, user)
-            ),
-        )
-        return
     try:
         use_case = _start_assignment_round_use_case(context)
-        if hasattr(use_case, "execute_with_batch_size"):
-            question = use_case.execute_with_batch_size(
-                user_id=user.id,
-                kind=kind,
-                batch_size=batch_size,
-            )
-        else:
-            question = use_case.execute(user_id=user.id, kind=kind)
+        question = _execute_assignment_start_use_case(
+            use_case,
+            user_id=user.id,
+            kind=kind,
+            ui_language=_telegram_ui_language(context, user),
+        )
     except ValueError:
         await query.edit_message_text(
             _tg("start_assignment_empty", context=context, user=user),
@@ -5245,11 +5232,13 @@ async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TY
         return
     selected_lesson_id = None if lesson_id == "all" else lesson_id
     try:
-        question = service.start_session(
+        question = _start_training_session_with_ui_language(
+            service,
             user_id=user.id,
             topic_id=topic_id,
             lesson_id=selected_lesson_id,
             mode=TrainingMode(mode_value),
+            ui_language=_telegram_ui_language(context, user),
         )
     except ApplicationError as error:
         await query.edit_message_text(str(error))
@@ -5290,12 +5279,14 @@ async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text(_tg("no_active_session_send_start", context=context, user=user))
         return
     try:
-        question = _service(context).start_session(
+        question = _start_training_session_with_ui_language(
+            _service(context),
             user_id=user.id,
             topic_id=topic_id,
             lesson_id=lesson_id,
             mode=TrainingMode(str(mode_value)),
             adaptive_per_word=True,
+            ui_language=_telegram_ui_language(context, user),
         )
     except (ApplicationError, ValueError) as error:
         await query.edit_message_text(str(error))
@@ -5428,13 +5419,9 @@ async def bonus_hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_
             if active_session.completed:
                 reply_markup = _assignment_round_complete_keyboard(
                     assignment_kind,
-                    has_more=bool(round_progress.remaining_word_count > 0),
-                    remaining_word_count=(
-                        round_progress.remaining_word_count
-                        if round_progress.remaining_word_count > 0
-                        else None
-                    ),
-                    round_batch_size=getattr(active_session, "total_items", None),
+                    has_more=False,
+                    remaining_word_count=None,
+                    round_batch_size=None,
                     language=_telegram_ui_language(context, user),
                 )
     lines = [_tg("bonus_hard_skipped", context=context, user=user)]
@@ -5743,6 +5730,45 @@ async def _process_answer(
         outcome.next_question is not None
         and _expects_text_answer_for_question(outcome.next_question)
     )
+    raw_completed_assignment_session = _raw_training_session_by_id(
+        context,
+        session_id=active_session_id,
+    )
+    continuation_question = None
+    assignment_kind = _assignment_kind_from_session(active_session_before_submit)
+    _, assignment_goal_id = _assignment_kind_and_goal_id_from_source_tag(
+        getattr(active_session_before_submit, "source_tag", None),
+    )
+    start_assignment_use_case = _start_assignment_round_use_case_or_none(context)
+    if (
+        outcome.next_question is None
+        and outcome.summary is not None
+        and assignment_kind is not None
+        and start_assignment_use_case is not None
+        ):
+            raw_goal_id = None
+            if raw_completed_assignment_session is not None:
+                _, raw_goal_id = _assignment_kind_and_goal_id_from_source_tag(
+                    getattr(raw_completed_assignment_session, "source_tag", None),
+                )
+            try:
+                continuation_question = _execute_assignment_start_use_case(
+                    start_assignment_use_case,
+                    user_id=user.id,
+                    kind=assignment_kind,
+                    goal_id=raw_goal_id or assignment_goal_id,
+                    combo_correct_streak=int(
+                        getattr(raw_completed_assignment_session, "combo_correct_streak", 0) or 0
+                    ),
+                    combo_hard_active=bool(
+                        getattr(raw_completed_assignment_session, "combo_hard_active", False)
+                    ),
+                    ui_language=_telegram_ui_language(context, user),
+                )
+            except ValueError:
+                continuation_question = None
+    if continuation_question is not None:
+        context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(continuation_question)
     active_session_for_feedback = _service(context).get_active_session(user_id=user.id)
     if before_summary is not None:
         feedback_update = _collect_goal_feedback_update(
@@ -5750,15 +5776,24 @@ async def _process_answer(
             user=user,
             before_summary=before_summary,
         )
+    feedback_outcome = outcome
+    if continuation_question is not None and outcome.summary is not None:
+        # The underlying training session is complete, but homework continues in a
+        # freshly started session. Keep the feedback short instead of showing a
+        # misleading "Session complete" state.
+        feedback_outcome = AnswerOutcome(
+            result=outcome.result,
+            summary=None,
+            next_question=None,
+        )
     await _send_feedback(
         message,
-        outcome,
+        feedback_outcome,
         context=context,
         active_session=active_session_for_feedback or active_session_before_submit,
         user=user,
         feedback_update=feedback_update,
     )
-    assignment_kind = _assignment_kind_from_session(active_session_before_submit)
     if assignment_kind is not None:
         await _send_or_update_assignment_progress_message(
             context,
@@ -5773,7 +5808,9 @@ async def _process_answer(
             learner=user,
             completed_goals=feedback_update.completed_goals,
         )
-    if outcome.next_question is not None:
+    if continuation_question is not None:
+        await _send_question(update, context, continuation_question)
+    elif outcome.next_question is not None:
         await _send_question(update, context, outcome.next_question)
     else:
         await _flush_pending_notifications_for_user(context, user_id=user.id)
@@ -5821,16 +5858,11 @@ async def _send_feedback(
                 progress=round_progress,
             )
     if outcome.summary is not None and assignment_kind is not None and feedback_user_id is not None:
-        has_more = bool(round_progress is not None and round_progress.remaining_word_count > 0)
         reply_markup = _assignment_round_complete_keyboard(
             assignment_kind,
-            has_more=has_more,
-            remaining_word_count=(
-                round_progress.remaining_word_count
-                if round_progress is not None and round_progress.remaining_word_count > 0
-                else None
-            ),
-            round_batch_size=getattr(active_session, "total_items", None),
+            has_more=False,
+            remaining_word_count=None,
+            round_batch_size=None,
             language=_telegram_ui_language(context, feedback_user),
         )
     text = view.text
