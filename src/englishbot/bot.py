@@ -249,6 +249,7 @@ _NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
 _MEDIUM_TASK_STATE_KEY = "medium_task_state"
+_MEDIUM_TASK_LOCK_KEY = "medium_task_lock"
 _GAME_STAR_REWARD_CORRECT = 10
 _GAME_CHEST_REWARDS: tuple[int, ...] = (30, 50, 50, 100)
 _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW = timedelta(minutes=5)
@@ -5475,107 +5476,116 @@ async def medium_answer_callback_handler(update: Update, context: ContextTypes.D
     if query is None or user is None or query.data is None:
         return
     await query.answer()
-    state = _get_medium_task_state(context)
-    message = getattr(query, "message", None)
-    message_id = getattr(message, "message_id", None)
-    if state is None:
-        logger.debug("Medium callback ignored: no medium state user_id=%s data=%s", user.id, query.data)
-        return
-    if state.message_id is None:
-        logger.debug("Medium callback ignored: state has no message_id user_id=%s data=%s", user.id, query.data)
-        return
-    if message_id != state.message_id:
-        logger.debug(
-            "Medium callback ignored: stale message user_id=%s data=%s callback_message_id=%s state_message_id=%s",
-            user.id,
-            query.data,
-            message_id,
-            state.message_id,
-        )
-        return
-    active_session = _service(context).get_active_session(user_id=user.id)
-    if active_session is None:
-        logger.debug("Medium callback ignored: no active session user_id=%s data=%s", user.id, query.data)
-        return
-    current_question = _service(context).get_current_question(user_id=user.id)
-    if (
-        current_question.mode is not TrainingMode.MEDIUM
-        or current_question.session_id != state.session_id
-        or current_question.item_id != state.item_id
-    ):
-        logger.debug(
-            "Medium callback ignored: question mismatch user_id=%s data=%s current_mode=%s current_session_id=%s state_session_id=%s current_item_id=%s state_item_id=%s",
-            user.id,
-            query.data,
-            current_question.mode.value,
-            current_question.session_id,
-            state.session_id,
-            current_question.item_id,
-            state.item_id,
-        )
-        _clear_medium_task_state(context)
-        return
-    if query.data == "medium:backspace":
-        if not state.selected_letter_indexes:
-            logger.debug("Medium callback ignored: backspace on empty answer user_id=%s", user.id)
+    async with _medium_task_lock(context):
+        state = _get_medium_task_state(context)
+        message = getattr(query, "message", None)
+        message_id = getattr(message, "message_id", None)
+        if state is None:
+            logger.debug("Medium callback ignored: no medium state user_id=%s data=%s", user.id, query.data)
             return
-        state = _MediumTaskState(
-            session_id=state.session_id,
-            item_id=state.item_id,
-            target_word=state.target_word,
-            shuffled_letters=state.shuffled_letters,
-            selected_letter_indexes=state.selected_letter_indexes[:-1],
-            message_id=state.message_id,
-        )
-    elif query.data.startswith("medium:noop:"):
-        logger.debug("Medium callback ignored: noop button user_id=%s data=%s", user.id, query.data)
-        return
-    elif query.data.startswith("medium:pick:"):
-        if _medium_task_is_complete(state):
-            logger.debug("Medium callback ignored: answer already complete user_id=%s data=%s", user.id, query.data)
+        if state.message_id is None:
+            logger.debug("Medium callback ignored: state has no message_id user_id=%s data=%s", user.id, query.data)
             return
-        try:
-            picked_index = int(query.data.rsplit(":", 1)[-1])
-        except ValueError:
-            logger.debug("Medium callback ignored: invalid pick payload user_id=%s data=%s", user.id, query.data)
-            return
-        if picked_index < 0 or picked_index >= len(state.shuffled_letters):
+        if message_id != state.message_id:
             logger.debug(
-                "Medium callback ignored: pick index out of range user_id=%s data=%s index=%s letter_count=%s",
+                "Medium callback ignored: stale message user_id=%s data=%s callback_message_id=%s state_message_id=%s",
                 user.id,
                 query.data,
-                picked_index,
-                len(state.shuffled_letters),
+                message_id,
+                state.message_id,
             )
             return
-        if picked_index in state.selected_letter_indexes:
+        active_session = _service(context).get_active_session(user_id=user.id)
+        if active_session is None:
+            logger.debug("Medium callback ignored: no active session user_id=%s data=%s", user.id, query.data)
+            return
+        current_question = _service(context).get_current_question(user_id=user.id)
+        if (
+            current_question.mode is not TrainingMode.MEDIUM
+            or current_question.session_id != state.session_id
+            or current_question.item_id != state.item_id
+        ):
             logger.debug(
-                "Medium callback ignored: letter already used user_id=%s data=%s index=%s",
+                "Medium callback ignored: question mismatch user_id=%s data=%s current_mode=%s current_session_id=%s state_session_id=%s current_item_id=%s state_item_id=%s",
                 user.id,
                 query.data,
-                picked_index,
+                current_question.mode.value,
+                current_question.session_id,
+                state.session_id,
+                current_question.item_id,
+                state.item_id,
             )
+            _clear_medium_task_state(context)
             return
-        state = _MediumTaskState(
-            session_id=state.session_id,
-            item_id=state.item_id,
-            target_word=state.target_word,
-            shuffled_letters=state.shuffled_letters,
-            selected_letter_indexes=(*state.selected_letter_indexes, picked_index),
-            message_id=state.message_id,
+        if query.data == "medium:backspace":
+            if not state.selected_letter_indexes:
+                logger.debug("Medium callback ignored: backspace on empty answer user_id=%s", user.id)
+                return
+            state = _MediumTaskState(
+                session_id=state.session_id,
+                item_id=state.item_id,
+                target_word=state.target_word,
+                shuffled_letters=state.shuffled_letters,
+                selected_letter_indexes=state.selected_letter_indexes[:-1],
+                message_id=state.message_id,
+            )
+        elif query.data.startswith("medium:noop:"):
+            logger.debug("Medium callback ignored: noop button user_id=%s data=%s", user.id, query.data)
+            return
+        elif query.data.startswith("medium:pick:"):
+            if _medium_task_is_complete(state):
+                logger.debug("Medium callback ignored: answer already complete user_id=%s data=%s", user.id, query.data)
+                return
+            try:
+                picked_index = int(query.data.rsplit(":", 1)[-1])
+            except ValueError:
+                logger.debug("Medium callback ignored: invalid pick payload user_id=%s data=%s", user.id, query.data)
+                return
+            if picked_index < 0 or picked_index >= len(state.shuffled_letters):
+                logger.debug(
+                    "Medium callback ignored: pick index out of range user_id=%s data=%s index=%s letter_count=%s",
+                    user.id,
+                    query.data,
+                    picked_index,
+                    len(state.shuffled_letters),
+                )
+                return
+            if picked_index in state.selected_letter_indexes:
+                logger.debug(
+                    "Medium callback ignored: letter already used user_id=%s data=%s index=%s",
+                    user.id,
+                    query.data,
+                    picked_index,
+                )
+                return
+            state = _MediumTaskState(
+                session_id=state.session_id,
+                item_id=state.item_id,
+                target_word=state.target_word,
+                shuffled_letters=state.shuffled_letters,
+                selected_letter_indexes=(*state.selected_letter_indexes, picked_index),
+                message_id=state.message_id,
+            )
+        elif query.data == "medium:check":
+            if not _medium_task_is_complete(state):
+                logger.debug("Medium callback ignored: check before complete user_id=%s", user.id)
+                return
+        else:
+            logger.debug("Medium callback ignored: unsupported payload user_id=%s data=%s", user.id, query.data)
+            return
+        _set_medium_task_state(context, state)
+        if query.data == "medium:check":
+            await _edit_training_question_view(
+                query,
+                view=_build_medium_question_view(current_question, state=state, context=context, user=user),
+            )
+            _clear_medium_task_state(context)
+            await _process_answer(update, context, _medium_task_answer_text(state))
+            return
+        await _edit_training_question_view(
+            query,
+            view=_build_medium_question_view(current_question, state=state, context=context, user=user),
         )
-    else:
-        logger.debug("Medium callback ignored: unsupported payload user_id=%s data=%s", user.id, query.data)
-        return
-    _set_medium_task_state(context, state)
-    if _medium_task_is_complete(state):
-        _clear_medium_task_state(context)
-        await _process_answer(update, context, _medium_task_answer_text(state))
-        return
-    await _edit_training_question_view(
-        query,
-        view=_build_medium_question_view(current_question, state=state),
-    )
 
 
 async def choice_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -5975,6 +5985,18 @@ def _set_medium_task_state(context: ContextTypes.DEFAULT_TYPE, state: _MediumTas
         user_data[_MEDIUM_TASK_STATE_KEY] = state
 
 
+def _medium_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return asyncio.Lock()
+    lock = user_data.get(_MEDIUM_TASK_LOCK_KEY)
+    if isinstance(lock, asyncio.Lock):
+        return lock
+    created_lock = asyncio.Lock()
+    user_data[_MEDIUM_TASK_LOCK_KEY] = created_lock
+    return created_lock
+
+
 def _medium_task_slot_count(state: _MediumTaskState) -> int:
     return sum(1 for character in state.target_word if not character.isspace())
 
@@ -6019,7 +6041,12 @@ def _medium_task_answer_text(state: _MediumTaskState) -> str:
     return "".join(assembled)
 
 
-def _medium_task_keyboard(state: _MediumTaskState) -> InlineKeyboardMarkup:
+def _medium_task_keyboard(
+    state: _MediumTaskState,
+    *,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+    user=None,
+) -> InlineKeyboardMarkup:
     selected_indexes = set(state.selected_letter_indexes)
     buttons = [
         InlineKeyboardButton(
@@ -6036,7 +6063,20 @@ def _medium_task_keyboard(state: _MediumTaskState) -> InlineKeyboardMarkup:
     row_width = 4
     for start in range(0, len(buttons), row_width):
         rows.append(buttons[start : start + row_width])
-    rows.append([InlineKeyboardButton("⌫", callback_data="medium:backspace")])
+    check_callback = "medium:check" if _medium_task_is_complete(state) else "medium:noop:check"
+    rows.append(
+        [
+            InlineKeyboardButton("⌫", callback_data="medium:backspace"),
+            InlineKeyboardButton(
+                (
+                    _tg("medium_check_button", context=context, user=user)
+                    if context is not None
+                    else telegram_ui_text("medium_check_button")
+                ),
+                callback_data=check_callback,
+            ),
+        ]
+    )
     return InlineKeyboardMarkup(rows)
 
 
@@ -6058,12 +6098,14 @@ def _build_medium_question_view(
     question: TrainingQuestion,
     *,
     state: _MediumTaskState,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+    user=None,
 ) -> TelegramTextView | TelegramPhotoView:
     image_path = resolve_existing_image_path(question.image_ref)
     return build_training_question_view(
         question,
         image_path=image_path,
-        reply_markup=_medium_task_keyboard(state),
+        reply_markup=_medium_task_keyboard(state, context=context, user=user),
         body_text_override=_build_medium_question_text(question, state),
     )
 
@@ -6119,6 +6161,8 @@ async def _send_question(
         view = _build_medium_question_view(
             question,
             state=_build_medium_task_state(question),
+            context=context,
+            user=user,
         )
     elif question.options:
         reply_markup = InlineKeyboardMarkup(

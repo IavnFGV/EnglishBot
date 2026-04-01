@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -665,6 +666,8 @@ async def test_send_question_builds_medium_inline_keyboard_and_state() -> None:
         "P",
     ]
     assert keyboard.inline_keyboard[-1][0].text == "⌫"
+    assert keyboard.inline_keyboard[-1][1].text == "✅ Check"
+    assert keyboard.inline_keyboard[-1][1].callback_data == "medium:noop:check"
     state = context.user_data["medium_task_state"]
     assert state.target_word == "APPLE"
     assert state.shuffled_letters == ("A", "P", "L", "E", "P")
@@ -731,14 +734,84 @@ async def test_medium_answer_callback_handler_uses_backspace_and_repeated_letter
         query.data = callback_data
         await bot.medium_answer_callback_handler(update, context)  # type: ignore[arg-type]
 
-    assert processed_answers == ["APPLE"]
+    assert processed_answers == []
+    assert context.user_data["medium_task_state"].selected_letter_indexes == (0, 1, 4, 2, 3)
     assert any("A P _ _ _" in text for text, _reply_markup, _parse_mode in query.edit_calls)
     assert any("A P P _ _" in text for text, _reply_markup, _parse_mode in query.edit_calls)
+    assert any("A P P L E" in text for text, _reply_markup, _parse_mode in query.edit_calls)
+    assert any(
+        reply_markup is not None
+        and reply_markup.inline_keyboard[-1][1].callback_data == "medium:check"
+        for _text, reply_markup, _parse_mode in query.edit_calls
+    )
     assert any(
         any(button.text == "·" for row in reply_markup.inline_keyboard[:-1] for button in row)
         for _text, reply_markup, _parse_mode in query.edit_calls
         if reply_markup is not None
     )
+
+    query.data = "medium:check"
+    await bot.medium_answer_callback_handler(update, context)  # type: ignore[arg-type]
+
+    assert processed_answers == ["APPLE"]
+    assert "medium_task_state" not in context.user_data
+
+
+@pytest.mark.anyio
+async def test_medium_answer_callback_handler_ignores_check_before_word_is_complete(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    question = TrainingQuestion(
+        session_id="session-medium-2b",
+        item_id="apple",
+        mode=TrainingMode.MEDIUM,
+        prompt="Translation: яблоко\nVisual clue: Image is shown above.\nShuffled letters hint: APLEP\nType the English word.",
+        image_ref=None,
+        correct_answer="APPLE",
+        letter_hint="APLEP",
+    )
+    processed_answers: list[str] = []
+
+    async def _fake_process_answer(update, context, answer: str) -> None:  # noqa: ARG001
+        processed_answers.append(answer)
+
+    monkeypatch.setattr(bot, "_process_answer", _fake_process_answer)
+
+    message = _FakeEditableMessage("medium")
+    message.message_id = 77
+    query = _FakeQuery("medium:check", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+        effective_message=message,
+    )
+    context = SimpleNamespace(
+        user_data={
+            "medium_task_state": bot._MediumTaskState(
+                session_id=question.session_id,
+                item_id=question.item_id,
+                target_word=question.correct_answer,
+                shuffled_letters=("A", "P", "L", "E", "P"),
+                selected_letter_indexes=(0, 1),
+                message_id=77,
+            )
+        },
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _MediumQuestionService(question),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    with caplog.at_level("DEBUG", logger="englishbot.bot"):
+        await bot.medium_answer_callback_handler(update, context)  # type: ignore[arg-type]
+
+    assert processed_answers == []
+    assert query.edit_calls == []
+    assert context.user_data["medium_task_state"].selected_letter_indexes == (0, 1)
+    assert "Medium callback ignored: check before complete" in caplog.text
 
 
 @pytest.mark.anyio
@@ -835,6 +908,79 @@ async def test_medium_answer_callback_handler_logs_reused_letter_press(
 
     assert query.edit_calls == []
     assert "Medium callback ignored: letter already used" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_medium_answer_callback_handler_serializes_fast_parallel_clicks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    question = TrainingQuestion(
+        session_id="session-medium-5",
+        item_id="apple",
+        mode=TrainingMode.MEDIUM,
+        prompt="Translation: яблоко\nVisual clue: Image is shown above.\nShuffled letters hint: APLEP\nType the English word.",
+        image_ref=None,
+        correct_answer="APPLE",
+        letter_hint="APLEP",
+    )
+    message = _FakeEditableMessage("medium")
+    message.message_id = 77
+    query_a = _FakeQuery("medium:pick:0", message)
+    query_b = _FakeQuery("medium:pick:1", message)
+    update_a = SimpleNamespace(
+        callback_query=query_a,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+        effective_message=message,
+    )
+    update_b = SimpleNamespace(
+        callback_query=query_b,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+        effective_message=message,
+    )
+    context = SimpleNamespace(
+        user_data={
+            "medium_task_state": bot._MediumTaskState(
+                session_id=question.session_id,
+                item_id=question.item_id,
+                target_word=question.correct_answer,
+                shuffled_letters=("A", "P", "L", "E", "P"),
+                selected_letter_indexes=(),
+                message_id=77,
+            )
+        },
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _MediumQuestionService(question),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+    first_edit_started = asyncio.Event()
+    release_first_edit = asyncio.Event()
+    edit_call_count = 0
+
+    original_edit = bot._edit_training_question_view
+
+    async def _wrapped_edit_training_question_view(query, *, view) -> None:  # noqa: ANN001
+        nonlocal edit_call_count
+        edit_call_count += 1
+        if edit_call_count == 1:
+            first_edit_started.set()
+            await release_first_edit.wait()
+        await original_edit(query, view=view)
+
+    monkeypatch.setattr(bot, "_edit_training_question_view", _wrapped_edit_training_question_view)
+
+    task_a = asyncio.create_task(bot.medium_answer_callback_handler(update_a, context))  # type: ignore[arg-type]
+    await first_edit_started.wait()
+    task_b = asyncio.create_task(bot.medium_answer_callback_handler(update_b, context))  # type: ignore[arg-type]
+    await asyncio.sleep(0)
+    assert context.user_data["medium_task_state"].selected_letter_indexes == (0,)
+
+    release_first_edit.set()
+    await asyncio.gather(task_a, task_b)
+
+    assert context.user_data["medium_task_state"].selected_letter_indexes == (0, 1)
 
 
 @pytest.mark.anyio

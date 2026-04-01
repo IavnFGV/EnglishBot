@@ -456,6 +456,8 @@ async def test_bot_rendering_uses_compact_text_prompt_for_text_mode() -> None:
         "d",
     ]
     assert reply_markup.inline_keyboard[-1][0].text == "⌫"
+    assert reply_markup.inline_keyboard[-1][1].text == "✅ Check"
+    assert reply_markup.inline_keyboard[-1][1].callback_data == "medium:noop:check"
 
 
 def test_comfyui_client_generates_image_via_http_protocol(
