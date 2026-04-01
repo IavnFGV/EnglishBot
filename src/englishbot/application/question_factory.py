@@ -37,12 +37,13 @@ class QuestionFactory:
         item: VocabularyItem,
         all_topic_items: list[VocabularyItem],
     ) -> TrainingQuestion:
+        is_bonus_hard = session.bonus_item_id == item.id and session.bonus_mode is not None
         question_mode = session.mode
         for session_item in session.items:
             if session_item.vocabulary_item_id == item.id and session_item.mode is not None:
                 question_mode = session_item.mode
                 break
-        if session.bonus_item_id == item.id and session.bonus_mode is not None:
+        if is_bonus_hard:
             question_mode = session.bonus_mode
             first_letter = next((char for char in item.english_word if char.isalpha()), item.english_word[:1]).upper()
             prompt = (
@@ -61,6 +62,8 @@ class QuestionFactory:
                 input_hint="Type the word or skip this bonus challenge.",
                 letter_hint=first_letter,
             )
+        if session.combo_hard_active:
+            question_mode = TrainingMode.HARD
         image_line = (
             "Image is shown above."
             if item.image_ref

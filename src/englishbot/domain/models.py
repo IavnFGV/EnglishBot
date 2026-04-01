@@ -116,6 +116,8 @@ class TrainingSession:
     current_index: int = 0
     bonus_item_id: str | None = None
     bonus_mode: TrainingMode | None = None
+    combo_correct_streak: int = 0
+    combo_hard_active: bool = False
     answer_history: list[SessionAnswer] = field(default_factory=list)
     completed: bool = False
 

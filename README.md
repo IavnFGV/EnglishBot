@@ -212,8 +212,15 @@ Homework completion rules:
   - `1 easy`
   - `2 medium`
   - then, with a small random chance, one optional bonus `hard` step
+- separately from word progress, a round can build a combo:
+  - after `4` correct answers in a row, the next base word is asked in `hard`
+  - each additional correct combo-hard answer keeps the next base word in `hard`
+  - one mistake resets the combo
 - the bonus `hard` step does not increase homework remaining counters or round size
 - when a bonus `hard` step appears, the homework progress circle marks that word with `🔥`
+- the homework progress circle also shows a moving combo arrow:
+  - it crawls as the learner builds the `4-answer` streak
+  - when the combo is active, it points at the next forced-`hard` word
 - a homework for 10 words is not the same as 10 rounds
 - a deadline helps organize the task, but completion still depends on word progress
 

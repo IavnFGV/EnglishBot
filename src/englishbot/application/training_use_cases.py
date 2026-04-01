@@ -37,6 +37,8 @@ from englishbot.logging_utils import logged_service_call
 
 logger = logging.getLogger(__name__)
 
+_COMBO_HARD_TRIGGER_STREAK = 4
+
 
 def _homework_goal_id_from_source_tag(source_tag: str | None) -> str | None:
     if source_tag is None or not source_tag.startswith("assignment:homework:"):
@@ -276,6 +278,14 @@ class SubmitAnswerUseCase:
     def execute(self, *, user_id: int, answer: str) -> AnswerOutcome:
         session = self._require_active_session(user_id)
         question = self._get_current_question.execute(user_id=user_id)
+        is_bonus_question = (
+            session.bonus_item_id == question.item_id and session.bonus_mode is not None
+        )
+        is_combo_hard_question = (
+            not is_bonus_question
+            and session.combo_hard_active
+            and question.mode is TrainingMode.HARD
+        )
         result = self._answer_checker.check(question=question, answer=answer)
         progress = self._progress_repository.get(user_id, question.item_id) or UserProgress(
             user_id=user_id,
@@ -333,6 +343,22 @@ class SubmitAnswerUseCase:
                     ),
                 )
                 bonus_hard_started = bool(getattr(progress_update, "bonus_hard_unlocked", False))
+        if not is_bonus_question:
+            if result.is_correct:
+                if is_combo_hard_question:
+                    session.combo_hard_active = True
+                    session.combo_correct_streak = _COMBO_HARD_TRIGGER_STREAK
+                else:
+                    session.combo_correct_streak = min(
+                        _COMBO_HARD_TRIGGER_STREAK,
+                        session.combo_correct_streak + 1,
+                    )
+                    session.combo_hard_active = (
+                        session.combo_correct_streak >= _COMBO_HARD_TRIGGER_STREAK
+                    )
+            else:
+                session.combo_correct_streak = 0
+                session.combo_hard_active = False
         try:
             session.record_answer(
                 answer=answer,

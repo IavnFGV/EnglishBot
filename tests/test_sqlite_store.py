@@ -976,6 +976,39 @@ def test_sqlite_store_tracks_recent_session_words(tmp_path: Path) -> None:
     assert store.list_recent_session_words(user_id=1, limit_sessions=2) == {"dog", "sun"}
 
 
+def test_sqlite_store_persists_session_combo_hard_state(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+            ],
+        }
+    )
+
+    from englishbot.domain.models import SessionItem, TrainingMode, TrainingSession
+
+    store.save_session(
+        TrainingSession(
+            id="combo-session",
+            user_id=3,
+            topic_id="animals",
+            mode=TrainingMode.EASY,
+            combo_correct_streak=4,
+            combo_hard_active=True,
+            items=[SessionItem(order=0, vocabulary_item_id="cat")],
+        )
+    )
+
+    session = store.get_active_session_by_user(3)
+
+    assert session is not None
+    assert session.combo_correct_streak == 4
+    assert session.combo_hard_active is True
+
+
 def test_sqlite_store_lists_goals_and_user_metrics(tmp_path: Path) -> None:
     from datetime import UTC, datetime
 

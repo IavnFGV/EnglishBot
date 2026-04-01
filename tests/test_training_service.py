@@ -468,6 +468,133 @@ def test_submit_answer_can_insert_bonus_hard_without_changing_session_total(
     assert session_repository.get_active_by_user(15) is None
 
 
+def test_submit_answer_activates_combo_hard_after_four_correct_and_resets_after_mistake(
+    vocabulary_items: list[VocabularyItem],
+) -> None:
+    session_repository = InMemorySessionRepository()
+    progress_repository = InMemoryUserProgressRepository()
+    vocabulary_repository = InMemoryVocabularyRepository(vocabulary_items)
+    question_factory = QuestionFactory(random.Random(1))
+    get_current_question = GetCurrentQuestionUseCase(
+        vocabulary_repository=vocabulary_repository,
+        session_repository=session_repository,
+        question_factory=question_factory,
+    )
+    submit_answer = SubmitAnswerUseCase(
+        progress_repository=progress_repository,
+        session_repository=session_repository,
+        get_current_question=get_current_question,
+        answer_checker=AnswerChecker(),
+        summary_calculator=SessionSummaryCalculator(),
+    )
+    session = TrainingSession(
+        id="session-combo-hard",
+        user_id=22,
+        topic_id="weather",
+        mode=TrainingMode.EASY,
+        items=[
+            SessionItem(order=0, vocabulary_item_id="1"),
+            SessionItem(order=1, vocabulary_item_id="2"),
+            SessionItem(order=2, vocabulary_item_id="3"),
+            SessionItem(order=3, vocabulary_item_id="4"),
+            SessionItem(order=4, vocabulary_item_id="5"),
+            SessionItem(order=5, vocabulary_item_id="6"),
+            SessionItem(order=6, vocabulary_item_id="7"),
+        ],
+    )
+    session_repository.save(session)
+
+    assert submit_answer.execute(user_id=22, answer="sun").next_question.mode is TrainingMode.EASY
+    assert submit_answer.execute(user_id=22, answer="rain").next_question.mode is TrainingMode.EASY
+    assert submit_answer.execute(user_id=22, answer="cloud").next_question.mode is TrainingMode.EASY
+
+    fourth_outcome = submit_answer.execute(user_id=22, answer="wind")
+
+    assert fourth_outcome.next_question is not None
+    assert fourth_outcome.next_question.mode is TrainingMode.HARD
+    active_session = session_repository.get_active_by_user(22)
+    assert active_session is not None
+    assert active_session.combo_correct_streak == 4
+    assert active_session.combo_hard_active is True
+
+    fifth_outcome = submit_answer.execute(user_id=22, answer="spring")
+
+    assert fifth_outcome.next_question is not None
+    assert fifth_outcome.next_question.mode is TrainingMode.HARD
+
+    sixth_outcome = submit_answer.execute(user_id=22, answer="wrong")
+
+    assert sixth_outcome.next_question is not None
+    assert sixth_outcome.next_question.mode is TrainingMode.EASY
+    active_session = session_repository.get_active_by_user(22)
+    assert active_session is not None
+    assert active_session.combo_correct_streak == 0
+    assert active_session.combo_hard_active is False
+
+
+def test_submit_answer_keeps_combo_hard_for_next_word_after_bonus_hard_on_same_word(
+    vocabulary_items: list[VocabularyItem],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("englishbot.application.training_use_cases.random.random", lambda: 0.0)
+    session_repository = InMemorySessionRepository()
+    progress_repository = _HomeworkBonusProgressRepository()
+    vocabulary_repository = InMemoryVocabularyRepository(vocabulary_items)
+    question_factory = QuestionFactory(random.Random(1))
+    get_current_question = GetCurrentQuestionUseCase(
+        vocabulary_repository=vocabulary_repository,
+        session_repository=session_repository,
+        question_factory=question_factory,
+    )
+    submit_answer = SubmitAnswerUseCase(
+        progress_repository=progress_repository,
+        session_repository=session_repository,
+        get_current_question=get_current_question,
+        answer_checker=AnswerChecker(),
+        summary_calculator=SessionSummaryCalculator(),
+    )
+    session = TrainingSession(
+        id="session-combo-bonus-hard",
+        user_id=23,
+        topic_id="seasons",
+        source_tag="assignment:homework:goal-23",
+        mode=TrainingMode.MEDIUM,
+        items=[
+            SessionItem(order=0, vocabulary_item_id="1", mode=TrainingMode.EASY),
+            SessionItem(order=1, vocabulary_item_id="2", mode=TrainingMode.EASY),
+            SessionItem(order=2, vocabulary_item_id="3", mode=TrainingMode.EASY),
+            SessionItem(order=3, vocabulary_item_id="4", mode=TrainingMode.MEDIUM),
+            SessionItem(order=4, vocabulary_item_id="5", mode=TrainingMode.MEDIUM),
+            SessionItem(order=5, vocabulary_item_id="6", mode=TrainingMode.MEDIUM),
+        ],
+    )
+    session_repository.save(session)
+    for item_id in ("1", "2", "3", "4", "5", "6"):
+        progress_repository.save_word_stats(WordStats(user_id=23, word_id=item_id))
+
+    submit_answer.execute(user_id=23, answer="sun")
+    submit_answer.execute(user_id=23, answer="rain")
+    submit_answer.execute(user_id=23, answer="cloud")
+    fourth_outcome = submit_answer.execute(user_id=23, answer="wind")
+
+    assert fourth_outcome.next_question is not None
+    assert fourth_outcome.next_question.mode is TrainingMode.HARD
+    assert fourth_outcome.next_question.item_id == "4"
+
+    fifth_outcome = submit_answer.execute(user_id=23, answer="wind")
+
+    assert fifth_outcome.next_question is not None
+    assert fifth_outcome.next_question.mode is TrainingMode.HARD
+    assert fifth_outcome.next_question.item_id == "5"
+
+    sixth_outcome = submit_answer.execute(user_id=23, answer="spring")
+
+    assert sixth_outcome.summary is None
+    assert sixth_outcome.next_question is not None
+    assert sixth_outcome.next_question.mode is TrainingMode.HARD
+    assert sixth_outcome.next_question.item_id == "6"
+
+
 def test_training_flow_integration_for_medium_mode_and_unique_session_ids(
     topics: list[Topic],
     lessons: list[Lesson],

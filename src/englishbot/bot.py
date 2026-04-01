@@ -1222,6 +1222,7 @@ def _build_assignment_progress_snapshot(
     kind: AssignmentSessionKind,
     user,
     goal_id: str | None = None,
+    active_session=None,
 ) -> AssignmentProgressSnapshot | None:
     if context.application.bot_data.get("content_store") is None:
         return None
@@ -1290,6 +1291,9 @@ def _build_assignment_progress_snapshot(
         remaining_word_count=remaining_word_count,
         estimated_round_count=estimated_round_count,
         segments=segments,
+        combo_charge_streak=max(0, min(4, int(getattr(active_session, "combo_correct_streak", 0) or 0))),
+        combo_hard_active=bool(getattr(active_session, "combo_hard_active", False)),
+        combo_target_word_id=_session_combo_target_word_id(active_session),
     )
 
 
@@ -1327,6 +1331,28 @@ def _assignment_progress_image_path(*, user_id: int, kind: AssignmentSessionKind
         / "englishbot-assignment-progress"
         / f"user-{user_id}-{kind.value}.png"
     )
+
+
+def _session_combo_target_word_id(active_session) -> str | None:
+    if active_session is None or not bool(getattr(active_session, "combo_hard_active", False)):
+        return None
+    if not hasattr(active_session, "current_item_id"):
+        return None
+    try:
+        return active_session.current_item_id()
+    except ValueError:
+        return None
+
+
+def _session_combo_target_word_id(active_session) -> str | None:
+    if active_session is None or not bool(getattr(active_session, "combo_hard_active", False)):
+        return None
+    if not hasattr(active_session, "current_item_id"):
+        return None
+    try:
+        return active_session.current_item_id()
+    except ValueError:
+        return None
 
 
 def _assignment_progress_caption(
@@ -1395,6 +1421,7 @@ async def _send_or_update_assignment_progress_message(
         return
     if active_session is None:
         active_session = _service(context).get_active_session(user_id=user_id)
+    raw_active_session = _active_training_session(context, user_id=user_id)
     _, goal_id = _assignment_kind_and_goal_id_from_source_tag(
         getattr(active_session, "source_tag", None),
     )
@@ -1404,6 +1431,7 @@ async def _send_or_update_assignment_progress_message(
         kind=kind,
         user=user,
         goal_id=goal_id,
+        active_session=raw_active_session,
     )
     flow_id = _assignment_progress_flow_id(user_id=user_id, kind=kind, goal_id=goal_id)
     if snapshot is None:

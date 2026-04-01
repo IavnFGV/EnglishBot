@@ -13,9 +13,11 @@ from englishbot.application.homework_progress_use_cases import (
 from englishbot.assignment_progress_image import (
     AssignmentProgressSegment,
     AssignmentProgressSnapshot,
+    _segment_color,
     render_assignment_progress_image,
 )
 from englishbot.domain.models import GoalPeriod, GoalType, TrainingMode
+from englishbot.domain.models import SessionItem, TrainingSession
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 
 
@@ -59,6 +61,66 @@ def test_render_assignment_progress_image_writes_png(tmp_path: Path) -> None:
     assert output_path.read_bytes().startswith(b"\x89PNG")
     with Image.open(output_path) as image:
         assert image.size == (512, 512)
+
+
+def test_render_assignment_progress_image_draws_pending_bonus_arrow_over_counter(tmp_path: Path) -> None:
+    snapshot = AssignmentProgressSnapshot(
+        center_label="done",
+        legend_labels=("start", "warm-up", "almost", "done"),
+        completed_word_count=0,
+        total_word_count=2,
+        remaining_word_count=2,
+        estimated_round_count=1,
+        segments=(
+            AssignmentProgressSegment(
+                "a",
+                "April",
+                1.0,
+                bonus_hard_pending=True,
+            ),
+            AssignmentProgressSegment("b", "August", 0.0),
+        ),
+    )
+
+    output_path = render_assignment_progress_image(
+        snapshot,
+        output_path=tmp_path / "progress" / "bonus-arrow.png",
+    )
+
+    with Image.open(output_path) as image:
+        center_x = image.size[0] // 2
+        center_y = int(image.size[1] * 0.41)
+        sampled_pixels = [
+            image.getpixel((x, y))
+            for x in range(center_x + 18, center_x + 70)
+            for y in range(center_y - 6, center_y + 7)
+        ]
+
+    assert any(red > 220 and green > 90 and green < 210 and blue < 140 for red, green, blue in sampled_pixels)
+
+
+def test_segment_color_uses_distinct_teal_for_completed_bonus_hard() -> None:
+    assert _segment_color(
+        AssignmentProgressSegment(
+            "word",
+            "Word",
+            1.0,
+            bonus_hard_pending=False,
+            bonus_hard_completed=True,
+        )
+    ) == "#1f9d8b"
+
+
+def test_segment_color_keeps_orange_for_pending_bonus_hard_progress_stage() -> None:
+    assert _segment_color(
+        AssignmentProgressSegment(
+            "word",
+            "Word",
+            0.66,
+            bonus_hard_pending=True,
+            bonus_hard_completed=False,
+        )
+    ) == "#ffaf5f"
 
 
 def test_build_assignment_progress_snapshot_uses_homework_word_progress(tmp_path: Path) -> None:
@@ -241,6 +303,53 @@ def test_build_assignment_progress_snapshot_marks_bonus_hard_pending_and_complet
     assert completed_snapshot is not None
     assert completed_snapshot.segments[0].bonus_hard_pending is False
     assert completed_snapshot.segments[0].bonus_hard_completed is True
+
+
+def test_build_assignment_progress_snapshot_includes_combo_arrow_state(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    goal = HomeworkProgressUseCase(store=store).create_goal(
+        user_id=18,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=2,
+        target_word_ids=["april", "august"],
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": store,
+                "telegram_ui_language": "en",
+            }
+        )
+    )
+    active_session = TrainingSession(
+        id="session-combo-image",
+        user_id=18,
+        topic_id="months",
+        source_tag=f"assignment:homework:{goal.id}",
+        mode=TrainingMode.MEDIUM,
+        current_index=1,
+        combo_correct_streak=4,
+        combo_hard_active=True,
+        items=[
+            SessionItem(order=0, vocabulary_item_id="april", mode=TrainingMode.MEDIUM),
+            SessionItem(order=1, vocabulary_item_id="august", mode=TrainingMode.MEDIUM),
+        ],
+    )
+
+    snapshot = bot._build_assignment_progress_snapshot(
+        context=context,  # type: ignore[arg-type]
+        user_id=18,
+        kind=AssignmentSessionKind.HOMEWORK,
+        user=SimpleNamespace(id=18, language_code="en"),
+        goal_id=goal.id,
+        active_session=active_session,
+    )
+
+    assert snapshot is not None
+    assert snapshot.combo_charge_streak == 4
+    assert snapshot.combo_hard_active is True
+    assert snapshot.combo_target_word_id == "august"
 
 
 def test_build_assignment_progress_snapshot_uses_current_goal_when_goal_id_is_provided(tmp_path: Path) -> None:

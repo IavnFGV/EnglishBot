@@ -304,6 +304,8 @@ class SQLiteContentStore:
                     current_index INTEGER NOT NULL DEFAULT 0,
                     bonus_item_id TEXT REFERENCES learning_items(id) ON DELETE SET NULL,
                     bonus_mode TEXT,
+                    combo_correct_streak INTEGER NOT NULL DEFAULT 0,
+                    combo_hard_active INTEGER NOT NULL DEFAULT 0,
                     completed INTEGER NOT NULL DEFAULT 0
                 );
 
@@ -493,6 +495,14 @@ class SQLiteContentStore:
                 connection.execute("ALTER TABLE training_sessions ADD COLUMN bonus_item_id TEXT")
             if "bonus_mode" not in session_columns:
                 connection.execute("ALTER TABLE training_sessions ADD COLUMN bonus_mode TEXT")
+            if "combo_correct_streak" not in session_columns:
+                connection.execute(
+                    "ALTER TABLE training_sessions ADD COLUMN combo_correct_streak INTEGER NOT NULL DEFAULT 0"
+                )
+            if "combo_hard_active" not in session_columns:
+                connection.execute(
+                    "ALTER TABLE training_sessions ADD COLUMN combo_hard_active INTEGER NOT NULL DEFAULT 0"
+                )
             session_answer_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(training_session_answers)").fetchall()
             }
@@ -2132,8 +2142,9 @@ class SQLiteContentStore:
             connection.execute(
                 """
                 INSERT INTO training_sessions (
-                    id, user_id, topic_id, lesson_id, source_tag, mode, current_index, bonus_item_id, bonus_mode, completed
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, user_id, topic_id, lesson_id, source_tag, mode, current_index, bonus_item_id, bonus_mode,
+                    combo_correct_streak, combo_hard_active, completed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     user_id=excluded.user_id,
                     topic_id=excluded.topic_id,
@@ -2143,6 +2154,8 @@ class SQLiteContentStore:
                     current_index=excluded.current_index,
                     bonus_item_id=excluded.bonus_item_id,
                     bonus_mode=excluded.bonus_mode,
+                    combo_correct_streak=excluded.combo_correct_streak,
+                    combo_hard_active=excluded.combo_hard_active,
                     completed=excluded.completed
                 """,
                 (
@@ -2155,6 +2168,8 @@ class SQLiteContentStore:
                     session.current_index,
                     session.bonus_item_id,
                     session.bonus_mode.value if session.bonus_mode is not None else None,
+                    session.combo_correct_streak,
+                    1 if session.combo_hard_active else 0,
                     1 if session.completed else 0,
                 ),
             )
@@ -2241,6 +2256,8 @@ class SQLiteContentStore:
                     current_index,
                     bonus_item_id,
                     bonus_mode,
+                    combo_correct_streak,
+                    combo_hard_active,
                     completed
                 FROM training_sessions
                 WHERE id = ?
@@ -2281,6 +2298,8 @@ class SQLiteContentStore:
                 if session_row["bonus_mode"] is not None
                 else None
             ),
+            combo_correct_streak=int(session_row["combo_correct_streak"] or 0),
+            combo_hard_active=bool(session_row["combo_hard_active"]),
             completed=bool(session_row["completed"]),
             items=[
                 SessionItem(order=row["sort_order"], vocabulary_item_id=row["vocabulary_item_id"])

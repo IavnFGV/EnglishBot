@@ -91,6 +91,15 @@ Difficulty progress inside homework is intentionally stricter than plain topic p
 - the bonus `hard` step does not add to homework-left or round-left counters
 - when bonus `hard` is ready or cleared, the progress circle marks that word with `🔥`
 
+Round flow also has a separate combo mechanic:
+
+- after `4` correct answers in a row, the next base homework word is asked in `hard`
+- every additional correct combo-hard answer keeps the next base homework word in `hard`
+- one mistake resets the combo chain
+- the combo chain is session-based, not a permanent homework requirement
+- when a word closes with a random bonus `hard` and a combo activates at the same time, the bonus `hard` stays on that same word first, and the combo-hard continues on the next base word
+- the progress circle shows a moving combo arrow while the streak charges and a fired arrow when the next word is forced to `hard`
+
 The deadline helps organize the task, but homework is finished only when the assigned words actually reach their required state.
 
 ## Homework feedback in chat
