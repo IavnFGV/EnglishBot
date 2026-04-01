@@ -222,10 +222,10 @@ def _draw_combo_streak_indicator(
     dot_size = min(max(18, size // 21), row_gap - 5)
     x = int(size * 0.87)
     start_y = legend_top + row_gap * 2
-    active_fill = "#2f7df6" if combo_hard_active else "#85b6ff"
-    active_outline = "#1f5fcc"
-    inactive_fill = "#edf4ff"
-    inactive_outline = "#bfd5f5"
+    active_fill = "#167a6c" if combo_hard_active else "#79d99a"
+    active_outline = "#0f5d52" if combo_hard_active else "#4fbf79"
+    inactive_fill = "#eef7f1"
+    inactive_outline = "#c8ddcf"
 
     for index in range(4):
         y = start_y - index * row_gap
@@ -261,12 +261,18 @@ def _draw_legend(
         legend_entries.append((left_x, base_y + row_gap * 2, "#167a6c", hard_legend_label))
 
     for x, y, color, label in legend_entries:
-        outline = "#0f5d52" if color == "#167a6c" else None
+        outline = {
+            "#dde7ef": "#c2d3e2",
+            "#f7d36a": "#dfba4d",
+            "#ffaf5f": "#e48f39",
+            "#79d99a": "#4fbf79",
+            "#167a6c": "#0f5d52",
+        }.get(color)
         draw.ellipse(
             [x, y, x + swatch_size, y + swatch_size],
             fill=color,
             outline=outline,
-            width=max(2, size // 180) if outline is not None else 0,
+            width=max(2, size // 180),
         )
         draw.text(
             (x + swatch_size + 8, y - 2),

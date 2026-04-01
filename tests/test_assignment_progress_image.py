@@ -131,7 +131,40 @@ def test_render_assignment_progress_image_draws_combo_streak_dots(tmp_path: Path
             for y in range(330, 470)
         ]
 
-    assert any(blue > 220 and red < 180 and green > 170 for red, green, blue in sampled_pixels)
+    assert any(green > 200 and red < 170 and blue < 190 for red, green, blue in sampled_pixels)
+
+
+def test_render_assignment_progress_image_draws_dark_green_combo_dots_when_hard_active(tmp_path: Path) -> None:
+    snapshot = AssignmentProgressSnapshot(
+        center_label="done",
+        legend_labels=("start", "warm-up", "almost", "done"),
+        hard_legend_label="hard clear",
+        completed_word_count=1,
+        total_word_count=3,
+        remaining_word_count=2,
+        estimated_round_count=1,
+        segments=(
+            AssignmentProgressSegment("a", "April", 0.33),
+            AssignmentProgressSegment("b", "August", 0.66),
+            AssignmentProgressSegment("c", "Apricot", 1.0),
+        ),
+        combo_charge_streak=4,
+        combo_hard_active=True,
+    )
+
+    output_path = render_assignment_progress_image(
+        snapshot,
+        output_path=tmp_path / "progress" / "combo-dots-hard.png",
+    )
+
+    with Image.open(output_path) as image:
+        sampled_pixels = [
+            image.getpixel((x, y))
+            for x in range(425, 475)
+            for y in range(330, 470)
+        ]
+
+    assert any(green > 100 and green < 160 and red < 40 and blue < 130 for red, green, blue in sampled_pixels)
 
 
 def test_segment_color_uses_distinct_teal_for_completed_bonus_hard() -> None:
