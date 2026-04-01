@@ -1225,10 +1225,79 @@ async def test_send_feedback_keeps_compact_first_line_and_restores_assignment_pr
 
 
 @pytest.mark.anyio
-async def test_hard_skip_handler_routes_active_hard_question_into_existing_answer_flow(
+async def test_hard_skip_handler_downgrades_homework_hard_to_same_word_on_medium(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     message = _FakeEditableMessage("bonus")
+    query = _FakeQuery("hard:skip:session-hard:cat", message)
+    sent_questions: list[TrainingQuestion] = []
+    saved_sessions: list[TrainingSession] = []
+
+    async def _fake_send_question(update, context, question):  # noqa: ANN001
+        sent_questions.append(question)
+
+    monkeypatch.setattr(bot, "_send_question", _fake_send_question)
+    session = TrainingSession(
+        id="session-hard",
+        user_id=123,
+        topic_id="animals",
+        mode=TrainingMode.HARD,
+        source_tag="assignment:homework:goal-1",
+        combo_correct_streak=4,
+        combo_hard_active=True,
+        items=[SessionItem(order=0, vocabulary_item_id="cat", mode=TrainingMode.HARD)],
+    )
+    context = SimpleNamespace(
+        bot=_FakeBot(),
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_current_question=lambda user_id: TrainingQuestion(  # noqa: ARG005
+                        session_id="session-hard",
+                        item_id="cat",
+                        mode=TrainingMode.HARD,
+                        prompt="hard",
+                        image_ref=None,
+                        correct_answer="cat",
+                    )
+                    if not saved_sessions
+                    else TrainingQuestion(
+                        session_id="session-hard",
+                        item_id="cat",
+                        mode=TrainingMode.MEDIUM,
+                        prompt="medium",
+                        image_ref=None,
+                        correct_answer="cat",
+                        letter_hint="act",
+                    )
+                ),
+                "content_store": SimpleNamespace(
+                    get_active_session_by_user=lambda user_id: session,  # noqa: ARG005
+                    save_session=lambda updated: saved_sessions.append(updated),
+                ),
+                "telegram_ui_language": "en",
+            }
+        ),
+        user_data={},
+    )
+
+    await bot.hard_skip_handler(
+        SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=123, language_code="en")),
+        context,  # type: ignore[arg-type]
+    )
+
+    assert len(saved_sessions) == 1
+    assert saved_sessions[0].items[0].mode is TrainingMode.MEDIUM
+    assert saved_sessions[0].combo_correct_streak == 0
+    assert saved_sessions[0].combo_hard_active is False
+    assert [question.mode for question in sent_questions] == [TrainingMode.MEDIUM]
+
+
+@pytest.mark.anyio
+async def test_hard_skip_handler_uses_existing_answer_flow_outside_homework(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = _FakeEditableMessage("hard")
     query = _FakeQuery("hard:skip:session-hard:cat", message)
     handled: list[str] = []
 
@@ -1256,6 +1325,7 @@ async def test_hard_skip_handler_routes_active_hard_question_into_existing_answe
                         user_id=123,
                         topic_id="animals",
                         mode=TrainingMode.HARD,
+                        source_tag=None,
                         items=[SessionItem(order=0, vocabulary_item_id="cat", mode=TrainingMode.HARD)],
                     )
                 ),

@@ -159,7 +159,7 @@ from englishbot.bot_editor_ui import topic_selection_view as ui_topic_selection_
 from englishbot.bot_editor_ui import words_menu_keyboard as ui_words_menu_keyboard
 from englishbot.bot_editor_ui import words_menu_view as ui_words_menu_view
 from englishbot.config import RuntimeConfigService, Settings
-from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType, Topic, TrainingMode, TrainingQuestion
+from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType, SessionItem, Topic, TrainingMode, TrainingQuestion
 from englishbot.image_generation.clients import ComfyUIImageGenerationClient
 from englishbot.image_generation.clients import LocalPlaceholderImageGenerationClient
 from englishbot.image_generation.pixabay import PixabayImageSearchClient, RemoteImageDownloader
@@ -5364,7 +5364,26 @@ async def hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         or current_question.mode is not TrainingMode.HARD
     ):
         return
-    await _process_answer(update, context, "__skip_hard__")
+    assignment_kind = _assignment_kind_from_session(active_session)
+    if assignment_kind is not AssignmentSessionKind.HOMEWORK:
+        await _process_answer(update, context, "__skip_hard__")
+        return
+    if active_session.current_index >= len(active_session.items):
+        return
+    current_item = active_session.items[active_session.current_index]
+    active_session.items[active_session.current_index] = SessionItem(
+        order=current_item.order,
+        vocabulary_item_id=current_item.vocabulary_item_id,
+        mode=TrainingMode.MEDIUM,
+    )
+    active_session.combo_correct_streak = 0
+    active_session.combo_hard_active = False
+    active_session.bonus_item_id = None
+    active_session.bonus_mode = None
+    _content_store(context).save_session(active_session)
+    context.user_data["awaiting_text_answer"] = False
+    next_question = _service(context).get_current_question(user_id=user.id)
+    await _send_question(update, context, next_question)
 
 
 async def medium_answer_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
