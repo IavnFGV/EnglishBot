@@ -5,6 +5,7 @@ from englishbot.bot import (
     build_application,
     chat_member_logger_handler,
     game_mode_placeholder_callback_handler,
+    goal_text_handler,
     group_text_observer_handler,
     image_review_edit_search_query_handler,
     image_review_next_handler,
@@ -67,6 +68,13 @@ def test_text_answer_handler_is_registered_after_add_words_handler() -> None:
     assert any(handler.callback is image_review_edit_search_query_handler for handler in app.handlers[0])
     assert any(handler.callback is text_answer_handler for handler in app.handlers[1])
     assert any(handler.callback is group_text_observer_handler for handler in app.handlers[2])
+    add_words_index = next(
+        index for index, handler in enumerate(app.handlers[0]) if handler.callback is add_words_text_handler
+    )
+    goal_text_index = next(
+        index for index, handler in enumerate(app.handlers[0]) if handler.callback is goal_text_handler
+    )
+    assert add_words_index < goal_text_index
 
 
 def test_build_application_uses_injected_config_service() -> None:

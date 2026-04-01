@@ -820,11 +820,11 @@ def build_application(
         group=0,
     )
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, goal_text_handler),
+        MessageHandler(filters.TEXT & ~filters.COMMAND, add_words_text_handler),
         group=0,
     )
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, add_words_text_handler),
+        MessageHandler(filters.TEXT & ~filters.COMMAND, goal_text_handler),
         group=0,
     )
     app.add_handler(
