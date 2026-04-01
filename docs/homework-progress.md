@@ -98,7 +98,8 @@ Round flow also has a separate combo mechanic:
 - one mistake resets the combo chain
 - the combo chain is session-based, not a permanent homework requirement
 - when a word closes with a random bonus `hard` and a combo activates at the same time, the bonus `hard` stays on that same word first, and the combo-hard continues on the next base word
-- the progress circle shows a moving combo arrow while the streak charges and a fired arrow when the next word is forced to `hard`
+- the progress circle shows a compact `4-dot` combo indicator while the streak charges
+- when the combo is active, all `4` dots light up
 
 The deadline helps organize the task, but homework is finished only when the assigned words actually reach their required state.
 

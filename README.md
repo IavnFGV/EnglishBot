@@ -218,9 +218,9 @@ Homework completion rules:
   - one mistake resets the combo
 - the bonus `hard` step does not increase homework remaining counters or round size
 - when a bonus `hard` step appears, the homework progress circle marks that word with `🔥`
-- the homework progress circle also shows a moving combo arrow:
-  - it crawls as the learner builds the `4-answer` streak
-  - when the combo is active, it points at the next forced-`hard` word
+- the homework progress circle also shows a small `4-dot` combo indicator:
+  - the dots fill as the learner builds the `4-answer` streak
+  - when the combo is active, all `4` dots light up
 - a homework for 10 words is not the same as 10 rounds
 - a deadline helps organize the task, but completion still depends on word progress
 

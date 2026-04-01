@@ -51,12 +51,10 @@ def render_assignment_progress_image(
     sweep_angle = 360.0 / segment_count
     gap = min(4.0, sweep_angle * 0.12)
     pending_bonus_angles: list[float] = []
-    segment_midpoints: dict[str, float] = {}
 
     for index, segment in enumerate(snapshot.segments):
         segment_start = start_angle + index * sweep_angle + gap / 2
         segment_end = start_angle + (index + 1) * sweep_angle - gap / 2
-        segment_midpoints[segment.word_id] = (segment_start + segment_end) / 2
         draw.pieslice(
             [
                 center_x - outer_radius,
@@ -120,25 +118,12 @@ def render_assignment_progress_image(
             size=size,
         )
 
-    if snapshot.combo_hard_active and snapshot.combo_target_word_id in segment_midpoints:
-        _draw_combo_fire_arrow(
-            draw,
-            center_x=center_x,
-            center_y=center_y,
-            outer_radius=outer_radius,
-            angle_degrees=segment_midpoints[snapshot.combo_target_word_id],
-            size=size,
-        )
-    elif snapshot.combo_charge_streak > 0:
-        charge_ratio = min(1.0, max(0.0, snapshot.combo_charge_streak / 4.0))
-        _draw_combo_charge_arrow(
-            draw,
-            center_x=center_x,
-            center_y=center_y,
-            outer_radius=outer_radius,
-            angle_degrees=start_angle + 360.0 * charge_ratio,
-            size=size,
-        )
+    _draw_combo_streak_indicator(
+        draw,
+        combo_charge_streak=snapshot.combo_charge_streak,
+        combo_hard_active=snapshot.combo_hard_active,
+        size=size,
+    )
 
     legend_items = [
         ("#dde7ef", snapshot.legend_labels[0]),
@@ -233,99 +218,36 @@ def _draw_bonus_hard_arrow(
     )
 
 
-def _draw_combo_charge_arrow(
+def _draw_combo_streak_indicator(
     draw: ImageDraw.ImageDraw,
     *,
-    center_x: int,
-    center_y: int,
-    outer_radius: int,
-    angle_degrees: float,
+    combo_charge_streak: int,
+    combo_hard_active: bool,
     size: int,
 ) -> None:
-    angle = math.radians(angle_degrees)
-    orbit_radius = outer_radius + max(12, size // 30)
-    shaft_length = max(18, size // 16)
-    shaft_width = max(8, size // 44)
-    head_length = max(14, size // 22)
-    head_width = max(16, size // 18)
+    filled_count = 4 if combo_hard_active else max(0, min(4, combo_charge_streak))
+    if filled_count <= 0:
+        return
+    dot_size = max(14, size // 24)
+    gap = max(8, size // 40)
+    total_width = dot_size * 4 + gap * 3
+    start_x = size - int(size * 0.12) - total_width
+    y = int(size * 0.37)
+    active_fill = "#2f7df6" if combo_hard_active else "#85b6ff"
+    active_outline = "#1f5fcc"
+    inactive_fill = "#edf4ff"
+    inactive_outline = "#bfd5f5"
 
-    dir_x = math.cos(angle)
-    dir_y = math.sin(angle)
-    perp_x = -math.sin(angle)
-    perp_y = math.cos(angle)
-
-    center_orbit_x = center_x + dir_x * orbit_radius
-    center_orbit_y = center_y + dir_y * orbit_radius
-    start_x = center_orbit_x - perp_x * shaft_length / 2
-    start_y = center_orbit_y - perp_y * shaft_length / 2
-    end_x = center_orbit_x + perp_x * shaft_length / 2
-    end_y = center_orbit_y + perp_y * shaft_length / 2
-    tip_x = end_x + perp_x * head_length
-    tip_y = end_y + perp_y * head_length
-
-    shaft = [
-        (start_x + dir_x * shaft_width / 2, start_y + dir_y * shaft_width / 2),
-        (end_x + dir_x * shaft_width / 2, end_y + dir_y * shaft_width / 2),
-        (end_x - dir_x * shaft_width / 2, end_y - dir_y * shaft_width / 2),
-        (start_x - dir_x * shaft_width / 2, start_y - dir_y * shaft_width / 2),
-    ]
-    head = [
-        (tip_x, tip_y),
-        (end_x + dir_x * head_width / 2, end_y + dir_y * head_width / 2),
-        (end_x - dir_x * head_width / 2, end_y - dir_y * head_width / 2),
-    ]
-
-    draw.polygon(shaft, fill="#4aa8ff")
-    draw.polygon(head, fill="#216fe0")
-
-
-def _draw_combo_fire_arrow(
-    draw: ImageDraw.ImageDraw,
-    *,
-    center_x: int,
-    center_y: int,
-    outer_radius: int,
-    angle_degrees: float,
-    size: int,
-) -> None:
-    angle = math.radians(angle_degrees)
-    shaft_start = outer_radius + max(6, size // 64)
-    shaft_end = outer_radius + max(30, size // 10)
-    shaft_width = max(10, size // 34)
-    head_length = max(18, size // 18)
-    head_width = max(18, size // 16)
-
-    dir_x = math.cos(angle)
-    dir_y = math.sin(angle)
-    perp_x = -math.sin(angle)
-    perp_y = math.cos(angle)
-
-    start_x = center_x + dir_x * shaft_start
-    start_y = center_y + dir_y * shaft_start
-    end_x = center_x + dir_x * shaft_end
-    end_y = center_y + dir_y * shaft_end
-    tip_x = center_x + dir_x * (shaft_end + head_length)
-    tip_y = center_y + dir_y * (shaft_end + head_length)
-
-    shaft = [
-        (start_x + perp_x * shaft_width / 2, start_y + perp_y * shaft_width / 2),
-        (end_x + perp_x * shaft_width / 2, end_y + perp_y * shaft_width / 2),
-        (end_x - perp_x * shaft_width / 2, end_y - perp_y * shaft_width / 2),
-        (start_x - perp_x * shaft_width / 2, start_y - perp_y * shaft_width / 2),
-    ]
-    head = [
-        (tip_x, tip_y),
-        (end_x + perp_x * head_width / 2, end_y + perp_y * head_width / 2),
-        (end_x - perp_x * head_width / 2, end_y - perp_y * head_width / 2),
-    ]
-
-    draw.polygon(shaft, fill="#ff9b3d")
-    draw.polygon(head, fill="#ff6b1a")
-    draw.line(
-        [(start_x, start_y), (tip_x, tip_y)],
-        fill="#ffd36b",
-        width=max(3, size // 120),
-    )
+    for index in range(4):
+        x = start_x + index * (dot_size + gap)
+        fill = active_fill if index < filled_count else inactive_fill
+        outline = active_outline if index < filled_count else inactive_outline
+        draw.ellipse(
+            [x, y, x + dot_size, y + dot_size],
+            fill=fill,
+            outline=outline,
+            width=max(2, size // 180),
+        )
 
 
 def _load_font(size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
