@@ -97,6 +97,38 @@ def test_settings_from_config_service_reads_disabled_ai_flags(tmp_path: Path) ->
     assert settings.comfyui_enabled is False
 
 
+def test_settings_from_config_service_reads_tts_settings(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "TELEGRAM_BOT_TOKEN=test-token\n"
+        "TTS_SERVICE_ENABLED=true\n"
+        "TTS_SERVICE_BASE_URL=http://englishbot-tts:8090\n"
+        "TTS_SERVICE_TIMEOUT_SEC=22\n"
+        "TTS_HOST=0.0.0.0\n"
+        "TTS_PORT=8091\n"
+        "TTS_CACHE_DIR=data/tts-cache\n"
+        "TTS_VOICE_DIR=data/tts-voices\n"
+        "TTS_VOICE_NAME=en_GB-alan-medium\n"
+        "TTS_VOICE_MODEL_PATH=data/tts-voices/custom.onnx\n"
+        "TTS_VOICE_CONFIG_PATH=data/tts-voices/custom.onnx.json\n",
+        encoding="utf-8",
+    )
+    service = create_runtime_config_service(env_file_path=env_file, environ={})
+
+    settings = Settings.from_config_service(service)
+
+    assert settings.tts_service_enabled is True
+    assert settings.tts_service_base_url == "http://englishbot-tts:8090"
+    assert settings.tts_service_timeout_sec == 22
+    assert settings.tts_host == "0.0.0.0"
+    assert settings.tts_port == 8091
+    assert settings.tts_cache_dir == Path("data/tts-cache")
+    assert settings.tts_voice_dir == Path("data/tts-voices")
+    assert settings.tts_voice_name == "en_GB-alan-medium"
+    assert settings.tts_voice_model_path == Path("data/tts-voices/custom.onnx")
+    assert settings.tts_voice_config_path == Path("data/tts-voices/custom.onnx.json")
+
+
 def test_settings_from_config_service_reads_admin_bootstrap_secret(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(

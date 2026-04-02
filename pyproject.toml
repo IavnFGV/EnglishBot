@@ -26,6 +26,10 @@ dev = [
 llm = [
   "requests>=2.32.0,<3.0.0"
 ]
+tts = [
+  "piper-tts>=1.4.1,<2.0.0",
+  "pathvalidate>=3.3.1,<4.0.0"
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

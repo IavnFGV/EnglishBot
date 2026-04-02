@@ -25,6 +25,9 @@ If the operational process changes, update this document in the same change set.
   shared/
     .env
     data/
+    tts/
+      cache/
+      voices/
     assets/
     nginx/
       acme/
@@ -48,19 +51,30 @@ If the operational process changes, update this document in the same change set.
 4. Put Web App settings into `/srv/englishbot/shared/.env` if admin access is needed:
    - `WEB_APP_BASE_URL`
    - optional `WEB_APP_PORT`
-5. If you do not have a domain yet, you can use a temporary host like `<server-ip>.nip.io`, for example:
+5. Put TTS settings into `/srv/englishbot/shared/.env` if the separate TTS container should run:
+   - `TTS_SERVICE_ENABLED=true`
+   - optional `TTS_SERVICE_BASE_URL`
+   - optional `TTS_HOST`
+   - optional `TTS_PORT`
+   - optional `TTS_VOICE_NAME`
+   - optional `TTS_CACHE_DIR`
+   - optional `TTS_VOICE_DIR`
+6. Create TTS runtime directories:
+   - `/srv/englishbot/shared/tts/cache/`
+   - `/srv/englishbot/shared/tts/voices/`
+7. If you do not have a domain yet, you can use a temporary host like `<server-ip>.nip.io`, for example:
 
 ```env
 WEB_APP_BASE_URL=https://204.168.193.232.nip.io
 ```
 
-6. Prepare ACME and certificate directories:
+8. Prepare ACME and certificate directories:
    - `/srv/englishbot/shared/nginx/acme/`
    - `/srv/englishbot/shared/nginx/certs/`
-7. Put TLS certificate files into `/srv/englishbot/shared/nginx/certs/`:
+9. Put TLS certificate files into `/srv/englishbot/shared/nginx/certs/`:
    - `fullchain.pem`
    - `privkey.pem`
-8. Start the runtime:
+10. Start the runtime:
 
 ```bash
 cd /srv/englishbot/app
@@ -116,8 +130,11 @@ Runtime note:
 
 - `englishbot` runs the Telegram bot process
 - `englishbot-webapp` runs the admin Web App process
+- `englishbot-tts` runs the separate Piper-backed HTTP TTS service on `8090`
 - `englishbot-nginx` terminates TLS on `443` and proxies to `englishbot-webapp:8080`
 - both share the same runtime SQLite database and assets directory
+- `englishbot-tts` persists downloaded voice models in `shared/tts/voices/`
+- `englishbot-tts` persists synthesized WAV cache in `shared/tts/cache/`
 - `englishbot-nginx` also serves `/.well-known/acme-challenge/` from `shared/nginx/acme/`
 - before certificates are issued, `englishbot-nginx` starts in HTTP mode on port `80`
 - after certificates are present, `englishbot-nginx` switches to HTTPS + HTTP->HTTPS redirect on restart
@@ -197,11 +214,14 @@ cd /srv/englishbot/app
 docker compose ps
 docker compose logs -f englishbot
 docker compose logs -f englishbot-webapp
+docker compose logs -f englishbot-tts
 docker compose logs -f englishbot-nginx
 docker compose restart englishbot
 docker compose restart englishbot-webapp
+docker compose restart englishbot-tts
 docker compose restart englishbot-nginx
 docker compose up -d --build
+curl http://127.0.0.1:8090/healthz
 bash scripts/backup-runtime-db.sh manual
 bash scripts/deploy-docker-app.sh
 bash scripts/rollback-docker-app.sh
@@ -211,6 +231,8 @@ bash scripts/restore-runtime-db.sh /srv/englishbot/shared/backups/db/<backup-fil
 ## Persistence
 
 - `data/` keeps SQLite runtime state
+- `tts/cache/` keeps cached WAV files from the TTS service
+- `tts/voices/` keeps downloaded Piper voice model files
 - `assets/` keeps generated and downloaded images
 - `nginx/acme/` keeps ACME HTTP-01 challenge files for Let's Encrypt
 - `nginx/certs/` keeps TLS certificate files for the admin Web App reverse proxy

@@ -149,6 +149,49 @@ _SETTING_DEFINITIONS: dict[str, RuntimeSettingDefinition] = {
     ),
     "comfyui_vae_name": RuntimeSettingDefinition("comfyui_vae_name", ("COMFYUI_VAE_NAME",), ""),
     "comfyui_seed": RuntimeSettingDefinition("comfyui_seed", ("COMFYUI_SEED",), 5, "int"),
+    "tts_service_enabled": RuntimeSettingDefinition("tts_service_enabled", ("TTS_SERVICE_ENABLED",), False, "bool"),
+    "tts_service_base_url": RuntimeSettingDefinition(
+        "tts_service_base_url",
+        ("TTS_SERVICE_BASE_URL",),
+        "http://englishbot-tts:8090",
+    ),
+    "tts_service_timeout_sec": RuntimeSettingDefinition(
+        "tts_service_timeout_sec",
+        ("TTS_SERVICE_TIMEOUT_SEC",),
+        15,
+        "int",
+    ),
+    "tts_host": RuntimeSettingDefinition("tts_host", ("TTS_HOST",), "0.0.0.0"),
+    "tts_port": RuntimeSettingDefinition("tts_port", ("TTS_PORT",), 8090, "int"),
+    "tts_cache_dir": RuntimeSettingDefinition(
+        "tts_cache_dir",
+        ("TTS_CACHE_DIR",),
+        Path("data/tts-cache"),
+        "path",
+    ),
+    "tts_voice_dir": RuntimeSettingDefinition(
+        "tts_voice_dir",
+        ("TTS_VOICE_DIR",),
+        Path("data/tts-voices"),
+        "path",
+    ),
+    "tts_voice_name": RuntimeSettingDefinition(
+        "tts_voice_name",
+        ("TTS_VOICE_NAME",),
+        "en_US-lessac-medium",
+    ),
+    "tts_voice_model_path": RuntimeSettingDefinition(
+        "tts_voice_model_path",
+        ("TTS_VOICE_MODEL_PATH",),
+        None,
+        "path",
+    ),
+    "tts_voice_config_path": RuntimeSettingDefinition(
+        "tts_voice_config_path",
+        ("TTS_VOICE_CONFIG_PATH",),
+        None,
+        "path",
+    ),
 }
 
 
@@ -332,6 +375,16 @@ class Settings:
     ollama_extract_text_prompt_path: Path = Path("prompts/ollama_extract_text_prompt.txt")
     ollama_image_prompt_path: Path = Path("prompts/ollama_image_prompt_prompt.txt")
     comfyui_enabled: bool = True
+    tts_service_enabled: bool = False
+    tts_service_base_url: str = "http://englishbot-tts:8090"
+    tts_service_timeout_sec: int = 15
+    tts_host: str = "0.0.0.0"
+    tts_port: int = 8090
+    tts_cache_dir: Path = Path("data/tts-cache")
+    tts_voice_dir: Path = Path("data/tts-voices")
+    tts_voice_name: str = "en_US-lessac-medium"
+    tts_voice_model_path: Path | None = None
+    tts_voice_config_path: Path | None = None
 
     @classmethod
     def from_config_service(cls, service: RuntimeConfigService) -> "Settings":
@@ -369,6 +422,16 @@ class Settings:
             ollama_image_prompt_path=service.get_path("ollama_image_prompt_path")
             or Path("prompts/ollama_image_prompt_prompt.txt"),
             comfyui_enabled=bool(service.get("comfyui_enabled")),
+            tts_service_enabled=bool(service.get("tts_service_enabled")),
+            tts_service_base_url=service.get_str("tts_service_base_url"),
+            tts_service_timeout_sec=service.get_int("tts_service_timeout_sec"),
+            tts_host=service.get_str("tts_host"),
+            tts_port=service.get_int("tts_port"),
+            tts_cache_dir=service.get_path("tts_cache_dir") or Path("data/tts-cache"),
+            tts_voice_dir=service.get_path("tts_voice_dir") or Path("data/tts-voices"),
+            tts_voice_name=service.get_str("tts_voice_name"),
+            tts_voice_model_path=service.get_path("tts_voice_model_path"),
+            tts_voice_config_path=service.get_path("tts_voice_config_path"),
         )
 
     @classmethod

@@ -17,3 +17,6 @@ assets*/
 backup
 logs/
 *.log*
+data/tts-cache/
+data/tts-voices/
+.tmp/

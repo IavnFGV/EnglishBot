@@ -8,6 +8,7 @@ import json
 import logging
 import random
 import tempfile
+from io import BytesIO
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
@@ -18,6 +19,7 @@ from telegram import (
     BotCommandScopeChat,
     ForceReply,
     InlineKeyboardMarkup,
+    InputFile,
     InputMediaPhoto,
     ReplyKeyboardMarkup,
     Update,
@@ -395,6 +397,7 @@ def build_application(
     content_store.initialize()
     app.bot_data["content_store"] = content_store
     app.bot_data["config_service"] = config_service
+    app.bot_data["settings"] = settings
     app.bot_data["runtime_version_info"] = get_runtime_version_info()
     app.bot_data["smart_parsing_gateway"] = (
         DisabledSmartLessonParsingGateway()
@@ -647,6 +650,7 @@ def build_application(
     app.add_handler(CallbackQueryHandler(game_next_round_handler, pattern=r"^game:next_round$"))
     app.add_handler(CallbackQueryHandler(game_repeat_handler, pattern=r"^game:repeat$"))
     app.add_handler(CallbackQueryHandler(mode_selected_handler, pattern=r"^mode:"))
+    app.add_handler(CallbackQueryHandler(tts_current_handler, pattern=r"^tts:current$"))
     app.add_handler(CallbackQueryHandler(hard_skip_handler, pattern=r"^hard:skip:"))
     app.add_handler(CallbackQueryHandler(medium_answer_callback_handler, pattern=r"^medium:"))
     app.add_handler(CallbackQueryHandler(choice_answer_handler, pattern=r"^answer:"))
@@ -872,6 +876,34 @@ def _job_queue_or_none(application) -> object | None:
     if raw_job_queue is not None:
         return raw_job_queue
     return getattr(application, "job_queue", None)
+
+
+def _settings_or_none(context: ContextTypes.DEFAULT_TYPE):
+    return context.application.bot_data.get("settings")
+
+
+def _tts_service_enabled(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    settings = _settings_or_none(context)
+    return bool(settings is not None and getattr(settings, "tts_service_enabled", False))
+
+
+def _tts_client_or_none(context: ContextTypes.DEFAULT_TYPE) -> TtsServiceClient | None:
+    if not _tts_service_enabled(context):
+        return None
+    cached_client = context.application.bot_data.get("tts_service_client")
+    if cached_client is not None:
+        return cached_client
+    settings = _settings_or_none(context)
+    if settings is None:
+        return None
+    from englishbot.tts_service import TtsServiceClient
+
+    client = TtsServiceClient(
+        base_url=getattr(settings, "tts_service_base_url"),
+        timeout_sec=getattr(settings, "tts_service_timeout_sec", 15),
+    )
+    context.application.bot_data["tts_service_client"] = client
+    return client
 
 
 def _telegram_user_login_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserLoginRepository:
@@ -5529,20 +5561,65 @@ def _hard_skip_keyboard(
     user,
     session_id: str,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
+    rows: list[list[InlineKeyboardButton]] = [
         [
+            InlineKeyboardButton(
+                _tg("hard_skip_button", context=context, user=user),
+                callback_data=_hard_skip_callback_data(
+                    context=context,
+                    user_id=int(user.id),
+                    session_id=session_id,
+                ),
+            )
+        ]
+    ]
+    if _tts_service_enabled(context):
+        rows.append(
             [
                 InlineKeyboardButton(
-                    _tg("hard_skip_button", context=context, user=user),
-                    callback_data=_hard_skip_callback_data(
-                        context=context,
-                        user_id=int(user.id),
-                        session_id=session_id,
-                    ),
+                    _tg("tts_play_button", context=context, user=user),
+                    callback_data="tts:current",
                 )
             ]
-        ]
-    )
+        )
+    return InlineKeyboardMarkup(rows)
+
+
+async def tts_current_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    client = _tts_client_or_none(context)
+    if client is None:
+        await query.answer(_tg("tts_unavailable", context=context, user=user))
+        return
+    try:
+        active_session = _service(context).get_active_session(user_id=user.id)
+    except Exception:
+        active_session = None
+    if active_session is None:
+        await query.answer(_tg("no_active_session_begin", context=context, user=user))
+        return
+    try:
+        current_question = _service(context).get_current_question(user_id=user.id)
+    except InvalidSessionStateError:
+        await query.answer(_tg("no_active_session_begin", context=context, user=user))
+        return
+    try:
+        audio_bytes = client.synthesize(text=current_question.correct_answer)
+    except Exception as error:
+        logger.warning(
+            "TTS unavailable for user_id=%s item_id=%s error=%s",
+            user.id,
+            current_question.item_id,
+            error,
+        )
+        await query.answer(_tg("tts_unavailable", context=context, user=user))
+        return
+    await query.answer()
+    audio_file = InputFile(BytesIO(audio_bytes), filename="pronunciation.wav")
+    await query.message.reply_audio(audio=audio_file)
 
 
 async def hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -6253,6 +6330,15 @@ def _medium_task_keyboard(
             ),
         ]
     )
+    if context is not None and _tts_service_enabled(context):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    _tg("tts_play_button", context=context, user=user),
+                    callback_data="tts:current",
+                )
+            ]
+        )
     return InlineKeyboardMarkup(rows)
 
 
@@ -6341,12 +6427,20 @@ async def _send_question(
             user=user,
         )
     elif question.options:
-        reply_markup = InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton(option, callback_data=f"answer:{option}")]
-                for option in question.options
-            ]
-        )
+        rows = [
+            [InlineKeyboardButton(option, callback_data=f"answer:{option}")]
+            for option in question.options
+        ]
+        if _tts_service_enabled(context):
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        _tg("tts_play_button", context=context, user=user),
+                        callback_data="tts:current",
+                    )
+                ]
+            )
+        reply_markup = InlineKeyboardMarkup(rows)
         image_path = resolve_existing_image_path(question.image_ref)
         view = build_training_question_view(
             question,

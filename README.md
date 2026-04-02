@@ -96,6 +96,39 @@ The application layer is split into clear responsibilities:
 More details are in `ARCHITECTURE.md` and `docs/homework-progress.md`.
 The admin Telegram Web App MVP is documented in `docs/telegram-webapp-admin.md`.
 
+## Optional TTS Service
+
+The project can now run a separate HTTP TTS container for English word audio.
+
+Design goals:
+
+- keep Piper and voice models out of the main bot container
+- let the bot call TTS over HTTP instead of spawning local synthesis in the Telegram runtime
+- cache generated WAV files on disk so repeated requests for the same word are cheap
+
+The TTS service entrypoint is:
+
+```bash
+python -m englishbot.tts_service
+```
+
+Current HTTP endpoints:
+
+- `GET /healthz`
+- `POST /speak` with JSON body `{"text": "winter"}`
+
+Current validation rules for TTS input:
+
+- only short English-like text is accepted
+- Cyrillic characters are rejected
+- unsupported punctuation is rejected
+
+Important note:
+
+- this is intentionally a separate service and compose container
+- learner Telegram flows do not automatically send audio yet
+- the service is ready for later `🔊` button integration
+
 ## Learner Flow
 
 1. Choose a topic

@@ -37,12 +37,18 @@ class _FakeMessage:
         self.text = text
         self.replies: list[str] = []
         self.reply_markup_calls: list[object | None] = []
+        self.reply_audio_calls: list[object] = []
         self.chat_id = 1
         self.message_id = 10
 
     async def reply_text(self, text: str, reply_markup=None, parse_mode=None) -> None:  # noqa: ARG002
         self.replies.append(text)
         self.reply_markup_calls.append(reply_markup)
+        self.message_id += 1
+        return SimpleNamespace(message_id=self.message_id, chat_id=self.chat_id)
+
+    async def reply_audio(self, audio, **kwargs):  # noqa: ANN001, ARG002
+        self.reply_audio_calls.append(audio)
         self.message_id += 1
         return SimpleNamespace(message_id=self.message_id, chat_id=self.chat_id)
 
@@ -69,10 +75,12 @@ class _FakeQuery:
         self.message = message
         self.from_user = SimpleNamespace(id=user_id)
         self.answers = 0
+        self.answer_payloads: list[tuple[object | None, object | None]] = []
         self.edit_calls: list[tuple[str, object | None, str | None]] = []
 
     async def answer(self, text=None, show_alert=None) -> None:  # noqa: ARG002
         self.answers += 1
+        self.answer_payloads.append((text, show_alert))
 
     async def edit_message_text(self, text: str, reply_markup=None, parse_mode=None) -> None:
         self.edit_calls.append((text, reply_markup, parse_mode))
@@ -677,6 +685,38 @@ async def test_send_question_builds_medium_inline_keyboard_and_state() -> None:
     assert state.shuffled_letters == ("A", "P", "L", "E", "P")
     assert state.selected_letter_indexes == ()
     assert state.message_id == 11
+
+
+@pytest.mark.anyio
+async def test_send_question_adds_tts_button_when_enabled() -> None:
+    message = _FakeMessage("start")
+    registry = _FakeTelegramFlowMessageRepository()
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "telegram_flow_message_repository": registry,
+                "settings": SimpleNamespace(tts_service_enabled=True),
+            }
+        ),
+        bot=_FakeBot(),
+    )
+    update = SimpleNamespace(effective_message=message)
+    question = TrainingQuestion(
+        session_id="session-easy-tts",
+        item_id="cloud",
+        mode=TrainingMode.EASY,
+        prompt="Translation: облако",
+        image_ref=None,
+        correct_answer="cloud",
+        options=["cloud", "bag", "book"],
+    )
+
+    await _send_question(update, context, question)  # type: ignore[arg-type]
+
+    keyboard = message.reply_markup_calls[0]
+    assert keyboard.inline_keyboard[-1][0].text == "🔊 Play"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "tts:current"
 
 
 @pytest.mark.anyio
@@ -1376,6 +1416,75 @@ def test_hard_skip_keyboard_uses_short_callback_token() -> None:
             "ttl_seconds": 172800,
         }
     ]
+
+
+@pytest.mark.anyio
+async def test_tts_current_handler_sends_audio_for_current_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = _FakeEditableMessage("question")
+    query = _FakeQuery("tts:current", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    synthesized: list[str] = []
+
+    class _FakeTtsClient:
+        def synthesize(self, *, text: str) -> bytes:
+            synthesized.append(text)
+            return b"RIFFfakewav"
+
+    monkeypatch.setattr(bot, "_tts_client_or_none", lambda context: _FakeTtsClient())
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(id="session-1"),  # noqa: ARG005
+                    get_current_question=lambda user_id: TrainingQuestion(  # noqa: ARG005
+                        session_id="session-1",
+                        item_id="cloud",
+                        mode=TrainingMode.EASY,
+                        prompt="Translation: облако",
+                        image_ref=None,
+                        correct_answer="cloud",
+                        options=["cloud", "bag", "book"],
+                    ),
+                ),
+                "telegram_ui_language": "en",
+            }
+        )
+    )
+
+    await bot.tts_current_handler(update, context)  # type: ignore[arg-type]
+
+    assert synthesized == ["cloud"]
+    assert query.answers == 1
+    assert query.answer_payloads == [(None, None)]
+    assert len(message.reply_audio_calls) == 1
+
+
+@pytest.mark.anyio
+async def test_tts_current_handler_answers_gracefully_when_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = _FakeEditableMessage("question")
+    query = _FakeQuery("tts:current", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+
+    monkeypatch.setattr(bot, "_tts_client_or_none", lambda context: None)
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"telegram_ui_language": "en"})
+    )
+
+    await bot.tts_current_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.answers == 1
+    assert query.answer_payloads == [("Audio is unavailable right now.", None)]
+    assert message.reply_audio_calls == []
 
 
 @pytest.mark.anyio

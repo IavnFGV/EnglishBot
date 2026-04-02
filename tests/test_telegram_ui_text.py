@@ -34,3 +34,10 @@ def test_telegram_ui_text_returns_localized_assignment_progress_hard_note() -> N
     assert telegram_ui_text("assignment_progress_legend_hard_note", language="en") == "hard clear"
     assert telegram_ui_text("assignment_progress_legend_hard_note", language="ru") == "hard пройден"
     assert telegram_ui_text("assignment_progress_legend_hard_note", language="uk") == "hard пройдено"
+
+
+def test_telegram_ui_text_returns_localized_tts_strings() -> None:
+    assert telegram_ui_text("tts_play_button", language="en") == "🔊 Play"
+    assert telegram_ui_text("tts_play_button", language="ru") == "🔊 Слушать"
+    assert telegram_ui_text("tts_play_button", language="uk") == "🔊 Слухати"
+    assert telegram_ui_text("tts_unavailable", language="en") == "Audio is unavailable right now."
