@@ -14,6 +14,7 @@ from englishbot.logging_utils import logged_service_call
 logger = logging.getLogger(__name__)
 
 _WHITESPACE_RE = re.compile(r"\s+")
+_CYRILLIC_RE = re.compile(r"[А-Яа-яЁёІіЇїЄєҐґ]")
 
 
 def _normalize_text(value: str) -> str:
@@ -110,6 +111,15 @@ class LessonExtractionValidator:
                 ValidationError(
                     code="empty_english_word",
                     message="English word is required.",
+                    field_name="english_word",
+                    item_index=index,
+                )
+            )
+        if _CYRILLIC_RE.search(item.english_word):
+            errors.append(
+                ValidationError(
+                    code="cyrillic_in_english_word",
+                    message="English word contains Cyrillic characters. Please correct it before import.",
                     field_name="english_word",
                     item_index=index,
                 )

@@ -122,6 +122,23 @@ def test_duplicate_handling_rejects_duplicate_words() -> None:
     assert any(error.code == "duplicate_english_word" for error in result.validation.errors)
 
 
+def test_cyrillic_characters_in_english_word_are_rejected() -> None:
+    draft = LessonExtractionDraft(
+        topic_title="Fairy Tales",
+        vocabulary_items=[
+            ExtractedVocabularyItemDraft(
+                english_word="Рrincess",
+                translation="принцесса",
+                source_fragment="Рrincess - принцесса",
+            ),
+        ],
+    )
+    result = build_pipeline(draft).run(raw_text="cyrillic typo")
+
+    assert result.validation.is_valid is False
+    assert any(error.code == "cyrillic_in_english_word" for error in result.validation.errors)
+
+
 def test_duplicate_proposed_ids_are_rejected() -> None:
     draft = LessonExtractionDraft(
         topic_title="Weather",

@@ -261,6 +261,30 @@ def test_start_add_words_fallback_preview_splits_slash_synonyms_when_ai_is_unava
     ]
 
 
+def test_add_words_edit_rejects_cyrillic_letters_in_english_word() -> None:
+    repository = InMemoryAddWordsFlowRepository()
+    harness = _harness()
+    start = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
+    apply_edit = ApplyAddWordsEditUseCase(harness=harness, flow_repository=repository)
+
+    flow = start.execute(user_id=7, raw_text="messy fairy tale text")
+    updated = apply_edit.execute(
+        user_id=7,
+        flow_id=flow.flow_id,
+        edited_text=(
+            "Topic: Fairy Tales\n"
+            "Lesson: -\n\n"
+            "Рrincess: принцесса\n"
+        ),
+    )
+
+    assert updated.draft_result.validation.is_valid is False
+    assert any(
+        error.code == "cyrillic_in_english_word"
+        for error in updated.draft_result.validation.errors
+    )
+
+
 def test_start_add_words_fallback_preview_parses_parentheses_style_teacher_dictionary() -> None:
     repository = InMemoryAddWordsFlowRepository()
     harness = AddWordsFlowHarness(
