@@ -166,6 +166,11 @@ from englishbot.image_generation.clients import ComfyUIImageGenerationClient
 from englishbot.image_generation.clients import LocalPlaceholderImageGenerationClient
 from englishbot.image_generation.pixabay import PixabayImageSearchClient, RemoteImageDownloader
 from englishbot.image_generation.paths import resolve_existing_image_path
+from englishbot.image_generation.paths import (
+    build_item_audio_path,
+    build_item_audio_ref,
+    resolve_existing_audio_path,
+)
 from englishbot.image_generation.pipeline import ContentPackImageEnricher
 from englishbot.image_generation.previews import ensure_numbered_candidate_strip
 from englishbot.image_generation.resilient import ResilientImageGenerator
@@ -904,6 +909,14 @@ def _tts_client_or_none(context: ContextTypes.DEFAULT_TYPE) -> TtsServiceClient 
     )
     context.application.bot_data["tts_service_client"] = client
     return client
+
+
+def _extract_sent_voice_file_id(sent_message) -> str | None:
+    voice = getattr(sent_message, "voice", None)
+    file_id = getattr(voice, "file_id", None)
+    if isinstance(file_id, str) and file_id.strip():
+        return file_id.strip()
+    return None
 
 
 def _telegram_user_login_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserLoginRepository:
@@ -5606,6 +5619,46 @@ async def tts_current_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     except InvalidSessionStateError:
         await query.answer(_tg("no_active_session_begin", context=context, user=user))
         return
+    item = None
+    try:
+        item = _content_store(context).get_vocabulary_item(current_question.item_id)
+    except Exception:
+        item = None
+    if item is not None and item.telegram_voice_file_id:
+        try:
+            await query.answer()
+            await query.message.reply_voice(voice=item.telegram_voice_file_id)
+            return
+        except Exception as error:
+            logger.warning(
+                "Cached Telegram voice_id failed user_id=%s item_id=%s error=%s",
+                user.id,
+                current_question.item_id,
+                error,
+            )
+    if item is not None and item.audio_ref:
+        audio_path = resolve_existing_audio_path(item.audio_ref)
+        if audio_path is not None:
+            try:
+                await query.answer()
+                with audio_path.open("rb") as audio_file:
+                    sent_message = await query.message.reply_voice(
+                        voice=InputFile(audio_file, filename=audio_path.name)
+                    )
+                voice_file_id = _extract_sent_voice_file_id(sent_message)
+                if voice_file_id is not None:
+                    _content_store(context).update_word_audio(
+                        item_id=item.id,
+                        telegram_voice_file_id=voice_file_id,
+                    )
+                return
+            except Exception as error:
+                logger.warning(
+                    "Cached local TTS audio failed user_id=%s item_id=%s error=%s",
+                    user.id,
+                    current_question.item_id,
+                    error,
+                )
     try:
         audio_bytes = client.synthesize(text=current_question.correct_answer)
     except Exception as error:
@@ -5617,9 +5670,30 @@ async def tts_current_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         await query.answer(_tg("tts_unavailable", context=context, user=user))
         return
+    audio_ref: str | None = None
+    if item is not None and item.topic_id:
+        audio_path = build_item_audio_path(
+            assets_dir=Path("assets"),
+            topic_id=item.topic_id,
+            item_id=item.id,
+        )
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
+        audio_path.write_bytes(audio_bytes)
+        audio_ref = build_item_audio_ref(
+            assets_dir=Path("assets"),
+            topic_id=item.topic_id,
+            item_id=item.id,
+        )
     await query.answer()
-    audio_file = InputFile(BytesIO(audio_bytes), filename="pronunciation.wav")
-    await query.message.reply_audio(audio=audio_file)
+    voice_file = InputFile(BytesIO(audio_bytes), filename="pronunciation.ogg")
+    sent_message = await query.message.reply_voice(voice=voice_file)
+    voice_file_id = _extract_sent_voice_file_id(sent_message)
+    if item is not None and (audio_ref is not None or voice_file_id is not None):
+        _content_store(context).update_word_audio(
+            item_id=item.id,
+            audio_ref=audio_ref,
+            telegram_voice_file_id=voice_file_id,
+        )
 
 
 async def hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

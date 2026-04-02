@@ -140,6 +140,72 @@ def test_sqlite_content_store_imports_json_and_reconstructs_content_pack(tmp_pat
     assert content_pack["vocabulary_items"][0]["image_ref"] == "assets/fairy-tales/dragon.png"
 
 
+def test_sqlite_content_store_updates_and_returns_audio_fields(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "weather", "title": "Weather"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cloud", "english_word": "Cloud", "translation": "облако"},
+            ],
+        }
+    )
+
+    store.update_word_audio(
+        item_id="cloud",
+        audio_ref="assets/weather/audio/cloud.ogg",
+        telegram_voice_file_id="voice-file-123",
+    )
+
+    item = store.get_vocabulary_item("cloud")
+    content_pack = store.get_content_pack("weather")
+
+    assert item is not None
+    assert item.audio_ref == "assets/weather/audio/cloud.ogg"
+    assert item.telegram_voice_file_id == "voice-file-123"
+    assert content_pack["vocabulary_items"][0]["audio_ref"] == "assets/weather/audio/cloud.ogg"
+    assert content_pack["vocabulary_items"][0]["telegram_voice_file_id"] == "voice-file-123"
+
+
+def test_sqlite_content_store_preserves_audio_fields_on_reimport_without_audio_metadata(
+    tmp_path: Path,
+) -> None:
+    content_dir = tmp_path / "content" / "custom"
+    content_dir.mkdir(parents=True)
+    content_path = content_dir / "weather.json"
+    content_path.write_text(
+        json.dumps(
+            {
+                "topic": {"id": "weather", "title": "Weather"},
+                "lessons": [],
+                "vocabulary_items": [
+                    {"id": "cloud", "english_word": "Cloud", "translation": "облако"},
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+
+    store.import_json_directories([content_dir], replace=True)
+    store.update_word_audio(
+        item_id="cloud",
+        audio_ref="assets/weather/audio/cloud.ogg",
+        telegram_voice_file_id="voice-file-123",
+    )
+
+    store.import_json_directories([content_dir], replace=False)
+
+    item = store.get_vocabulary_item("cloud")
+    assert item is not None
+    assert item.audio_ref == "assets/weather/audio/cloud.ogg"
+    assert item.telegram_voice_file_id == "voice-file-123"
+
+
 def test_sqlite_telegram_user_logins_store_last_seen_username(tmp_path: Path) -> None:
     store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
     repository = SQLiteTelegramUserLoginRepository(store)

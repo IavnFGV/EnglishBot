@@ -135,6 +135,8 @@ def _expand_slash_synonym_items(  # noqa: PLR0913
     image_prompt: str | None,
     pixabay_search_query: str | None,
     source_fragment: str | None,
+    audio_ref: str | None,
+    telegram_voice_file_id: str | None,
     is_active: bool,
 ) -> list[VocabularyItem]:
     english_variants = (
@@ -158,6 +160,8 @@ def _expand_slash_synonym_items(  # noqa: PLR0913
                 pixabay_search_query=pixabay_search_query,
                 source_fragment=source_fragment,
                 is_active=is_active,
+                audio_ref=audio_ref,
+                telegram_voice_file_id=telegram_voice_file_id,
             )
         ]
     return [
@@ -175,6 +179,8 @@ def _expand_slash_synonym_items(  # noqa: PLR0913
             pixabay_search_query=pixabay_search_query,
             source_fragment=source_fragment,
             is_active=is_active,
+            audio_ref=audio_ref,
+            telegram_voice_file_id=telegram_voice_file_id,
         )
         for variant in english_variants
     ]
@@ -265,6 +271,8 @@ class SQLiteContentStore:
                     image_prompt TEXT,
                     pixabay_search_query TEXT,
                     source_fragment TEXT,
+                    audio_ref TEXT,
+                    telegram_voice_file_id TEXT,
                     is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
@@ -533,6 +541,13 @@ class SQLiteContentStore:
                 connection.execute("ALTER TABLE telegram_user_logins ADD COLUMN last_name TEXT")
             if "language_code" not in telegram_login_columns:
                 connection.execute("ALTER TABLE telegram_user_logins ADD COLUMN language_code TEXT")
+            learning_item_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(learning_items)").fetchall()
+            }
+            if "audio_ref" not in learning_item_columns:
+                connection.execute("ALTER TABLE learning_items ADD COLUMN audio_ref TEXT")
+            if "telegram_voice_file_id" not in learning_item_columns:
+                connection.execute("ALTER TABLE learning_items ADD COLUMN telegram_voice_file_id TEXT")
 
     def has_runtime_content(self) -> bool:
         self.initialize()
@@ -568,6 +583,8 @@ class SQLiteContentStore:
                     image_prompt=item.image_prompt,
                     pixabay_search_query=item.pixabay_search_query,
                     source_fragment=item.source_fragment,
+                    audio_ref=item.audio_ref,
+                    telegram_voice_file_id=item.telegram_voice_file_id,
                     is_active=item.is_active,
                 ):
                     item_map[expanded_item.id] = expanded_item
@@ -746,6 +763,8 @@ class SQLiteContentStore:
                 li.image_prompt,
                 li.pixabay_search_query,
                 li.source_fragment,
+                li.audio_ref,
+                li.telegram_voice_file_id,
                 li.is_active
             FROM topic_learning_items AS tli
             JOIN learning_items AS li ON li.id = tli.learning_item_id
@@ -792,6 +811,8 @@ class SQLiteContentStore:
                     li.image_prompt,
                     li.pixabay_search_query,
                     li.source_fragment,
+                    li.audio_ref,
+                    li.telegram_voice_file_id,
                     li.is_active
                 FROM learning_items AS li
                 ORDER BY li.display_word, li.id
@@ -829,6 +850,8 @@ class SQLiteContentStore:
                     li.image_prompt,
                     li.pixabay_search_query,
                     li.source_fragment,
+                    li.audio_ref,
+                    li.telegram_voice_file_id,
                     li.is_active
                 FROM learning_items AS li
                 WHERE li.id = ?
@@ -939,6 +962,36 @@ class SQLiteContentStore:
         if cursor.rowcount == 0:
             raise ValueError("Vocabulary item was not found.")
 
+    def update_word_audio(
+        self,
+        *,
+        item_id: str,
+        audio_ref: str | None = None,
+        telegram_voice_file_id: str | None = None,
+    ) -> None:
+        self.initialize()
+        assignments: list[str] = []
+        params: list[object] = []
+        if audio_ref is not None:
+            assignments.append("audio_ref = ?")
+            params.append(audio_ref)
+        if telegram_voice_file_id is not None:
+            assignments.append("telegram_voice_file_id = ?")
+            params.append(telegram_voice_file_id)
+        if not assignments:
+            return
+        with _connect(self._db_path) as connection:
+            cursor = connection.execute(
+                f"""
+                UPDATE learning_items
+                SET {", ".join(assignments)}
+                WHERE id = ?
+                """,
+                (*params, item_id),
+            )
+        if cursor.rowcount == 0:
+            raise ValueError("Vocabulary item was not found.")
+
     def get_content_pack(self, topic_id: str) -> dict[str, object]:
         self.initialize()
         topic = self.get_topic(topic_id)
@@ -970,6 +1023,12 @@ class SQLiteContentStore:
                     **(
                         {"source_fragment": item.source_fragment}
                         if item.source_fragment is not None
+                        else {}
+                    ),
+                    **({"audio_ref": item.audio_ref} if item.audio_ref is not None else {}),
+                    **(
+                        {"telegram_voice_file_id": item.telegram_voice_file_id}
+                        if item.telegram_voice_file_id is not None
                         else {}
                     ),
                 }
@@ -1044,6 +1103,10 @@ class SQLiteContentStore:
                     image_source=_optional_json_str(item_raw.get("image_source")),
                     image_prompt=_optional_json_str(item_raw.get("image_prompt")),
                     pixabay_search_query=_optional_json_str(item_raw.get("pixabay_search_query")),
+                    audio_ref=_optional_json_str(item_raw.get("audio_ref")),
+                    telegram_voice_file_id=_optional_json_str(
+                        item_raw.get("telegram_voice_file_id")
+                    ),
                     source_fragment=_optional_json_str(item_raw.get("source_fragment")),
                     is_active=bool(item_raw.get("is_active", True)),
                 )
@@ -3045,8 +3108,9 @@ class SQLiteContentStore:
             """
             INSERT INTO learning_items (
                 id, lexeme_id, display_word, display_translation, meaning_hint,
-                image_ref, image_source, image_prompt, pixabay_search_query, source_fragment, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                image_ref, image_source, image_prompt, pixabay_search_query, source_fragment,
+                audio_ref, telegram_voice_file_id, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 lexeme_id=excluded.lexeme_id,
                 display_word=excluded.display_word,
@@ -3057,6 +3121,8 @@ class SQLiteContentStore:
                 image_prompt=excluded.image_prompt,
                 pixabay_search_query=excluded.pixabay_search_query,
                 source_fragment=excluded.source_fragment,
+                audio_ref=COALESCE(excluded.audio_ref, learning_items.audio_ref),
+                telegram_voice_file_id=COALESCE(excluded.telegram_voice_file_id, learning_items.telegram_voice_file_id),
                 is_active=excluded.is_active
             """,
             (
@@ -3070,6 +3136,8 @@ class SQLiteContentStore:
                 item.image_prompt,
                 item.pixabay_search_query,
                 item.source_fragment,
+                item.audio_ref,
+                item.telegram_voice_file_id,
                 1 if item.is_active else 0,
             ),
         )
@@ -3089,6 +3157,8 @@ class SQLiteContentStore:
             pixabay_search_query=row["pixabay_search_query"],
             source_fragment=row["source_fragment"],
             is_active=bool(row["is_active"]),
+            audio_ref=row["audio_ref"],
+            telegram_voice_file_id=row["telegram_voice_file_id"],
         )
 
     def _row_to_progress(self, row: sqlite3.Row) -> UserProgress:

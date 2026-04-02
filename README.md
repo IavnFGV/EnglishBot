@@ -104,7 +104,7 @@ Design goals:
 
 - keep Piper and voice models out of the main bot container
 - let the bot call TTS over HTTP instead of spawning local synthesis in the Telegram runtime
-- cache generated WAV files on disk so repeated requests for the same word are cheap
+- cache generated OGG voice files on disk so repeated requests for the same word are cheap
 
 The TTS service entrypoint is:
 
@@ -126,8 +126,10 @@ Current validation rules for TTS input:
 Important note:
 
 - this is intentionally a separate service and compose container
-- learner Telegram flows do not automatically send audio yet
-- the service is ready for later `🔊` button integration
+- learner Telegram flows use an optional `🔊` button when `TTS_SERVICE_ENABLED=true`
+- playback first tries a cached Telegram `voice file_id`
+- then falls back to a locally cached word asset under `assets/<topic>/audio/`
+- only then does the bot call the HTTP TTS service again
 
 ## Learner Flow
 
@@ -509,6 +511,23 @@ Useful options:
 - `--dry-run` to see selections without saving files
 
 The script uses the existing Pixabay API settings from `.env`, fetches the first 20 popular results for each word, and then picks the best candidate using simple semantic heuristics based on tags, source-page text, and image size. This is intentionally a lightweight external-service flow rather than local LLM image generation.
+
+Backfill missing vocabulary audio through the optional TTS service:
+
+```bash
+python -m englishbot.fill_word_audio \
+  --assets-dir assets \
+  --delay-sec 1
+```
+
+Useful options:
+
+- `--topic-id fairy-tales` to fill one topic only
+- `--limit 50` to process a smaller batch
+- `--force` to regenerate even when a local audio asset already exists
+- `--dry-run` to see selections without saving files
+
+This command stores per-word audio assets under `assets/<topic>/audio/` as `.ogg` files and updates `audio_ref` in the runtime database. Telegram `voice file_id` values are still learned lazily the first time a learner actually taps `🔊` in chat.
 
 What is still stubbed:
 

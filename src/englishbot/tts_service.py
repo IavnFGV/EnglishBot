@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -79,10 +78,12 @@ class PiperTtsSynthesizer:
             return cache_path.read_bytes()
         voice_files = self._resolve_voice_files()
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with NamedTemporaryFile(suffix=".wav", dir=cache_path.parent, delete=False) as tmp_file:
-            temp_path = Path(tmp_file.name)
+        with NamedTemporaryFile(suffix=".wav", dir=cache_path.parent, delete=False) as tmp_wav_file:
+            temp_wav_path = Path(tmp_wav_file.name)
+        with NamedTemporaryFile(suffix=".ogg", dir=cache_path.parent, delete=False) as tmp_ogg_file:
+            temp_ogg_path = Path(tmp_ogg_file.name)
         try:
-            result = subprocess.run(
+            piper_result = subprocess.run(
                 [
                     self._python_executable,
                     "-m",
@@ -92,20 +93,41 @@ class PiperTtsSynthesizer:
                     "-c",
                     str(voice_files.config_path),
                     "-f",
-                    str(temp_path),
+                    str(temp_wav_path),
                 ],
                 input=(normalized + "\n").encode("utf-8"),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=False,
             )
-            if result.returncode != 0 or not temp_path.exists() or temp_path.stat().st_size == 0:
-                stderr = result.stderr.decode("utf-8", errors="replace").strip()
+            if piper_result.returncode != 0 or not temp_wav_path.exists() or temp_wav_path.stat().st_size == 0:
+                stderr = piper_result.stderr.decode("utf-8", errors="replace").strip()
                 raise RuntimeError(f"Piper synthesis failed: {stderr or 'unknown error'}")
-            shutil.move(str(temp_path), str(cache_path))
+            ffmpeg_result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(temp_wav_path),
+                    "-c:a",
+                    "libopus",
+                    "-b:a",
+                    "48k",
+                    str(temp_ogg_path),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            if ffmpeg_result.returncode != 0 or not temp_ogg_path.exists() or temp_ogg_path.stat().st_size == 0:
+                stderr = ffmpeg_result.stderr.decode("utf-8", errors="replace").strip()
+                raise RuntimeError(f"ffmpeg conversion failed: {stderr or 'unknown error'}")
+            temp_ogg_path.replace(cache_path)
         finally:
-            if temp_path.exists():
-                temp_path.unlink()
+            if temp_wav_path.exists():
+                temp_wav_path.unlink()
+            if temp_ogg_path.exists():
+                temp_ogg_path.unlink()
         return cache_path.read_bytes()
 
     def _resolve_voice_files(self) -> PiperVoiceFiles:
@@ -126,7 +148,7 @@ class PiperTtsSynthesizer:
 
     def _cache_path(self, text: str) -> Path:
         digest = hashlib.sha256(f"{self._voice_name}:{text}".encode("utf-8")).hexdigest()
-        return self._cache_dir / f"{digest}.wav"
+        return self._cache_dir / f"{digest}.ogg"
 
 
 class TtsHttpService:
@@ -174,7 +196,7 @@ def create_tts_http_handler(service: TtsHttpService):
                 self._write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"message": "TTS synthesis failed."})
                 return
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "audio/wav")
+            self.send_header("Content-Type", "audio/ogg")
             self.send_header("Content-Length", str(len(audio_bytes)))
             self.end_headers()
             self.wfile.write(audio_bytes)

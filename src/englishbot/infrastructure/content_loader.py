@@ -150,6 +150,10 @@ class JsonContentPackLoader:
             image_ref=self._optional_str(raw, "image_ref", source_name, "vocabulary item"),
             image_source=self._optional_str(raw, "image_source", source_name, "vocabulary item"),
             image_prompt=self._optional_str(raw, "image_prompt", source_name, "vocabulary item"),
+            audio_ref=self._optional_str(raw, "audio_ref", source_name, "vocabulary item"),
+            telegram_voice_file_id=self._optional_str(
+                raw, "telegram_voice_file_id", source_name, "vocabulary item"
+            ),
             source_fragment=self._optional_str(
                 raw, "source_fragment", source_name, "vocabulary item"
             ),

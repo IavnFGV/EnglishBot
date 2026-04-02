@@ -231,9 +231,9 @@ bash scripts/restore-runtime-db.sh /srv/englishbot/shared/backups/db/<backup-fil
 ## Persistence
 
 - `data/` keeps SQLite runtime state
-- `tts/cache/` keeps cached WAV files from the TTS service
+- `tts/cache/` keeps cached OGG voice files from the TTS service
 - `tts/voices/` keeps downloaded Piper voice model files
-- `assets/` keeps generated and downloaded images
+- `assets/` keeps generated and downloaded images plus cached per-word audio assets under `assets/<topic>/audio/`
 - `nginx/acme/` keeps ACME HTTP-01 challenge files for Let's Encrypt
 - `nginx/certs/` keeps TLS certificate files for the admin Web App reverse proxy
 - `backups/db/` keeps the latest 5 rolling SQLite backup copies

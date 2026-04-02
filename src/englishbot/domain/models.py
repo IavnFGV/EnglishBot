@@ -68,6 +68,8 @@ class VocabularyItem:
     pixabay_search_query: str | None = None
     source_fragment: str | None = None
     is_active: bool = True
+    audio_ref: str | None = None
+    telegram_voice_file_id: str | None = None
 
 
 @dataclass(slots=True)

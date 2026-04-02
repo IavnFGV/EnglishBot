@@ -36,10 +36,22 @@ def test_piper_tts_synthesizer_uses_cache(tmp_path: Path, monkeypatch: pytest.Mo
     model_path.write_bytes(b"model")
     config_path.write_text("{}", encoding="utf-8")
 
-    def _fake_run(cmd: list[str], *, input: bytes, stdout, stderr, check: bool):  # noqa: ANN001
+    def _fake_run(
+        cmd: list[str],
+        *,
+        input: bytes | None = None,
+        stdout,
+        stderr,
+        check: bool,
+    ):  # noqa: ANN001
         calls.append(cmd)
-        output_path = Path(cmd[cmd.index("-f") + 1])
-        output_path.write_bytes(b"RIFFfake-wav")
+        if cmd[0] == "python" and "-m" in cmd and "piper" in cmd:
+            output_path = Path(cmd[cmd.index("-f") + 1])
+            output_path.write_bytes(b"RIFFfake-wav")
+            assert input == b"Princess\n"
+        elif cmd[0] == "ffmpeg":
+            output_path = Path(cmd[-1])
+            output_path.write_bytes(b"OggSfake-ogg")
         return SimpleNamespace(returncode=0, stderr=b"")
 
     monkeypatch.setattr("englishbot.tts_service.subprocess.run", _fake_run)
@@ -56,16 +68,16 @@ def test_piper_tts_synthesizer_uses_cache(tmp_path: Path, monkeypatch: pytest.Mo
     first = synthesizer.synthesize(text="Princess")
     second = synthesizer.synthesize(text="Princess")
 
-    assert first == b"RIFFfake-wav"
-    assert second == b"RIFFfake-wav"
-    assert len(calls) == 1
+    assert first == b"OggSfake-ogg"
+    assert second == b"OggSfake-ogg"
+    assert len(calls) == 2
 
 
 def test_tts_http_handler_serves_health_and_speak(tmp_path: Path) -> None:
     class _FakeSynthesizer:
         def synthesize(self, *, text: str) -> bytes:
             assert text == "winter"
-            return b"RIFFwav"
+            return b"OggSfake-ogg"
 
     service = TtsHttpService(synthesizer=_FakeSynthesizer(), voice_name="en_US-lessac-medium")
     handler = create_tts_http_handler(service)
@@ -87,8 +99,8 @@ def test_tts_http_handler_serves_health_and_speak(tmp_path: Path) -> None:
             method="POST",
         )
         with urlopen(request) as response:
-            assert response.headers.get_content_type() == "audio/wav"
-            assert response.read() == b"RIFFwav"
+            assert response.headers.get_content_type() == "audio/ogg"
+            assert response.read() == b"OggSfake-ogg"
     finally:
         server.shutdown()
         thread.join(timeout=2)
