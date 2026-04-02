@@ -3320,7 +3320,7 @@ async def admin_goal_deadline_callback_handler(update: Update, context: ContextT
     await _finish_admin_goal_creation(query_or_message=query, context=context, user=user)
 
 
-def _create_admin_goals_from_context(*, context: ContextTypes.DEFAULT_TYPE) -> list[Goal]:
+def _create_admin_goals_from_context(*, context: ContextTypes.DEFAULT_TYPE) -> list:
     source_raw = str(context.user_data.get("admin_goal_source", GoalWordSource.RECENT.value))
     topic_id = source_raw.split(":", 1)[1] if source_raw.startswith("topic:") else None
     source = GoalWordSource.TOPIC if topic_id else GoalWordSource(source_raw)
@@ -3334,6 +3334,11 @@ def _create_admin_goals_from_context(*, context: ContextTypes.DEFAULT_TYPE) -> l
         manual_word_ids=list(context.user_data.get("admin_goal_manual_word_ids", [])),
         deadline_date=context.user_data.get("admin_goal_deadline_date"),
     )
+
+
+async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAULT_TYPE, user) -> None:
+    """Backward-compatible wrapper kept for tests and older call sites."""
+    await _finish_admin_goal_creation(query_or_message=query, context=context, user=user)
 
 
 async def _finish_admin_goal_creation(*, query_or_message, context: ContextTypes.DEFAULT_TYPE, user) -> None:
