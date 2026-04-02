@@ -451,12 +451,18 @@ def test_sqlite_content_store_clears_only_user_learning_data(tmp_path: Path) -> 
         text="Homework reminder",
         not_before_at=datetime(2026, 3, 31, tzinfo=UTC),
     )
+    store.create_telegram_callback_token(
+        user_id=55,
+        action="hard_skip",
+        payload={"session_id": "session-55"},
+    )
 
     cleared = store.clear_user_learning_data(user_id=55)
 
     assert cleared["goals"] == 1
     assert cleared["sessions"] == 1
     assert cleared["word_stats"] == 1
+    assert cleared["callback_tokens"] == 1
     assert store.list_user_goals(user_id=55, statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED, GoalStatus.EXPIRED)) == []
     assert store.list_progress_by_user(55) == []
     assert store.get_word_stats(55, "cat") is None
@@ -465,6 +471,74 @@ def test_sqlite_content_store_clears_only_user_learning_data(tmp_path: Path) -> 
     assert store.list_pending_telegram_notifications(recipient_user_id=55) == []
     assert any(login.user_id == 55 for login in store.list_telegram_user_logins())
     assert any(item.user_id == 55 and item.role == "admin" for item in store.list_telegram_user_role_assignments())
+
+
+def test_sqlite_store_telegram_callback_tokens_are_single_use_and_user_bound(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+
+    token = store.create_telegram_callback_token(
+        user_id=101,
+        action="hard_skip",
+        payload={"session_id": "session-101"},
+    )
+
+    assert store.consume_telegram_callback_token(
+        token=token,
+        user_id=202,
+        action="hard_skip",
+    ) is None
+    assert store.consume_telegram_callback_token(
+        token=token,
+        user_id=101,
+        action="hard_skip",
+    ) == {"session_id": "session-101"}
+    assert store.consume_telegram_callback_token(
+        token=token,
+        user_id=101,
+        action="hard_skip",
+    ) is None
+
+
+def test_sqlite_store_telegram_callback_tokens_expire_and_prune(tmp_path: Path) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    now = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+    token = store.create_telegram_callback_token(
+        user_id=303,
+        action="hard_skip",
+        payload={"session_id": "session-303"},
+        ttl_seconds=5,
+        now=now,
+    )
+
+    assert (
+        store.consume_telegram_callback_token(
+            token=token,
+            user_id=303,
+            action="hard_skip",
+            now=now + timedelta(seconds=6),
+        )
+        is None
+    )
+
+    another = store.create_telegram_callback_token(
+        user_id=303,
+        action="hard_skip",
+        payload={"session_id": "session-304"},
+        ttl_seconds=5,
+        now=now,
+    )
+    assert store.prune_expired_telegram_callback_tokens(now=now + timedelta(seconds=6)) == 1
+    assert (
+        store.consume_telegram_callback_token(
+            token=another,
+            user_id=303,
+            action="hard_skip",
+            now=now + timedelta(seconds=6),
+        )
+        is None
+    )
 
 
 def test_initialize_drops_legacy_vocabulary_items_table_after_learning_items_exists(

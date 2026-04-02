@@ -17,7 +17,6 @@ from telegram import (
     BotCommand,
     BotCommandScopeChat,
     ForceReply,
-    InlineKeyboardButton,
     InlineKeyboardMarkup,
     InputMediaPhoto,
     ReplyKeyboardMarkup,
@@ -215,6 +214,7 @@ from englishbot.presentation.telegram_ui_text import (
     supported_telegram_ui_languages,
     telegram_ui_text,
 )
+from englishbot.telegram_buttons import InlineKeyboardButton
 from englishbot.presentation.telegram_menu_access import (
     DEFAULT_TELEGRAM_COMMAND_SPECS,
     PERMISSION_WORD_IMAGES_EDIT,
@@ -254,6 +254,10 @@ _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW = timedelta(minutes=5)
 _NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD = timedelta(minutes=1)
 _NOTIFICATION_DELAY_AFTER_RECENT_ANSWER = timedelta(minutes=2)
 _DAILY_ASSIGNMENT_REMINDER_TIME = time(hour=13, minute=0, tzinfo=UTC)
+_CALLBACK_TOKEN_TTL_SECONDS = 48 * 60 * 60
+_HARD_SKIP_CALLBACK_ACTION = "hard_skip"
+_EDITABLE_WORD_CALLBACK_ACTION = "editable_word"
+_PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION = "published_image_item"
 _HELP_COMMAND_TEXT: dict[str, str] = {
     "start": "open your personal start menu",
     "help": "show commands",
@@ -2268,6 +2272,8 @@ def _editable_words_view(
         reply_markup=_editable_words_keyboard(
             topic_id=topic_id,
             words=words,
+            context=context,
+            user_id=int(user.id),
             language=_telegram_ui_language(context, user),
         ),
     )
@@ -3672,6 +3678,8 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=_editable_words_keyboard(
                 topic_id=topic_id,
                 words=words,
+                context=context,
+                user_id=int(user.id),
                 language=_telegram_ui_language(context, user),
             ),
         )
@@ -4410,6 +4418,8 @@ async def published_images_menu_handler(
         reply_markup=_published_image_items_keyboard(
             topic_id=topic_id,
             raw_items=raw_items,
+            context=context,
+            user_id=int(user.id),
             language=_telegram_ui_language(context, user),
         ),
     )
@@ -5318,8 +5328,95 @@ async def game_repeat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
-def _hard_skip_callback_data(*, session_id: str) -> str:
-    return f"hard:skip:{session_id}"
+def _create_callback_token(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    action: str,
+    payload: dict[str, object],
+    fallback_value: str,
+) -> str:
+    creator = getattr(_content_store(context), "create_telegram_callback_token", None)
+    if creator is None:
+        return fallback_value
+    return str(
+        creator(
+            user_id=user_id,
+            action=action,
+            payload=payload,
+            ttl_seconds=_CALLBACK_TOKEN_TTL_SECONDS,
+        )
+    )
+
+
+def _consume_callback_token(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    action: str,
+    token: str,
+    fallback_key: str,
+    allow_colon_fallback: bool = False,
+) -> dict[str, object] | None:
+    consumer = getattr(_content_store(context), "consume_telegram_callback_token", None)
+    if consumer is None:
+        return {fallback_key: token}
+    resolved = consumer(user_id=user_id, action=action, token=token)
+    if resolved is None:
+        if ":" in token and not allow_colon_fallback:
+            return None
+        return {fallback_key: token}
+    return resolved
+
+
+def _hard_skip_callback_data(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    session_id: str,
+) -> str:
+    token = _create_callback_token(
+        context=context,
+        user_id=user_id,
+        action=_HARD_SKIP_CALLBACK_ACTION,
+        payload={"session_id": session_id},
+        fallback_value=session_id,
+    )
+    return f"hard:skip:{token}"
+
+
+def _editable_word_callback_data(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    topic_id: str,
+    item_index: int,
+) -> str:
+    token = _create_callback_token(
+        context=context,
+        user_id=user_id,
+        action=_EDITABLE_WORD_CALLBACK_ACTION,
+        payload={"topic_id": topic_id, "item_index": item_index},
+        fallback_value=f"{topic_id}:{item_index}",
+    )
+    return f"words:edit_item:{token}"
+
+
+def _published_image_item_callback_data(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    topic_id: str,
+    item_index: int,
+) -> str:
+    token = _create_callback_token(
+        context=context,
+        user_id=user_id,
+        action=_PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
+        payload={"topic_id": topic_id, "item_index": item_index},
+        fallback_value=f"{topic_id}:{item_index}",
+    )
+    return f"words:edit_published_image:{token}"
 
 
 def _hard_skip_keyboard(
@@ -5333,7 +5430,11 @@ def _hard_skip_keyboard(
             [
                 InlineKeyboardButton(
                     _tg("hard_skip_button", context=context, user=user),
-                    callback_data=_hard_skip_callback_data(session_id=session_id),
+                    callback_data=_hard_skip_callback_data(
+                        context=context,
+                        user_id=int(user.id),
+                        session_id=session_id,
+                    ),
                 )
             ]
         ]
@@ -5349,7 +5450,19 @@ async def hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     parts = query.data.split(":", 2)
     if len(parts) != 3:
         return
-    _, _, session_id = parts
+    _, _, token = parts
+    payload = _consume_callback_token(
+        context=context,
+        user_id=int(user.id),
+        action=_HARD_SKIP_CALLBACK_ACTION,
+        token=token,
+        fallback_key="session_id",
+    )
+    if payload is None:
+        return
+    session_id = str(payload.get("session_id") or "").strip()
+    if not session_id:
+        return
     active_session = _active_training_session(context, user_id=user.id)
     if active_session is None or active_session.id != session_id:
         return
@@ -7094,8 +7207,41 @@ def _published_image_items_keyboard(
     *,
     topic_id: str,
     raw_items: list[object],
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+    user_id: int | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
+    if context is not None and user_id is not None:
+        rows: list[list[InlineKeyboardButton]] = []
+        for index, raw_item in enumerate(raw_items):
+            if not isinstance(raw_item, dict):
+                continue
+            english_word = str(raw_item.get("english_word", "")).strip() or str(
+                raw_item.get("id", "")
+            ).strip()
+            translation = str(raw_item.get("translation", "")).strip()
+            has_image = bool(str(raw_item.get("image_ref", "")).strip())
+            label = _editable_word_button_label(
+                english_word=english_word,
+                translation=translation,
+                has_image=has_image,
+            )
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        label[:64],
+                        callback_data=_published_image_item_callback_data(
+                            context=context,
+                            user_id=user_id,
+                            topic_id=topic_id,
+                            item_index=index,
+                        ),
+                    )
+                ]
+            )
+        if not rows:
+            rows = [[InlineKeyboardButton(_tg("no_items", language=language), callback_data="words:menu")]]
+        return InlineKeyboardMarkup(rows)
     return ui_published_image_items_keyboard(
         tg=_tg,
         topic_id=topic_id,
@@ -7122,8 +7268,32 @@ def _editable_words_keyboard(
     *,
     topic_id: str,
     words,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+    user_id: int | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
+    if context is not None and user_id is not None:
+        rows = [
+            [
+                InlineKeyboardButton(
+                    _editable_word_button_label(
+                        english_word=word.english_word,
+                        translation=word.translation,
+                        has_image=getattr(word, "has_image", False),
+                    )[:64],
+                    callback_data=_editable_word_callback_data(
+                        context=context,
+                        user_id=user_id,
+                        topic_id=topic_id,
+                        item_index=index,
+                    ),
+                )
+            ]
+            for index, word in enumerate(words)
+        ]
+        if not rows:
+            rows = [[InlineKeyboardButton(_tg("no_words", language=language), callback_data="words:menu")]]
+        return InlineKeyboardMarkup(rows)
     return ui_editable_words_keyboard(
         tg=_tg,
         topic_id=topic_id,

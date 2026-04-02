@@ -211,6 +211,42 @@ For editor/import flows specifically:
 - when temporary Telegram editor/review messages need cleanup, reuse the shared tracked-message registry in the bot (`flow_id + tag`) instead of adding one-off delete logic
 - prefer adding a new tag to the existing cleanup mechanism over introducing separate ad hoc state for each Telegram subflow
 
+## Telegram Callback Conventions
+
+When designing or changing Telegram inline keyboards, explicitly classify callback payloads before adding new buttons:
+
+- keep short, stable, low-entropy actions as plain callback data
+- examples of stable payloads:
+  - menu navigation
+  - mode switches
+  - simple index picks
+  - fixed actions like `continue`, `restart`, `backspace`
+- treat callback payloads as unstable if they include long or user/content-specific identifiers
+- examples of unstable payloads:
+  - UUIDs
+  - long `item_id` or `topic_id` values
+  - multiple concatenated parameters
+  - editor/review/action payloads that may grow over time
+
+For unstable callback payloads:
+
+- check Telegram callback size limits before shipping
+- prefer a short indirection token stored server-side instead of embedding the whole payload in `callback_data`
+- make these tokens short-lived and clean them up after use or expiry
+
+Do not:
+
+- assume current IDs will always stay short enough
+- add new composite callback formats without first deciding whether they are stable or unstable
+- fix overflow problems one button at a time without considering whether the callback should move to a tokenized pattern
+
+## Telegram Button Layer Conventions
+
+- Create inline buttons through the project-local wrapper in `src/englishbot/telegram_buttons.py`.
+- Do not import `InlineKeyboardButton` directly from `telegram` in feature or UI modules.
+- Keep callback-data formatting and future tokenization logic centralized in the project button layer instead of scattering it across handlers and keyboard builders.
+- If a new module needs inline buttons, import the wrapper from `englishbot.telegram_buttons`.
+
 
 # Testing is mandatory.
 Do not substitute test coverage with helper scripts, demo scripts, CLI flows, or manual verification notes.

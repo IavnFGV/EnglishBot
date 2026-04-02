@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
+import secrets
 import sqlite3
 import unicodedata
+import uuid
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from englishbot.domain.add_words_models import AddWordsFlowState
@@ -223,6 +224,7 @@ class SQLiteContentStore:
                     DROP TABLE IF EXISTS add_words_flows;
                     DROP TABLE IF EXISTS image_review_flows;
                     DROP TABLE IF EXISTS telegram_flow_messages;
+                    DROP TABLE IF EXISTS telegram_callback_tokens;
                     """
                 )
             elif "learning_items" in existing_tables and "vocabulary_items" in existing_tables:
@@ -377,6 +379,15 @@ class SQLiteContentStore:
                     role TEXT NOT NULL,
                     assigned_at TEXT NOT NULL,
                     PRIMARY KEY (user_id, role)
+                );
+
+                CREATE TABLE IF NOT EXISTS telegram_callback_tokens (
+                    token TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS pending_telegram_notifications (
@@ -1620,6 +1631,10 @@ class SQLiteContentStore:
                 "DELETE FROM image_review_flows WHERE editor_user_id = ?",
                 (user_id,),
             ).rowcount
+            deleted_callback_tokens = connection.execute(
+                "DELETE FROM telegram_callback_tokens WHERE user_id = ?",
+                (user_id,),
+            ).rowcount
             goal_ids = [
                 str(row["id"])
                 for row in connection.execute(
@@ -1653,6 +1668,7 @@ class SQLiteContentStore:
             "pending_notifications": deleted_pending_notifications,
             "add_words_flows": deleted_add_words_flows,
             "image_review_flows": deleted_image_review_flows,
+            "callback_tokens": deleted_callback_tokens,
             "flow_messages": deleted_flow_messages,
         }
 
@@ -2684,6 +2700,114 @@ class SQLiteContentStore:
                 """,
                 (user_id, normalized_role, timestamp),
             )
+
+    def prune_expired_telegram_callback_tokens(self, *, now: datetime | None = None) -> int:
+        self.initialize()
+        current = now or datetime.now(UTC)
+        with _connect(self._db_path) as connection:
+            return connection.execute(
+                """
+                DELETE FROM telegram_callback_tokens
+                WHERE expires_at IS NOT NULL AND expires_at <= ?
+                """,
+                (current.isoformat(),),
+            ).rowcount
+
+    def create_telegram_callback_token(
+        self,
+        *,
+        user_id: int,
+        action: str,
+        payload: dict[str, object],
+        ttl_seconds: int | None = 48 * 60 * 60,
+        now: datetime | None = None,
+    ) -> str:
+        self.initialize()
+        current = now or datetime.now(UTC)
+        normalized_action = str(action).strip()
+        if not normalized_action:
+            raise ValueError("Telegram callback action is required.")
+        expires_at = (
+            (current + timedelta(seconds=ttl_seconds)).isoformat()
+            if ttl_seconds is not None
+            else None
+        )
+        payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        with _connect(self._db_path) as connection:
+            connection.execute(
+                """
+                DELETE FROM telegram_callback_tokens
+                WHERE expires_at IS NOT NULL AND expires_at <= ?
+                """,
+                (current.isoformat(),),
+            )
+            for _attempt in range(8):
+                token = secrets.token_urlsafe(9).rstrip("=")
+                try:
+                    connection.execute(
+                        """
+                        INSERT INTO telegram_callback_tokens (
+                            token, user_id, action, payload_json, created_at, expires_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            token,
+                            user_id,
+                            normalized_action,
+                            payload_json,
+                            current.isoformat(),
+                            expires_at,
+                        ),
+                    )
+                    return token
+                except sqlite3.IntegrityError:
+                    continue
+        raise RuntimeError("Unable to create a unique Telegram callback token.")
+
+    def consume_telegram_callback_token(
+        self,
+        *,
+        token: str,
+        user_id: int,
+        action: str | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, object] | None:
+        self.initialize()
+        normalized_token = str(token).strip()
+        if not normalized_token:
+            return None
+        current = now or datetime.now(UTC)
+        normalized_action = str(action).strip() if action is not None else None
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT user_id, action, payload_json, expires_at
+                FROM telegram_callback_tokens
+                WHERE token = ?
+                """,
+                (normalized_token,),
+            ).fetchone()
+            if row is None:
+                return None
+            expires_at_raw = row["expires_at"]
+            if expires_at_raw:
+                expires_at = datetime.fromisoformat(str(expires_at_raw))
+                if expires_at <= current:
+                    connection.execute(
+                        "DELETE FROM telegram_callback_tokens WHERE token = ?",
+                        (normalized_token,),
+                    )
+                    return None
+            if int(row["user_id"]) != user_id:
+                return None
+            if normalized_action is not None and str(row["action"]) != normalized_action:
+                return None
+            connection.execute(
+                "DELETE FROM telegram_callback_tokens WHERE token = ?",
+                (normalized_token,),
+            )
+            return json.loads(str(row["payload_json"]))
 
     def list_telegram_user_role_assignments(self) -> list[TelegramUserRoleAssignment]:
         self.initialize()

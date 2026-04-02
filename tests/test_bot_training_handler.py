@@ -1229,7 +1229,7 @@ async def test_hard_skip_handler_downgrades_homework_hard_to_same_word_on_medium
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     message = _FakeEditableMessage("bonus")
-    query = _FakeQuery("hard:skip:session-hard", message)
+    query = _FakeQuery("hard:skip:skip-token", message)
     sent_questions: list[TrainingQuestion] = []
     saved_sessions: list[TrainingSession] = []
 
@@ -1274,6 +1274,7 @@ async def test_hard_skip_handler_downgrades_homework_hard_to_same_word_on_medium
                 "content_store": SimpleNamespace(
                     get_active_session_by_user=lambda user_id: session,  # noqa: ARG005
                     save_session=lambda updated: saved_sessions.append(updated),
+                    consume_telegram_callback_token=lambda **kwargs: {"session_id": "session-hard"},
                 ),
                 "telegram_ui_language": "en",
             }
@@ -1298,7 +1299,7 @@ async def test_hard_skip_handler_uses_existing_answer_flow_outside_homework(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     message = _FakeEditableMessage("hard")
-    query = _FakeQuery("hard:skip:session-hard", message)
+    query = _FakeQuery("hard:skip:skip-token", message)
     handled: list[str] = []
 
     async def _fake_process_answer(update, context, answer):  # noqa: ANN001
@@ -1327,7 +1328,8 @@ async def test_hard_skip_handler_uses_existing_answer_flow_outside_homework(
                         mode=TrainingMode.HARD,
                         source_tag=None,
                         items=[SessionItem(order=0, vocabulary_item_id="cat", mode=TrainingMode.HARD)],
-                    )
+                    ),
+                    consume_telegram_callback_token=lambda **kwargs: {"session_id": "session-hard"},
                 ),
                 "telegram_ui_language": "en",
             }
@@ -1341,6 +1343,39 @@ async def test_hard_skip_handler_uses_existing_answer_flow_outside_homework(
     )
 
     assert handled == ["__skip_hard__"]
+
+
+def test_hard_skip_keyboard_uses_short_callback_token() -> None:
+    created: list[dict[str, object]] = []
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": SimpleNamespace(
+                    create_telegram_callback_token=lambda **kwargs: created.append(kwargs) or "cbtok123456"
+                ),
+                "telegram_ui_language": "en",
+            }
+        )
+    )
+    user = SimpleNamespace(id=321, language_code="en")
+
+    markup = bot._hard_skip_keyboard(
+        context=context,  # type: ignore[arg-type]
+        user=user,
+        session_id="session-hard-very-long-id",
+    )
+
+    button = markup.inline_keyboard[0][0]
+    assert button.callback_data == "hard:skip:cbtok123456"
+    assert len(button.callback_data) < 64
+    assert created == [
+        {
+            "user_id": 321,
+            "action": "hard_skip",
+            "payload": {"session_id": "session-hard-very-long-id"},
+            "ttl_seconds": 172800,
+        }
+    ]
 
 
 @pytest.mark.anyio

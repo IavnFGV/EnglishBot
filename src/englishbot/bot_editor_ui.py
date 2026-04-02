@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from englishbot.domain.models import Topic, TrainingMode
@@ -19,6 +19,7 @@ from englishbot.presentation.telegram_views import (
     build_topic_selection_view,
     build_words_menu_view,
 )
+from englishbot.telegram_buttons import InlineKeyboardButton
 
 TelegramTextGetter = Callable[..., str]
 
