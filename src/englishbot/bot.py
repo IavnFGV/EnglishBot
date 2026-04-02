@@ -3257,6 +3257,16 @@ async def admin_goal_deadline_callback_handler(update: Update, context: ContextT
         context.user_data["admin_goal_deadline_date"] = None
     elif option == "today":
         context.user_data["admin_goal_deadline_date"] = datetime.now(UTC).date().isoformat()
+    elif option == "tomorrow":
+        context.user_data["admin_goal_deadline_date"] = (
+            datetime.now(UTC).date() + timedelta(days=1)
+        ).isoformat()
+    elif option == "week_end":
+        today = datetime.now(UTC).date()
+        days_until_sunday = 6 - today.weekday()
+        context.user_data["admin_goal_deadline_date"] = (
+            today + timedelta(days=max(days_until_sunday, 0))
+        ).isoformat()
     else:
         days = int(option.removesuffix("d"))
         context.user_data["admin_goal_deadline_date"] = (

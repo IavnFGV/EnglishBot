@@ -350,12 +350,8 @@ def admin_goal_deadline_keyboard(
         [
             [
                 InlineKeyboardButton(tg("admin_goal_deadline_today", language=language), callback_data="words:admin_goal_deadline:today"),
-                InlineKeyboardButton(tg("admin_goal_deadline_in_days", language=language, days=3), callback_data="words:admin_goal_deadline:3d"),
-                InlineKeyboardButton(tg("admin_goal_deadline_in_days", language=language, days=7), callback_data="words:admin_goal_deadline:7d"),
-            ],
-            [
-                InlineKeyboardButton(tg("admin_goal_deadline_in_days", language=language, days=14), callback_data="words:admin_goal_deadline:14d"),
-                InlineKeyboardButton(tg("admin_goal_deadline_none", language=language), callback_data="words:admin_goal_deadline:none"),
+                InlineKeyboardButton(tg("admin_goal_deadline_tomorrow", language=language), callback_data="words:admin_goal_deadline:tomorrow"),
+                InlineKeyboardButton(tg("admin_goal_deadline_end_of_week", language=language), callback_data="words:admin_goal_deadline:week_end"),
             ],
             [InlineKeyboardButton(tg("admin_goal_deadline_custom", language=language), callback_data="words:admin_goal_deadline:custom")],
             [InlineKeyboardButton(tg("back", language=language), callback_data="assign:admin_goal_recipients:page:0")],

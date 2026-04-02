@@ -511,7 +511,7 @@ async def test_admin_goal_deadline_callback_handler_creates_goal_with_preset_dea
 
     created_calls: list[dict[str, object]] = []
     query = _RecordingQuery()
-    query.data = "words:admin_goal_deadline:7d"
+    query.data = "words:admin_goal_deadline:week_end"
     context = SimpleNamespace(
         user_data={
             "admin_goal_period": "homework",
@@ -551,9 +551,75 @@ async def test_admin_goal_deadline_callback_handler_creates_goal_with_preset_dea
         context,  # type: ignore[arg-type]
     )
 
-    assert created_calls[0]["deadline_date"] == "2026-04-09"
+    assert created_calls[0]["deadline_date"] == "2026-04-05"
     assert flushed == [77]
     assert query.edits[-1][0] == "Assigned homework for 1 users (4 words each)."
+
+
+@pytest.mark.anyio
+async def test_admin_goal_deadline_callback_handler_creates_goal_with_tomorrow_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import englishbot.bot as bot_module
+
+    from datetime import UTC, datetime
+
+    class _FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # noqa: ANN001
+            return cls(2026, 4, 2, tzinfo=tz or UTC)
+
+    monkeypatch.setattr(bot_module, "datetime", _FixedDateTime)
+    monkeypatch.setattr(bot_module, "_schedule_assignment_assigned_notifications", lambda context, goals: None)
+
+    async def _fake_flush_pending_notifications_for_user(context, user_id):  # noqa: ANN001, ARG001
+        return None
+
+    monkeypatch.setattr(bot_module, "_flush_pending_notifications_for_user", _fake_flush_pending_notifications_for_user)
+
+    created_calls: list[dict[str, object]] = []
+    query = _RecordingQuery()
+    query.data = "words:admin_goal_deadline:tomorrow"
+    context = SimpleNamespace(
+        user_data={
+            "admin_goal_period": "homework",
+            "admin_goal_type": "word_level_homework",
+            "admin_goal_source": "recent",
+            "admin_goal_recipient_user_ids": {77},
+            "words_flow_mode": "awaiting_admin_goal_deadline_text",
+        },
+        application=SimpleNamespace(
+            bot_data={
+                "assign_goal_to_users_use_case": SimpleNamespace(
+                    execute=lambda **kwargs: (
+                        created_calls.append(kwargs)
+                        or [
+                            Goal(
+                                id="g1",
+                                user_id=77,
+                                goal_period=GoalPeriod.HOMEWORK,
+                                goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+                                target_count=4,
+                                progress_count=0,
+                                status=GoalStatus.ACTIVE,
+                                deadline_date=kwargs["deadline_date"],
+                            )
+                        ]
+                    )
+                )
+            }
+        ),
+    )
+
+    await admin_goal_deadline_callback_handler(
+        SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(id=123, language_code="en"),
+        ),
+        context,  # type: ignore[arg-type]
+    )
+
+    assert created_calls[0]["deadline_date"] == "2026-04-03"
 
 
 @pytest.mark.anyio
@@ -885,6 +951,9 @@ def test_admin_goal_flow_keyboards_include_back_navigation() -> None:
     assert _admin_goal_target_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_assign_goal"
     assert _admin_goal_source_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_assign_goal"
     assert _admin_goal_deadline_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_goal_recipients:page:0"
+    assert _admin_goal_deadline_keyboard().inline_keyboard[0][0].callback_data == "words:admin_goal_deadline:today"
+    assert _admin_goal_deadline_keyboard().inline_keyboard[0][1].callback_data == "words:admin_goal_deadline:tomorrow"
+    assert _admin_goal_deadline_keyboard().inline_keyboard[0][2].callback_data == "words:admin_goal_deadline:week_end"
 
 
 def test_admin_goal_manual_keyboard_shows_page_range_indicator() -> None:
