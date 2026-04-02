@@ -12,8 +12,11 @@ from englishbot.presentation.telegram_menu_access import TelegramMenuAccessPolic
 from englishbot.bot import (
     _assign_menu_keyboard,
     _assignment_round_complete_keyboard,
+    _admin_goal_deadline_keyboard,
     _admin_goal_manual_keyboard,
     _admin_goal_recipients_keyboard,
+    admin_goal_deadline_callback_handler,
+    admin_goal_recipients_callback_handler,
     assign_goal_detail_callback_handler,
     assign_user_detail_callback_handler,
     _goal_setup_keyboard,
@@ -463,6 +466,97 @@ async def test_admin_goal_period_callback_handler_uses_homework_goal_type_for_ho
 
 
 @pytest.mark.anyio
+async def test_admin_goal_recipients_done_opens_deadline_step() -> None:
+    query = _RecordingQuery()
+    query.data = "assign:admin_goal_recipients:done"
+    context = SimpleNamespace(
+        user_data={"admin_goal_recipient_user_ids": {101}},
+        application=SimpleNamespace(bot_data={}),
+    )
+
+    await admin_goal_recipients_callback_handler(
+        SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(id=123, language_code="en"),
+        ),
+        context,  # type: ignore[arg-type]
+    )
+
+    assert context.user_data["words_flow_mode"] == "awaiting_admin_goal_deadline_text"
+    assert query.edits[-1][0] == "Choose a deadline for this homework:"
+
+
+@pytest.mark.anyio
+async def test_admin_goal_deadline_callback_handler_creates_goal_with_preset_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import englishbot.bot as bot_module
+
+    from datetime import UTC, datetime
+
+    class _FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # noqa: ANN001
+            return cls(2026, 4, 2, tzinfo=tz or UTC)
+
+    monkeypatch.setattr(bot_module, "datetime", _FixedDateTime)
+    monkeypatch.setattr(bot_module, "_schedule_assignment_assigned_notifications", lambda context, goals: None)
+
+    flushed: list[int] = []
+
+    async def _fake_flush_pending_notifications_for_user(context, user_id):  # noqa: ANN001
+        flushed.append(user_id)
+
+    monkeypatch.setattr(bot_module, "_flush_pending_notifications_for_user", _fake_flush_pending_notifications_for_user)
+
+    created_calls: list[dict[str, object]] = []
+    query = _RecordingQuery()
+    query.data = "words:admin_goal_deadline:7d"
+    context = SimpleNamespace(
+        user_data={
+            "admin_goal_period": "homework",
+            "admin_goal_type": "word_level_homework",
+            "admin_goal_source": "recent",
+            "admin_goal_recipient_user_ids": {77},
+            "words_flow_mode": "awaiting_admin_goal_deadline_text",
+        },
+        application=SimpleNamespace(
+            bot_data={
+                "assign_goal_to_users_use_case": SimpleNamespace(
+                    execute=lambda **kwargs: (
+                        created_calls.append(kwargs)
+                        or [
+                            Goal(
+                                id="g1",
+                                user_id=77,
+                                goal_period=GoalPeriod.HOMEWORK,
+                                goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+                                target_count=4,
+                                progress_count=0,
+                                status=GoalStatus.ACTIVE,
+                                deadline_date=kwargs["deadline_date"],
+                            )
+                        ]
+                    )
+                )
+            }
+        ),
+    )
+
+    await admin_goal_deadline_callback_handler(
+        SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(id=123, language_code="en"),
+        ),
+        context,  # type: ignore[arg-type]
+    )
+
+    assert created_calls[0]["deadline_date"] == "2026-04-09"
+    assert flushed == [77]
+    assert query.edits[-1][0] == "Assigned homework for 1 users (4 words each)."
+
+
+@pytest.mark.anyio
 async def test_goal_setup_disabled_callback_handler_returns_to_assignments_menu() -> None:
     query = _RecordingQuery()
     context = SimpleNamespace(user_data={"goal_period": "daily"}, application=SimpleNamespace(bot_data={}))
@@ -517,6 +611,72 @@ async def test_goal_text_handler_disables_legacy_self_goal_prompt(monkeypatch: p
     assert len(sent_views) == 1
     assert sent_views[0].text == "Self-managed goals are disabled. Ask an admin to assign work."
     assert "words_flow_mode" not in context.user_data
+
+
+@pytest.mark.anyio
+async def test_goal_text_handler_creates_admin_goal_with_custom_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import englishbot.bot as bot_module
+
+    monkeypatch.setattr(bot_module, "_schedule_assignment_assigned_notifications", lambda context, goals: None)
+
+    async def _fake_delete_message_if_possible(context, message):  # noqa: ANN001
+        return None
+
+    async def _fake_flush_pending_notifications_for_user(context, user_id):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(bot_module, "_delete_message_if_possible", _fake_delete_message_if_possible)
+    monkeypatch.setattr(bot_module, "_flush_pending_notifications_for_user", _fake_flush_pending_notifications_for_user)
+
+    created_calls: list[dict[str, object]] = []
+    reply_calls: list[str] = []
+
+    async def _reply_text(text: str, reply_markup=None) -> None:  # noqa: ARG001
+        reply_calls.append(text)
+
+    context = SimpleNamespace(
+        user_data={
+            "words_flow_mode": "awaiting_admin_goal_deadline_text",
+            "admin_goal_period": "homework",
+            "admin_goal_type": "word_level_homework",
+            "admin_goal_source": "recent",
+            "admin_goal_recipient_user_ids": {77},
+        },
+        application=SimpleNamespace(
+            bot_data={
+                "assign_goal_to_users_use_case": SimpleNamespace(
+                    execute=lambda **kwargs: (
+                        created_calls.append(kwargs)
+                        or [
+                            Goal(
+                                id="g1",
+                                user_id=77,
+                                goal_period=GoalPeriod.HOMEWORK,
+                                goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+                                target_count=3,
+                                progress_count=0,
+                                status=GoalStatus.ACTIVE,
+                                deadline_date=kwargs["deadline_date"],
+                            )
+                        ]
+                    )
+                )
+            }
+        ),
+    )
+
+    await goal_text_handler(
+        SimpleNamespace(
+            effective_message=SimpleNamespace(text="2026-04-15", reply_text=_reply_text),
+            effective_user=SimpleNamespace(id=123, language_code="en"),
+        ),
+        context,  # type: ignore[arg-type]
+    )
+
+    assert created_calls[0]["deadline_date"] == "2026-04-15"
+    assert reply_calls[-1] == "Assigned homework for 1 users (3 words each)."
 
 
 def test_topic_keyboards_show_item_counts_when_provided() -> None:
@@ -724,6 +884,7 @@ def test_admin_goal_flow_keyboards_include_back_navigation() -> None:
     assert len(_admin_goal_period_keyboard().inline_keyboard) == 2
     assert _admin_goal_target_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_assign_goal"
     assert _admin_goal_source_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_assign_goal"
+    assert _admin_goal_deadline_keyboard().inline_keyboard[-1][0].callback_data == "assign:admin_goal_recipients:page:0"
 
 
 def test_admin_goal_manual_keyboard_shows_page_range_indicator() -> None:

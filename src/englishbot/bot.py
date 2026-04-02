@@ -113,6 +113,7 @@ from englishbot.bot_assignments_admin_ui import page_range_label as ui_page_rang
 from englishbot.bot_assignments_admin_ui import render_assignment_goal_detail_text as ui_render_assignment_goal_detail_text
 from englishbot.bot_assignments_admin_ui import render_assignment_user_detail_text as ui_render_assignment_user_detail_text
 from englishbot.bot_assignments_ui import admin_goal_custom_target_keyboard as ui_admin_goal_custom_target_keyboard
+from englishbot.bot_assignments_ui import admin_goal_deadline_keyboard as ui_admin_goal_deadline_keyboard
 from englishbot.bot_assignments_ui import admin_goal_period_keyboard as ui_admin_goal_period_keyboard
 from englishbot.bot_assignments_ui import admin_goal_source_keyboard as ui_admin_goal_source_keyboard
 from englishbot.bot_assignments_ui import admin_goal_target_keyboard as ui_admin_goal_target_keyboard
@@ -235,6 +236,7 @@ _IMAGE_REVIEW_AWAITING_PHOTO = "awaiting_image_review_photo"
 _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
 _GOAL_AWAITING_TARGET_TEXT = "awaiting_goal_target_text"
 _ADMIN_GOAL_AWAITING_TARGET_TEXT = "awaiting_admin_goal_target_text"
+_ADMIN_GOAL_AWAITING_DEADLINE_TEXT = "awaiting_admin_goal_deadline_text"
 _EXPECTED_USER_INPUT_STATE_KEY = "expected_user_input_state"
 _IMAGE_REVIEW_STEP_TAG = "image_review_step"
 _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
@@ -667,6 +669,7 @@ def build_application(
     app.add_handler(CallbackQueryHandler(admin_goal_period_callback_handler, pattern=r"^words:admin_goal_period:"))
     app.add_handler(CallbackQueryHandler(admin_goal_target_callback_handler, pattern=r"^words:admin_goal_target:"))
     app.add_handler(CallbackQueryHandler(admin_goal_source_callback_handler, pattern=r"^words:admin_goal_source:"))
+    app.add_handler(CallbackQueryHandler(admin_goal_deadline_callback_handler, pattern=r"^words:admin_goal_deadline:"))
     app.add_handler(
         CallbackQueryHandler(admin_goal_manual_toggle_callback_handler, pattern=r"^words:admin_goal_manual:toggle:")
     )
@@ -2747,6 +2750,10 @@ def _admin_goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE)
     return ui_admin_goal_source_keyboard(tg=_tg, language=language)
 
 
+def _admin_goal_deadline_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
+    return ui_admin_goal_deadline_keyboard(tg=_tg, language=language)
+
+
 def _render_progress_text(*, context: ContextTypes.DEFAULT_TYPE, user) -> str:
     summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
     summary = LearnerProgressSummary(
@@ -2961,6 +2968,7 @@ async def admin_assign_goal_start_handler(update: Update, context: ContextTypes.
         "admin_goal_type",
         "admin_goal_target_count",
         "admin_goal_source",
+        "admin_goal_deadline_date",
         "admin_goal_manual_word_ids",
         "admin_goal_recipient_user_ids",
         "admin_goal_recipients_page",
@@ -3191,12 +3199,25 @@ async def admin_goal_recipients_callback_handler(update: Update, context: Contex
         return
     await query.answer()
     if query.data.startswith("assign:admin_goal_recipients:page:"):
+        if context.user_data.get("words_flow_mode") == _ADMIN_GOAL_AWAITING_DEADLINE_TEXT:
+            context.user_data.pop("words_flow_mode", None)
+            _clear_expected_user_input(context)
         page = int(query.data.split(":")[-1])
     elif query.data == "assign:admin_goal_recipients:done":
         if not context.user_data.get("admin_goal_recipient_user_ids"):
             await query.edit_message_text(_tg("assign_select_users_empty", context=context, user=user))
             return
-        await _create_admin_goal_from_context(query=query, context=context, user=user)
+        context.user_data.pop("admin_goal_deadline_date", None)
+        context.user_data["words_flow_mode"] = _ADMIN_GOAL_AWAITING_DEADLINE_TEXT
+        _remember_expected_user_input(
+            context,
+            chat_id=getattr(getattr(query, "message", None), "chat_id", None),
+            message_id=getattr(getattr(query, "message", None), "message_id", None),
+        )
+        await query.edit_message_text(
+            _tg("admin_goal_deadline_prompt", context=context, user=user),
+            reply_markup=_admin_goal_deadline_keyboard(language=_telegram_ui_language(context, user)),
+        )
         return
     else:
         target_user_id = int(query.data.split(":")[-1])
@@ -3213,11 +3234,42 @@ async def admin_goal_recipients_callback_handler(update: Update, context: Contex
     )
 
 
-async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAULT_TYPE, user) -> None:
+async def admin_goal_deadline_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or query.data is None:
+        return
+    await query.answer()
+    option = query.data.split(":")[-1]
+    if option == "custom":
+        context.user_data["words_flow_mode"] = _ADMIN_GOAL_AWAITING_DEADLINE_TEXT
+        _remember_expected_user_input(
+            context,
+            chat_id=getattr(getattr(query, "message", None), "chat_id", None),
+            message_id=getattr(getattr(query, "message", None), "message_id", None),
+        )
+        await query.edit_message_text(
+            _tg("admin_goal_deadline_custom_prompt", context=context, user=user),
+            reply_markup=_admin_goal_deadline_keyboard(language=_telegram_ui_language(context, user)),
+        )
+        return
+    if option == "none":
+        context.user_data["admin_goal_deadline_date"] = None
+    elif option == "today":
+        context.user_data["admin_goal_deadline_date"] = datetime.now(UTC).date().isoformat()
+    else:
+        days = int(option.removesuffix("d"))
+        context.user_data["admin_goal_deadline_date"] = (
+            datetime.now(UTC).date() + timedelta(days=days)
+        ).isoformat()
+    await _finish_admin_goal_creation(query_or_message=query, context=context, user=user)
+
+
+def _create_admin_goals_from_context(*, context: ContextTypes.DEFAULT_TYPE) -> list[Goal]:
     source_raw = str(context.user_data.get("admin_goal_source", GoalWordSource.RECENT.value))
     topic_id = source_raw.split(":", 1)[1] if source_raw.startswith("topic:") else None
     source = GoalWordSource.TOPIC if topic_id else GoalWordSource(source_raw)
-    created = _assign_goal_to_users_use_case(context).execute(
+    return _assign_goal_to_users_use_case(context).execute(
         user_ids=list(context.user_data.get("admin_goal_recipient_user_ids", [])),
         goal_period=GoalPeriod(str(context.user_data.get("admin_goal_period", GoalPeriod.HOMEWORK.value))),
         goal_type=GoalType(str(context.user_data.get("admin_goal_type", GoalType.WORD_LEVEL_HOMEWORK.value))),
@@ -3225,31 +3277,49 @@ async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAUL
         source=source,
         topic_id=topic_id,
         manual_word_ids=list(context.user_data.get("admin_goal_manual_word_ids", [])),
+        deadline_date=context.user_data.get("admin_goal_deadline_date"),
     )
+
+
+async def _finish_admin_goal_creation(*, query_or_message, context: ContextTypes.DEFAULT_TYPE, user) -> None:
+    created = _create_admin_goals_from_context(context=context)
     _schedule_assignment_assigned_notifications(context, goals=created)
     for recipient_user_id in {int(goal.user_id) for goal in created}:
         await _flush_pending_notifications_for_user(context, user_id=recipient_user_id)
     assigned_word_count = max((int(goal.target_count) for goal in created), default=0)
-    await query.edit_message_text(
-        _tg(
-            "admin_goal_created",
-            context=context,
-            user=user,
-            user_count=len(created),
-            target=assigned_word_count,
+    if hasattr(query_or_message, "edit_message_text"):
+        await query_or_message.edit_message_text(
+            _tg(
+                "admin_goal_created",
+                context=context,
+                user=user,
+                user_count=len(created),
+                target=assigned_word_count,
+            )
         )
-    )
+    else:
+        await query_or_message.reply_text(
+            _tg(
+                "admin_goal_created",
+                context=context,
+                user=user,
+                user_count=len(created),
+                target=assigned_word_count,
+            )
+        )
     for key in (
         "admin_goal_period",
         "admin_goal_type",
         "admin_goal_target_count",
         "admin_goal_source",
+        "admin_goal_deadline_date",
         "admin_goal_manual_word_ids",
         "admin_goal_recipient_user_ids",
         "admin_goal_recipients_page",
         "words_flow_mode",
     ):
         context.user_data.pop(key, None)
+    _clear_expected_user_input(context)
 
 
 async def admin_users_progress_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3912,52 +3982,76 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     if flow_mode not in {
         _ADMIN_GOAL_AWAITING_TARGET_TEXT,
+        _ADMIN_GOAL_AWAITING_DEADLINE_TEXT,
     }:
         return
-    prompt_reply_markup = (
-        _admin_goal_custom_target_keyboard(language=_telegram_ui_language(context, user))
-    )
-    try:
-        target_count = int(message.text.strip())
-    except ValueError:
-        edited = await _edit_expected_user_input_prompt(
-            context,
-            text=_tg("goal_target_custom_prompt", context=context, user=user),
-            reply_markup=prompt_reply_markup,
+    if flow_mode == _ADMIN_GOAL_AWAITING_TARGET_TEXT:
+        prompt_reply_markup = (
+            _admin_goal_custom_target_keyboard(language=_telegram_ui_language(context, user))
         )
-        if not edited:
-            await message.reply_text(
-                _tg("goal_target_custom_prompt", context=context, user=user),
+        try:
+            target_count = int(message.text.strip())
+        except ValueError:
+            edited = await _edit_expected_user_input_prompt(
+                context,
+                text=_tg("goal_target_custom_prompt", context=context, user=user),
                 reply_markup=prompt_reply_markup,
             )
-        return
-    if target_count <= 0:
-        edited = await _edit_expected_user_input_prompt(
-            context,
-            text=_tg("goal_target_custom_prompt", context=context, user=user),
-            reply_markup=prompt_reply_markup,
-        )
-        if not edited:
-            await message.reply_text(
-                _tg("goal_target_custom_prompt", context=context, user=user),
+            if not edited:
+                await message.reply_text(
+                    _tg("goal_target_custom_prompt", context=context, user=user),
+                    reply_markup=prompt_reply_markup,
+                )
+            return
+        if target_count <= 0:
+            edited = await _edit_expected_user_input_prompt(
+                context,
+                text=_tg("goal_target_custom_prompt", context=context, user=user),
                 reply_markup=prompt_reply_markup,
             )
-        return
-    context.user_data["admin_goal_target_count"] = target_count
-    context.user_data.pop("words_flow_mode", None)
-    next_reply_markup = _admin_goal_source_keyboard(language=_telegram_ui_language(context, user))
-    edited = await _edit_expected_user_input_prompt(
-        context,
-        text=_tg("goal_source_prompt", context=context, user=user),
-        reply_markup=next_reply_markup,
-    )
-    if not edited:
-        await message.reply_text(
-            _tg("goal_source_prompt", context=context, user=user),
+            if not edited:
+                await message.reply_text(
+                    _tg("goal_target_custom_prompt", context=context, user=user),
+                    reply_markup=prompt_reply_markup,
+                )
+            return
+        context.user_data["admin_goal_target_count"] = target_count
+        context.user_data.pop("words_flow_mode", None)
+        next_reply_markup = _admin_goal_source_keyboard(language=_telegram_ui_language(context, user))
+        edited = await _edit_expected_user_input_prompt(
+            context,
+            text=_tg("goal_source_prompt", context=context, user=user),
             reply_markup=next_reply_markup,
         )
+        if not edited:
+            await message.reply_text(
+                _tg("goal_source_prompt", context=context, user=user),
+                reply_markup=next_reply_markup,
+            )
+        await _delete_message_if_possible(context, message=message)
+        _clear_expected_user_input(context)
+        return
+
+    deadline_text = message.text.strip()
+    try:
+        parsed_deadline = datetime.strptime(deadline_text, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        prompt_reply_markup = _admin_goal_deadline_keyboard(language=_telegram_ui_language(context, user))
+        edited = await _edit_expected_user_input_prompt(
+            context,
+            text=_tg("admin_goal_deadline_custom_prompt", context=context, user=user),
+            reply_markup=prompt_reply_markup,
+        )
+        if not edited:
+            await message.reply_text(
+                _tg("admin_goal_deadline_custom_prompt", context=context, user=user),
+                reply_markup=prompt_reply_markup,
+            )
+        return
+    context.user_data["admin_goal_deadline_date"] = parsed_deadline
+    context.user_data.pop("words_flow_mode", None)
     await _delete_message_if_possible(context, message=message)
-    _clear_expected_user_input(context)
+    await _finish_admin_goal_creation(query_or_message=message, context=context, user=user)
 
 
 async def add_words_edit_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

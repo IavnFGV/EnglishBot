@@ -341,6 +341,28 @@ def admin_goal_source_keyboard(
     )
 
 
+def admin_goal_deadline_keyboard(
+    *,
+    tg: TelegramTextGetter,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(tg("admin_goal_deadline_today", language=language), callback_data="words:admin_goal_deadline:today"),
+                InlineKeyboardButton(tg("admin_goal_deadline_in_days", language=language, days=3), callback_data="words:admin_goal_deadline:3d"),
+                InlineKeyboardButton(tg("admin_goal_deadline_in_days", language=language, days=7), callback_data="words:admin_goal_deadline:7d"),
+            ],
+            [
+                InlineKeyboardButton(tg("admin_goal_deadline_in_days", language=language, days=14), callback_data="words:admin_goal_deadline:14d"),
+                InlineKeyboardButton(tg("admin_goal_deadline_none", language=language), callback_data="words:admin_goal_deadline:none"),
+            ],
+            [InlineKeyboardButton(tg("admin_goal_deadline_custom", language=language), callback_data="words:admin_goal_deadline:custom")],
+            [InlineKeyboardButton(tg("back", language=language), callback_data="assign:admin_goal_recipients:page:0")],
+        ]
+    )
+
+
 def assignment_round_batch_keyboard(
     *,
     tg: TelegramTextGetter,
