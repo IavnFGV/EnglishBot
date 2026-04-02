@@ -27,7 +27,7 @@ from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 
 FAIRY_TALES_LESSON_TEXT = (
     "Fairy Tales\n\n"
-    "Рrincess / Prince — принцесса / принц\n"
+    "Princess / Prince — принцесса / принц\n"
     "Castle — замок\n"
     "King / Queen — король / королева\n"
     "Dragon — дракон\n"

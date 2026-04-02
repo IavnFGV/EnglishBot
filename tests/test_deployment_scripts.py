@@ -197,6 +197,8 @@ def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
     assert "contents: write" in workflow
     assert "branches:" in workflow
     assert "- main" in workflow
+    assert 'cache: "pip"' in workflow
+    assert 'cache-dependency-path: "pyproject.toml"' in workflow
     assert 'python -m pip install -e ".[dev,llm]"' in workflow
     assert "PYTHONPATH=. pytest -q" in workflow
     assert "ssh-keyscan" in workflow
@@ -208,6 +210,16 @@ def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
     assert "current-release.env" in workflow
     assert "git tag -a" in workflow
     assert "git push origin" in workflow
+
+
+def test_ci_workflow_uses_pip_cache_for_repeated_runner_installs() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert 'uses: actions/setup-python@v5' in workflow
+    assert 'cache: "pip"' in workflow
+    assert 'cache-dependency-path: "pyproject.toml"' in workflow
+    assert 'python -m pip install -e ".[dev,llm]"' in workflow
+    assert "PYTHONPATH=. pytest -q" in workflow
 
 
 def test_deploy_script_recreates_runtime_containers() -> None:

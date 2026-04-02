@@ -884,6 +884,8 @@ def _job_queue_or_none(application) -> object | None:
 
 
 def _settings_or_none(context: ContextTypes.DEFAULT_TYPE):
+    if context is None or getattr(context, "application", None) is None:
+        return None
     return context.application.bot_data.get("settings")
 
 

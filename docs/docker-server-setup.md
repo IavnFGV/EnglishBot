@@ -126,6 +126,12 @@ docker compose up -d --build --force-recreate
 
 After that, GitHub Actions can deploy updates by SSH.
 
+Runner cache note:
+
+- GitHub-hosted runners are ephemeral, so each workflow starts on a fresh temporary VM.
+- To avoid downloading the same Python packages on every run, both CI and deploy workflows enable `actions/setup-python` pip caching keyed by `pyproject.toml`.
+- That cache lives in GitHub Actions cache storage, not on the Hetzner server and not on the short-lived runner disk.
+
 Runtime note:
 
 - `englishbot` runs the Telegram bot process

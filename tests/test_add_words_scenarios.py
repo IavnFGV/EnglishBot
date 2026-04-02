@@ -54,7 +54,7 @@ def test_editor_starts_flow_with_malformed_extraction_and_falls_back_to_valid_dr
     assert scenario.flow.draft_result.extraction_metadata.parse_path == "fallback"
     assert scenario.flow.draft_result.extraction_metadata.smart_parse_status == "remote_error"
     assert [item.english_word for item in scenario.flow.draft_result.draft.vocabulary_items[:3]] == [
-        "Рrincess",
+        "Princess",
         "Prince",
         "Castle",
     ]
