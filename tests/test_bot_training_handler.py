@@ -674,16 +674,16 @@ async def test_send_question_builds_medium_inline_keyboard_and_state() -> None:
     assert "🧩" in message.replies[0]
     assert "_ _ _ _ _" in message.replies[0]
     keyboard = message.reply_markup_calls[0]
-    assert [button.text for row in keyboard.inline_keyboard[:-1] for button in row] == [
+    assert [button.text for row in keyboard.inline_keyboard[:-2] for button in row] == [
         "A",
         "P",
         "L",
         "E",
         "P",
     ]
-    assert keyboard.inline_keyboard[-1][0].text == "⌫"
-    assert keyboard.inline_keyboard[-1][1].text == "✅ Check"
-    assert keyboard.inline_keyboard[-1][1].callback_data == "medium:noop:check"
+    assert keyboard.inline_keyboard[-2][0].text == "⌫"
+    assert keyboard.inline_keyboard[-1][0].text == "✅ Check"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "medium:noop:check"
     state = context.user_data["medium_task_state"]
     assert state.target_word == "APPLE"
     assert state.shuffled_letters == ("A", "P", "L", "E", "P")
@@ -789,7 +789,8 @@ async def test_medium_answer_callback_handler_uses_backspace_and_repeated_letter
     assert any("A P P L E" in text for text, _reply_markup, _parse_mode in query.edit_calls)
     assert any(
         reply_markup is not None
-        and reply_markup.inline_keyboard[-1][1].callback_data == "medium:check"
+        and reply_markup.inline_keyboard[-2][0].callback_data == "medium:backspace"
+        and reply_markup.inline_keyboard[-1][0].callback_data == "medium:check"
         for _text, reply_markup, _parse_mode in query.edit_calls
     )
     assert any(
@@ -1549,6 +1550,66 @@ async def test_tts_current_handler_prefers_cached_telegram_voice_file_id(
 
 
 @pytest.mark.anyio
+async def test_tts_current_handler_replaces_previous_tracked_voice_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = _FakeEditableMessage("question")
+    query = _FakeQuery("tts:current", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    registry = _FakeTelegramFlowMessageRepository()
+    registry.track(flow_id="tts-voice:123", chat_id=1, message_id=55, tag="tts_voice")
+
+    class _ExplodingTtsClient:
+        def synthesize(self, *, text: str) -> bytes:  # noqa: ARG002
+            raise AssertionError("TTS should not be used when voice file_id is cached")
+
+    monkeypatch.setattr(bot, "_tts_client_or_none", lambda context: _ExplodingTtsClient())
+    fake_bot = _FakeBot()
+    context = SimpleNamespace(
+        user_data={},
+        bot=fake_bot,
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(id="session-1"),  # noqa: ARG005
+                    get_current_question=lambda user_id: TrainingQuestion(  # noqa: ARG005
+                        session_id="session-1",
+                        item_id="cloud",
+                        mode=TrainingMode.EASY,
+                        prompt="Translation: облако",
+                        image_ref=None,
+                        correct_answer="cloud",
+                        options=["cloud", "bag", "book"],
+                    ),
+                ),
+                "content_store": SimpleNamespace(
+                    get_vocabulary_item=lambda item_id: SimpleNamespace(  # noqa: ARG005
+                        id="cloud",
+                        topic_id="weather",
+                        audio_ref="assets/weather/audio/cloud.ogg",
+                        telegram_voice_file_id="cached-voice-id",
+                    ),
+                    update_word_audio=lambda **kwargs: None,
+                ),
+                "telegram_flow_message_repository": registry,
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    await bot.tts_current_handler(update, context)  # type: ignore[arg-type]
+
+    assert fake_bot.deleted_messages == [(1, 55)]
+    assert message.reply_voice_calls == ["cached-voice-id"]
+    tracked = registry.list(flow_id="tts-voice:123", tag="tts_voice")
+    assert len(tracked) == 1
+    assert tracked[0].message_id == 11
+
+
+@pytest.mark.anyio
 async def test_tts_current_handler_answers_gracefully_when_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1569,6 +1630,111 @@ async def test_tts_current_handler_answers_gracefully_when_unavailable(
     assert query.answers == 1
     assert query.answer_payloads == [("Audio is unavailable right now.", None)]
     assert message.reply_voice_calls == []
+
+
+@pytest.mark.anyio
+async def test_tts_current_handler_suppresses_duplicate_requests_while_in_flight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = _FakeEditableMessage("question")
+    query = _FakeQuery("tts:current", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    lock = asyncio.Lock()
+    await lock.acquire()
+    context = SimpleNamespace(
+        user_data={bot._TTS_TASK_LOCK_KEY: lock},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(id="session-1"),  # noqa: ARG005
+                    get_current_question=lambda user_id: TrainingQuestion(  # noqa: ARG005
+                        session_id="session-1",
+                        item_id="cloud",
+                        mode=TrainingMode.EASY,
+                        prompt="Translation: облако",
+                        image_ref=None,
+                        correct_answer="cloud",
+                        options=["cloud", "bag", "book"],
+                    ),
+                ),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+    monkeypatch.setattr(bot, "_tts_client_or_none", lambda context: object())
+
+    try:
+        await bot.tts_current_handler(update, context)  # type: ignore[arg-type]
+    finally:
+        lock.release()
+
+    assert query.answers == 1
+    assert query.answer_payloads == [("Sending audio...", None)]
+    assert message.reply_voice_calls == []
+
+
+@pytest.mark.anyio
+async def test_tts_current_handler_throttles_immediate_repeat_for_same_word(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_message = _FakeEditableMessage("question")
+    first_query = _FakeQuery("tts:current", first_message)
+    first_update = SimpleNamespace(
+        callback_query=first_query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    second_message = _FakeEditableMessage("question")
+    second_query = _FakeQuery("tts:current", second_message)
+    second_update = SimpleNamespace(
+        callback_query=second_query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+
+    class _ExplodingTtsClient:
+        def synthesize(self, *, text: str) -> bytes:  # noqa: ARG002
+            raise AssertionError("TTS should not be used when voice file_id is cached")
+
+    monkeypatch.setattr(bot, "_tts_client_or_none", lambda context: _ExplodingTtsClient())
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(id="session-1"),  # noqa: ARG005
+                    get_current_question=lambda user_id: TrainingQuestion(  # noqa: ARG005
+                        session_id="session-1",
+                        item_id="cloud",
+                        mode=TrainingMode.EASY,
+                        prompt="Translation: облако",
+                        image_ref=None,
+                        correct_answer="cloud",
+                        options=["cloud", "bag", "book"],
+                    ),
+                ),
+                "content_store": SimpleNamespace(
+                    get_vocabulary_item=lambda item_id: SimpleNamespace(  # noqa: ARG005
+                        id="cloud",
+                        topic_id="weather",
+                        audio_ref="assets/weather/audio/cloud.ogg",
+                        telegram_voice_file_id="cached-voice-id",
+                    ),
+                    update_word_audio=lambda **kwargs: None,
+                ),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    await bot.tts_current_handler(first_update, context)  # type: ignore[arg-type]
+    await bot.tts_current_handler(second_update, context)  # type: ignore[arg-type]
+
+    assert first_query.answer_payloads == [(None, None)]
+    assert first_message.reply_voice_calls == ["cached-voice-id"]
+    assert second_query.answer_payloads == [("Audio was just sent.", None)]
+    assert second_message.reply_voice_calls == []
 
 
 @pytest.mark.anyio

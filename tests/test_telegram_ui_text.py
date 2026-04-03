@@ -41,3 +41,5 @@ def test_telegram_ui_text_returns_localized_tts_strings() -> None:
     assert telegram_ui_text("tts_play_button", language="ru") == "🔊 Слушать"
     assert telegram_ui_text("tts_play_button", language="uk") == "🔊 Слухати"
     assert telegram_ui_text("tts_unavailable", language="en") == "Audio is unavailable right now."
+    assert telegram_ui_text("tts_already_sending", language="en") == "Sending audio..."
+    assert telegram_ui_text("tts_recently_sent", language="en") == "Audio was just sent."

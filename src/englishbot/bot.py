@@ -250,6 +250,7 @@ _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
 _TRAINING_QUESTION_TAG = "training_question"
 _TRAINING_FEEDBACK_TAG = "training_feedback"
+_TTS_VOICE_TAG = "tts_voice"
 _ASSIGNMENT_PROGRESS_TAG = "assignment_progress"
 _CHAT_MENU_TAG = "chat_menu"
 _NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
@@ -257,6 +258,9 @@ _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
 _MEDIUM_TASK_STATE_KEY = "medium_task_state"
 _MEDIUM_TASK_LOCK_KEY = "medium_task_lock"
+_TTS_TASK_LOCK_KEY = "tts_task_lock"
+_TTS_TASK_RECENT_KEY = "tts_task_recent"
+_TTS_REPEAT_COOLDOWN_SEC = 2.5
 _GAME_STAR_REWARD_CORRECT = 10
 _GAME_CHEST_REWARDS: tuple[int, ...] = (30, 50, 50, 100)
 _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW = timedelta(minutes=5)
@@ -5626,80 +5630,134 @@ async def tts_current_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     except InvalidSessionStateError:
         await query.answer(_tg("no_active_session_begin", context=context, user=user))
         return
-    item = None
-    try:
-        item = _content_store(context).get_vocabulary_item(current_question.item_id)
-    except Exception:
-        item = None
-    if item is not None and item.telegram_voice_file_id:
-        try:
-            await query.answer()
-            await query.message.reply_voice(voice=item.telegram_voice_file_id)
+    lock = _tts_task_lock(context)
+    if lock.locked():
+        await query.answer(_tg("tts_already_sending", context=context, user=user))
+        return
+    recent_request = _tts_recent_request(context)
+    loop = asyncio.get_running_loop()
+    now = loop.time()
+    if recent_request is not None:
+        recent_item_id, recent_sent_at = recent_request
+        if (
+            recent_item_id == current_question.item_id
+            and now - recent_sent_at < _TTS_REPEAT_COOLDOWN_SEC
+        ):
+            await query.answer(_tg("tts_recently_sent", context=context, user=user))
             return
-        except Exception as error:
-            logger.warning(
-                "Cached Telegram voice_id failed user_id=%s item_id=%s error=%s",
-                user.id,
-                current_question.item_id,
-                error,
-            )
-    if item is not None and item.audio_ref:
-        audio_path = resolve_existing_audio_path(item.audio_ref)
-        if audio_path is not None:
+    async with lock:
+        recent_request = _tts_recent_request(context)
+        now = loop.time()
+        if recent_request is not None:
+            recent_item_id, recent_sent_at = recent_request
+            if (
+                recent_item_id == current_question.item_id
+                and now - recent_sent_at < _TTS_REPEAT_COOLDOWN_SEC
+            ):
+                await query.answer(_tg("tts_recently_sent", context=context, user=user))
+                return
+        item = None
+        try:
+            item = _content_store(context).get_vocabulary_item(current_question.item_id)
+        except Exception:
+            item = None
+        if item is not None and item.telegram_voice_file_id:
             try:
                 await query.answer()
-                with audio_path.open("rb") as audio_file:
-                    sent_message = await query.message.reply_voice(
-                        voice=InputFile(audio_file, filename=audio_path.name)
-                    )
-                voice_file_id = _extract_sent_voice_file_id(sent_message)
-                if voice_file_id is not None:
-                    _content_store(context).update_word_audio(
-                        item_id=item.id,
-                        telegram_voice_file_id=voice_file_id,
-                    )
+                await _reply_voice_replacing_previous_tts(
+                    context=context,
+                    user_id=int(user.id),
+                    message=query.message,
+                    voice=item.telegram_voice_file_id,
+                )
+                _set_tts_recent_request(
+                    context,
+                    item_id=current_question.item_id,
+                    sent_at=loop.time(),
+                )
                 return
             except Exception as error:
                 logger.warning(
-                    "Cached local TTS audio failed user_id=%s item_id=%s error=%s",
+                    "Cached Telegram voice_id failed user_id=%s item_id=%s error=%s",
                     user.id,
                     current_question.item_id,
                     error,
                 )
-    try:
-        audio_bytes = client.synthesize(text=current_question.correct_answer)
-    except Exception as error:
-        logger.warning(
-            "TTS unavailable for user_id=%s item_id=%s error=%s",
-            user.id,
-            current_question.item_id,
-            error,
+        if item is not None and item.audio_ref:
+            audio_path = resolve_existing_audio_path(item.audio_ref)
+            if audio_path is not None:
+                try:
+                    await query.answer()
+                    with audio_path.open("rb") as audio_file:
+                        sent_message = await _reply_voice_replacing_previous_tts(
+                            context=context,
+                            user_id=int(user.id),
+                            message=query.message,
+                            voice=InputFile(audio_file, filename=audio_path.name),
+                        )
+                    voice_file_id = _extract_sent_voice_file_id(sent_message)
+                    if voice_file_id is not None:
+                        _content_store(context).update_word_audio(
+                            item_id=item.id,
+                            telegram_voice_file_id=voice_file_id,
+                        )
+                    _set_tts_recent_request(
+                        context,
+                        item_id=current_question.item_id,
+                        sent_at=loop.time(),
+                    )
+                    return
+                except Exception as error:
+                    logger.warning(
+                        "Cached local TTS audio failed user_id=%s item_id=%s error=%s",
+                        user.id,
+                        current_question.item_id,
+                        error,
+                    )
+        try:
+            audio_bytes = client.synthesize(text=current_question.correct_answer)
+        except Exception as error:
+            logger.warning(
+                "TTS unavailable for user_id=%s item_id=%s error=%s",
+                user.id,
+                current_question.item_id,
+                error,
+            )
+            await query.answer(_tg("tts_unavailable", context=context, user=user))
+            return
+        audio_ref: str | None = None
+        if item is not None and item.topic_id:
+            audio_path = build_item_audio_path(
+                assets_dir=Path("assets"),
+                topic_id=item.topic_id,
+                item_id=item.id,
+            )
+            audio_path.parent.mkdir(parents=True, exist_ok=True)
+            audio_path.write_bytes(audio_bytes)
+            audio_ref = build_item_audio_ref(
+                assets_dir=Path("assets"),
+                topic_id=item.topic_id,
+                item_id=item.id,
+            )
+        await query.answer()
+        voice_file = InputFile(BytesIO(audio_bytes), filename="pronunciation.ogg")
+        sent_message = await _reply_voice_replacing_previous_tts(
+            context=context,
+            user_id=int(user.id),
+            message=query.message,
+            voice=voice_file,
         )
-        await query.answer(_tg("tts_unavailable", context=context, user=user))
-        return
-    audio_ref: str | None = None
-    if item is not None and item.topic_id:
-        audio_path = build_item_audio_path(
-            assets_dir=Path("assets"),
-            topic_id=item.topic_id,
-            item_id=item.id,
-        )
-        audio_path.parent.mkdir(parents=True, exist_ok=True)
-        audio_path.write_bytes(audio_bytes)
-        audio_ref = build_item_audio_ref(
-            assets_dir=Path("assets"),
-            topic_id=item.topic_id,
-            item_id=item.id,
-        )
-    await query.answer()
-    voice_file = InputFile(BytesIO(audio_bytes), filename="pronunciation.ogg")
-    sent_message = await query.message.reply_voice(voice=voice_file)
-    voice_file_id = _extract_sent_voice_file_id(sent_message)
-    if item is not None and (audio_ref is not None or voice_file_id is not None):
-        _content_store(context).update_word_audio(
-            item_id=item.id,
-            audio_ref=audio_ref,
-            telegram_voice_file_id=voice_file_id,
+        voice_file_id = _extract_sent_voice_file_id(sent_message)
+        if item is not None and (audio_ref is not None or voice_file_id is not None):
+            _content_store(context).update_word_audio(
+                item_id=item.id,
+                audio_ref=audio_ref,
+                telegram_voice_file_id=voice_file_id,
+            )
+        _set_tts_recent_request(
+            context,
+            item_id=current_question.item_id,
+            sent_at=loop.time(),
         )
 
 
@@ -6331,6 +6389,39 @@ def _medium_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
     return created_lock
 
 
+def _tts_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return asyncio.Lock()
+    lock = user_data.get(_TTS_TASK_LOCK_KEY)
+    if isinstance(lock, asyncio.Lock):
+        return lock
+    created_lock = asyncio.Lock()
+    user_data[_TTS_TASK_LOCK_KEY] = created_lock
+    return created_lock
+
+
+def _tts_recent_request(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, float] | None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return None
+    value = user_data.get(_TTS_TASK_RECENT_KEY)
+    if (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], str)
+        and isinstance(value[1], (int, float))
+    ):
+        return value[0], float(value[1])
+    return None
+
+
+def _set_tts_recent_request(context: ContextTypes.DEFAULT_TYPE, *, item_id: str, sent_at: float) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data[_TTS_TASK_RECENT_KEY] = (item_id, sent_at)
+
+
 def _medium_task_slot_count(state: _MediumTaskState) -> int:
     return sum(1 for character in state.target_word if not character.isspace())
 
@@ -6401,6 +6492,17 @@ def _medium_task_keyboard(
     rows.append(
         [
             InlineKeyboardButton("⌫", callback_data="medium:backspace"),
+        ]
+    )
+    if context is not None and _tts_service_enabled(context):
+        rows[-1].append(
+            InlineKeyboardButton(
+                _tg("tts_play_button", context=context, user=user),
+                callback_data="tts:current",
+            )
+        )
+    rows.append(
+        [
             InlineKeyboardButton(
                 (
                     _tg("medium_check_button", context=context, user=user)
@@ -6408,18 +6510,9 @@ def _medium_task_keyboard(
                     else telegram_ui_text("medium_check_button")
                 ),
                 callback_data=check_callback,
-            ),
+            )
         ]
     )
-    if context is not None and _tts_service_enabled(context):
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    _tg("tts_play_button", context=context, user=user),
-                    callback_data="tts:current",
-                )
-            ]
-        )
     return InlineKeyboardMarkup(rows)
 
 
@@ -7114,6 +7207,34 @@ def _track_flow_message(
 
 def _published_word_edit_flow_id(*, user_id: int) -> str:
     return f"published-word-edit:{user_id}"
+
+
+def _tts_voice_flow_id(*, user_id: int) -> str:
+    return f"tts-voice:{user_id}"
+
+
+async def _reply_voice_replacing_previous_tts(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    message,
+    voice,
+):
+    flow_id = _tts_voice_flow_id(user_id=user_id)
+    await _delete_tracked_flow_messages(
+        context,
+        flow_id=flow_id,
+        tag=_TTS_VOICE_TAG,
+    )
+    sent_message = await message.reply_voice(voice=voice)
+    _track_flow_message(
+        context,
+        flow_id=flow_id,
+        tag=_TTS_VOICE_TAG,
+        message=sent_message,
+        fallback_chat_id=_message_chat_id(message),
+    )
+    return sent_message
 
 
 async def _prepare_and_send_image_review_step(

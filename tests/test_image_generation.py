@@ -447,7 +447,7 @@ async def test_bot_rendering_uses_compact_text_prompt_for_text_mode() -> None:
     assert text == "🧩 <b>дракон</b>\n\n<b>_ _ _ _ _ _</b>"
     assert parse_mode == "HTML"
     assert reply_markup is not None
-    assert [button.text for row in reply_markup.inline_keyboard[:-1] for button in row] == [
+    assert [button.text for row in reply_markup.inline_keyboard[:-2] for button in row] == [
         "a",
         "g",
         "r",
@@ -455,9 +455,9 @@ async def test_bot_rendering_uses_compact_text_prompt_for_text_mode() -> None:
         "o",
         "d",
     ]
-    assert reply_markup.inline_keyboard[-1][0].text == "⌫"
-    assert reply_markup.inline_keyboard[-1][1].text == "✅ Check"
-    assert reply_markup.inline_keyboard[-1][1].callback_data == "medium:noop:check"
+    assert reply_markup.inline_keyboard[-2][0].text == "⌫"
+    assert reply_markup.inline_keyboard[-1][0].text == "✅ Check"
+    assert reply_markup.inline_keyboard[-1][0].callback_data == "medium:noop:check"
 
 
 def test_comfyui_client_generates_image_via_http_protocol(
