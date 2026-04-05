@@ -4639,12 +4639,39 @@ async def published_image_item_handler(
 ) -> None:
     query = update.callback_query
     user = update.effective_user
-    if query is None or user is None:
+    if query is None or user is None or query.data is None:
         return
     await query.answer()
-    _, _, topic_id, item_index = query.data.split(":")
+    token = query.data.removeprefix("words:edit_published_image:")
+    payload = _consume_callback_token(
+        context=context,
+        user_id=int(user.id),
+        action=_PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
+        token=token,
+        fallback_key="selection",
+        allow_colon_fallback=True,
+    )
+    if payload is None:
+        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
+        return
+    topic_id = payload.get("topic_id")
+    item_index = payload.get("item_index")
+    if isinstance(topic_id, str) and isinstance(item_index, int):
+        resolved_topic_id = topic_id
+        resolved_item_index = item_index
+    else:
+        selection = payload.get("selection")
+        if not isinstance(selection, str) or ":" not in selection:
+            await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
+            return
+        resolved_topic_id, raw_item_index = selection.rsplit(":", 1)
+        try:
+            resolved_item_index = int(raw_item_index)
+        except ValueError:
+            await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
+            return
     try:
-        content_pack = _content_store(context).get_content_pack(topic_id)
+        content_pack = _content_store(context).get_content_pack(resolved_topic_id)
     except ValueError:
         await query.edit_message_text(_tg("published_content_not_found", context=context, user=user))
         return
@@ -4653,7 +4680,7 @@ async def published_image_item_handler(
         await query.edit_message_text(_tg("no_vocabulary_items_found", context=context, user=user))
         return
     try:
-        selected_item = raw_items[int(item_index)]
+        selected_item = raw_items[resolved_item_index]
     except (ValueError, IndexError):
         await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
         return
@@ -4667,7 +4694,7 @@ async def published_image_item_handler(
     review_flow = await asyncio.to_thread(
         _start_published_word_image_review(context).execute,
         user_id=user.id,
-        topic_id=topic_id,
+        topic_id=resolved_topic_id,
         item_id=item_id,
     )
     await _send_current_published_image_preview(query.message, context, review_flow, user=user)

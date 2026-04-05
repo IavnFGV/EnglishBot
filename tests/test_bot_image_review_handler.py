@@ -368,6 +368,12 @@ class _FakeContentStore:
         assert topic_id == "fairy-tales"
         return self._content_pack
 
+    def consume_telegram_callback_token(self, **kwargs):  # noqa: ANN003
+        token = kwargs.get("token")
+        if token == "tokenized-item":
+            return {"topic_id": "fairy-tales", "item_index": 0}
+        return None
+
 
 class _FakeSelectImageCandidateUseCase:
     def __init__(self, flow: ImageReviewFlowState) -> None:
@@ -715,7 +721,7 @@ async def test_published_image_menu_and_item_handlers_show_current_image_and_wai
 
         item_message = _FakeCallbackMessage(tmp_path)
         item_query = _FakeQuery(
-            "words:edit_published_image:fairy-tales:0",
+            "words:edit_published_image:tokenized-item",
             item_message,
         )
         item_update = SimpleNamespace(
