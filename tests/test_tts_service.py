@@ -16,6 +16,7 @@ from englishbot.tts_service import (
     TtsHttpService,
     TtsServiceClient,
     TtsTextValidationError,
+    TtsVoiceSelectionError,
     build_tts_service,
     create_tts_http_handler,
     validate_tts_text,
@@ -74,12 +75,20 @@ def test_piper_tts_synthesizer_uses_cache(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 def test_tts_http_handler_serves_health_and_speak(tmp_path: Path) -> None:
-    class _FakeSynthesizer:
-        def synthesize(self, *, text: str) -> bytes:
+    class _FakeService:
+        def health_payload(self) -> dict[str, object]:
+            return {
+                "status": "ok",
+                "voice_name": "en_US-lessac-medium",
+                "voice_variants": ["en_US-lessac-medium", "en_GB-alan-medium"],
+            }
+
+        def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:
             assert text == "winter"
+            assert voice_name == "en_GB-alan-medium"
             return b"OggSfake-ogg"
 
-    service = TtsHttpService(synthesizer=_FakeSynthesizer(), voice_name="en_US-lessac-medium")
+    service = _FakeService()
     handler = create_tts_http_handler(service)
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -90,11 +99,12 @@ def test_tts_http_handler_serves_health_and_speak(tmp_path: Path) -> None:
             assert json.loads(response.read().decode("utf-8")) == {
                 "status": "ok",
                 "voice_name": "en_US-lessac-medium",
+                "voice_variants": ["en_US-lessac-medium", "en_GB-alan-medium"],
             }
 
         request = Request(
             f"{base_url}/speak",
-            data=json.dumps({"text": "winter"}).encode("utf-8"),
+            data=json.dumps({"text": "winter", "voice_name": "en_GB-alan-medium"}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -108,11 +118,14 @@ def test_tts_http_handler_serves_health_and_speak(tmp_path: Path) -> None:
 
 
 def test_tts_http_handler_rejects_invalid_text() -> None:
-    class _FakeSynthesizer:
-        def synthesize(self, *, text: str) -> bytes:
+    class _FakeService:
+        def health_payload(self) -> dict[str, object]:
+            return {"status": "ok", "voice_name": "en_US-lessac-medium", "voice_variants": ["en_US-lessac-medium"]}
+
+        def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:  # noqa: ARG002
             raise TtsTextValidationError("Text contains Cyrillic characters.")
 
-    service = TtsHttpService(synthesizer=_FakeSynthesizer(), voice_name="en_US-lessac-medium")
+    service = _FakeService()
     handler = create_tts_http_handler(service)
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -136,11 +149,15 @@ def test_tts_http_handler_rejects_invalid_text() -> None:
 
 
 def test_tts_service_client_calls_http_service() -> None:
-    class _FakeSynthesizer:
-        def synthesize(self, *, text: str) -> bytes:
-            return f"audio:{text}".encode("utf-8")
+    class _FakeService:
+        def health_payload(self) -> dict[str, object]:
+            return {"status": "ok", "voice_name": "en_US-lessac-medium", "voice_variants": ["en_US-lessac-medium"]}
 
-    service = TtsHttpService(synthesizer=_FakeSynthesizer(), voice_name="en_US-lessac-medium")
+        def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:
+            suffix = "" if voice_name is None else f":{voice_name}"
+            return f"audio:{text}{suffix}".encode("utf-8")
+
+    service = _FakeService()
     handler = create_tts_http_handler(service)
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -148,11 +165,23 @@ def test_tts_service_client_calls_http_service() -> None:
     try:
         client = TtsServiceClient(base_url=f"http://127.0.0.1:{server.server_port}", timeout_sec=5)
         assert client.health()["status"] == "ok"
-        assert client.synthesize(text="cloud") == b"audio:cloud"
+        assert client.synthesize(text="cloud", voice_name="en_US-lessac-medium") == b"audio:cloud:en_US-lessac-medium"
     finally:
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
+
+
+def test_tts_http_service_rejects_unknown_voice(tmp_path: Path) -> None:
+    service = TtsHttpService(
+        default_voice_name="en_US-lessac-medium",
+        voice_variants=("en_GB-alan-medium",),
+        cache_dir=tmp_path / "cache",
+        voice_dir=tmp_path / "voices",
+    )
+
+    with pytest.raises(TtsVoiceSelectionError, match="not configured"):
+        service.synthesize(text="winter", voice_name="en_US-ryan-high")
 
 
 def test_build_tts_service_uses_settings_paths(tmp_path: Path) -> None:
@@ -160,6 +189,7 @@ def test_build_tts_service_uses_settings_paths(tmp_path: Path) -> None:
         telegram_token="token",
         log_level="INFO",
         tts_voice_name="en_US-lessac-medium",
+        tts_voice_variants=("en_GB-alan-medium",),
         tts_cache_dir=tmp_path / "cache",
         tts_voice_dir=tmp_path / "voices",
     )
@@ -167,3 +197,4 @@ def test_build_tts_service_uses_settings_paths(tmp_path: Path) -> None:
     service = build_tts_service(settings)
 
     assert service.health_payload()["voice_name"] == "en_US-lessac-medium"
+    assert service.health_payload()["voice_variants"] == ["en_US-lessac-medium", "en_GB-alan-medium"]

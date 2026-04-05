@@ -30,6 +30,10 @@ class TtsTextValidationError(ValueError):
     pass
 
 
+class TtsVoiceSelectionError(ValueError):
+    pass
+
+
 def normalize_tts_text(text: str) -> str:
     return " ".join(text.strip().split())
 
@@ -152,18 +156,69 @@ class PiperTtsSynthesizer:
 
 
 class TtsHttpService:
-    def __init__(self, *, synthesizer: PiperTtsSynthesizer, voice_name: str) -> None:
-        self._synthesizer = synthesizer
-        self._voice_name = voice_name
+    def __init__(
+        self,
+        *,
+        default_voice_name: str,
+        voice_variants: tuple[str, ...],
+        cache_dir: Path,
+        voice_dir: Path,
+        model_path: Path | None = None,
+        config_path: Path | None = None,
+        python_executable: str = sys.executable,
+    ) -> None:
+        self._default_voice_name = default_voice_name
+        self._voice_variants = _normalize_voice_variants(default_voice_name, voice_variants)
+        self._cache_dir = cache_dir
+        self._voice_dir = voice_dir
+        self._default_model_path = model_path
+        self._default_config_path = config_path
+        self._python_executable = python_executable
+        self._synthesizers: dict[str, PiperTtsSynthesizer] = {}
 
     def health_payload(self) -> dict[str, object]:
         return {
             "status": "ok",
-            "voice_name": self._voice_name,
+            "voice_name": self._default_voice_name,
+            "voice_variants": list(self._voice_variants),
         }
 
-    def synthesize(self, *, text: str) -> bytes:
-        return self._synthesizer.synthesize(text=text)
+    def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:
+        selected_voice_name = self._resolve_voice_name(voice_name)
+        synthesizer = self._get_synthesizer(selected_voice_name)
+        return synthesizer.synthesize(text=text)
+
+    def _resolve_voice_name(self, voice_name: str | None) -> str:
+        selected_voice_name = (voice_name or self._default_voice_name).strip()
+        if selected_voice_name not in self._voice_variants:
+            raise TtsVoiceSelectionError(f"Voice '{selected_voice_name}' is not configured.")
+        return selected_voice_name
+
+    def _get_synthesizer(self, voice_name: str) -> PiperTtsSynthesizer:
+        synthesizer = self._synthesizers.get(voice_name)
+        if synthesizer is not None:
+            return synthesizer
+        model_path = self._default_model_path if voice_name == self._default_voice_name else None
+        config_path = self._default_config_path if voice_name == self._default_voice_name else None
+        created = PiperTtsSynthesizer(
+            voice_name=voice_name,
+            cache_dir=self._cache_dir,
+            voice_dir=self._voice_dir,
+            model_path=model_path,
+            config_path=config_path,
+            python_executable=self._python_executable,
+        )
+        self._synthesizers[voice_name] = created
+        return created
+
+
+def _normalize_voice_variants(default_voice_name: str, voice_variants: tuple[str, ...]) -> tuple[str, ...]:
+    ordered: list[str] = []
+    for candidate in (default_voice_name, *voice_variants):
+        normalized = candidate.strip()
+        if normalized and normalized not in ordered:
+            ordered.append(normalized)
+    return tuple(ordered)
 
 
 def create_tts_http_handler(service: TtsHttpService):
@@ -186,9 +241,12 @@ def create_tts_http_handler(service: TtsHttpService):
                 self._write_json(HTTPStatus.BAD_REQUEST, {"message": "Invalid JSON body."})
                 return
             text = str(payload.get("text", ""))
+            voice_name = payload.get("voice_name")
+            if voice_name is not None:
+                voice_name = str(voice_name)
             try:
-                audio_bytes = service.synthesize(text=text)
-            except TtsTextValidationError as error:
+                audio_bytes = service.synthesize(text=text, voice_name=voice_name)
+            except (TtsTextValidationError, TtsVoiceSelectionError) as error:
                 self._write_json(HTTPStatus.BAD_REQUEST, {"message": str(error)})
                 return
             except Exception:
@@ -224,10 +282,13 @@ class TtsServiceClient:
         with urlopen(urljoin(self._base_url, "healthz"), timeout=self._timeout_sec) as response:
             return json.loads(response.read().decode("utf-8"))
 
-    def synthesize(self, *, text: str) -> bytes:
+    def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:
+        payload: dict[str, object] = {"text": text}
+        if voice_name is not None:
+            payload["voice_name"] = voice_name
         request = Request(
             urljoin(self._base_url, "speak"),
-            data=json.dumps({"text": text}).encode("utf-8"),
+            data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -240,14 +301,15 @@ class TtsServiceClient:
 
 
 def build_tts_service(settings: Settings) -> TtsHttpService:
-    synthesizer = PiperTtsSynthesizer(
-        voice_name=settings.tts_voice_name,
+    return TtsHttpService(
+        default_voice_name=settings.tts_voice_name,
+        voice_variants=settings.tts_voice_variants,
         cache_dir=settings.tts_cache_dir,
         voice_dir=settings.tts_voice_dir,
         model_path=settings.tts_voice_model_path,
         config_path=settings.tts_voice_config_path,
+        python_executable=sys.executable,
     )
-    return TtsHttpService(synthesizer=synthesizer, voice_name=settings.tts_voice_name)
 
 
 def main() -> None:

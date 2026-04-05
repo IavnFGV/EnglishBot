@@ -116,6 +116,7 @@ Current HTTP endpoints:
 
 - `GET /healthz`
 - `POST /speak` with JSON body `{"text": "winter"}`
+- optional `voice_name` can be passed as `{"text": "winter", "voice_name": "en_GB-cori-high"}`
 
 Current validation rules for TTS input:
 
@@ -127,6 +128,7 @@ Important note:
 
 - this is intentionally a separate service and compose container
 - learner Telegram flows use an optional `🔊` button when `TTS_SERVICE_ENABLED=true`
+- when `TTS_VOICE_VARIANTS` is configured, learner flows also get `🎙 Voice` to open a localized voice picker
 - playback first tries a cached Telegram `voice file_id`
 - then falls back to a locally cached word asset under `assets/<topic>/audio/`
 - only then does the bot call the HTTP TTS service again
@@ -527,7 +529,7 @@ Useful options:
 - `--force` to regenerate even when a local audio asset already exists
 - `--dry-run` to see selections without saving files
 
-This command stores per-word audio assets under `assets/<topic>/audio/` as `.ogg` files and updates `audio_ref` in the runtime database. Telegram `voice file_id` values are still learned lazily the first time a learner actually taps `🔊` in chat.
+This command stores per-word audio assets under `assets/<topic>/audio/` as `.ogg` files and updates `audio_ref` in the runtime database for the primary `TTS_VOICE_NAME`. Telegram `voice file_id` values are still learned lazily the first time a learner actually taps `🔊` in chat. Alternate voices configured through `TTS_VOICE_VARIANTS` are cached separately per word and per voice as learners cycle them with `🔁 Voice`.
 
 What is still stubbed:
 

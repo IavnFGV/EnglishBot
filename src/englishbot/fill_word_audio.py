@@ -16,7 +16,7 @@ from englishbot.tts_service import TtsServiceClient
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    help="Fill missing word audio by generating local per-word WAV assets through the TTS service.",
+    help="Fill missing word audio by generating local per-word OGG assets through the TTS service.",
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -73,6 +73,7 @@ def main(
             timeout_sec=config_service.get_int("tts_service_timeout_sec"),
         ),
         assets_dir=assets_dir,
+        voice_name=config_service.get_str("tts_voice_name"),
     )
     summary = use_case.execute(
         topic_id=topic_id,

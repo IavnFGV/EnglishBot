@@ -168,6 +168,34 @@ def test_sqlite_content_store_updates_and_returns_audio_fields(tmp_path: Path) -
     assert content_pack["vocabulary_items"][0]["telegram_voice_file_id"] == "voice-file-123"
 
 
+def test_sqlite_content_store_updates_and_returns_audio_variant_fields(tmp_path: Path) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "weather", "title": "Weather"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cloud", "english_word": "Cloud", "translation": "облако"},
+            ],
+        }
+    )
+
+    store.update_word_audio_variant(
+        item_id="cloud",
+        voice_name="en_GB-alan-medium",
+        audio_ref="assets/weather/audio/cloud__en_GB_alan_medium.ogg",
+        telegram_voice_file_id="voice-file-gb-123",
+    )
+
+    variant = store.get_word_audio_variant(item_id="cloud", voice_name="en_GB-alan-medium")
+
+    assert variant is not None
+    assert variant.item_id == "cloud"
+    assert variant.voice_name == "en_GB-alan-medium"
+    assert variant.audio_ref == "assets/weather/audio/cloud__en_GB_alan_medium.ogg"
+    assert variant.telegram_voice_file_id == "voice-file-gb-123"
+
+
 def test_sqlite_content_store_preserves_audio_fields_on_reimport_without_audio_metadata(
     tmp_path: Path,
 ) -> None:

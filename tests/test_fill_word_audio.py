@@ -9,10 +9,10 @@ from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 class FakeTtsClient:
     def __init__(self, bytes_by_word: dict[str, bytes]) -> None:
         self.bytes_by_word = bytes_by_word
-        self.calls: list[str] = []
+        self.calls: list[tuple[str, str | None]] = []
 
-    def synthesize(self, *, text: str) -> bytes:
-        self.calls.append(text)
+    def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:
+        self.calls.append((text, voice_name))
         return self.bytes_by_word[text]
 
 
@@ -47,6 +47,7 @@ def test_fill_word_audio_use_case_generates_audio_assets_and_updates_store(tmp_p
         store=store,
         tts_client=client,
         assets_dir=tmp_path / "assets",
+        voice_name="en_US-libritts-high",
     )
 
     summary = use_case.execute()
@@ -55,7 +56,7 @@ def test_fill_word_audio_use_case_generates_audio_assets_and_updates_store(tmp_p
     assert summary.updated_count == 2
     assert summary.skipped_count == 0
     assert summary.failed_count == 0
-    assert client.calls == ["bad", "good"]
+    assert client.calls == [("bad", "en_US-libritts-high"), ("good", "en_US-libritts-high")]
 
     good = store.get_vocabulary_item("good")
     bad = store.get_vocabulary_item("bad")
@@ -63,6 +64,7 @@ def test_fill_word_audio_use_case_generates_audio_assets_and_updates_store(tmp_p
     assert bad is not None
     assert good.audio_ref == (tmp_path / "assets" / "basics" / "audio" / "good.ogg").as_posix()
     assert bad.audio_ref == (tmp_path / "assets" / "basics" / "audio" / "bad.ogg").as_posix()
+    assert store.get_word_audio_variant(item_id="good", voice_name="en_US-libritts-high") is not None
     assert (tmp_path / "assets" / "basics" / "audio" / "good.ogg").read_bytes() == b"wav-good"
     assert (tmp_path / "assets" / "basics" / "audio" / "bad.ogg").read_bytes() == b"wav-bad"
 
@@ -78,6 +80,7 @@ def test_fill_word_audio_use_case_skips_existing_local_audio_without_force(tmp_p
         store=store,
         tts_client=client,
         assets_dir=tmp_path / "assets",
+        voice_name="en_US-libritts-high",
     )
 
     summary = use_case.execute()
@@ -86,7 +89,7 @@ def test_fill_word_audio_use_case_skips_existing_local_audio_without_force(tmp_p
     assert summary.updated_count == 1
     assert summary.skipped_count == 1
     assert summary.failed_count == 0
-    assert client.calls == ["bad"]
+    assert client.calls == [("bad", "en_US-libritts-high")]
 
 
 def test_fill_word_audio_use_case_dry_run_does_not_write_or_update(tmp_path: Path) -> None:
@@ -96,6 +99,7 @@ def test_fill_word_audio_use_case_dry_run_does_not_write_or_update(tmp_path: Pat
         store=store,
         tts_client=client,
         assets_dir=tmp_path / "assets",
+        voice_name="en_US-libritts-high",
     )
 
     summary = use_case.execute(limit=1, dry_run=True)

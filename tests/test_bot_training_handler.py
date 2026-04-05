@@ -91,6 +91,9 @@ class _FakeQuery:
         self.message.edits.append(text)
         self.message.edit_reply_markup_calls.append(reply_markup)
 
+    async def edit_message_reply_markup(self, reply_markup=None) -> None:
+        self.message.edit_reply_markup_calls.append(reply_markup)
+
 
 class _FakeCallbackMessage(_FakeMessage):
     def __init__(self, text: str) -> None:
@@ -700,7 +703,11 @@ async def test_send_question_adds_tts_button_when_enabled() -> None:
         application=SimpleNamespace(
             bot_data={
                 "telegram_flow_message_repository": registry,
-                "settings": SimpleNamespace(tts_service_enabled=True),
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=(),
+                ),
             }
         ),
         bot=_FakeBot(),
@@ -721,6 +728,42 @@ async def test_send_question_adds_tts_button_when_enabled() -> None:
     keyboard = message.reply_markup_calls[0]
     assert keyboard.inline_keyboard[-1][0].text == "🔊 Play"
     assert keyboard.inline_keyboard[-1][0].callback_data == "tts:current"
+
+
+@pytest.mark.anyio
+async def test_send_question_adds_tts_next_voice_button_when_multiple_voices_enabled() -> None:
+    message = _FakeMessage("start")
+    registry = _FakeTelegramFlowMessageRepository()
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "telegram_flow_message_repository": registry,
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
+                ),
+            }
+        ),
+        bot=_FakeBot(),
+    )
+    update = SimpleNamespace(effective_message=message)
+    question = TrainingQuestion(
+        session_id="session-easy-tts",
+        item_id="cloud",
+        mode=TrainingMode.EASY,
+        prompt="Translation: облако",
+        image_ref=None,
+        correct_answer="cloud",
+        options=["cloud", "bag", "book"],
+    )
+
+    await _send_question(update, context, question)  # type: ignore[arg-type]
+
+    keyboard = message.reply_markup_calls[0]
+    assert [button.text for button in keyboard.inline_keyboard[-1]] == ["🔊 Play", "🎙 Voice"]
+    assert [button.callback_data for button in keyboard.inline_keyboard[-1]] == ["tts:current", "tts:voices"]
 
 
 @pytest.mark.anyio
@@ -1437,20 +1480,20 @@ async def test_tts_current_handler_sends_audio_for_current_question(
     synthesized: list[str] = []
 
     class _FakeTtsClient:
-        def synthesize(self, *, text: str) -> bytes:
-            synthesized.append(text)
+        def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:
+            synthesized.append(f"{text}:{voice_name}")
             return b"RIFFfakewav"
 
     monkeypatch.setattr(bot, "_tts_client_or_none", lambda context: _FakeTtsClient())
     monkeypatch.setattr(
         bot,
         "build_item_audio_path",
-        lambda *, assets_dir, topic_id, item_id: tmp_path / assets_dir / topic_id / "audio" / f"{item_id}.ogg",
+        lambda *, assets_dir, topic_id, item_id, voice_name=None: tmp_path / assets_dir / topic_id / "audio" / f"{item_id}.ogg",
     )
     monkeypatch.setattr(
         bot,
         "build_item_audio_ref",
-        lambda *, assets_dir, topic_id, item_id: f"{assets_dir.as_posix()}/{topic_id}/audio/{item_id}.ogg",
+        lambda *, assets_dir, topic_id, item_id, voice_name=None: f"{assets_dir.as_posix()}/{topic_id}/audio/{item_id}.ogg",
     )
     saved_audio_updates: list[dict[str, object]] = []
     context = SimpleNamespace(
@@ -1475,7 +1518,14 @@ async def test_tts_current_handler_sends_audio_for_current_question(
                         audio_ref=None,
                         telegram_voice_file_id=None,
                     ),
+                    get_word_audio_variant=lambda **kwargs: None,
+                    update_word_audio_variant=lambda **kwargs: None,
                     update_word_audio=lambda **kwargs: saved_audio_updates.append(kwargs),
+                ),
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
                 ),
                 "telegram_ui_language": "en",
             }
@@ -1484,7 +1534,7 @@ async def test_tts_current_handler_sends_audio_for_current_question(
 
     await bot.tts_current_handler(update, context)  # type: ignore[arg-type]
 
-    assert synthesized == ["cloud"]
+    assert synthesized == ["cloud:en_US-libritts-high"]
     assert query.answers == 1
     assert query.answer_payloads == [(None, None)]
     assert len(message.reply_voice_calls) == 1
@@ -1509,7 +1559,7 @@ async def test_tts_current_handler_prefers_cached_telegram_voice_file_id(
     )
 
     class _ExplodingTtsClient:
-        def synthesize(self, *, text: str) -> bytes:  # noqa: ARG002
+        def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:  # noqa: ARG002
             raise AssertionError("TTS should not be used when voice file_id is cached")
 
     monkeypatch.setattr(bot, "_tts_client_or_none", lambda context: _ExplodingTtsClient())
@@ -1535,7 +1585,14 @@ async def test_tts_current_handler_prefers_cached_telegram_voice_file_id(
                         audio_ref="assets/weather/audio/cloud.ogg",
                         telegram_voice_file_id="cached-voice-id",
                     ),
+                    get_word_audio_variant=lambda **kwargs: None,
+                    update_word_audio_variant=lambda **kwargs: None,
                     update_word_audio=lambda **kwargs: None,
+                ),
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
                 ),
                 "telegram_ui_language": "en",
             }
@@ -1563,7 +1620,7 @@ async def test_tts_current_handler_replaces_previous_tracked_voice_message(
     registry.track(flow_id="tts-voice:123", chat_id=1, message_id=55, tag="tts_voice")
 
     class _ExplodingTtsClient:
-        def synthesize(self, *, text: str) -> bytes:  # noqa: ARG002
+        def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:  # noqa: ARG002
             raise AssertionError("TTS should not be used when voice file_id is cached")
 
     monkeypatch.setattr(bot, "_tts_client_or_none", lambda context: _ExplodingTtsClient())
@@ -1592,9 +1649,16 @@ async def test_tts_current_handler_replaces_previous_tracked_voice_message(
                         audio_ref="assets/weather/audio/cloud.ogg",
                         telegram_voice_file_id="cached-voice-id",
                     ),
+                    get_word_audio_variant=lambda **kwargs: None,
+                    update_word_audio_variant=lambda **kwargs: None,
                     update_word_audio=lambda **kwargs: None,
                 ),
                 "telegram_flow_message_repository": registry,
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
+                ),
                 "telegram_ui_language": "en",
             }
         ),
@@ -1660,6 +1724,11 @@ async def test_tts_current_handler_suppresses_duplicate_requests_while_in_flight
                         options=["cloud", "bag", "book"],
                     ),
                 ),
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
+                ),
                 "telegram_ui_language": "en",
             }
         ),
@@ -1694,7 +1763,7 @@ async def test_tts_current_handler_throttles_immediate_repeat_for_same_word(
     )
 
     class _ExplodingTtsClient:
-        def synthesize(self, *, text: str) -> bytes:  # noqa: ARG002
+        def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:  # noqa: ARG002
             raise AssertionError("TTS should not be used when voice file_id is cached")
 
     monkeypatch.setattr(bot, "_tts_client_or_none", lambda context: _ExplodingTtsClient())
@@ -1721,7 +1790,14 @@ async def test_tts_current_handler_throttles_immediate_repeat_for_same_word(
                         audio_ref="assets/weather/audio/cloud.ogg",
                         telegram_voice_file_id="cached-voice-id",
                     ),
+                    get_word_audio_variant=lambda **kwargs: None,
+                    update_word_audio_variant=lambda **kwargs: None,
                     update_word_audio=lambda **kwargs: None,
+                ),
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
                 ),
                 "telegram_ui_language": "en",
             }
@@ -1735,6 +1811,114 @@ async def test_tts_current_handler_throttles_immediate_repeat_for_same_word(
     assert first_message.reply_voice_calls == ["cached-voice-id"]
     assert second_query.answer_payloads == [("Audio was just sent.", None)]
     assert second_message.reply_voice_calls == []
+
+
+@pytest.mark.anyio
+async def test_tts_voice_menu_handler_shows_available_voice_list() -> None:
+    message = _FakeEditableMessage("question")
+    query = _FakeQuery("tts:voices", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(id="session-1"),  # noqa: ARG005
+                    get_current_question=lambda user_id: TrainingQuestion(  # noqa: ARG005
+                        session_id="session-1",
+                        item_id="cloud",
+                        mode=TrainingMode.EASY,
+                        prompt="Translation: облако",
+                        image_ref=None,
+                        correct_answer="cloud",
+                        options=["cloud", "bag", "book"],
+                    ),
+                ),
+                "content_store": SimpleNamespace(
+                    get_vocabulary_item=lambda item_id: SimpleNamespace(  # noqa: ARG005
+                        id="cloud",
+                        topic_id="weather",
+                        audio_ref="assets/weather/audio/cloud.ogg",
+                        telegram_voice_file_id="cached-primary-voice-id",
+                    ),
+                    get_word_audio_variant=lambda **kwargs: SimpleNamespace(
+                        item_id="cloud",
+                        voice_name="en_GB-cori-high",
+                        audio_ref="assets/weather/audio/cloud__en_GB_cori_high.ogg",
+                        telegram_voice_file_id="cached-alt-voice-id",
+                    ),
+                    update_word_audio_variant=lambda **kwargs: None,
+                    update_word_audio=lambda **kwargs: None,
+                ),
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
+                ),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    await bot.tts_voice_menu_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.answer_payloads == [(None, None)]
+    markup = message.edit_reply_markup_calls[-1]
+    assert [row[0].text for row in markup.inline_keyboard] == [
+        "✓ 🇺🇸 American · Jane",
+        "🇬🇧 British · Cori",
+        "⬅ Back",
+    ]
+    assert [row[0].callback_data for row in markup.inline_keyboard] == [
+        "tts:voice:0",
+        "tts:voice:1",
+        "tts:voice:back",
+    ]
+
+
+@pytest.mark.anyio
+async def test_tts_voice_select_handler_restores_question_keyboard() -> None:
+    message = _FakeEditableMessage("question")
+    query = _FakeQuery("tts:voice:1", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(id="session-1"),  # noqa: ARG005
+                    get_current_question=lambda user_id: TrainingQuestion(  # noqa: ARG005
+                        session_id="session-1",
+                        item_id="cloud",
+                        mode=TrainingMode.EASY,
+                        prompt="Translation: облако",
+                        image_ref=None,
+                        correct_answer="cloud",
+                        options=["cloud", "bag", "book"],
+                    ),
+                ),
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
+                ),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    await bot.tts_voice_select_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.answer_payloads == [("🇬🇧 British · Cori", None)]
+    assert context.user_data[bot._TTS_SELECTED_VOICE_KEY]["cloud"] == "en_GB-cori-high"
+    markup = message.edit_reply_markup_calls[-1]
+    assert [button.text for button in markup.inline_keyboard[-1]] == ["🔊 Play", "🎙 Voice"]
 
 
 @pytest.mark.anyio

@@ -10,10 +10,10 @@ from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 
 class FakeTtsServiceClient:
     def __init__(self, **_: object) -> None:
-        self.calls: list[str] = []
+        self.calls: list[tuple[str, str | None]] = []
 
-    def synthesize(self, *, text: str) -> bytes:
-        self.calls.append(text)
+    def synthesize(self, *, text: str, voice_name: str | None = None) -> bytes:
+        self.calls.append((text, voice_name))
         return f"wav:{text}".encode("utf-8")
 
 
@@ -25,6 +25,7 @@ def test_fill_word_audio_cli_updates_missing_audio(tmp_path: Path, monkeypatch) 
                 f"CONTENT_DB_PATH={(tmp_path / 'data' / 'englishbot.db').as_posix()}",
                 "TTS_SERVICE_BASE_URL=http://127.0.0.1:8090",
                 "TTS_SERVICE_TIMEOUT_SEC=15",
+                "TTS_VOICE_NAME=en_US-libritts-high",
             ]
         )
         + "\n",

@@ -26,10 +26,12 @@ class FillWordAudioUseCase:
         store,
         tts_client,
         assets_dir: Path,
+        voice_name: str,
     ) -> None:
         self._store = store
         self._tts_client = tts_client
         self._assets_dir = assets_dir
+        self._voice_name = voice_name
 
     @logged_service_call(
         "FillWordAudioUseCase.execute",
@@ -72,7 +74,7 @@ class FillWordAudioUseCase:
                 logger.warning("Skipping audio backfill without topic_id item_id=%s", item.id)
                 continue
             try:
-                audio_bytes = self._tts_client.synthesize(text=item.english_word)
+                audio_bytes = self._tts_client.synthesize(text=item.english_word, voice_name=self._voice_name)
                 output_path = build_item_audio_path(
                     assets_dir=self._assets_dir,
                     topic_id=item.topic_id,
@@ -93,6 +95,11 @@ class FillWordAudioUseCase:
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     output_path.write_bytes(audio_bytes)
                     self._store.update_word_audio(item_id=item.id, audio_ref=audio_ref)
+                    self._store.update_word_audio_variant(
+                        item_id=item.id,
+                        voice_name=self._voice_name,
+                        audio_ref=audio_ref,
+                    )
                 updated_count += 1
             except Exception:  # noqa: BLE001
                 failed_count += 1

@@ -30,6 +30,7 @@ from englishbot.domain.models import (
     TrainingMode,
     TrainingSession,
     UserProgress,
+    VocabularyAudioVariant,
     VocabularyItem,
     WordStats,
 )
@@ -275,6 +276,14 @@ class SQLiteContentStore:
                     telegram_voice_file_id TEXT,
                     is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS learning_item_audio_variants (
+                    item_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+                    voice_name TEXT NOT NULL,
+                    audio_ref TEXT,
+                    telegram_voice_file_id TEXT,
+                    PRIMARY KEY (item_id, voice_name)
                 );
 
                 CREATE TABLE IF NOT EXISTS topic_learning_items (
@@ -548,6 +557,17 @@ class SQLiteContentStore:
                 connection.execute("ALTER TABLE learning_items ADD COLUMN audio_ref TEXT")
             if "telegram_voice_file_id" not in learning_item_columns:
                 connection.execute("ALTER TABLE learning_items ADD COLUMN telegram_voice_file_id TEXT")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS learning_item_audio_variants (
+                    item_id TEXT NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+                    voice_name TEXT NOT NULL,
+                    audio_ref TEXT,
+                    telegram_voice_file_id TEXT,
+                    PRIMARY KEY (item_id, voice_name)
+                )
+                """
+            )
 
     def has_runtime_content(self) -> bool:
         self.initialize()
@@ -988,6 +1008,65 @@ class SQLiteContentStore:
                 WHERE id = ?
                 """,
                 (*params, item_id),
+            )
+        if cursor.rowcount == 0:
+            raise ValueError("Vocabulary item was not found.")
+
+    def get_word_audio_variant(self, *, item_id: str, voice_name: str) -> VocabularyAudioVariant | None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT item_id, voice_name, audio_ref, telegram_voice_file_id
+                FROM learning_item_audio_variants
+                WHERE item_id = ? AND voice_name = ?
+                """,
+                (item_id, voice_name),
+            ).fetchone()
+        if row is None:
+            return None
+        return VocabularyAudioVariant(
+            item_id=row["item_id"],
+            voice_name=row["voice_name"],
+            audio_ref=row["audio_ref"],
+            telegram_voice_file_id=row["telegram_voice_file_id"],
+        )
+
+    def update_word_audio_variant(
+        self,
+        *,
+        item_id: str,
+        voice_name: str,
+        audio_ref: str | None = None,
+        telegram_voice_file_id: str | None = None,
+    ) -> None:
+        self.initialize()
+        if audio_ref is None and telegram_voice_file_id is None:
+            return
+        with _connect(self._db_path) as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO learning_item_audio_variants (
+                    item_id,
+                    voice_name,
+                    audio_ref,
+                    telegram_voice_file_id
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(item_id, voice_name)
+                DO UPDATE SET
+                    audio_ref = COALESCE(excluded.audio_ref, learning_item_audio_variants.audio_ref),
+                    telegram_voice_file_id = COALESCE(
+                        excluded.telegram_voice_file_id,
+                        learning_item_audio_variants.telegram_voice_file_id
+                    )
+                """,
+                (
+                    item_id,
+                    voice_name,
+                    audio_ref,
+                    telegram_voice_file_id,
+                ),
             )
         if cursor.rowcount == 0:
             raise ValueError("Vocabulary item was not found.")

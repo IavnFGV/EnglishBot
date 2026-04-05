@@ -57,6 +57,7 @@ If the operational process changes, update this document in the same change set.
    - optional `TTS_HOST`
    - optional `TTS_PORT`
    - optional `TTS_VOICE_NAME`
+   - optional `TTS_VOICE_VARIANTS`
    - optional `TTS_CACHE_DIR`
    - optional `TTS_VOICE_DIR`
 6. Create TTS runtime directories:
@@ -140,7 +141,7 @@ Runtime note:
 - `englishbot-nginx` terminates TLS on `443` and proxies to `englishbot-webapp:8080`
 - both share the same runtime SQLite database and assets directory
 - `englishbot-tts` persists downloaded voice models in `shared/tts/voices/`
-- `englishbot-tts` persists synthesized WAV cache in `shared/tts/cache/`
+- `englishbot-tts` persists synthesized OGG cache in `shared/tts/cache/`
 - `englishbot-nginx` also serves `/.well-known/acme-challenge/` from `shared/nginx/acme/`
 - before certificates are issued, `englishbot-nginx` starts in HTTP mode on port `80`
 - after certificates are present, `englishbot-nginx` switches to HTTPS + HTTP->HTTPS redirect on restart

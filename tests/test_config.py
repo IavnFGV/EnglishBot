@@ -109,6 +109,7 @@ def test_settings_from_config_service_reads_tts_settings(tmp_path: Path) -> None
         "TTS_CACHE_DIR=data/tts-cache\n"
         "TTS_VOICE_DIR=data/tts-voices\n"
         "TTS_VOICE_NAME=en_GB-alan-medium\n"
+        "TTS_VOICE_VARIANTS=en_US-libritts-high, en_GB-cori-high\n"
         "TTS_VOICE_MODEL_PATH=data/tts-voices/custom.onnx\n"
         "TTS_VOICE_CONFIG_PATH=data/tts-voices/custom.onnx.json\n",
         encoding="utf-8",
@@ -125,6 +126,7 @@ def test_settings_from_config_service_reads_tts_settings(tmp_path: Path) -> None
     assert settings.tts_cache_dir == Path("data/tts-cache")
     assert settings.tts_voice_dir == Path("data/tts-voices")
     assert settings.tts_voice_name == "en_GB-alan-medium"
+    assert settings.tts_voice_variants == ("en_US-libritts-high", "en_GB-cori-high")
     assert settings.tts_voice_model_path == Path("data/tts-voices/custom.onnx")
     assert settings.tts_voice_config_path == Path("data/tts-voices/custom.onnx.json")
 

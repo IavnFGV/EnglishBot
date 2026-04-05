@@ -72,6 +72,14 @@ class VocabularyItem:
     telegram_voice_file_id: str | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class VocabularyAudioVariant:
+    item_id: str
+    voice_name: str
+    audio_ref: str | None = None
+    telegram_voice_file_id: str | None = None
+
+
 @dataclass(slots=True)
 class UserProgress:
     user_id: int

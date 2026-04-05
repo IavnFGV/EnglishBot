@@ -180,6 +180,11 @@ _SETTING_DEFINITIONS: dict[str, RuntimeSettingDefinition] = {
         ("TTS_VOICE_NAME",),
         "en_US-lessac-medium",
     ),
+    "tts_voice_variants": RuntimeSettingDefinition(
+        "tts_voice_variants",
+        ("TTS_VOICE_VARIANTS",),
+        "",
+    ),
     "tts_voice_model_path": RuntimeSettingDefinition(
         "tts_voice_model_path",
         ("TTS_VOICE_MODEL_PATH",),
@@ -383,11 +388,18 @@ class Settings:
     tts_cache_dir: Path = Path("data/tts-cache")
     tts_voice_dir: Path = Path("data/tts-voices")
     tts_voice_name: str = "en_US-lessac-medium"
+    tts_voice_variants: tuple[str, ...] = ()
     tts_voice_model_path: Path | None = None
     tts_voice_config_path: Path | None = None
 
     @classmethod
     def from_config_service(cls, service: RuntimeConfigService) -> "Settings":
+        raw_tts_voice_variants = service.get_str("tts_voice_variants")
+        tts_voice_variants = tuple(
+            part.strip()
+            for part in raw_tts_voice_variants.split(",")
+            if part.strip()
+        )
         return cls(
             telegram_token=service.get_str("telegram_token"),
             log_level=service.get_str("log_level"),
@@ -430,6 +442,7 @@ class Settings:
             tts_cache_dir=service.get_path("tts_cache_dir") or Path("data/tts-cache"),
             tts_voice_dir=service.get_path("tts_voice_dir") or Path("data/tts-voices"),
             tts_voice_name=service.get_str("tts_voice_name"),
+            tts_voice_variants=tts_voice_variants,
             tts_voice_model_path=service.get_path("tts_voice_model_path"),
             tts_voice_config_path=service.get_path("tts_voice_config_path"),
         )
