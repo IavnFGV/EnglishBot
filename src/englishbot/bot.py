@@ -209,7 +209,6 @@ from englishbot.presentation.telegram_views import (
     build_published_word_edit_prompt_view,
     build_start_menu_view,
     build_status_view,
-    build_training_question_view,
     edit_telegram_text_view,
     send_telegram_view,
 )
@@ -224,6 +223,14 @@ from englishbot.telegram_answer_handlers import (
     hard_skip_handler as telegram_hard_skip_handler,
     medium_answer_callback_handler as telegram_medium_answer_callback_handler,
     text_answer_handler as telegram_text_answer_handler,
+)
+from englishbot.telegram_question_delivery import (
+    build_medium_question_view as delivery_build_medium_question_view,
+    edit_training_question_view as delivery_edit_training_question_view,
+    medium_task_answer_text as delivery_medium_task_answer_text,
+    medium_task_is_complete as delivery_medium_task_is_complete,
+    medium_task_slots_text as delivery_medium_task_slots_text,
+    send_question as delivery_send_question,
 )
 from englishbot.telegram_command_menu import (
     chat_menu_keyboard as menu_chat_menu_keyboard,
@@ -6423,48 +6430,15 @@ def _set_tts_recent_request(
         user_data[_TTS_TASK_RECENT_KEY] = (item_id, voice_name, sent_at)
 
 
-def _medium_task_slot_count(state: _MediumTaskState) -> int:
-    return sum(1 for character in state.target_word if not character.isspace())
-
-
 def _medium_task_is_complete(state: _MediumTaskState) -> bool:
-    return len(state.selected_letter_indexes) >= _medium_task_slot_count(state)
-
-
-def _medium_task_selected_letters(state: _MediumTaskState) -> list[str]:
-    return [state.shuffled_letters[index] for index in state.selected_letter_indexes]
-
+    return delivery_medium_task_is_complete(state)
 
 def _medium_task_slots_text(state: _MediumTaskState) -> str:
-    selected_letters = _medium_task_selected_letters(state)
-    selected_index = 0
-    current_word_slots: list[str] = []
-    rendered_words: list[str] = []
-    for character in state.target_word:
-        if character.isspace():
-            if current_word_slots:
-                rendered_words.append(" ".join(current_word_slots))
-                current_word_slots = []
-            continue
-        slot_value = "_"
-        if selected_index < len(selected_letters):
-            slot_value = selected_letters[selected_index]
-        current_word_slots.append(slot_value)
-        selected_index += 1
-    if current_word_slots:
-        rendered_words.append(" ".join(current_word_slots))
-    return "   ".join(rendered_words) or "_"
+    return delivery_medium_task_slots_text(state)
 
 
 def _medium_task_answer_text(state: _MediumTaskState) -> str:
-    selected_letters = iter(_medium_task_selected_letters(state))
-    assembled: list[str] = []
-    for character in state.target_word:
-        if character.isspace():
-            assembled.append(character)
-            continue
-        assembled.append(next(selected_letters, ""))
-    return "".join(assembled)
+    return delivery_medium_task_answer_text(state)
 
 
 def _medium_task_keyboard(
@@ -6512,20 +6486,6 @@ def _medium_task_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-def _extract_training_translation(prompt: str) -> str:
-    for line in prompt.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("Translation:"):
-            return stripped.removeprefix("Translation:").strip()
-    return prompt.strip()
-
-
-def _build_medium_question_text(question: TrainingQuestion, state: _MediumTaskState) -> str:
-    translation = html.escape(_extract_training_translation(question.prompt))
-    slots = html.escape(_medium_task_slots_text(state))
-    return f"🧩 <b>{translation}</b>\n\n<b>{slots}</b>"
-
-
 def _build_medium_question_view(
     question: TrainingQuestion,
     *,
@@ -6533,12 +6493,16 @@ def _build_medium_question_view(
     context: ContextTypes.DEFAULT_TYPE | None = None,
     user=None,
 ) -> TelegramTextView | TelegramPhotoView:
-    image_path = resolve_existing_image_path(question.image_ref)
-    return build_training_question_view(
+    return delivery_build_medium_question_view(
         question,
-        image_path=image_path,
-        reply_markup=_medium_task_keyboard(state, context=context, user=user),
-        body_text_override=_build_medium_question_text(question, state),
+        state=state,
+        context=context,
+        user=user,
+        resolve_existing_image_path=resolve_existing_image_path,
+        tts_service_enabled=_tts_service_enabled,
+        tts_buttons=_tts_buttons,
+        tg=_tg,
+        inline_keyboard_button_type=InlineKeyboardButton,
     )
 
 
@@ -6547,24 +6511,7 @@ async def _edit_training_question_view(
     *,
     view: TelegramTextView | TelegramPhotoView,
 ) -> None:
-    try:
-        if isinstance(view, TelegramPhotoView):
-            kwargs = {
-                "caption": view.caption,
-                "reply_markup": view.reply_markup,
-            }
-            if view.parse_mode is not None:
-                kwargs["parse_mode"] = view.parse_mode
-            await query.message.edit_caption(**kwargs)
-            return
-        await query.edit_message_text(
-            view.text,
-            reply_markup=view.reply_markup,
-            parse_mode=view.parse_mode,
-        )
-    except BadRequest as error:
-        if "Message is not modified" not in str(error):
-            raise
+    await delivery_edit_training_question_view(query, view=view)
 
 
 async def _send_question(
@@ -6572,74 +6519,24 @@ async def _send_question(
     context: ContextTypes.DEFAULT_TYPE,
     question: TrainingQuestion,
 ) -> None:
-    message = update.effective_message
-    user = getattr(update, "effective_user", None)
-    if message is None:
-        return
-    await _delete_tracked_flow_messages(
+    await delivery_send_question(
+        update,
         context,
-        flow_id=question.session_id,
-        tag=_TRAINING_QUESTION_TAG,
-    )
-    _clear_medium_task_state(context)
-    view: TelegramTextView | TelegramPhotoView
-    reply_markup = None
-    active_session = (
-        _active_training_session(context, user_id=user.id)
-        if user is not None
-        else None
-    )
-    if question.mode is TrainingMode.MEDIUM:
-        view = _build_medium_question_view(
-            question,
-            state=_build_medium_task_state(question),
-            context=context,
-            user=user,
-        )
-    elif question.options:
-        rows = [
-            [InlineKeyboardButton(option, callback_data=f"answer:{option}")]
-            for option in question.options
-        ]
-        if _tts_service_enabled(context):
-            rows.append(_tts_buttons(context=context, user=user))
-        reply_markup = InlineKeyboardMarkup(rows)
-        image_path = resolve_existing_image_path(question.image_ref)
-        view = build_training_question_view(
-            question,
-            image_path=image_path,
-            reply_markup=reply_markup,
-        )
-    else:
-        if (
-            user is not None
-            and active_session is not None
-            and active_session.id == question.session_id
-            and question.mode is TrainingMode.HARD
-        ):
-            reply_markup = _hard_skip_keyboard(
-                context=context,
-                user=user,
-                session_id=question.session_id,
-            )
-        image_path = resolve_existing_image_path(question.image_ref)
-        view = build_training_question_view(
-            question,
-            image_path=image_path,
-            reply_markup=reply_markup,
-        )
-    sent_message = await send_telegram_view(message, view)
-    if question.mode is TrainingMode.MEDIUM:
-        _set_medium_task_state(
-            context,
-            _build_medium_task_state(question, message_id=getattr(sent_message, "message_id", None)),
-        )
-    _track_flow_message(
-        context,
-        flow_id=question.session_id,
-        tag=_TRAINING_QUESTION_TAG,
-        message=sent_message,
-        fallback_chat_id=_message_chat_id(message),
+        question,
+        delete_tracked_flow_messages=_delete_tracked_flow_messages,
+        training_question_tag=_TRAINING_QUESTION_TAG,
+        clear_medium_task_state=_clear_medium_task_state,
+        active_training_session=_active_training_session,
+        build_medium_task_state=_build_medium_task_state,
+        build_medium_question_view=_build_medium_question_view,
+        tts_service_enabled=_tts_service_enabled,
+        tts_buttons=_tts_buttons,
+        resolve_existing_image_path=resolve_existing_image_path,
+        hard_skip_keyboard=_hard_skip_keyboard,
+        set_medium_task_state=_set_medium_task_state,
+        track_flow_message=_track_flow_message,
+        message_chat_id=_message_chat_id,
+        inline_keyboard_button_type=InlineKeyboardButton,
     )
 
 

@@ -32,6 +32,7 @@ First extraction steps already in place:
 - [src/englishbot/telegram_navigation_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram_navigation_handlers.py) owns top-level menu navigation such as `/words`, `/assign`, start menu callbacks, and homework launch entry points
 - [src/englishbot/telegram_learner_entry_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram_learner_entry_handlers.py) owns learner training entry points such as continue/restart session, topic selection, lesson selection, and mode selection
 - [src/englishbot/telegram_answer_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram_answer_handlers.py) owns Telegram answer-entry handlers such as choice answers, text answers, medium-letter callbacks, and hard-skip entry handling
+- [src/englishbot/telegram_question_delivery.py](/workspaces/EnglishBot/src/englishbot/telegram_question_delivery.py) owns question rendering and delivery helpers for medium-mode letter UI and question message sending
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers
 
 ## Current Status
