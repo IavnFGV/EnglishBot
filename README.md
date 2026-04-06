@@ -41,6 +41,7 @@ First extraction steps already in place:
 - [src/englishbot/telegram_homework_admin.py](/workspaces/EnglishBot/src/englishbot/telegram_homework_admin.py) owns homework goal/admin callbacks and assignment drill-down screens, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers; dead compatibility leftovers are removed incrementally once they have no in-repo callers
 - repeated `context.application.bot_data[...]` access in `bot.py` is being centralized gradually through shared helper accessors so the remaining facade stays easier to teach and scan
+- repeated `context.user_data[...]` access in `bot.py` is also being centralized gradually so per-user Telegram state reads like one concept instead of many tiny ad hoc patterns
 
 ## Current Status
 

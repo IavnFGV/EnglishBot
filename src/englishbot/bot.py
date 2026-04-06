@@ -395,6 +395,51 @@ def _optional_bot_data(
     return bot_data.get(key, default)
 
 
+def _user_data_or_none(context: ContextTypes.DEFAULT_TYPE | None) -> dict | None:
+    if context is None:
+        return None
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        return user_data
+    return None
+
+
+def _optional_user_data(
+    context: ContextTypes.DEFAULT_TYPE | None,
+    key: str,
+    *,
+    default=None,
+):
+    user_data = _user_data_or_none(context)
+    if user_data is None:
+        return default
+    return user_data.get(key, default)
+
+
+def _set_user_data(
+    context: ContextTypes.DEFAULT_TYPE | None,
+    key: str,
+    value,
+) -> bool:
+    user_data = _user_data_or_none(context)
+    if user_data is None:
+        return False
+    user_data[key] = value
+    return True
+
+
+def _pop_user_data(
+    context: ContextTypes.DEFAULT_TYPE | None,
+    key: str,
+    *,
+    default=None,
+):
+    user_data = _user_data_or_none(context)
+    if user_data is None:
+        return default
+    return user_data.pop(key, default)
+
+
 def _tg(
     key: str,
     *,
@@ -1706,14 +1751,14 @@ def _remember_expected_user_input(
 ) -> None:
     if chat_id is None or message_id is None:
         return
-    context.user_data[_EXPECTED_USER_INPUT_STATE_KEY] = {
+    _set_user_data(context, _EXPECTED_USER_INPUT_STATE_KEY, {
         "chat_id": chat_id,
         "message_id": message_id,
-    }
+    })
 
 
 def _clear_expected_user_input(context: ContextTypes.DEFAULT_TYPE) -> None:
-    context.user_data.pop(_EXPECTED_USER_INPUT_STATE_KEY, None)
+    _pop_user_data(context, _EXPECTED_USER_INPUT_STATE_KEY, default=None)
 
 
 async def _edit_expected_user_input_prompt(
@@ -1722,7 +1767,7 @@ async def _edit_expected_user_input_prompt(
     text: str,
     reply_markup,
 ) -> bool:
-    stored = context.user_data.get(_EXPECTED_USER_INPUT_STATE_KEY)
+    stored = _optional_user_data(context, _EXPECTED_USER_INPUT_STATE_KEY)
     if not isinstance(stored, dict):
         return False
     chat_id = stored.get("chat_id")
@@ -3611,9 +3656,7 @@ def _expects_text_answer_for_question(question: TrainingQuestion) -> bool:
 
 
 def _clear_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_data = getattr(context, "user_data", None)
-    if isinstance(user_data, dict):
-        user_data.pop(_MEDIUM_TASK_STATE_KEY, None)
+    _pop_user_data(context, _MEDIUM_TASK_STATE_KEY, default=None)
 
 
 def _build_medium_task_state(
@@ -3634,24 +3677,19 @@ def _build_medium_task_state(
 
 
 def _get_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> _MediumTaskState | None:
-    user_data = getattr(context, "user_data", None)
-    if not isinstance(user_data, dict):
-        return None
-    state = user_data.get(_MEDIUM_TASK_STATE_KEY)
+    state = _optional_user_data(context, _MEDIUM_TASK_STATE_KEY)
     if isinstance(state, _MediumTaskState):
         return state
     return None
 
 
 def _set_medium_task_state(context: ContextTypes.DEFAULT_TYPE, state: _MediumTaskState) -> None:
-    user_data = getattr(context, "user_data", None)
-    if isinstance(user_data, dict):
-        user_data[_MEDIUM_TASK_STATE_KEY] = state
+    _set_user_data(context, _MEDIUM_TASK_STATE_KEY, state)
 
 
 def _medium_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
-    user_data = getattr(context, "user_data", None)
-    if not isinstance(user_data, dict):
+    user_data = _user_data_or_none(context)
+    if user_data is None:
         return asyncio.Lock()
     lock = user_data.get(_MEDIUM_TASK_LOCK_KEY)
     if isinstance(lock, asyncio.Lock):
@@ -3662,8 +3700,8 @@ def _medium_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
 
 
 def _tts_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
-    user_data = getattr(context, "user_data", None)
-    if not isinstance(user_data, dict):
+    user_data = _user_data_or_none(context)
+    if user_data is None:
         return asyncio.Lock()
     lock = user_data.get(_TTS_TASK_LOCK_KEY)
     if isinstance(lock, asyncio.Lock):
@@ -3674,8 +3712,8 @@ def _tts_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
 
 
 def _tts_selected_voice_store(context: ContextTypes.DEFAULT_TYPE) -> dict[str, str]:
-    user_data = getattr(context, "user_data", None)
-    if not isinstance(user_data, dict):
+    user_data = _user_data_or_none(context)
+    if user_data is None:
         return {}
     current = user_data.get(_TTS_SELECTED_VOICE_KEY)
     if isinstance(current, dict):
@@ -3711,10 +3749,7 @@ def _advance_tts_selected_voice_name(context: ContextTypes.DEFAULT_TYPE, *, item
 
 
 def _tts_recent_request(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, str, float] | None:
-    user_data = getattr(context, "user_data", None)
-    if not isinstance(user_data, dict):
-        return None
-    value = user_data.get(_TTS_TASK_RECENT_KEY)
+    value = _optional_user_data(context, _TTS_TASK_RECENT_KEY)
     if (
         isinstance(value, tuple)
         and len(value) == 3
@@ -3740,9 +3775,7 @@ def _set_tts_recent_request(
     voice_name: str,
     sent_at: float,
 ) -> None:
-    user_data = getattr(context, "user_data", None)
-    if isinstance(user_data, dict):
-        user_data[_TTS_TASK_RECENT_KEY] = (item_id, voice_name, sent_at)
+    _set_user_data(context, _TTS_TASK_RECENT_KEY, (item_id, voice_name, sent_at))
 
 
 def _medium_task_is_complete(state: _MediumTaskState) -> bool:
