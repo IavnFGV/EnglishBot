@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import random
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
@@ -2729,63 +2728,19 @@ async def game_mode_placeholder_callback_handler(
 
 
 async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    game_state = _game_state(context)
-    user = update.effective_user
-    if user is None:
-        return
-    topic_id = game_state.get("topic_id")
-    lesson_id = game_state.get("lesson_id")
-    mode_value = game_state.get("mode_value")
-    if not topic_id or not mode_value:
-        await query.edit_message_text(_tg("no_active_session_send_start", context=context, user=user))
-        return
-    try:
-        question = _start_training_session_with_ui_language(
-            _service(context),
-            user_id=user.id,
-            topic_id=topic_id,
-            lesson_id=lesson_id,
-            mode=TrainingMode(str(mode_value)),
-            adaptive_per_word=True,
-            ui_language=_telegram_ui_language(context, user),
-        )
-    except (ApplicationError, ValueError) as error:
-        await query.edit_message_text(str(error))
-        return
-    streak_days = _content_store(context).update_game_streak(user_id=user.id, played_at=datetime.now(UTC))
-    _set_user_data(context, _GAME_STATE_KEY, {
-        "active": True,
-        "topic_id": topic_id,
-        "lesson_id": lesson_id,
-        "mode_value": mode_value,
-        "session_stars": 0,
-        "correct_answers": 0,
-        "streak_days": streak_days,
-    })
-    _set_user_data(context, "awaiting_text_answer", _expects_text_answer_for_question(question))
-    await query.edit_message_text(
-        _tg("game_round_started", context=context, user=user, streak_days=streak_days)
+    from englishbot.telegram_game_mode import (
+        game_next_round_handler as telegram_game_next_round_handler,
     )
-    await _send_question(update, context, question)
+
+    await telegram_game_next_round_handler(update, context)
 
 
 async def game_repeat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _pop_user_data(context, _GAME_STATE_KEY, default=None)
-    _clear_medium_task_state(context)
-    await query.edit_message_text(_tg("start_menu_title", context=context, user=user))
-    await send_telegram_view(
-        query.message,
-        _start_menu_view(context=context, user=user),
+    from englishbot.telegram_game_mode import (
+        game_repeat_handler as telegram_game_repeat_handler,
     )
+
+    await telegram_game_repeat_handler(update, context)
 
 
 def _create_callback_token(
@@ -3233,34 +3188,11 @@ async def _send_game_feedback(
     outcome: AnswerOutcome,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    game_state = _game_state(context)
-    if not isinstance(game_state, dict):
-        return
-    session_stars = int(game_state.get("session_stars", 0))
-    correct_answers = int(game_state.get("correct_answers", 0))
-    if outcome.result.is_correct:
-        session_stars += _GAME_STAR_REWARD_CORRECT
-        correct_answers += 1
-        feedback = _tg("game_correct", context=context, user=getattr(message, "from_user", None))
-    else:
-        feedback = _tg("game_almost", context=context, user=getattr(message, "from_user", None))
-    game_state["session_stars"] = session_stars
-    game_state["correct_answers"] = correct_answers
-    if outcome.summary is not None:
-        progress = outcome.summary.total_questions
-    else:
-        active_session = _service(context).get_active_session(user_id=message.from_user.id)
-        progress = 1 if active_session is None else max(1, active_session.current_position - 1)
-    text = _tg(
-        "game_feedback",
-        context=context,
-        user=getattr(message, "from_user", None),
-        feedback=feedback,
-        progress=progress,
-        total=5,
-        stars=session_stars,
+    from englishbot.telegram_game_mode import (
+        send_game_feedback as telegram_send_game_feedback,
     )
-    await message.reply_text(text)
+
+    await telegram_send_game_feedback(message, outcome, context)
 
 
 async def _finish_game_session(
@@ -3268,37 +3200,11 @@ async def _finish_game_session(
     outcome: AnswerOutcome,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    user = getattr(message, "from_user", None)
-    if user is None:
-        return
-    game_state = _game_state(context)
-    if not isinstance(game_state, dict):
-        return
-    session_stars = int(game_state.get("session_stars", 0))
-    chest_stars = random.choice(_GAME_CHEST_REWARDS)
-    total_earned = session_stars + chest_stars
-    total_stars = _content_store(context).add_game_stars(user_id=user.id, stars=total_earned)
-    streak_days = _content_store(context).update_game_streak(user_id=user.id, played_at=datetime.now(UTC))
-    await message.reply_text(
-        _tg(
-            "game_session_complete",
-            context=context,
-            user=user,
-            session_stars=session_stars,
-            chest_stars=chest_stars,
-            total_earned=total_earned,
-            total_stars=total_stars,
-            streak_days=streak_days,
-        ),
-        reply_markup=_game_result_keyboard(language=_telegram_ui_language(context, user)),
+    from englishbot.telegram_game_mode import (
+        finish_game_session as telegram_finish_game_session,
     )
-    _set_user_data(context, _GAME_STATE_KEY, {
-        "active": False,
-        "topic_id": game_state.get("topic_id"),
-        "lesson_id": game_state.get("lesson_id"),
-        "mode_value": game_state.get("mode_value"),
-    })
-    await _flush_pending_notifications_for_user(context, user_id=user.id)
+
+    await telegram_finish_game_session(message, outcome, context)
 
 
 def _expects_text_answer_for_question(question: TrainingQuestion) -> bool:

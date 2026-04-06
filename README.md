@@ -44,6 +44,7 @@ First extraction steps already in place:
 - [src/englishbot/telegram_assignment_progress.py](/workspaces/EnglishBot/src/englishbot/telegram_assignment_progress.py) owns assignment progress snapshot building, track rendering, and progress-image send/update helpers, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_notifications.py](/workspaces/EnglishBot/src/englishbot/telegram_notifications.py) owns pending-notification scheduling, delivery, reminder jobs, and dismiss-button rendering, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_image_review_support.py](/workspaces/EnglishBot/src/englishbot/telegram_image_review_support.py) owns image-review preview sending, local-candidate generation step handling, and review-step rendering helpers, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram_game_mode.py](/workspaces/EnglishBot/src/englishbot/telegram_game_mode.py) owns game-mode round restart, repeat flow, per-answer game feedback, and game completion summary, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers; dead compatibility leftovers are removed incrementally once they have no in-repo callers
 - repeated `context.application.bot_data[...]` access in `bot.py` is being centralized gradually through shared helper accessors so the remaining facade stays easier to teach and scan
 - repeated `context.user_data[...]` access in `bot.py` is also being centralized gradually so per-user Telegram state reads like one concept instead of many tiny ad hoc patterns
@@ -65,10 +66,6 @@ Checkpoint after this cleanup wave:
 If cleanup continues after this point, the next steps should be chosen by responsibility, not by line count.
 
 Best candidates for the next wave:
-
-- game-mode helpers still clustered in `src/englishbot/bot.py`
-  - examples: next-round flow, game feedback, game completion summary
-  - reason: this is a separate learner mode with its own state transitions and UX copy
 
 - medium-task UI helpers still clustered in `src/englishbot/bot.py`
   - examples: medium keyboard state, slot rendering, check/backspace interactions
