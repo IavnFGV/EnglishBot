@@ -230,6 +230,14 @@ from englishbot.telegram_entry_handlers import (
     start_handler as telegram_start_handler,
     version_handler as telegram_version_handler,
 )
+from englishbot.telegram_learner_entry_handlers import (
+    continue_session_handler as telegram_continue_session_handler,
+    game_mode_placeholder_callback_handler as telegram_game_mode_placeholder_callback_handler,
+    lesson_selected_handler as telegram_lesson_selected_handler,
+    mode_selected_handler as telegram_mode_selected_handler,
+    restart_session_handler as telegram_restart_session_handler,
+    topic_selected_handler as telegram_topic_selected_handler,
+)
 from englishbot.telegram_navigation_handlers import (
     assign_menu_callback_handler as telegram_assign_menu_callback_handler,
     assign_menu_handler as telegram_assign_menu_handler,
@@ -5177,50 +5185,29 @@ async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAU
 
 
 async def continue_session_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    logger.info("User %s chose to continue the active session", user.id)
-    try:
-        question = _service(context).get_current_question(user_id=user.id)
-    except InvalidSessionStateError:
-        context.user_data["awaiting_text_answer"] = False
-        _clear_medium_task_state(context)
-        await query.edit_message_text(_tg("no_active_session_send_start", context=context, user=user))
-        return
-    _record_assignment_activity(context, user_id=user.id)
-    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
-    await query.edit_message_text(_tg("continue_current_session", context=context, user=user))
-    active_session = _service(context).get_active_session(user_id=user.id)
-    assignment_kind = _assignment_kind_from_session(active_session)
-    callback_message = getattr(query, "message", None)
-    if assignment_kind is not None and callback_message is not None:
-        await _send_or_update_assignment_progress_message(
-            context,
-            message=callback_message,
-            user=user,
-            kind=assignment_kind,
-            active_session=active_session,
-        )
-    await _send_question(update, context, question)
+    await telegram_continue_session_handler(
+        update,
+        context,
+        service=_service,
+        clear_medium_task_state=_clear_medium_task_state,
+        tg=_tg,
+        expects_text_answer_for_question=_expects_text_answer_for_question,
+        record_assignment_activity=_record_assignment_activity,
+        assignment_kind_from_session=_assignment_kind_from_session,
+        send_or_update_assignment_progress_message=_send_or_update_assignment_progress_message,
+        send_question=_send_question,
+    )
 
 
 async def restart_session_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    logger.info("User %s chose to discard the active session", user.id)
-    _service(context).discard_active_session(user_id=user.id)
-    context.user_data["awaiting_text_answer"] = False
-    _clear_medium_task_state(context)
-    await query.edit_message_text(_tg("previous_session_discarded", context=context, user=user))
-    await send_telegram_view(
-        query.message,
-        _start_menu_view(context=context, user=user),
+    await telegram_restart_session_handler(
+        update,
+        context,
+        service=_service,
+        clear_medium_task_state=_clear_medium_task_state,
+        tg=_tg,
+        send_view=send_telegram_view,
+        start_menu_view=_start_menu_view,
     )
 
 
@@ -5262,98 +5249,48 @@ async def start_assignment_unavailable_callback_handler(
 
 
 async def topic_selected_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    topic_id = query.data.removeprefix("topic:")
-    lesson_selection = _service(context).list_lessons_by_topic(topic_id=topic_id)
-    if lesson_selection.has_lessons:
-        lesson_view = _lesson_selection_view(
-            text=_tg("choose_lesson", context=context, user=update.effective_user),
-            topic_id=topic_id,
-            lessons=lesson_selection.lessons,
-            context=context,
-            user=update.effective_user,
-        )
-        await query.edit_message_text(
-            lesson_view.text,
-            reply_markup=lesson_view.reply_markup,
-        )
-        return
-    mode_view = _mode_selection_view(
-        text=_tg("choose_mode", context=context, user=update.effective_user),
-        topic_id=topic_id,
-        lesson_id=None,
-        context=context,
-        user=update.effective_user,
-    )
-    await query.edit_message_text(
-        mode_view.text,
-        reply_markup=mode_view.reply_markup,
+    await telegram_topic_selected_handler(
+        update,
+        context,
+        service=_service,
+        lesson_selection_view=_lesson_selection_view,
+        mode_selection_view=_mode_selection_view,
+        tg=_tg,
     )
 
 
 async def lesson_selected_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    _, topic_id, lesson_id = query.data.split(":")
-    selected_lesson_id = None if lesson_id == "all" else lesson_id
-    mode_view = _mode_selection_view(
-        text=_tg("choose_mode", context=context, user=update.effective_user),
-        topic_id=topic_id,
-        lesson_id=selected_lesson_id,
-        context=context,
-        user=update.effective_user,
-    )
-    await query.edit_message_text(
-        mode_view.text,
-        reply_markup=mode_view.reply_markup,
+    await telegram_lesson_selected_handler(
+        update,
+        context,
+        mode_selection_view=_mode_selection_view,
+        tg=_tg,
     )
 
 
 async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    _, topic_id, lesson_id, mode_value = query.data.split(":")
-    service = _service(context)
-    user = update.effective_user
-    if user is None:
-        return
-    selected_lesson_id = None if lesson_id == "all" else lesson_id
-    try:
-        question = _start_training_session_with_ui_language(
-            service,
-            user_id=user.id,
-            topic_id=topic_id,
-            lesson_id=selected_lesson_id,
-            mode=TrainingMode(mode_value),
-            ui_language=_telegram_ui_language(context, user),
-        )
-    except ApplicationError as error:
-        await query.edit_message_text(str(error))
-        return
-    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
-    await query.edit_message_text(_tg("session_started", context=context, user=user))
-    await _send_question(update, context, question)
+    await telegram_mode_selected_handler(
+        update,
+        context,
+        service=_service,
+        start_training_session_with_ui_language=_start_training_session_with_ui_language,
+        telegram_ui_language=_telegram_ui_language,
+        tg=_tg,
+        expects_text_answer_for_question=_expects_text_answer_for_question,
+        send_question=_send_question,
+    )
 
 
 async def game_mode_placeholder_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    await query.edit_message_text(
-        _tg("game_mode_coming_soon", context=context, user=user),
-        reply_markup=_start_submenu_keyboard(language=_telegram_ui_language(context, user)),
+    await telegram_game_mode_placeholder_callback_handler(
+        update,
+        context,
+        tg=_tg,
+        start_submenu_keyboard=_start_submenu_keyboard,
+        telegram_ui_language=_telegram_ui_language,
     )
 
 
