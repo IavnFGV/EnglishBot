@@ -457,6 +457,19 @@ def _pop_user_data(
     return user_data.pop(key, default)
 
 
+def _game_state(context: ContextTypes.DEFAULT_TYPE) -> dict:
+    current = _optional_user_data(context, _GAME_STATE_KEY, default={})
+    if isinstance(current, dict):
+        return current
+    created: dict = {}
+    _set_user_data(context, _GAME_STATE_KEY, created)
+    return created
+
+
+def _admin_goal_user_state(context: ContextTypes.DEFAULT_TYPE, key: str, *, default=None):
+    return _optional_user_data(context, key, default=default)
+
+
 def _tg(
     key: str,
     *,
@@ -2035,9 +2048,7 @@ async def makeadmin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     role_repository = _telegram_user_role_repository(context)
     admin_ids = role_repository.list_memberships().get("admin", frozenset())
     requester_is_admin = user.id in admin_ids
-    bootstrap_secret = str(
-        context.application.bot_data.get("admin_bootstrap_secret", "")
-    ).strip()
+    bootstrap_secret = str(_optional_bot_data(context, "admin_bootstrap_secret", default="")).strip()
     secret_is_valid = bool(
         bootstrap_secret and provided_secret and hmac.compare_digest(provided_secret, bootstrap_secret)
     )
@@ -2107,9 +2118,7 @@ async def clear_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     provided_secret = str(context.args[1]).strip()
-    bootstrap_secret = str(
-        context.application.bot_data.get("admin_bootstrap_secret", "")
-    ).strip()
+    bootstrap_secret = str(_optional_bot_data(context, "admin_bootstrap_secret", default="")).strip()
     requester_is_admin = _is_admin(user.id, context)
     secret_is_valid = bool(
         bootstrap_secret and provided_secret and hmac.compare_digest(provided_secret, bootstrap_secret)
@@ -2141,13 +2150,13 @@ async def clear_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    recent_activity = context.application.bot_data.get("recent_assignment_activity_by_user")
+    recent_activity = _optional_bot_data(context, "recent_assignment_activity_by_user")
     if isinstance(recent_activity, dict):
         recent_activity.pop(target_user_id, None)
-    preview_ids = context.application.bot_data.get("word_import_preview_message_ids")
+    preview_ids = _optional_bot_data(context, "word_import_preview_message_ids")
     if isinstance(preview_ids, dict):
         preview_ids.pop(target_user_id, None)
-    cancel_add_words = context.application.bot_data.get("add_words_cancel_use_case")
+    cancel_add_words = _optional_bot_data(context, "add_words_cancel_use_case")
     execute_cancel = getattr(cancel_add_words, "execute", None)
     if callable(execute_cancel):
         try:
@@ -2376,7 +2385,7 @@ def _raw_training_session_by_id(
 ):
     if not isinstance(session_id, str):
         return None
-    store = context.application.bot_data.get("content_store")
+    store = _optional_bot_data(context, "content_store")
     if store is None or not hasattr(store, "get_session_by_id"):
         return None
     return store.get_session_by_id(session_id)
@@ -2399,11 +2408,11 @@ async def words_progress_callback_handler(update: Update, context: ContextTypes.
 
 
 def _clear_self_goal_setup_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    context.user_data.pop("goal_period", None)
-    context.user_data.pop("goal_type", None)
-    context.user_data.pop("goal_target_count", None)
-    if context.user_data.get("words_flow_mode") == _GOAL_AWAITING_TARGET_TEXT:
-        context.user_data.pop("words_flow_mode", None)
+    _pop_user_data(context, "goal_period", default=None)
+    _pop_user_data(context, "goal_type", default=None)
+    _pop_user_data(context, "goal_target_count", default=None)
+    if _optional_user_data(context, "words_flow_mode") == _GOAL_AWAITING_TARGET_TEXT:
+        _pop_user_data(context, "words_flow_mode", default=None)
 
 
 async def goal_setup_disabled_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2472,7 +2481,7 @@ async def admin_goal_source_menu_callback_handler(update: Update, context: Conte
 
 def _admin_goal_manual_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user, page: int) -> InlineKeyboardMarkup:
     items = _content_store(context).list_all_vocabulary()
-    selected = set(context.user_data.get("admin_goal_manual_word_ids", set()))
+    selected = set(_admin_goal_user_state(context, "admin_goal_manual_word_ids", default=set()))
     keyboard, normalized_page = ui_admin_goal_manual_keyboard(
         tg=_tg,
         items=items,
@@ -2480,7 +2489,7 @@ def _admin_goal_manual_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user, pag
         page=page,
         language=_telegram_ui_language(context, user),
     )
-    context.user_data["admin_goal_manual_page"] = normalized_page
+    _set_user_data(context, "admin_goal_manual_page", normalized_page)
     return keyboard
 
 
@@ -2495,7 +2504,7 @@ def _admin_goal_recipients_keyboard(
         viewer_user_id=user.id,
         viewer_username=getattr(user, "username", None),
     )
-    selected = set(context.user_data.get("admin_goal_recipient_user_ids", set()))
+    selected = set(_admin_goal_user_state(context, "admin_goal_recipient_user_ids", default=set()))
     keyboard, normalized_page = ui_admin_goal_recipients_keyboard(
         tg=_tg,
         items=items,
@@ -2503,7 +2512,7 @@ def _admin_goal_recipients_keyboard(
         page=page,
         language=_telegram_ui_language(context, user),
     )
-    context.user_data["admin_goal_recipients_page"] = normalized_page
+    _set_user_data(context, "admin_goal_recipients_page", normalized_page)
     return keyboard
 
 
@@ -2578,18 +2587,18 @@ async def admin_goal_deadline_callback_handler(update: Update, context: ContextT
 
 
 def _create_admin_goals_from_context(*, context: ContextTypes.DEFAULT_TYPE) -> list:
-    source_raw = str(context.user_data.get("admin_goal_source", GoalWordSource.RECENT.value))
+    source_raw = str(_admin_goal_user_state(context, "admin_goal_source", default=GoalWordSource.RECENT.value))
     topic_id = source_raw.split(":", 1)[1] if source_raw.startswith("topic:") else None
     source = GoalWordSource.TOPIC if topic_id else GoalWordSource(source_raw)
     return _assign_goal_to_users_use_case(context).execute(
-        user_ids=list(context.user_data.get("admin_goal_recipient_user_ids", [])),
-        goal_period=GoalPeriod(str(context.user_data.get("admin_goal_period", GoalPeriod.HOMEWORK.value))),
-        goal_type=GoalType(str(context.user_data.get("admin_goal_type", GoalType.WORD_LEVEL_HOMEWORK.value))),
+        user_ids=list(_admin_goal_user_state(context, "admin_goal_recipient_user_ids", default=[])),
+        goal_period=GoalPeriod(str(_admin_goal_user_state(context, "admin_goal_period", default=GoalPeriod.HOMEWORK.value))),
+        goal_type=GoalType(str(_admin_goal_user_state(context, "admin_goal_type", default=GoalType.WORD_LEVEL_HOMEWORK.value))),
         target_count=None,
         source=source,
         topic_id=topic_id,
-        manual_word_ids=list(context.user_data.get("admin_goal_manual_word_ids", [])),
-        deadline_date=context.user_data.get("admin_goal_deadline_date"),
+        manual_word_ids=list(_admin_goal_user_state(context, "admin_goal_manual_word_ids", default=[])),
+        deadline_date=_admin_goal_user_state(context, "admin_goal_deadline_date"),
     )
 
 
@@ -3100,7 +3109,7 @@ async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_
     if query is None:
         return
     await query.answer()
-    game_state = context.user_data.get(_GAME_STATE_KEY, {})
+    game_state = _game_state(context)
     user = update.effective_user
     if user is None:
         return
@@ -3124,7 +3133,7 @@ async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text(str(error))
         return
     streak_days = _content_store(context).update_game_streak(user_id=user.id, played_at=datetime.now(UTC))
-    context.user_data[_GAME_STATE_KEY] = {
+    _set_user_data(context, _GAME_STATE_KEY, {
         "active": True,
         "topic_id": topic_id,
         "lesson_id": lesson_id,
@@ -3132,8 +3141,8 @@ async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_
         "session_stars": 0,
         "correct_answers": 0,
         "streak_days": streak_days,
-    }
-    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
+    })
+    _set_user_data(context, "awaiting_text_answer", _expects_text_answer_for_question(question))
     await query.edit_message_text(
         _tg("game_round_started", context=context, user=user, streak_days=streak_days)
     )
@@ -3146,7 +3155,7 @@ async def game_repeat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if query is None or user is None:
         return
     await query.answer()
-    context.user_data.pop(_GAME_STATE_KEY, None)
+    _pop_user_data(context, _GAME_STATE_KEY, default=None)
     _clear_medium_task_state(context)
     await query.edit_message_text(_tg("start_menu_title", context=context, user=user))
     await send_telegram_view(
@@ -3453,9 +3462,9 @@ async def group_text_observer_handler(
 ) -> None:
     if not _is_group_chat(update):
         return
-    if context.user_data.get("awaiting_text_answer"):
+    if _optional_user_data(context, "awaiting_text_answer"):
         return
-    if context.user_data.get("words_flow_mode") is not None:
+    if _optional_user_data(context, "words_flow_mode") is not None:
         return
     message = update.effective_message
     user = update.effective_user
@@ -3600,7 +3609,7 @@ async def _send_game_feedback(
     outcome: AnswerOutcome,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    game_state = context.user_data.get(_GAME_STATE_KEY, {})
+    game_state = _game_state(context)
     if not isinstance(game_state, dict):
         return
     session_stars = int(game_state.get("session_stars", 0))
@@ -3638,7 +3647,7 @@ async def _finish_game_session(
     user = getattr(message, "from_user", None)
     if user is None:
         return
-    game_state = context.user_data.get(_GAME_STATE_KEY, {})
+    game_state = _game_state(context)
     if not isinstance(game_state, dict):
         return
     session_stars = int(game_state.get("session_stars", 0))
@@ -3659,12 +3668,12 @@ async def _finish_game_session(
         ),
         reply_markup=_game_result_keyboard(language=_telegram_ui_language(context, user)),
     )
-    context.user_data[_GAME_STATE_KEY] = {
+    _set_user_data(context, _GAME_STATE_KEY, {
         "active": False,
         "topic_id": game_state.get("topic_id"),
         "lesson_id": game_state.get("lesson_id"),
         "mode_value": game_state.get("mode_value"),
-    }
+    })
     await _flush_pending_notifications_for_user(context, user_id=user.id)
 
 
@@ -4919,7 +4928,7 @@ def _topic_item_counts(
     context: ContextTypes.DEFAULT_TYPE,
     topic_ids: list[str],
 ) -> dict[str, int]:
-    store = context.application.bot_data.get("content_store")
+    store = _optional_bot_data(context, "content_store")
     if store is None:
         return {}
     counts: dict[str, int] = {}
