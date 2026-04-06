@@ -156,6 +156,23 @@ def test_server_backup_script_keeps_only_latest_five_versions() -> None:
     assert 'if [[ ${#EXISTING_BACKUPS[@]} -gt "${KEEP_BACKUPS}" ]]' in script
 
 
+def test_readme_documents_offline_image_rerank_manifest_flow() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "python -m englishbot.export_image_rerank_manifest" in readme
+    assert "python -m englishbot.rerank_image_manifest" in readme
+    assert "python -m englishbot.apply_image_rerank_decisions" in readme
+
+
+def test_docker_server_setup_documents_offline_image_rerank_flow() -> None:
+    docs = Path("docs/docker-server-setup.md").read_text(encoding="utf-8")
+
+    assert "Offline image rerank loop" in docs
+    assert "python -m englishbot.export_image_rerank_manifest" in docs
+    assert "python -m englishbot.rerank_image_manifest" in docs
+    assert "python -m englishbot.apply_image_rerank_decisions" in docs
+
+
 def test_server_restore_script_restores_backup_and_restarts_bot() -> None:
     script = Path("scripts/restore-runtime-db.sh").read_text(encoding="utf-8")
 

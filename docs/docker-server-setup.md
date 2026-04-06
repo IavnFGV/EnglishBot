@@ -147,6 +147,42 @@ Runtime note:
 - after certificates are present, `englishbot-nginx` switches to HTTPS + HTTP->HTTPS redirect on restart
 - deploy scripts use `--force-recreate` so changes in bind-mounted runtime config such as `shared/.env` are applied reliably
 
+## Offline image rerank loop
+
+If you want to use a stronger local machine for AI-based Pixabay reranking without exposing the production SQLite database over the network, use the manifest/decisions flow:
+
+1. On production, export a manifest JSON:
+
+```bash
+cd /srv/englishbot/app
+docker compose exec -T englishbot python -m englishbot.export_image_rerank_manifest \
+  --output output/image-rerank-manifest.json \
+  --only-missing-images
+```
+
+2. Copy `output/image-rerank-manifest.json` to the stronger machine.
+3. On the stronger machine, run:
+
+```bash
+python -m englishbot.rerank_image_manifest \
+  --input output/image-rerank-manifest.json \
+  --output output/image-rerank-decisions.json \
+  --candidate-count 3 \
+  --ollama-model qwen2.5vl:3b
+```
+
+4. Copy `output/image-rerank-decisions.json` back to production.
+5. On production, apply the selected images:
+
+```bash
+cd /srv/englishbot/app
+docker compose exec -T englishbot python -m englishbot.apply_image_rerank_decisions \
+  --input output/image-rerank-decisions.json \
+  --assets-dir assets
+```
+
+This updates `assets/<topic>/...` and `image_ref` in the runtime DB while keeping the expensive AI reranking step off the production server.
+
 ## Free TLS Certificate
 
 The simplest free option here is Let's Encrypt with an HTTP-01 challenge.
