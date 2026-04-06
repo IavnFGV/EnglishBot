@@ -39,7 +39,7 @@ First extraction steps already in place:
 - [src/englishbot/telegram_editor_images.py](/workspaces/EnglishBot/src/englishbot/telegram_editor_images.py) owns published-image editing and image-review callbacks, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_tts.py](/workspaces/EnglishBot/src/englishbot/telegram_tts.py) owns TTS callbacks and current-question audio sending, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_homework_admin.py](/workspaces/EnglishBot/src/englishbot/telegram_homework_admin.py) owns homework goal/admin callbacks and assignment drill-down screens, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers
+- [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers; dead compatibility leftovers are removed incrementally once they have no in-repo callers
 
 ## Current Status
 

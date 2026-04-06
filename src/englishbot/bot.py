@@ -66,7 +66,6 @@ from englishbot.application.homework_progress_use_cases import (
     GetAdminUserGoalsUseCase,
     GetAdminUsersProgressOverviewUseCase,
     GetLearnerAssignmentLaunchSummaryUseCase,
-    GetGoalWordCandidatesUseCase,
     GoalProgressView,
     GoalWordSource,
     HomeworkProgressUseCase,
@@ -89,7 +88,6 @@ from englishbot.bot_assignments_admin_ui import admin_goal_manual_keyboard as ui
 from englishbot.bot_assignments_admin_ui import admin_goal_recipients_keyboard as ui_admin_goal_recipients_keyboard
 from englishbot.bot_assignments_admin_ui import assignment_goal_detail_keyboard as ui_assignment_goal_detail_keyboard
 from englishbot.bot_assignments_admin_ui import assignment_user_goals_keyboard as ui_assignment_user_goals_keyboard
-from englishbot.bot_assignments_admin_ui import assignment_user_label as ui_assignment_user_label
 from englishbot.bot_assignments_admin_ui import assignment_users_keyboard as ui_assignment_users_keyboard
 from englishbot.bot_assignments_admin_ui import render_assignment_goal_detail_text as ui_render_assignment_goal_detail_text
 from englishbot.bot_assignments_admin_ui import render_assignment_user_detail_text as ui_render_assignment_user_detail_text
@@ -101,7 +99,6 @@ from englishbot.bot_assignments_ui import admin_goal_target_keyboard as ui_admin
 from englishbot.bot_assignments_ui import assign_menu_keyboard as ui_assign_menu_keyboard
 from englishbot.bot_assignments_ui import assignment_kind_label as ui_assignment_kind_label
 from englishbot.bot_assignments_ui import assignment_round_complete_keyboard as ui_assignment_round_complete_keyboard
-from englishbot.bot_assignments_ui import goal_custom_target_keyboard as ui_goal_custom_target_keyboard
 from englishbot.bot_assignments_ui import goal_list_keyboard as ui_goal_list_keyboard
 from englishbot.bot_assignments_ui import goal_setup_keyboard as ui_goal_setup_keyboard
 from englishbot.bot_assignments_ui import goal_source_keyboard as ui_goal_source_keyboard
@@ -109,7 +106,6 @@ from englishbot.bot_assignments_ui import goal_target_keyboard as ui_goal_target
 from englishbot.bot_assignments_ui import render_goal_progress_line as ui_render_goal_progress_line
 from englishbot.bot_assignments_ui import render_progress_text as ui_render_progress_text
 from englishbot.bot_assignments_ui import render_start_menu_text as ui_render_start_menu_text
-from englishbot.bot_assignments_ui import start_assignment_button_label as ui_start_assignment_button_label
 from englishbot.bot_assignments_ui import start_menu_keyboard as ui_start_menu_keyboard
 from englishbot.bot_editor_ui import draft_review_keyboard as ui_draft_review_keyboard
 from englishbot.bot_editor_ui import draft_review_view as ui_draft_review_view
@@ -130,7 +126,6 @@ from englishbot.bot_editor_ui import published_image_topics_keyboard as ui_publi
 from englishbot.bot_editor_ui import published_images_menu_keyboard as ui_published_images_menu_keyboard
 from englishbot.bot_editor_ui import published_word_edit_keyboard as ui_published_word_edit_keyboard
 from englishbot.bot_editor_ui import quick_actions_view as ui_quick_actions_view
-from englishbot.bot_editor_ui import topic_button_label as ui_topic_button_label
 from englishbot.bot_editor_ui import topic_keyboard as ui_topic_keyboard
 from englishbot.bot_editor_ui import topic_selection_view as ui_topic_selection_view
 from englishbot.bot_editor_ui import words_menu_keyboard as ui_words_menu_keyboard
@@ -186,7 +181,6 @@ from englishbot.telegram_question_delivery import (
     edit_training_question_view as delivery_edit_training_question_view,
     medium_task_answer_text as delivery_medium_task_answer_text,
     medium_task_is_complete as delivery_medium_task_is_complete,
-    medium_task_slots_text as delivery_medium_task_slots_text,
     send_question as delivery_send_question,
 )
 from englishbot.telegram_command_menu import (
@@ -1176,10 +1170,6 @@ def _assign_goal_to_users_use_case(context: ContextTypes.DEFAULT_TYPE) -> Assign
     return context.application.bot_data["assign_goal_to_users_use_case"]
 
 
-def _goal_word_candidates_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetGoalWordCandidatesUseCase:
-    return context.application.bot_data["goal_word_candidates_use_case"]
-
-
 def _admin_users_progress_overview_use_case(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GetAdminUsersProgressOverviewUseCase:
@@ -1302,17 +1292,6 @@ def _has_menu_permission(
     permission: str,
 ) -> bool:
     return _menu_access_policy(context).has_permission(user_id, permission)
-
-
-def _is_editor(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    return any(
-        _has_menu_permission(context, user_id=user_id, permission=permission)
-        for permission in (
-            PERMISSION_WORDS_ADD,
-            PERMISSION_WORDS_EDIT,
-            PERMISSION_WORD_IMAGES_EDIT,
-        )
-    )
 
 
 def _is_admin(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -1635,24 +1614,6 @@ def _mode_selection_view(
     )
 
 
-def _game_mode_selection_view(
-    *,
-    text: str,
-    topic_id: str,
-    lesson_id: str | None,
-    context: ContextTypes.DEFAULT_TYPE,
-    user,
-) -> TelegramTextView:
-    return ui_mode_selection_view(
-        text=text,
-        reply_markup=_game_mode_keyboard(
-            topic_id,
-            lesson_id,
-            language=_telegram_ui_language(context, user),
-        ),
-    )
-
-
 def _words_menu_view(
     *,
     text: str,
@@ -1825,10 +1786,6 @@ def _known_assignment_users(
         reverse=True,
     )
     return users
-
-
-def _assignment_user_label(item: _AssignmentUserView) -> str:
-    return ui_assignment_user_label(item)
 
 
 def _render_assignment_user_detail_text(*, context: ContextTypes.DEFAULT_TYPE, user, item: _AssignmentUserView, goals) -> str:
@@ -2206,10 +2163,6 @@ def _goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> In
     return ui_goal_source_keyboard(tg=_tg, language=language)
 
 
-def _goal_custom_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return ui_goal_custom_target_keyboard(tg=_tg, language=language)
-
-
 def _goal_list_keyboard(*, goals, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
     return ui_goal_list_keyboard(
         tg=_tg,
@@ -2298,20 +2251,6 @@ def _assignment_kind_and_goal_id_from_source_tag(
     kind = _assignment_kind_from_value(parts[1] if len(parts) > 1 else None)
     goal_id = parts[2] if len(parts) > 2 and parts[2] else None
     return kind, goal_id
-
-
-def _start_assignment_button_label(
-    kind: AssignmentSessionKind,
-    *,
-    available: bool,
-    language: str,
-) -> str:
-    return ui_start_assignment_button_label(
-        kind,
-        tg=_tg,
-        available=available,
-        language=language,
-    )
 
 
 def _active_session_topic_label(
@@ -3363,21 +3302,6 @@ async def tts_voice_select_handler(update: Update, context: ContextTypes.DEFAULT
     await telegram_tts_voice_select_handler(update, context)
 
 
-async def _send_tts_for_current_question(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    advance_voice: bool,
-) -> None:
-    from englishbot.telegram_tts import send_tts_for_current_question
-
-    await send_tts_for_current_question(
-        update,
-        context,
-        advance_voice=advance_voice,
-    )
-
-
 async def tts_current_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from englishbot.telegram_tts import (
         tts_current_handler as telegram_tts_current_handler,
@@ -3812,9 +3736,6 @@ def _set_tts_recent_request(
 def _medium_task_is_complete(state: _MediumTaskState) -> bool:
     return delivery_medium_task_is_complete(state)
 
-def _medium_task_slots_text(state: _MediumTaskState) -> str:
-    return delivery_medium_task_slots_text(state)
-
 
 def _medium_task_answer_text(state: _MediumTaskState) -> str:
     return delivery_medium_task_answer_text(state)
@@ -4012,14 +3933,6 @@ def _recent_assignment_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> d
     replacement: dict[int, datetime] = {}
     context.application.bot_data["recent_assignment_activity_by_user"] = replacement
     return replacement
-
-
-def _notification_action_button(notification_key: str) -> InlineKeyboardButton:
-    if notification_key.startswith("assignment-completed:"):
-        return InlineKeyboardButton("Open users progress", callback_data="assign:users")
-    if notification_key.startswith("assignment-assigned:homework:"):
-        return InlineKeyboardButton("Start homework", callback_data="start:launch:homework")
-    return InlineKeyboardButton("Open assignments", callback_data="assign:menu")
 
 
 def _notification_action_button_for_user(
@@ -4672,30 +4585,6 @@ async def _send_image_review_step(
     await _delete_tracked_messages(context, tracked_messages=tracked_before)
 
 
-def _candidate_label(index: int) -> str:
-    return chr(ord("A") + index)
-
-
-def _model_label(model_name: str) -> str:
-    if model_name == "sd15":
-        return "SD 1.5"
-    if model_name == "pixabay":
-        return "Pixabay"
-    return model_name.replace("-", " ").title()
-
-
-def _candidate_caption(index: int, candidate) -> str:
-    parts = [f"{_candidate_label(index)}. {_model_label(candidate.model_name)}"]
-    source_id = getattr(candidate, "source_id", None)
-    if source_id:
-        parts.append(f"ID {source_id}")
-    width = getattr(candidate, "width", None)
-    height = getattr(candidate, "height", None)
-    if width and height:
-        parts.append(f"{width}x{height}")
-    return " | ".join(parts)
-
-
 def _build_image_review_candidate_strip(*, flow, item_id: str, candidate_paths: list[Path]) -> Path:
     review_dir = candidate_paths[0].parent
     output_path = review_dir / f"{flow.flow_id}-{item_id}--review-strip-256.jpg"
@@ -4993,10 +4882,6 @@ def _topic_item_counts(
         except Exception:  # noqa: BLE001
             logger.debug("Failed to count topic items for topic_id=%s", topic_id, exc_info=True)
     return counts
-
-
-def _topic_button_label(*, title: str, item_count: int | None) -> str:
-    return ui_topic_button_label(title=title, item_count=item_count)
 
 
 def _active_session_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
