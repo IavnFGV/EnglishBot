@@ -4,7 +4,6 @@ import asyncio
 import html
 import hashlib
 import hmac
-import json
 import logging
 import random
 import tempfile
@@ -15,7 +14,6 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from telegram import (
-    ForceReply,
     InlineKeyboardMarkup,
     InputFile,
     InputMediaPhoto,
@@ -166,9 +164,6 @@ from englishbot.presentation.telegram_views import (
     build_assignment_menu_view,
     build_answer_feedback_view,
     build_current_image_preview_view,
-    build_image_review_attach_photo_view,
-    build_image_review_prompt_edit_view,
-    build_image_review_search_query_edit_view,
     build_image_review_step_view,
     build_start_menu_view,
     build_status_view,
@@ -3198,700 +3193,140 @@ async def published_images_menu_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, topic_id = query.data.split(":")
-    try:
-        content_pack = _content_store(context).get_content_pack(topic_id)
-    except ValueError:
-        await query.edit_message_text(_tg("published_content_not_found", context=context, user=user))
-        return
-    raw_items = content_pack.get("vocabulary_items", [])
-    if not isinstance(raw_items, list) or not raw_items:
-        await query.edit_message_text(_tg("no_vocabulary_items_found", context=context, user=user))
-        return
-    await query.edit_message_text(
-        _tg("choose_word_edit_image", context=context, user=user),
-        reply_markup=_published_image_items_keyboard(
-            topic_id=topic_id,
-            raw_items=raw_items,
-            context=context,
-            user_id=int(user.id),
-            language=_telegram_ui_language(context, user),
-        ),
+    from englishbot.telegram_editor_images import (
+        published_images_menu_handler as editor_published_images_menu_handler,
     )
+
+    await editor_published_images_menu_handler(update, context)
 
 
 async def published_image_item_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    token = query.data.removeprefix("words:edit_published_image:")
-    payload = _consume_callback_token(
-        context=context,
-        user_id=int(user.id),
-        action=_PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
-        token=token,
-        fallback_key="selection",
-        allow_colon_fallback=True,
+    from englishbot.telegram_editor_images import (
+        published_image_item_handler as editor_published_image_item_handler,
     )
-    if payload is None:
-        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-        return
-    topic_id = payload.get("topic_id")
-    item_index = payload.get("item_index")
-    if isinstance(topic_id, str) and isinstance(item_index, int):
-        resolved_topic_id = topic_id
-        resolved_item_index = item_index
-    else:
-        selection = payload.get("selection")
-        if not isinstance(selection, str) or ":" not in selection:
-            await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-            return
-        resolved_topic_id, raw_item_index = selection.rsplit(":", 1)
-        try:
-            resolved_item_index = int(raw_item_index)
-        except ValueError:
-            await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-            return
-    try:
-        content_pack = _content_store(context).get_content_pack(resolved_topic_id)
-    except ValueError:
-        await query.edit_message_text(_tg("published_content_not_found", context=context, user=user))
-        return
-    raw_items = content_pack.get("vocabulary_items", [])
-    if not isinstance(raw_items, list):
-        await query.edit_message_text(_tg("no_vocabulary_items_found", context=context, user=user))
-        return
-    try:
-        selected_item = raw_items[resolved_item_index]
-    except (ValueError, IndexError):
-        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-        return
-    if not isinstance(selected_item, dict):
-        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-        return
-    item_id = str(selected_item.get("id", "")).strip()
-    if not item_id:
-        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-        return
-    review_flow = await asyncio.to_thread(
-        _start_published_word_image_review(context).execute,
-        user_id=user.id,
-        topic_id=resolved_topic_id,
-        item_id=item_id,
-    )
-    await _send_current_published_image_preview(query.message, context, review_flow, user=user)
-    await _send_image_review_step(query.message, context, review_flow, user=user)
-    await _delete_message_if_possible(context, message=query.message)
+
+    await editor_published_image_item_handler(update, context)
 
 
 async def image_review_generate_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    if not _local_image_generation_available(context):
-        await query.edit_message_text(
-            _tg("image_generation_unavailable", context=context, user=user)
-        )
-        return
-    await edit_telegram_text_view(
-        query,
-        _status_view(text=_tg("start_image_generation", context=context, user=user)),
+    from englishbot.telegram_editor_images import (
+        image_review_generate_handler as editor_image_review_generate_handler,
     )
-    await _prepare_and_send_image_review_step(query.message, context, user.id, flow, user=user)
+
+    await editor_image_review_generate_handler(update, context)
 
 
 async def image_review_search_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    current_position = flow.current_index + 1
-    total_items = len(flow.items)
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "pixabay_search_progress",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
+    from englishbot.telegram_editor_images import (
+        image_review_search_handler as editor_image_review_search_handler,
     )
-    try:
-        updated_flow = await asyncio.to_thread(
-            _search_image_review_candidates(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-            query=flow.current_item.search_query,
-        )
-    except ValueError as error:
-        await query.edit_message_text(str(error))
-        return
-    except Exception:  # noqa: BLE001
-        logger.exception("Image review Pixabay search callback failed for user=%s", user.id)
-        await edit_telegram_text_view(
-            query,
-            _status_view(text=_tg("searching_pixabay_failed", context=context, user=user)),
-        )
-        return
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "pixabay_candidates_ready",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
-    )
-    await _send_image_review_step(query.message, context, updated_flow, user=user)
+
+    await editor_image_review_search_handler(update, context)
 
 
 async def image_review_next_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    current_position = flow.current_index + 1
-    total_items = len(flow.items)
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "loading_next_pixabay",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
+    from englishbot.telegram_editor_images import (
+        image_review_next_handler as editor_image_review_next_handler,
     )
-    try:
-        updated_flow = await asyncio.to_thread(
-            _load_next_image_review_candidates(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-        )
-    except ValueError as error:
-        await query.edit_message_text(str(error))
-        return
-    except Exception:  # noqa: BLE001
-        logger.exception("Image review next Pixabay page failed for user=%s", user.id)
-        await edit_telegram_text_view(
-            query,
-            _status_view(text=_tg("searching_pixabay_failed", context=context, user=user)),
-        )
-        return
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "pixabay_candidates_ready",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
-    )
-    await _send_image_review_step(query.message, context, updated_flow, user=user)
+
+    await editor_image_review_next_handler(update, context)
 
 
 async def image_review_previous_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    current_position = flow.current_index + 1
-    total_items = len(flow.items)
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "loading_previous_pixabay",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
+    from englishbot.telegram_editor_images import (
+        image_review_previous_handler as editor_image_review_previous_handler,
     )
-    try:
-        updated_flow = await asyncio.to_thread(
-            _load_previous_image_review_candidates(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-        )
-    except ValueError as error:
-        await query.edit_message_text(str(error))
-        return
-    except Exception:  # noqa: BLE001
-        logger.exception("Image review previous Pixabay page failed for user=%s", user.id)
-        await edit_telegram_text_view(
-            query,
-            _status_view(text=_tg("searching_pixabay_failed", context=context, user=user)),
-        )
-        return
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "pixabay_candidates_ready",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
-    )
-    await _send_image_review_step(query.message, context, updated_flow, user=user)
+
+    await editor_image_review_previous_handler(update, context)
 
 
 async def image_review_pick_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id, candidate_index = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    updated_flow = await asyncio.to_thread(
-        _select_image_review_candidate(context).execute,
-        user_id=user.id,
-        flow_id=flow_id,
-        item_id=flow.current_item.item_id,
-        candidate_index=int(candidate_index),
+    from englishbot.telegram_editor_images import (
+        image_review_pick_handler as editor_image_review_pick_handler,
     )
-    if updated_flow.completed:
-        if _image_review_origin(updated_flow) == "published_word_edit":
-            registry = _telegram_flow_messages(context)
-            tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-            await _delete_tracked_messages(
-                context,
-                tracked_messages=_tracked_messages_except_source_message(
-                    tracked_messages=tracked_messages,
-                    message=query.message,
-                ),
-            )
-            await asyncio.to_thread(
-                _publish_image_review(context).execute,
-                user_id=user.id,
-                flow_id=flow_id,
-                output_path=None,
-            )
-            _reload_training_service(context)
-            topic = updated_flow.content_pack.get("topic", {})
-            topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-            raw_items = updated_flow.content_pack.get("vocabulary_items", [])
-            await query.edit_message_text(
-                "\n".join(
-                    (
-                        _tg("image_selected", context=context, user=user),
-                        _tg("choose_another_word_to_edit", context=context, user=user),
-                    )
-                ),
-                reply_markup=_published_image_items_keyboard(
-                    topic_id=topic_id,
-                    raw_items=raw_items if isinstance(raw_items, list) else [],
-                    language=_telegram_ui_language(context, user),
-                ),
-            )
-            if registry is not None:
-                registry.clear(flow_id=flow_id)
-            return
-        output_path = _resolve_image_review_publish_output_path(updated_flow)
-        topic = updated_flow.content_pack.get("topic", {})
-        topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-        registry = _telegram_flow_messages(context)
-        tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-        await _delete_tracked_messages(
-            context,
-            tracked_messages=_tracked_messages_except_source_message(
-                tracked_messages=tracked_messages,
-                message=query.message,
-            ),
-        )
-        await asyncio.to_thread(
-            _publish_image_review(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-            output_path=output_path,
-        )
-        _reload_training_service(context)
-        _clear_active_word_flow(user.id, context)
-        await query.edit_message_text(
-            _tg(
-                "image_review_completed_published",
-                context=context,
-                user=user,
-                destination=_publish_destination_text(context, output_path=output_path, topic_id=topic_id),
-            )
-        )
-        if registry is not None:
-            registry.clear(flow_id=flow_id)
-        return
-    await query.edit_message_text(_tg("image_selected", context=context, user=user))
-    await _send_image_review_step(query.message, context, updated_flow, user=user)
+
+    await editor_image_review_pick_handler(update, context)
 
 
 async def image_review_skip_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    updated_flow = await asyncio.to_thread(
-        _skip_image_review_item(context).execute,
-        user_id=user.id,
-        flow_id=flow_id,
-        item_id=flow.current_item.item_id,
+    from englishbot.telegram_editor_images import (
+        image_review_skip_handler as editor_image_review_skip_handler,
     )
-    if updated_flow.completed:
-        if _image_review_origin(updated_flow) == "published_word_edit":
-            registry = _telegram_flow_messages(context)
-            tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-            await _delete_tracked_messages(
-                context,
-                tracked_messages=_tracked_messages_except_source_message(
-                    tracked_messages=tracked_messages,
-                    message=query.message,
-                ),
-            )
-            _cancel_image_review(context).execute(user_id=user.id)
-            topic = updated_flow.content_pack.get("topic", {})
-            topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-            raw_items = updated_flow.content_pack.get("vocabulary_items", [])
-            await query.edit_message_text(
-                _tg("no_changes_choose_another_word", context=context, user=user),
-                reply_markup=_published_image_items_keyboard(
-                    topic_id=topic_id,
-                    raw_items=raw_items if isinstance(raw_items, list) else [],
-                    language=_telegram_ui_language(context, user),
-                ),
-            )
-            if registry is not None:
-                registry.clear(flow_id=flow_id)
-            return
-        output_path = _resolve_image_review_publish_output_path(updated_flow)
-        topic = updated_flow.content_pack.get("topic", {})
-        topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-        registry = _telegram_flow_messages(context)
-        tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-        await _delete_tracked_messages(
-            context,
-            tracked_messages=_tracked_messages_except_source_message(
-                tracked_messages=tracked_messages,
-                message=query.message,
-            ),
-        )
-        await asyncio.to_thread(
-            _publish_image_review(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-            output_path=output_path,
-        )
-        _reload_training_service(context)
-        _clear_active_word_flow(user.id, context)
-        await query.edit_message_text(
-            _tg(
-                "image_review_completed_published",
-                context=context,
-                user=user,
-                destination=_publish_destination_text(context, output_path=output_path, topic_id=topic_id),
-            )
-        )
-        if registry is not None:
-            registry.clear(flow_id=flow_id)
-        return
-    await query.edit_message_text(_tg("image_skipped", context=context, user=user))
-    await _send_image_review_step(query.message, context, updated_flow, user=user)
+
+    await editor_image_review_skip_handler(update, context)
 
 
 async def image_review_edit_prompt_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if (
-        flow is None
-        or flow.flow_id != flow_id
-        or flow.current_item is None
-    ):
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_PROMPT_TEXT
-    context.user_data["image_review_flow_id"] = flow_id
-    context.user_data["image_review_item_id"] = flow.current_item.item_id
-    instruction_view, current_prompt_view = build_image_review_prompt_edit_view(
-        instruction_text=_tg("send_new_full_prompt", context=context, user=user),
-        current_prompt_text=_tg(
-            "current_prompt",
-            context=context,
-            user=user,
-            prompt=flow.current_item.prompt,
-        ),
-        instruction_markup=ForceReply(selective=True),
+    from englishbot.telegram_editor_images import (
+        image_review_edit_prompt_handler as editor_image_review_edit_prompt_handler,
     )
-    prompt_message = await send_telegram_view(query.message, instruction_view)
-    _remember_expected_user_input(
-        context,
-        chat_id=_message_chat_id(prompt_message),
-        message_id=getattr(prompt_message, "message_id", None),
-    )
-    await send_telegram_view(query.message, current_prompt_view)
+
+    await editor_image_review_edit_prompt_handler(update, context)
 
 
 async def image_review_edit_search_query_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT
-    context.user_data["image_review_flow_id"] = flow_id
-    context.user_data["image_review_item_id"] = flow.current_item.item_id
-    current_query = flow.current_item.search_query or flow.current_item.english_word
-    instruction_view, current_query_view = build_image_review_search_query_edit_view(
-        instruction_text=_tg("send_new_search_query", context=context, user=user),
-        current_query_text=_tg(
-            "current_query",
-            context=context,
-            user=user,
-            query=current_query,
-        ),
-        instruction_markup=ForceReply(selective=True),
+    from englishbot.telegram_editor_images import (
+        image_review_edit_search_query_handler as editor_image_review_edit_search_query_handler,
     )
-    prompt_message = await send_telegram_view(query.message, instruction_view)
-    _remember_expected_user_input(
-        context,
-        chat_id=_message_chat_id(prompt_message),
-        message_id=getattr(prompt_message, "message_id", None),
-    )
-    await send_telegram_view(query.message, current_query_view)
+
+    await editor_image_review_edit_search_query_handler(update, context)
 
 
 async def image_review_show_json_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    current_item_id = flow.current_item.item_id
-    raw_items = flow.content_pack.get("vocabulary_items", [])
-    item_payload: dict[str, object] | None = None
-    if isinstance(raw_items, list):
-        for raw_item in raw_items:
-            if not isinstance(raw_item, dict):
-                continue
-            if str(raw_item.get("id", "")).strip() != current_item_id:
-                continue
-            item_payload = raw_item
-            break
-    if item_payload is None:
-        item_payload = {
-            "id": flow.current_item.item_id,
-            "english_word": flow.current_item.english_word,
-            "translation": flow.current_item.translation,
-            "image_prompt": flow.current_item.prompt,
-            "pixabay_search_query": flow.current_item.search_query,
-        }
-    payload = json.dumps(item_payload, ensure_ascii=False, indent=2)
-    if len(payload) > 3500:
-        payload = payload[:3400].rstrip() + "\n..."
-    await query.message.reply_text(f"```json\n{payload}\n```", parse_mode="Markdown")
+    from englishbot.telegram_editor_images import (
+        image_review_show_json_handler as editor_image_review_show_json_handler,
+    )
+
+    await editor_image_review_show_json_handler(update, context)
 
 
 async def image_review_attach_photo_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if (
-        flow is None
-        or flow.flow_id != flow_id
-        or flow.current_item is None
-    ):
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_PHOTO
-    context.user_data["image_review_flow_id"] = flow_id
-    context.user_data["image_review_item_id"] = flow.current_item.item_id
-    await send_telegram_view(
-        query.message,
-        build_image_review_attach_photo_view(
-            instruction_text=_tg("attach_one_photo", context=context, user=user),
-            instruction_markup=ForceReply(selective=True),
-        ),
+    from englishbot.telegram_editor_images import (
+        image_review_attach_photo_handler as editor_image_review_attach_photo_handler,
     )
+
+    await editor_image_review_attach_photo_handler(update, context)
 
 
 async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if context.user_data.get("words_flow_mode") != _IMAGE_REVIEW_AWAITING_PHOTO:
-        return
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or user is None or not getattr(message, "photo", None):
-        return
-    flow_id = context.user_data.get("image_review_flow_id")
-    item_id = context.user_data.get("image_review_item_id")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if (
-        flow is None
-        or flow.flow_id != flow_id
-        or flow.current_item is None
-        or flow.current_item.item_id != item_id
-    ):
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("image_review_flow_id", None)
-        context.user_data.pop("image_review_item_id", None)
-        await message.reply_text(_tg("image_review_task_inactive", context=context, user=user))
-        return
-    context.user_data.pop("words_flow_mode", None)
-    context.user_data.pop("image_review_flow_id", None)
-    context.user_data.pop("image_review_item_id", None)
-    status_message = await message.reply_text(_tg("saving_uploaded_photo", context=context, user=user))
-    photo = message.photo[-1]
-    telegram_file = await photo.get_file()
-    topic = flow.content_pack.get("topic", {})
-    topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-    output_path = (
-        _image_review_assets_dir(context)
-        / topic_id
-        / "review"
-        / f"{item_id}--user-upload.jpg"
+    from englishbot.telegram_editor_images import (
+        image_review_photo_handler as editor_image_review_photo_handler,
     )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    await telegram_file.download_to_drive(custom_path=str(output_path))
-    image_ref = output_path.as_posix()
-    updated_flow = await asyncio.to_thread(
-        _attach_uploaded_image(context).execute,
-        user_id=user.id,
-        flow_id=flow_id,
-        item_id=item_id,
-        image_ref=image_ref,
-        output_path=output_path,
-    )
-    await status_message.edit_text(
-        _status_view(text=_tg("uploaded_photo_attached", context=context, user=user)).text
-    )
-    if updated_flow.completed:
-        output_path = _resolve_image_review_publish_output_path(updated_flow)
-        topic = updated_flow.content_pack.get("topic", {})
-        topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-        registry = _telegram_flow_messages(context)
-        tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-        await _delete_tracked_messages(context, tracked_messages=tracked_messages)
-        await asyncio.to_thread(
-            _publish_image_review(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-            output_path=output_path,
-        )
-        _reload_training_service(context)
-        _clear_active_word_flow(user.id, context)
-        await message.reply_text(
-            _tg(
-                "image_review_completed_published",
-                context=context,
-                user=user,
-                destination=_publish_destination_text(context, output_path=output_path, topic_id=topic_id),
-            )
-        )
-        return
-    await _send_image_review_step(message, context, updated_flow)
+
+    await editor_image_review_photo_handler(update, context)
 
 
 async def continue_session_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

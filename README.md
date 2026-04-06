@@ -36,6 +36,7 @@ First extraction steps already in place:
 - [src/englishbot/telegram_question_delivery.py](/workspaces/EnglishBot/src/englishbot/telegram_question_delivery.py) owns question rendering and delivery helpers for medium-mode letter UI and question message sending
 - [src/englishbot/telegram_answer_processing.py](/workspaces/EnglishBot/src/englishbot/telegram_answer_processing.py) owns learner answer processing and feedback delivery orchestration, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_editor_add_words.py](/workspaces/EnglishBot/src/englishbot/telegram_editor_add_words.py) owns the editor add-words flow, draft review actions, and published word text editing, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram_editor_images.py](/workspaces/EnglishBot/src/englishbot/telegram_editor_images.py) owns published-image editing and image-review callbacks, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers
 
 ## Current Status
