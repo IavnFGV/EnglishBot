@@ -374,7 +374,25 @@ def _telegram_ui_language(context: ContextTypes.DEFAULT_TYPE | None, user=None) 
 
 
 def _runtime_version_info(context: ContextTypes.DEFAULT_TYPE) -> RuntimeVersionInfo:
-    return context.application.bot_data["runtime_version_info"]
+    return _required_bot_data(context, "runtime_version_info")
+
+
+def _required_bot_data(context: ContextTypes.DEFAULT_TYPE, key: str):
+    return context.application.bot_data[key]
+
+
+def _optional_bot_data(
+    context: ContextTypes.DEFAULT_TYPE | None,
+    key: str,
+    *,
+    default=None,
+):
+    if context is None or getattr(context, "application", None) is None:
+        return default
+    bot_data = getattr(context.application, "bot_data", None)
+    if not isinstance(bot_data, dict):
+        return default
+    return bot_data.get(key, default)
 
 
 def _tg(
@@ -404,15 +422,15 @@ def build_application(
 
 
 def _service(context: ContextTypes.DEFAULT_TYPE) -> TrainingFacade:
-    return context.application.bot_data["training_service"]
+    return _required_bot_data(context, "training_service")
 
 
 def _content_store(context: ContextTypes.DEFAULT_TYPE) -> SQLiteContentStore:
-    return context.application.bot_data["content_store"]
+    return _required_bot_data(context, "content_store")
 
 
 def _active_training_session(context: ContextTypes.DEFAULT_TYPE, *, user_id: int):
-    store = context.application.bot_data.get("content_store")
+    store = _optional_bot_data(context, "content_store")
     if store is None or not hasattr(store, "get_active_session_by_user"):
         return None
     return store.get_active_session_by_user(user_id)
@@ -450,9 +468,7 @@ def resolve_existing_audio_path(audio_ref: str):
 
 
 def _settings_or_none(context: ContextTypes.DEFAULT_TYPE):
-    if context is None or getattr(context, "application", None) is None:
-        return None
-    return context.application.bot_data.get("settings")
+    return _optional_bot_data(context, "settings")
 
 
 def _tts_service_enabled(context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -500,7 +516,7 @@ def _tts_voice_label(context: ContextTypes.DEFAULT_TYPE, *, user, voice_name: st
 def _tts_client_or_none(context: ContextTypes.DEFAULT_TYPE) -> object | None:
     if not _tts_service_enabled(context):
         return None
-    cached_client = context.application.bot_data.get("tts_service_client")
+    cached_client = _optional_bot_data(context, "tts_service_client")
     if cached_client is not None:
         return cached_client
     settings = _settings_or_none(context)
@@ -525,11 +541,11 @@ def _extract_sent_voice_file_id(sent_message) -> str | None:
 
 
 def _telegram_user_login_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserLoginRepository:
-    return context.application.bot_data["telegram_user_login_repository"]
+    return _required_bot_data(context, "telegram_user_login_repository")
 
 
 def _telegram_user_role_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserRoleRepository:
-    return context.application.bot_data["telegram_user_role_repository"]
+    return _required_bot_data(context, "telegram_user_role_repository")
 
 
 def _telegram_ui_language_for_user_id(context: ContextTypes.DEFAULT_TYPE, *, user_id: int) -> str:
@@ -549,61 +565,61 @@ def _reload_training_service(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def _start_add_words_flow(context: ContextTypes.DEFAULT_TYPE) -> StartAddWordsFlowUseCase:
-    return context.application.bot_data["add_words_start_use_case"]
+    return _required_bot_data(context, "add_words_start_use_case")
 
 
 def _get_active_add_words_flow(context: ContextTypes.DEFAULT_TYPE) -> GetActiveAddWordsFlowUseCase:
-    return context.application.bot_data["add_words_get_active_use_case"]
+    return _required_bot_data(context, "add_words_get_active_use_case")
 
 
 def _apply_add_words_edit(context: ContextTypes.DEFAULT_TYPE) -> ApplyAddWordsEditUseCase:
-    return context.application.bot_data["add_words_apply_edit_use_case"]
+    return _required_bot_data(context, "add_words_apply_edit_use_case")
 
 
 def _regenerate_add_words_draft(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> RegenerateAddWordsDraftUseCase:
-    return context.application.bot_data["add_words_regenerate_use_case"]
+    return _required_bot_data(context, "add_words_regenerate_use_case")
 
 
 def _approve_add_words_draft(context: ContextTypes.DEFAULT_TYPE) -> ApproveAddWordsDraftUseCase:
-    return context.application.bot_data["add_words_approve_use_case"]
+    return _required_bot_data(context, "add_words_approve_use_case")
 
 
 def _save_approved_add_words_draft(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> SaveApprovedAddWordsDraftUseCase:
-    return context.application.bot_data["add_words_save_approved_draft_use_case"]
+    return _required_bot_data(context, "add_words_save_approved_draft_use_case")
 
 
 def _generate_add_words_image_prompts(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GenerateAddWordsImagePromptsUseCase:
-    return context.application.bot_data["add_words_generate_image_prompts_use_case"]
+    return _required_bot_data(context, "add_words_generate_image_prompts_use_case")
 
 
 def _mark_add_words_image_review_started(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> MarkAddWordsImageReviewStartedUseCase:
-    return context.application.bot_data["add_words_mark_image_review_started_use_case"]
+    return _required_bot_data(context, "add_words_mark_image_review_started_use_case")
 
 
 def _cancel_add_words_flow(context: ContextTypes.DEFAULT_TYPE) -> CancelAddWordsFlowUseCase:
-    return context.application.bot_data["add_words_cancel_use_case"]
+    return _required_bot_data(context, "add_words_cancel_use_case")
 
 
 def _start_image_review(context: ContextTypes.DEFAULT_TYPE) -> StartImageReviewUseCase:
-    return context.application.bot_data["image_review_start_use_case"]
+    return _required_bot_data(context, "image_review_start_use_case")
 
 
 def _homework_progress_use_case(context: ContextTypes.DEFAULT_TYPE) -> HomeworkProgressUseCase:
-    return context.application.bot_data["homework_progress_use_case"]
+    return _required_bot_data(context, "homework_progress_use_case")
 
 
 def _learner_assignment_launch_summary_use_case(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GetLearnerAssignmentLaunchSummaryUseCase:
-    return context.application.bot_data["learner_assignment_launch_summary_use_case"]
+    return _required_bot_data(context, "learner_assignment_launch_summary_use_case")
 
 
 def _list_goal_history(
@@ -612,7 +628,7 @@ def _list_goal_history(
     user_id: int,
     include_history: bool,
 ) -> list[GoalProgressView]:
-    use_case = context.application.bot_data.get("list_user_goals_use_case")
+    use_case = _optional_bot_data(context, "list_user_goals_use_case")
     if use_case is None:
         return []
     return list(use_case.execute(user_id=user_id, include_history=include_history))
@@ -1173,113 +1189,109 @@ def _assign_goal_to_users_use_case(context: ContextTypes.DEFAULT_TYPE) -> Assign
 def _admin_users_progress_overview_use_case(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GetAdminUsersProgressOverviewUseCase:
-    return context.application.bot_data["admin_users_progress_overview_use_case"]
+    return _required_bot_data(context, "admin_users_progress_overview_use_case")
 
 
 def _admin_user_goals_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetAdminUserGoalsUseCase:
-    return context.application.bot_data["admin_user_goals_use_case"]
+    return _required_bot_data(context, "admin_user_goals_use_case")
 
 
 def _admin_goal_detail_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetAdminGoalDetailUseCase:
-    return context.application.bot_data["admin_goal_detail_use_case"]
+    return _required_bot_data(context, "admin_goal_detail_use_case")
 
 
 def _start_published_word_image_review(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> StartPublishedWordImageEditUseCase:
-    return context.application.bot_data["image_review_start_published_word_use_case"]
+    return _required_bot_data(context, "image_review_start_published_word_use_case")
 
 
 def _get_active_image_review(context: ContextTypes.DEFAULT_TYPE) -> GetActiveImageReviewUseCase:
-    return context.application.bot_data["image_review_get_active_use_case"]
+    return _required_bot_data(context, "image_review_get_active_use_case")
 
 
 def _cancel_image_review(context: ContextTypes.DEFAULT_TYPE) -> CancelImageReviewFlowUseCase:
-    return context.application.bot_data["image_review_cancel_use_case"]
+    return _required_bot_data(context, "image_review_cancel_use_case")
 
 
 def _generate_image_review_candidates(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GenerateImageReviewCandidatesUseCase:
-    return context.application.bot_data["image_review_generate_use_case"]
+    return _required_bot_data(context, "image_review_generate_use_case")
 
 
 def _search_image_review_candidates(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> SearchImageReviewCandidatesUseCase:
-    return context.application.bot_data["image_review_search_use_case"]
+    return _required_bot_data(context, "image_review_search_use_case")
 
 
 def _load_next_image_review_candidates(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> LoadNextImageReviewCandidatesUseCase:
-    return context.application.bot_data["image_review_next_use_case"]
+    return _required_bot_data(context, "image_review_next_use_case")
 
 
 def _load_previous_image_review_candidates(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> LoadPreviousImageReviewCandidatesUseCase:
-    return context.application.bot_data["image_review_previous_use_case"]
+    return _required_bot_data(context, "image_review_previous_use_case")
 
 
 def _select_image_review_candidate(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> SelectImageCandidateUseCase:
-    return context.application.bot_data["image_review_select_use_case"]
+    return _required_bot_data(context, "image_review_select_use_case")
 
 
 def _skip_image_review_item(context: ContextTypes.DEFAULT_TYPE) -> SkipImageReviewItemUseCase:
-    return context.application.bot_data["image_review_skip_use_case"]
+    return _required_bot_data(context, "image_review_skip_use_case")
 
 
 def _publish_image_review(context: ContextTypes.DEFAULT_TYPE) -> PublishImageReviewUseCase:
-    return context.application.bot_data["image_review_publish_use_case"]
+    return _required_bot_data(context, "image_review_publish_use_case")
 
 
 def _update_image_review_prompt(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> UpdateImageReviewPromptUseCase:
-    return context.application.bot_data["image_review_update_prompt_use_case"]
+    return _required_bot_data(context, "image_review_update_prompt_use_case")
 
 
 def _attach_uploaded_image(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> AttachUploadedImageUseCase:
-    return context.application.bot_data["image_review_attach_uploaded_image_use_case"]
+    return _required_bot_data(context, "image_review_attach_uploaded_image_use_case")
 
 
 def _generate_content_pack_images(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GenerateContentPackImagesUseCase:
-    return context.application.bot_data["content_pack_generate_images_use_case"]
+    return _required_bot_data(context, "content_pack_generate_images_use_case")
 
 
 def _list_editable_topics(context: ContextTypes.DEFAULT_TYPE) -> ListEditableTopicsUseCase:
-    return context.application.bot_data["list_editable_topics_use_case"]
+    return _required_bot_data(context, "list_editable_topics_use_case")
 
 
 def _list_editable_words(context: ContextTypes.DEFAULT_TYPE) -> ListEditableWordsUseCase:
-    return context.application.bot_data["list_editable_words_use_case"]
+    return _required_bot_data(context, "list_editable_words_use_case")
 
 
 def _update_editable_word(context: ContextTypes.DEFAULT_TYPE) -> UpdateEditableWordUseCase:
-    return context.application.bot_data["update_editable_word_use_case"]
+    return _required_bot_data(context, "update_editable_word_use_case")
 
 
 def _image_review_assets_dir(context: ContextTypes.DEFAULT_TYPE) -> Path:
-    return context.application.bot_data["image_review_assets_dir"]
+    return _required_bot_data(context, "image_review_assets_dir")
 
 
 def _telegram_flow_messages(context: ContextTypes.DEFAULT_TYPE):
-    application = getattr(context, "application", None)
-    bot_data = getattr(application, "bot_data", None)
-    if not isinstance(bot_data, dict):
-        return None
-    return bot_data.get("telegram_flow_message_repository")
+    return _optional_bot_data(context, "telegram_flow_message_repository")
 
 
 def _menu_access_policy(context: ContextTypes.DEFAULT_TYPE) -> TelegramMenuAccessPolicy:
-    configured_policy = context.application.bot_data.get("telegram_menu_access_policy")
+    configured_policy = _optional_bot_data(context, "telegram_menu_access_policy")
     if isinstance(configured_policy, TelegramMenuAccessPolicy):
         return configured_policy
     return TelegramMenuAccessPolicy.from_bot_data(context.application.bot_data)
@@ -1320,7 +1332,7 @@ def _visible_command_rows(
 
 
 def _preview_message_ids(context: ContextTypes.DEFAULT_TYPE) -> dict[int, int]:
-    return context.application.bot_data["word_import_preview_message_ids"]
+    return _required_bot_data(context, "word_import_preview_message_ids")
 
 
 def _admin_web_app_url(
@@ -1331,7 +1343,7 @@ def _admin_web_app_url(
     user_id = getattr(user, "id", None)
     if user_id is None or not _is_admin(user_id, context):
         return None
-    configured_url = context.application.bot_data.get("web_app_base_url")
+    configured_url = _optional_bot_data(context, "web_app_base_url")
     if not isinstance(configured_url, str):
         return None
     normalized = configured_url.strip().rstrip("/")
@@ -1347,7 +1359,7 @@ def _assignment_guide_web_app_url(
     *,
     user,
 ) -> str | None:
-    configured_url = context.application.bot_data.get("web_app_base_url")
+    configured_url = _optional_bot_data(context, "web_app_base_url")
     if not isinstance(configured_url, str):
         return None
     normalized = configured_url.strip().rstrip("/")
@@ -1365,10 +1377,10 @@ class _EditorAICapabilities:
 
 
 def _smart_parsing_available(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    override = context.application.bot_data.get("smart_parsing_available")
+    override = _optional_bot_data(context, "smart_parsing_available")
     if isinstance(override, bool):
         return override
-    gateway = context.application.bot_data.get("smart_parsing_gateway")
+    gateway = _optional_bot_data(context, "smart_parsing_gateway")
     if gateway is None:
         return True
     try:
@@ -1379,10 +1391,10 @@ def _smart_parsing_available(context: ContextTypes.DEFAULT_TYPE) -> bool:
 
 
 def _local_image_generation_available(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    override = context.application.bot_data.get("local_image_generation_available")
+    override = _optional_bot_data(context, "local_image_generation_available")
     if isinstance(override, bool):
         return override
-    gateway = context.application.bot_data.get("image_generation_gateway")
+    gateway = _optional_bot_data(context, "image_generation_gateway")
     if gateway is None:
         return True
     try:
