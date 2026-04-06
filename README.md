@@ -47,6 +47,40 @@ First extraction steps already in place:
 - remaining startup and assignment helper accessors are also being moved onto the same shared bot-state helpers so the leftover facade follows one consistent runtime-access style
 - by this stage, direct raw `bot_data` access outside the shared accessor helpers is being eliminated, so the remaining facade is easier to read as a teaching example
 
+Checkpoint after this cleanup wave:
+
+- `src/englishbot/bot.py` is down to roughly `5k` lines instead of the earlier `7.5k+`
+- direct raw `context.application.bot_data[...]` access outside the shared accessor helpers has been eliminated
+- direct raw `context.user_data[...]` access has been reduced to the shared helper layer and a few intentionally local cases
+- the repo currently passes the full test suite: `520 passed, 3 skipped`
+
+## Next Wave Candidates
+
+If cleanup continues after this point, the next steps should be chosen by responsibility, not by line count.
+
+Best candidates for the next wave:
+
+- image-review support helpers still clustered in `src/englishbot/bot.py`
+  - examples: tracked-message cleanup, image-review preview sending, review-step rendering
+  - reason: this is optional editor tooling, not learner-core behavior
+
+- admin utility handlers still in `src/englishbot/bot.py`
+  - examples: `/makeadmin`, `/clearuser`
+  - reason: these are operational/admin flows with different reasons to change than learner UX
+
+- assignment progress rendering helpers still in `src/englishbot/bot.py`
+  - examples: progress snapshot building, progress image sending, round-progress text
+  - reason: this is a coherent subdomain and could become one teachable module
+
+- shared Telegram flow-message helpers
+  - examples: tracked flow message registration, deletion, replacement
+  - reason: this is adapter infrastructure used by multiple optional flows and can be taught as one reusable Telegram utility layer
+
+What should not be split just for appearance:
+
+- learner entry, question delivery, and answer flow, as long as they still read as one coherent study session story
+- single-theme keyboard/view helper blocks that are easier to explain together than apart
+
 ## Current Status
 
 The current project is already beyond the original narrow training MVP.
