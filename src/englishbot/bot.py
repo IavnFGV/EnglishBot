@@ -129,7 +129,6 @@ from englishbot.image_generation.paths import (
 from englishbot.image_generation.paths import (
     resolve_existing_audio_path as _resolve_existing_audio_path_impl,
 )
-from englishbot.image_generation.previews import ensure_numbered_candidate_strip
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.infrastructure.sqlite_store import (
     SQLiteTelegramUserLoginRepository,
@@ -140,8 +139,6 @@ from englishbot.presentation.telegram_views import (
     TelegramTextView,
     build_assignment_menu_view,
     build_answer_feedback_view,
-    build_current_image_preview_view,
-    build_image_review_step_view,
     build_start_menu_view,
     build_status_view,
     edit_telegram_text_view,
@@ -3875,61 +3872,16 @@ async def _prepare_and_send_image_review_step(
     *,
     user=None,
 ) -> None:
-    resolved_user = user or getattr(message, "from_user", None)
-    current_item = flow.current_item
-    if current_item is None:
-        await message.reply_text(
-            _tg(
-                "image_review_completed",
-                context=context,
-                user=resolved_user,
-            )
-        )
-        return
-    total_items = len(flow.items)
-    current_position = flow.current_index + 1
-    status_message = await message.reply_text(
-        _tg(
-            "local_candidates_generating",
-            context=context,
-            user=resolved_user,
-            current=current_position,
-            total=total_items,
-        )
+    from englishbot.telegram_image_review_support import (
+        prepare_and_send_image_review_step,
     )
-    stop_event = asyncio.Event()
-    heartbeat_task = asyncio.create_task(
-            _run_status_heartbeat(
-                status_message,
-                stage=f"Generating local image candidates {current_position}/{total_items}",
-                stop_event=stop_event,
-            )
-        )
-    try:
-        prepared_flow = await asyncio.to_thread(
-            _generate_image_review_candidates(context).execute,
-            user_id=user_id,
-            flow_id=flow.flow_id,
-        )
-    finally:
-        stop_event.set()
-        await heartbeat_task
-    await status_message.edit_text(
-        _status_view(
-            text=_tg(
-                "local_candidates_ready",
-                context=context,
-                user=resolved_user,
-                current=current_position,
-                total=total_items,
-            )
-        ).text
-    )
-    await _send_image_review_step(
+
+    await prepare_and_send_image_review_step(
         message,
         context,
-        prepared_flow,
-        user=resolved_user,
+        user_id,
+        flow,
+        user=user,
     )
 
 
@@ -3940,54 +3892,15 @@ async def _send_current_published_image_preview(
     *,
     user=None,
 ) -> None:
-    current_item = flow.current_item
-    if current_item is None:
-        return
-    registry = _telegram_flow_messages(context)
-    if registry is not None:
-        await _delete_tracked_messages(
-            context,
-            tracked_messages=registry.list(
-                flow_id=flow.flow_id,
-                tag=_IMAGE_REVIEW_CONTEXT_TAG,
-            ),
-        )
-    fallback_chat_id = _message_chat_id(message)
-    raw_items = flow.content_pack.get("vocabulary_items", [])
-    if not isinstance(raw_items, list):
-        return
-    image_ref: str | None = None
-    for raw_item in raw_items:
-        if not isinstance(raw_item, dict):
-            continue
-        if str(raw_item.get("id", "")).strip() != current_item.item_id:
-            continue
-        raw_image_ref = raw_item.get("image_ref")
-        if isinstance(raw_image_ref, str) and raw_image_ref.strip():
-            image_ref = raw_image_ref
-        break
-    resolved_user = user or getattr(message, "from_user", None)
-    image_path = resolve_existing_image_path(image_ref)
-    preview_view = build_current_image_preview_view(
-        image_path=image_path,
-        current_image_intro=_tg(
-            "current_image_intro",
-            context=context,
-            user=resolved_user,
-        ),
-        no_current_image_intro=_tg(
-            "no_current_image_intro",
-            context=context,
-            user=resolved_user,
-        ),
+    from englishbot.telegram_image_review_support import (
+        send_current_published_image_preview,
     )
-    preview_message = await send_telegram_view(message, preview_view)
-    _track_flow_message(
+
+    await send_current_published_image_preview(
+        message,
         context,
-        flow_id=flow.flow_id,
-        tag=_IMAGE_REVIEW_CONTEXT_TAG,
-        message=preview_message,
-        fallback_chat_id=fallback_chat_id,
+        flow,
+        user=user,
     )
 
 
@@ -3998,82 +3911,25 @@ async def _send_image_review_step(
     *,
     user=None,
 ) -> None:
-    resolved_user = user or getattr(message, "from_user", None)
-    current_item = flow.current_item
-    if current_item is None:
-        await message.reply_text(
-            _tg(
-                "image_review_completed",
-                context=context,
-                user=resolved_user,
-            )
-        )
-        return
-    registry = _telegram_flow_messages(context)
-    tracked_before = (
-        registry.list(flow_id=flow.flow_id, tag=_IMAGE_REVIEW_STEP_TAG)
-        if registry is not None
-        else []
-    )
-    fallback_chat_id = _message_chat_id(message)
-    total_items = len(flow.items)
-    current_position = flow.current_index + 1
-    generation_lines: list[str] = []
-    generation_metadata = getattr(current_item, "candidate_generation_metadata", None)
-    if generation_metadata is not None and generation_metadata.status_messages:
-        generation_lines.extend(generation_metadata.status_messages)
-    summary_view = build_image_review_step_view(
-        current_position=current_position,
-        total_items=total_items,
-        english_word=current_item.english_word,
-        translation=current_item.translation,
-        prompt=current_item.prompt,
-        candidate_source_type=current_item.candidate_source_type,
-        search_query=current_item.search_query,
-        search_page=current_item.search_page,
-        generation_status_messages=generation_lines,
-        reply_markup=_image_review_markup(
-            flow_id=flow.flow_id,
-            current_item=current_item,
-            context=context,
-            user=resolved_user,
-        ),
-        translate=_tg,
-        user=resolved_user,
-    )
-    summary_message = await send_telegram_view(message, summary_view)
-    _track_flow_message(
+    from englishbot.telegram_image_review_support import send_image_review_step
+
+    await send_image_review_step(
+        message,
         context,
-        flow_id=flow.flow_id,
-        tag=_IMAGE_REVIEW_STEP_TAG,
-        message=summary_message,
-        fallback_chat_id=fallback_chat_id,
+        flow,
+        user=user,
     )
-    if current_item.candidates:
-        strip_path = _build_image_review_candidate_strip(
-            flow=flow,
-            item_id=current_item.item_id,
-            candidate_paths=[candidate.output_path for candidate in current_item.candidates],
-        )
-        with strip_path.open("rb") as photo_file:
-            sent_photo = await message.reply_photo(photo=photo_file)
-        _track_flow_message(
-            context,
-            flow_id=flow.flow_id,
-            tag=_IMAGE_REVIEW_STEP_TAG,
-            message=sent_photo,
-            fallback_chat_id=fallback_chat_id,
-        )
-    await _delete_tracked_messages(context, tracked_messages=tracked_before)
 
 
 def _build_image_review_candidate_strip(*, flow, item_id: str, candidate_paths: list[Path]) -> Path:
-    review_dir = candidate_paths[0].parent
-    output_path = review_dir / f"{flow.flow_id}-{item_id}--review-strip-256.jpg"
-    return ensure_numbered_candidate_strip(
-        source_paths=candidate_paths,
-        output_path=output_path,
-        tile_size=256,
+    from englishbot.telegram_image_review_support import (
+        build_image_review_candidate_strip,
+    )
+
+    return build_image_review_candidate_strip(
+        flow=flow,
+        item_id=item_id,
+        candidate_paths=candidate_paths,
     )
 
 
