@@ -45,6 +45,7 @@ First extraction steps already in place:
 - mutable runtime stores inside `bot.py` such as pending notifications or recent activity maps are also being normalized through shared helper accessors so domain code is easier to distinguish from storage plumbing
 - ad hoc Telegram state for game rounds and admin goal setup is also being folded behind shared user-state helpers so these flows are easier to explain as named concepts instead of raw dictionary keys
 - remaining startup and assignment helper accessors are also being moved onto the same shared bot-state helpers so the leftover facade follows one consistent runtime-access style
+- by this stage, direct raw `bot_data` access outside the shared accessor helpers is being eliminated, so the remaining facade is easier to read as a teaching example
 
 ## Current Status
 

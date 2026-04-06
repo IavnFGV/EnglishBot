@@ -412,6 +412,15 @@ def _mutable_bot_data_dict(
     return replacement
 
 
+def _set_bot_data(
+    context: ContextTypes.DEFAULT_TYPE,
+    key: str,
+    value,
+):
+    context.application.bot_data[key] = value
+    return value
+
+
 def _user_data_or_none(context: ContextTypes.DEFAULT_TYPE | None) -> dict | None:
     if context is None:
         return None
@@ -603,8 +612,7 @@ def _tts_client_or_none(context: ContextTypes.DEFAULT_TYPE) -> object | None:
         base_url=getattr(settings, "tts_service_base_url"),
         timeout_sec=getattr(settings, "tts_service_timeout_sec", 15),
     )
-    context.application.bot_data["tts_service_client"] = client
-    return client
+    return _set_bot_data(context, "tts_service_client", client)
 
 
 def _extract_sent_voice_file_id(sent_message) -> str | None:
@@ -634,8 +642,10 @@ def _telegram_ui_language_for_user_id(context: ContextTypes.DEFAULT_TYPE, *, use
 
 
 def _reload_training_service(context: ContextTypes.DEFAULT_TYPE) -> None:
-    context.application.bot_data["training_service"] = build_training_service(
-        db_path=_content_store(context).db_path
+    _set_bot_data(
+        context,
+        "training_service",
+        build_training_service(db_path=_content_store(context).db_path),
     )
 
 
