@@ -42,6 +42,7 @@ First extraction steps already in place:
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers; dead compatibility leftovers are removed incrementally once they have no in-repo callers
 - repeated `context.application.bot_data[...]` access in `bot.py` is being centralized gradually through shared helper accessors so the remaining facade stays easier to teach and scan
 - repeated `context.user_data[...]` access in `bot.py` is also being centralized gradually so per-user Telegram state reads like one concept instead of many tiny ad hoc patterns
+- mutable runtime stores inside `bot.py` such as pending notifications or recent activity maps are also being normalized through shared helper accessors so domain code is easier to distinguish from storage plumbing
 
 ## Current Status
 

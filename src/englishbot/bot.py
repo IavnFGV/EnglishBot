@@ -395,6 +395,23 @@ def _optional_bot_data(
     return bot_data.get(key, default)
 
 
+def _mutable_bot_data_dict(
+    context: ContextTypes.DEFAULT_TYPE,
+    key: str,
+    *,
+    fallback_key: str | None = None,
+):
+    stored = _optional_bot_data(context, key)
+    if stored is None and fallback_key is not None:
+        stored = _optional_bot_data(context, fallback_key)
+    if isinstance(stored, dict):
+        context.application.bot_data[key] = stored
+        return stored
+    replacement: dict = {}
+    context.application.bot_data[key] = replacement
+    return replacement
+
+
 def _user_data_or_none(context: ContextTypes.DEFAULT_TYPE | None) -> dict | None:
     if context is None:
         return None
@@ -3950,34 +3967,19 @@ def _assignment_assigned_notification_emoji(*, goal_id: str) -> str:
 
 
 def _pending_notifications(context: ContextTypes.DEFAULT_TYPE) -> dict[str, _PendingNotification]:
-    stored = context.application.bot_data.setdefault("pending_notifications", {})
-    if isinstance(stored, dict):
-        return stored
-    replacement: dict[str, _PendingNotification] = {}
-    context.application.bot_data["pending_notifications"] = replacement
-    return replacement
+    return _mutable_bot_data_dict(context, "pending_notifications")
 
 
 def _pending_notification_repository(context: ContextTypes.DEFAULT_TYPE):
-    application = getattr(context, "application", None)
-    bot_data = getattr(application, "bot_data", None)
-    if not isinstance(bot_data, dict):
-        return None
-    return bot_data.get("pending_telegram_notification_repository")
+    return _optional_bot_data(context, "pending_telegram_notification_repository")
 
 
 def _recent_assignment_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> dict[int, datetime]:
-    stored = context.application.bot_data.get("recent_assignment_activity_by_user")
-    if stored is None:
-        stored = context.application.bot_data.get("recent_quiz_activity_by_user")
-    if stored is None:
-        stored = context.application.bot_data.setdefault("recent_assignment_activity_by_user", {})
-    if isinstance(stored, dict):
-        context.application.bot_data["recent_assignment_activity_by_user"] = stored
-        return stored
-    replacement: dict[int, datetime] = {}
-    context.application.bot_data["recent_assignment_activity_by_user"] = replacement
-    return replacement
+    return _mutable_bot_data_dict(
+        context,
+        "recent_assignment_activity_by_user",
+        fallback_key="recent_quiz_activity_by_user",
+    )
 
 
 def _notification_action_button_for_user(
@@ -4248,7 +4250,7 @@ def _schedule_goal_completed_notifications(
     learner,
     completed_goals: tuple[GoalProgressView, ...],
 ) -> None:
-    role_repository = context.application.bot_data.get("telegram_user_role_repository")
+    role_repository = _optional_bot_data(context, "telegram_user_role_repository")
     if role_repository is None:
         return
     memberships = role_repository.list_memberships()
