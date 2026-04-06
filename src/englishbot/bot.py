@@ -224,6 +224,10 @@ from englishbot.telegram_answer_handlers import (
     medium_answer_callback_handler as telegram_medium_answer_callback_handler,
     text_answer_handler as telegram_text_answer_handler,
 )
+from englishbot.telegram_answer_processing import (
+    process_answer as delivery_process_answer,
+    send_feedback as delivery_send_feedback,
+)
 from englishbot.telegram_question_delivery import (
     build_medium_question_view as delivery_build_medium_question_view,
     edit_training_question_view as delivery_edit_training_question_view,
@@ -5999,138 +6003,36 @@ async def _process_answer(
     context: ContextTypes.DEFAULT_TYPE,
     answer: str,
 ) -> None:
-    service = _service(context)
-    user = update.effective_user
-    message = update.effective_message
-    if user is None or message is None:
-        return
-    _clear_medium_task_state(context)
-    active_session_before_submit = service.get_active_session(user_id=user.id)
-    feedback_update: _GoalFeedbackUpdate | None = None
-    if context.application.bot_data.get("homework_progress_use_case") is not None:
-        before_summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
-    else:
-        before_summary = None
-    try:
-        outcome = service.submit_answer(user_id=user.id, answer=answer)
-    except InvalidSessionStateError:
-        context.user_data["awaiting_text_answer"] = False
-        _clear_medium_task_state(context)
-        await message.reply_text(_tg("no_active_session_begin", context=context, user=user))
-        return
-    except ApplicationError as error:
-        await message.reply_text(str(error))
-        return
-    if _assignment_kind_from_session(active_session_before_submit) is not None:
-        _record_assignment_activity(context, user_id=user.id)
-    active_session_id = getattr(active_session_before_submit, "session_id", None)
-    if isinstance(active_session_id, str):
-        await _delete_tracked_flow_messages(
-            context,
-            flow_id=active_session_id,
-            tag=_TRAINING_QUESTION_TAG,
-        )
-    game_state = context.user_data.get(_GAME_STATE_KEY)
-    if isinstance(game_state, dict) and game_state.get("active"):
-        await _send_game_feedback(message, outcome, context)
-        if outcome.next_question is not None:
-            context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(
-                outcome.next_question
-            )
-            await _send_question(update, context, outcome.next_question)
-        else:
-            context.user_data["awaiting_text_answer"] = False
-            _clear_medium_task_state(context)
-            await _finish_game_session(message, outcome, context)
-        return
-    context.user_data["awaiting_text_answer"] = bool(
-        outcome.next_question is not None
-        and _expects_text_answer_for_question(outcome.next_question)
-    )
-    raw_completed_assignment_session = _raw_training_session_by_id(
+    await delivery_process_answer(
+        update,
         context,
-        session_id=active_session_id,
+        answer,
+        service=_service,
+        clear_medium_task_state=_clear_medium_task_state,
+        tg=_tg,
+        assignment_kind_from_session=_assignment_kind_from_session,
+        record_assignment_activity=_record_assignment_activity,
+        delete_tracked_flow_messages=_delete_tracked_flow_messages,
+        training_question_tag=_TRAINING_QUESTION_TAG,
+        send_game_feedback=_send_game_feedback,
+        expects_text_answer_for_question=_expects_text_answer_for_question,
+        send_question=_send_question,
+        finish_game_session=_finish_game_session,
+        raw_training_session_by_id=_raw_training_session_by_id,
+        assignment_kind_and_goal_id_from_source_tag=_assignment_kind_and_goal_id_from_source_tag,
+        start_assignment_round_use_case_or_none=_start_assignment_round_use_case_or_none,
+        execute_assignment_start_use_case=_execute_assignment_start_use_case,
+        telegram_ui_language=_telegram_ui_language,
+        collect_goal_feedback_update=_collect_goal_feedback_update,
+        send_feedback=_send_feedback,
+        send_or_update_assignment_progress_message=_send_or_update_assignment_progress_message,
+        schedule_goal_completed_notifications=_schedule_goal_completed_notifications,
+        flush_pending_notifications_for_user=_flush_pending_notifications_for_user,
+        homework_progress_use_case=_homework_progress_use_case,
+        answer_outcome_type=AnswerOutcome,
+        invalid_session_state_error_type=InvalidSessionStateError,
+        application_error_type=ApplicationError,
     )
-    continuation_question = None
-    assignment_kind = _assignment_kind_from_session(active_session_before_submit)
-    _, assignment_goal_id = _assignment_kind_and_goal_id_from_source_tag(
-        getattr(active_session_before_submit, "source_tag", None),
-    )
-    start_assignment_use_case = _start_assignment_round_use_case_or_none(context)
-    if (
-        outcome.next_question is None
-        and outcome.summary is not None
-        and assignment_kind is not None
-        and start_assignment_use_case is not None
-        ):
-            raw_goal_id = None
-            if raw_completed_assignment_session is not None:
-                _, raw_goal_id = _assignment_kind_and_goal_id_from_source_tag(
-                    getattr(raw_completed_assignment_session, "source_tag", None),
-                )
-            try:
-                continuation_question = _execute_assignment_start_use_case(
-                    start_assignment_use_case,
-                    user_id=user.id,
-                    kind=assignment_kind,
-                    goal_id=raw_goal_id or assignment_goal_id,
-                    combo_correct_streak=int(
-                        getattr(raw_completed_assignment_session, "combo_correct_streak", 0) or 0
-                    ),
-                    combo_hard_active=bool(
-                        getattr(raw_completed_assignment_session, "combo_hard_active", False)
-                    ),
-                    ui_language=_telegram_ui_language(context, user),
-                )
-            except ValueError:
-                continuation_question = None
-    if continuation_question is not None:
-        context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(continuation_question)
-    active_session_for_feedback = _service(context).get_active_session(user_id=user.id)
-    if before_summary is not None:
-        feedback_update = _collect_goal_feedback_update(
-            context=context,
-            user=user,
-            before_summary=before_summary,
-        )
-    feedback_outcome = outcome
-    if continuation_question is not None and outcome.summary is not None:
-        # The underlying training session is complete, but homework continues in a
-        # freshly started session. Keep the feedback short instead of showing a
-        # misleading "Session complete" state.
-        feedback_outcome = AnswerOutcome(
-            result=outcome.result,
-            summary=None,
-            next_question=None,
-        )
-    await _send_feedback(
-        message,
-        feedback_outcome,
-        context=context,
-        active_session=active_session_for_feedback or active_session_before_submit,
-        user=user,
-        feedback_update=feedback_update,
-    )
-    if assignment_kind is not None:
-        await _send_or_update_assignment_progress_message(
-            context,
-            message=message,
-            user=user,
-            kind=assignment_kind,
-            active_session=active_session_for_feedback or active_session_before_submit,
-        )
-    if feedback_update is not None and feedback_update.completed_goals:
-        _schedule_goal_completed_notifications(
-            context,
-            learner=user,
-            completed_goals=feedback_update.completed_goals,
-        )
-    if continuation_question is not None:
-        await _send_question(update, context, continuation_question)
-    elif outcome.next_question is not None:
-        await _send_question(update, context, outcome.next_question)
-    else:
-        await _flush_pending_notifications_for_user(context, user_id=user.id)
 
 
 async def _send_feedback(
@@ -6142,80 +6044,28 @@ async def _send_feedback(
     user=None,
     feedback_update: _GoalFeedbackUpdate | None = None,
 ) -> None:
-    feedback_user = user if user is not None else getattr(message, "from_user", None)
-    feedback_user_id = getattr(feedback_user, "id", None)
-    view = build_answer_feedback_view(
+    await delivery_send_feedback(
+        message,
         outcome,
-        translate=_tg,
-        user=feedback_user,
+        context=context,
+        active_session=active_session,
+        user=user,
+        feedback_update=feedback_update,
+        build_answer_feedback_view=build_answer_feedback_view,
+        assignment_kind_from_session=_assignment_kind_from_session,
+        assignment_kind_and_goal_id_from_source_tag=_assignment_kind_and_goal_id_from_source_tag,
+        assignment_round_progress_view=_assignment_round_progress_view,
+        render_assignment_round_progress_text=_render_assignment_round_progress_text,
+        assignment_round_complete_keyboard=_assignment_round_complete_keyboard,
+        telegram_ui_language=_telegram_ui_language,
+        compact_assignment_feedback_text=_compact_assignment_feedback_text,
+        render_feedback_update_text=_render_feedback_update_text,
+        delete_tracked_flow_messages=_delete_tracked_flow_messages,
+        track_flow_message=_track_flow_message,
+        training_feedback_tag=_TRAINING_FEEDBACK_TAG,
+        message_chat_id=_message_chat_id,
+        tg=_tg,
     )
-    reply_markup = None
-    assignment_progress_text = ""
-    assignment_kind = _assignment_kind_from_session(active_session) if active_session is not None else None
-    assignment_goal_id = None
-    if active_session is not None:
-        _, assignment_goal_id = _assignment_kind_and_goal_id_from_source_tag(
-            getattr(active_session, "source_tag", None),
-        )
-    compact_assignment_feedback = assignment_kind is not None and hasattr(message, "reply_photo")
-    round_progress = None
-    if assignment_kind is not None and feedback_user_id is not None:
-        round_progress = _assignment_round_progress_view(
-            context=context,
-            user_id=feedback_user_id,
-            kind=assignment_kind,
-            goal_id=assignment_goal_id,
-            active_session=active_session,
-        )
-        if round_progress is not None:
-            assignment_progress_text = _render_assignment_round_progress_text(
-                context=context,
-                user=feedback_user,
-                kind=assignment_kind,
-                progress=round_progress,
-            )
-    if outcome.summary is not None and assignment_kind is not None and feedback_user_id is not None:
-        reply_markup = _assignment_round_complete_keyboard(
-            assignment_kind,
-            has_more=False,
-            remaining_word_count=None,
-            round_batch_size=None,
-            language=_telegram_ui_language(context, feedback_user),
-        )
-    text = view.text
-    if compact_assignment_feedback:
-        text = _compact_assignment_feedback_text(
-            base_text=view.text,
-            context=context,
-            user=feedback_user,
-            feedback_update=feedback_update,
-        )
-    elif feedback_update is not None:
-        update_text = _render_feedback_update_text(
-            context=context,
-            user=feedback_user,
-            update=feedback_update,
-        )
-        if update_text:
-            text = f"{text}\n\n{update_text}"
-    if assignment_progress_text and not compact_assignment_feedback:
-        text = f"{text}\n\n{assignment_progress_text}"
-    flow_id = getattr(active_session, "session_id", None)
-    if isinstance(flow_id, str):
-        await _delete_tracked_flow_messages(
-            context,
-            flow_id=flow_id,
-            tag=_TRAINING_FEEDBACK_TAG,
-        )
-    sent_message = await message.reply_text(text, reply_markup=reply_markup, parse_mode=view.parse_mode)
-    if isinstance(flow_id, str):
-        _track_flow_message(
-            context,
-            flow_id=flow_id,
-            tag=_TRAINING_FEEDBACK_TAG,
-            message=sent_message,
-            fallback_chat_id=_message_chat_id(message),
-        )
 
 
 async def _send_game_feedback(
