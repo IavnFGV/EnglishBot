@@ -531,7 +531,7 @@ python -m englishbot.rerank_image_manifest \
   --input output/image-rerank-manifest.json \
   --output output/image-rerank-decisions.json \
   --candidate-count 3 \
-  --ollama-model qwen2.5vl:3b
+  --ollama-model qwen2.5vl:7b
 ```
 
 3. Back on production, apply the decisions file, download the chosen images, and update `image_ref` in the runtime database:
@@ -725,7 +725,7 @@ bash scripts/switch-local-ai-mode.sh on
 The default active profile in `.devcontainer/devcontainer.json` is the `noai` profile for lightweight WSL and non-GPU setups.
 The default local AI mode in `.devcontainer/local-ai.env` is `off`, so Ollama/ComfyUI do not autostart and models are not auto-pulled unless you switch it to `on`.
 
-For local image reranking without a dedicated GPU box, the devcontainer Ollama presets default to the lightweight vision model `qwen2.5vl:3b`. This is intended for batch-style tasks such as choosing the best Pixabay candidate from a small set of previews, not for heavy multimodal chat workloads.
+For local image reranking, the devcontainer Ollama presets default to the vision model `qwen2.5vl:7b`. This is intended for batch-style tasks such as choosing the best Pixabay candidate from a small set of previews, not for heavy multimodal chat workloads.
 
 Inside the `cpu` and `gpu` profiles you can also inspect or restart services manually:
 

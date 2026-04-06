@@ -1,0 +1,1851 @@
+{
+  "exported_at": "2026-04-06T16:51:45+00:00",
+  "item_count": 205,
+  "items": [
+    {
+      "item_id": "toys-action-figure",
+      "english_word": "Action figure",
+      "translation": "фигурка",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Action figure",
+      "current_image_ref": "assets/toys/toys-action-figure.jpg"
+    },
+    {
+      "item_id": "frequency-always",
+      "english_word": "Always",
+      "translation": "всегда",
+      "topic_id": "frequency",
+      "topic_title": "Frequency",
+      "query": "Always",
+      "current_image_ref": "assets/frequency/frequency-always.jpg"
+    },
+    {
+      "item_id": "fruit-and-berries-apple",
+      "english_word": "Apple",
+      "translation": "яблоко",
+      "topic_id": "fruit-and-berries",
+      "topic_title": "Fruit and Berries",
+      "query": "Apple",
+      "current_image_ref": "assets/fruit-and-berries/fruit-and-berries-apple.png"
+    },
+    {
+      "item_id": "fruit-and-berries-apricot",
+      "english_word": "Apricot",
+      "translation": "абрикос",
+      "topic_id": "fruit-and-berries",
+      "topic_title": "Fruit and Berries",
+      "query": "Apricot",
+      "current_image_ref": "assets/fruit-and-berries/fruit-and-berries-apricot.png"
+    },
+    {
+      "item_id": "months-april",
+      "english_word": "April",
+      "translation": "апрель",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "April",
+      "current_image_ref": "assets/months/months-april.png"
+    },
+    {
+      "item_id": "months-august",
+      "english_word": "August",
+      "translation": "август",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "August",
+      "current_image_ref": "assets/months/months-august.png"
+    },
+    {
+      "item_id": "seasons-autumn",
+      "english_word": "Autumn",
+      "translation": "осень",
+      "topic_id": "seasons",
+      "topic_title": "Seasons",
+      "query": "Autumn",
+      "current_image_ref": "assets/seasons/seasons-autumn.png"
+    },
+    {
+      "item_id": "adjectives-bad",
+      "english_word": "Bad",
+      "translation": "плохой",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Bad",
+      "current_image_ref": "assets/adjectives/adjectives-bad.png"
+    },
+    {
+      "item_id": "birthday-balloons",
+      "english_word": "Balloons",
+      "translation": "воздушные шары",
+      "topic_id": "birthday",
+      "topic_title": "Birthday",
+      "query": "Balloons",
+      "current_image_ref": "assets/birthday/birthday-balloons.png"
+    },
+    {
+      "item_id": "fruit-and-berries-banana",
+      "english_word": "Banana",
+      "translation": "банан",
+      "topic_id": "fruit-and-berries",
+      "topic_title": "Fruit and Berries",
+      "query": "Banana",
+      "current_image_ref": "assets/fruit-and-berries/fruit-and-berries-banana.png"
+    },
+    {
+      "item_id": "adjectives-beautiful",
+      "english_word": "Beautiful",
+      "translation": "красивый",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Beautiful",
+      "current_image_ref": "assets/adjectives/adjectives-beautiful.png"
+    },
+    {
+      "item_id": "clothes-belt",
+      "english_word": "Belt",
+      "translation": "ремень",
+      "topic_id": "clothes",
+      "topic_title": "Clothes",
+      "query": "Belt",
+      "current_image_ref": "assets/clothes/clothes-belt.png"
+    },
+    {
+      "item_id": "adjectives-big",
+      "english_word": "Big",
+      "translation": "большой",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Big",
+      "current_image_ref": "assets/adjectives/adjectives-big.png"
+    },
+    {
+      "item_id": "birthday-birthday-boy",
+      "english_word": "Birthday boy",
+      "translation": "именинник",
+      "topic_id": "birthday",
+      "topic_title": "Birthday",
+      "query": "Birthday boy",
+      "current_image_ref": "assets/birthday/birthday-birthday-boy.png"
+    },
+    {
+      "item_id": "birthday-birthday-cake",
+      "english_word": "Birthday cake",
+      "translation": "торт ко дню рождения",
+      "topic_id": "birthday",
+      "topic_title": "Birthday",
+      "query": "Birthday cake",
+      "current_image_ref": "assets/birthday/birthday-birthday-cake.png"
+    },
+    {
+      "item_id": "birthday-birthday-girl",
+      "english_word": "Birthday girl",
+      "translation": "именинница",
+      "topic_id": "birthday",
+      "topic_title": "Birthday",
+      "query": "Birthday girl",
+      "current_image_ref": "assets/birthday/birthday-birthday-girl.png"
+    },
+    {
+      "item_id": "cake-flavours-black-and-caramel",
+      "english_word": "Black and caramel",
+      "translation": "чёрный с карамелью",
+      "topic_id": "cake-flavours",
+      "topic_title": "Cake Flavours",
+      "query": "Black and caramel",
+      "current_image_ref": "assets/cake-flavours/cake-flavours-black-and-caramel.jpg"
+    },
+    {
+      "item_id": "colors-blue",
+      "english_word": "Blue",
+      "translation": "синий",
+      "topic_id": "colors",
+      "topic_title": "Colors",
+      "query": "Blue",
+      "current_image_ref": "assets/colors/colors-blue.jpg"
+    },
+    {
+      "item_id": "flowers-bluebell",
+      "english_word": "Bluebell",
+      "translation": "колокольчик",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Bluebell",
+      "current_image_ref": "assets/flowers/flowers-bluebell.png"
+    },
+    {
+      "item_id": "toys-board-game",
+      "english_word": "Board game",
+      "translation": "настольная игра",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Board game",
+      "current_image_ref": "assets/toys/toys-board-game.png"
+    },
+    {
+      "item_id": "toys-book",
+      "english_word": "Book",
+      "translation": "книга",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Book",
+      "current_image_ref": "assets/toys/toys-book.jpg"
+    },
+    {
+      "item_id": "meals-bread",
+      "english_word": "Bread",
+      "translation": "хлеб",
+      "topic_id": "meals",
+      "topic_title": "Meals",
+      "query": "Bread",
+      "current_image_ref": "assets/meals/meals-bread.jpg"
+    },
+    {
+      "item_id": "christmas-food-bread-sauce",
+      "english_word": "Bread sauce",
+      "translation": "хлебный соус",
+      "topic_id": "christmas-food",
+      "topic_title": "Christmas Food",
+      "query": "Bread sauce",
+      "current_image_ref": "assets/christmas-food/christmas-food-bread-sauce.png"
+    },
+    {
+      "item_id": "colors-brown",
+      "english_word": "Brown",
+      "translation": "коричневый",
+      "topic_id": "colors",
+      "topic_title": "Colors",
+      "query": "Brown",
+      "current_image_ref": "assets/colors/colors-brown.png"
+    },
+    {
+      "item_id": "cake-flavours-brownie",
+      "english_word": "Brownie",
+      "translation": "брауни",
+      "topic_id": "cake-flavours",
+      "topic_title": "Cake Flavours",
+      "query": "Brownie",
+      "current_image_ref": "assets/cake-flavours/cake-flavours-brownie.jpg"
+    },
+    {
+      "item_id": "meals-cake",
+      "english_word": "Cake",
+      "translation": "торт",
+      "topic_id": "meals",
+      "topic_title": "Meals",
+      "query": "Cake",
+      "current_image_ref": "assets/meals/meals-cake.png"
+    },
+    {
+      "item_id": "confectionery-candies",
+      "english_word": "Candies",
+      "translation": "конфеты",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Candies",
+      "current_image_ref": "assets/confectionery/confectionery-candies.png"
+    },
+    {
+      "item_id": "birthday-candles",
+      "english_word": "Candles",
+      "translation": "свечи",
+      "topic_id": "birthday",
+      "topic_title": "Birthday",
+      "query": "Candles",
+      "current_image_ref": "assets/birthday/birthday-candles.png"
+    },
+    {
+      "item_id": "clothes-cap",
+      "english_word": "Cap",
+      "translation": "кепка",
+      "topic_id": "clothes",
+      "topic_title": "Clothes",
+      "query": "Cap",
+      "current_image_ref": "assets/clothes/clothes-cap.png"
+    },
+    {
+      "item_id": "toys-car",
+      "english_word": "Car",
+      "translation": "машина",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Car",
+      "current_image_ref": "assets/toys/toys-car.png"
+    },
+    {
+      "item_id": "birthday-card",
+      "english_word": "Card",
+      "translation": "открытка",
+      "topic_id": "birthday",
+      "topic_title": "Birthday",
+      "query": "Card",
+      "current_image_ref": "assets/birthday/birthday-card.png"
+    },
+    {
+      "item_id": "flowers-carnation",
+      "english_word": "Carnation",
+      "translation": "гвоздика",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Carnation",
+      "current_image_ref": "assets/flowers/flowers-carnation.png"
+    },
+    {
+      "item_id": "cake-flavours-carrot",
+      "english_word": "Carrot",
+      "translation": "морковь",
+      "topic_id": "cake-flavours",
+      "topic_title": "Cake Flavours",
+      "query": "Carrot",
+      "current_image_ref": "assets/cake-flavours/cake-flavours-carrot.jpg"
+    },
+    {
+      "item_id": "fairy-tales-castle",
+      "english_word": "Castle",
+      "translation": "замок",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Castle",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-castle.jpg"
+    },
+    {
+      "item_id": "russian-new-year-table-caviar",
+      "english_word": "Caviar",
+      "translation": "икра",
+      "topic_id": "russian-new-year-table",
+      "topic_title": "Russian New Year Table",
+      "query": "Caviar",
+      "current_image_ref": "assets/russian-new-year-table/russian-new-year-table-caviar.png"
+    },
+    {
+      "item_id": "flowers-chamomile",
+      "english_word": "Chamomile",
+      "translation": "ромашка",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Chamomile",
+      "current_image_ref": "assets/flowers/flowers-chamomile.png"
+    },
+    {
+      "item_id": "drinks-champagne",
+      "english_word": "Champagne",
+      "translation": "шампанское",
+      "topic_id": "drinks",
+      "topic_title": "Drinks",
+      "query": "Champagne",
+      "current_image_ref": "assets/drinks/drinks-champagne.png"
+    },
+    {
+      "item_id": "meals-cheese",
+      "english_word": "Cheese",
+      "translation": "сыр",
+      "topic_id": "meals",
+      "topic_title": "Meals",
+      "query": "Cheese",
+      "current_image_ref": "assets/meals/meals-cheese.png"
+    },
+    {
+      "item_id": "fruit-and-berries-cherry",
+      "english_word": "Cherry",
+      "translation": "вишня",
+      "topic_id": "fruit-and-berries",
+      "topic_title": "Fruit and Berries",
+      "query": "Cherry",
+      "current_image_ref": "assets/fruit-and-berries/fruit-and-berries-cherry.png"
+    },
+    {
+      "item_id": "confectionery-chocolate",
+      "english_word": "Chocolate",
+      "translation": "шоколад",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Chocolate",
+      "current_image_ref": "assets/confectionery/confectionery-chocolate.jpg"
+    },
+    {
+      "item_id": "meals-chocolate",
+      "english_word": "Chocolate",
+      "translation": "шоколад",
+      "topic_id": "meals",
+      "topic_title": "Meals",
+      "query": "Chocolate",
+      "current_image_ref": "assets/meals/meals-chocolate.jpg"
+    },
+    {
+      "item_id": "confectionery-chocolate-bar",
+      "english_word": "Chocolate bar",
+      "translation": "шоколадный батончик",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Chocolate bar",
+      "current_image_ref": "assets/confectionery/confectionery-chocolate-bar.png"
+    },
+    {
+      "item_id": "cake-flavours-chocolate-mousse",
+      "english_word": "Chocolate mousse",
+      "translation": "шоколадный мусс",
+      "topic_id": "cake-flavours",
+      "topic_title": "Cake Flavours",
+      "query": "Chocolate mousse",
+      "current_image_ref": "assets/cake-flavours/cake-flavours-chocolate-mousse.png"
+    },
+    {
+      "item_id": "christmas-food-chocolates",
+      "english_word": "Chocolates",
+      "translation": "шоколадные конфеты",
+      "topic_id": "christmas-food",
+      "topic_title": "Christmas Food",
+      "query": "Chocolates",
+      "current_image_ref": "assets/christmas-food/christmas-food-chocolates.jpg"
+    },
+    {
+      "item_id": "christmas-food-christmas-cake",
+      "english_word": "Christmas cake",
+      "translation": "рождественский кекс",
+      "topic_id": "christmas-food",
+      "topic_title": "Christmas Food",
+      "query": "Christmas cake",
+      "current_image_ref": "assets/christmas-food/christmas-food-christmas-cake.png"
+    },
+    {
+      "item_id": "christmas-food-christmas-pudding",
+      "english_word": "Christmas pudding",
+      "translation": "рождественский пудинг",
+      "topic_id": "christmas-food",
+      "topic_title": "Christmas Food",
+      "query": "Christmas pudding",
+      "current_image_ref": "assets/christmas-food/christmas-food-christmas-pudding.png"
+    },
+    {
+      "item_id": "drinks-coffee",
+      "english_word": "Coffee",
+      "translation": "кофе",
+      "topic_id": "drinks",
+      "topic_title": "Drinks",
+      "query": "Coffee",
+      "current_image_ref": "assets/drinks/drinks-coffee.png"
+    },
+    {
+      "item_id": "drinks-cola",
+      "english_word": "Cola",
+      "translation": "кола",
+      "topic_id": "drinks",
+      "topic_title": "Drinks",
+      "query": "Cola",
+      "current_image_ref": "assets/drinks/drinks-cola.jpg"
+    },
+    {
+      "item_id": "toys-comic-book",
+      "english_word": "Comic book",
+      "translation": "комикс",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Comic book",
+      "current_image_ref": "assets/toys/toys-comic-book.jpg"
+    },
+    {
+      "item_id": "toys-computer-game",
+      "english_word": "Computer game",
+      "translation": "компьютерная игра",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Computer game",
+      "current_image_ref": "assets/toys/toys-computer-game.png"
+    },
+    {
+      "item_id": "christmas-food-cranberry-sauce",
+      "english_word": "Cranberry sauce",
+      "translation": "клюквенный соус",
+      "topic_id": "christmas-food",
+      "topic_title": "Christmas Food",
+      "query": "Cranberry sauce",
+      "current_image_ref": "assets/christmas-food/christmas-food-cranberry-sauce.jpg"
+    },
+    {
+      "item_id": "flowers-dandelion",
+      "english_word": "Dandelion",
+      "translation": "одуванчик",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Dandelion",
+      "current_image_ref": "assets/flowers/flowers-dandelion.png"
+    },
+    {
+      "item_id": "months-december",
+      "english_word": "December",
+      "translation": "декабрь",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "December",
+      "current_image_ref": "assets/months/months-december.png"
+    },
+    {
+      "item_id": "toys-doll",
+      "english_word": "Doll",
+      "translation": "кукла",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Doll",
+      "current_image_ref": "assets/toys/toys-doll.png"
+    },
+    {
+      "item_id": "fairy-tales-dragon",
+      "english_word": "Dragon",
+      "translation": "дракон",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Dragon",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-dragon.jpg"
+    },
+    {
+      "item_id": "clothes-dress",
+      "english_word": "Dress",
+      "translation": "платье",
+      "topic_id": "clothes",
+      "topic_title": "Clothes",
+      "query": "Dress",
+      "current_image_ref": "assets/clothes/clothes-dress.png"
+    },
+    {
+      "item_id": "russian-new-year-table-dressed-herring",
+      "english_word": "Dressed herring",
+      "translation": "селёдка под шубой",
+      "topic_id": "russian-new-year-table",
+      "topic_title": "Russian New Year Table",
+      "query": "Dressed herring",
+      "current_image_ref": "assets/russian-new-year-table/russian-new-year-table-dressed-herring.png"
+    },
+    {
+      "item_id": "fairy-tales-dwarf",
+      "english_word": "Dwarf",
+      "translation": "гномик",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Dwarf",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-dwarf.png"
+    },
+    {
+      "item_id": "fairy-tales-elf",
+      "english_word": "Elf",
+      "translation": "эльф",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Elf",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-elf.png"
+    },
+    {
+      "item_id": "frequency-every-day",
+      "english_word": "Every day",
+      "translation": "каждый день",
+      "topic_id": "frequency",
+      "topic_title": "Frequency",
+      "query": "Every day",
+      "current_image_ref": "assets/frequency/frequency-every-day.png"
+    },
+    {
+      "item_id": "adjectives-evil",
+      "english_word": "Evil",
+      "translation": "злой",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Evil",
+      "current_image_ref": "assets/adjectives/adjectives-evil.png"
+    },
+    {
+      "item_id": "fairy-tales-fairy",
+      "english_word": "Fairy",
+      "translation": "фея",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Fairy",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-fairy.jpg"
+    },
+    {
+      "item_id": "adjectives-fast",
+      "english_word": "Fast",
+      "translation": "быстрый",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Fast",
+      "current_image_ref": "assets/adjectives/adjectives-fast.jpg"
+    },
+    {
+      "item_id": "months-february",
+      "english_word": "February",
+      "translation": "февраль",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "February",
+      "current_image_ref": "assets/months/months-february.png"
+    },
+    {
+      "item_id": "cake-flavours-fudge",
+      "english_word": "Fudge",
+      "translation": "помадка",
+      "topic_id": "cake-flavours",
+      "topic_title": "Cake Flavours",
+      "query": "Fudge",
+      "current_image_ref": "assets/cake-flavours/cake-flavours-fudge.png"
+    },
+    {
+      "item_id": "fairy-tales-ghost",
+      "english_word": "Ghost",
+      "translation": "привидение",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Ghost",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-ghost.jpg"
+    },
+    {
+      "item_id": "fairy-tales-giant",
+      "english_word": "Giant",
+      "translation": "великан",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Giant",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-giant.png"
+    },
+    {
+      "item_id": "birthday-gifts",
+      "english_word": "Gifts",
+      "translation": "подарки",
+      "topic_id": "birthday",
+      "topic_title": "Birthday",
+      "query": "Gifts",
+      "current_image_ref": "assets/birthday/birthday-gifts.png"
+    },
+    {
+      "item_id": "adjectives-good",
+      "english_word": "Good",
+      "translation": "хороший",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Good",
+      "current_image_ref": "assets/adjectives/adjectives-good.jpg"
+    },
+    {
+      "item_id": "toys-gorilla",
+      "english_word": "Gorilla",
+      "translation": "горилла",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Gorilla",
+      "current_image_ref": "assets/toys/toys-gorilla.jpg"
+    },
+    {
+      "item_id": "fruit-and-berries-grapes",
+      "english_word": "Grapes",
+      "translation": "виноград",
+      "topic_id": "fruit-and-berries",
+      "topic_title": "Fruit and Berries",
+      "query": "Grapes",
+      "current_image_ref": "assets/fruit-and-berries/fruit-and-berries-grapes.jpg"
+    },
+    {
+      "item_id": "colors-green",
+      "english_word": "Green",
+      "translation": "зелёный",
+      "topic_id": "colors",
+      "topic_title": "Colors",
+      "query": "Green",
+      "current_image_ref": "assets/colors/colors-green.png"
+    },
+    {
+      "item_id": "adjectives-happy",
+      "english_word": "Happy",
+      "translation": "счастливый",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Happy",
+      "current_image_ref": "assets/adjectives/adjectives-happy.jpg"
+    },
+    {
+      "item_id": "frequency-hardly-ever",
+      "english_word": "Hardly ever",
+      "translation": "почти никогда",
+      "topic_id": "frequency",
+      "topic_title": "Frequency",
+      "query": "Hardly ever",
+      "current_image_ref": "assets/frequency/frequency-hardly-ever.jpg"
+    },
+    {
+      "item_id": "adjectives-heavy",
+      "english_word": "Heavy",
+      "translation": "тяжёлый",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Heavy",
+      "current_image_ref": "assets/adjectives/adjectives-heavy.jpg"
+    },
+    {
+      "item_id": "drinks-hot-chocolate",
+      "english_word": "Hot chocolate",
+      "translation": "горячий шоколад",
+      "topic_id": "drinks",
+      "topic_title": "Drinks",
+      "query": "Hot chocolate",
+      "current_image_ref": "assets/drinks/drinks-hot-chocolate.jpg"
+    },
+    {
+      "item_id": "meals-ice-cream",
+      "english_word": "Ice cream",
+      "translation": "мороженое",
+      "topic_id": "meals",
+      "topic_title": "Meals",
+      "query": "Ice cream",
+      "current_image_ref": "assets/meals/meals-ice-cream.jpg"
+    },
+    {
+      "item_id": "flowers-iris",
+      "english_word": "Iris",
+      "translation": "ирис",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Iris",
+      "current_image_ref": "assets/flowers/flowers-iris.jpg"
+    },
+    {
+      "item_id": "months-january",
+      "english_word": "January",
+      "translation": "январь",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "January",
+      "current_image_ref": "assets/months/months-january.png"
+    },
+    {
+      "item_id": "confectionery-jelly-candy",
+      "english_word": "Jelly candy",
+      "translation": "желейная конфета",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Jelly candy",
+      "current_image_ref": "assets/confectionery/confectionery-jelly-candy.png"
+    },
+    {
+      "item_id": "confectionery-jellybean",
+      "english_word": "Jellybean",
+      "translation": "драже",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Jellybean",
+      "current_image_ref": "assets/confectionery/confectionery-jellybean.png"
+    },
+    {
+      "item_id": "fairy-tales-jinn",
+      "english_word": "Jinn",
+      "translation": "джинн",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Jinn",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-jinn.png"
+    },
+    {
+      "item_id": "drinks-juice",
+      "english_word": "Juice",
+      "translation": "сок",
+      "topic_id": "drinks",
+      "topic_title": "Drinks",
+      "query": "Juice",
+      "current_image_ref": "assets/drinks/drinks-juice.jpg"
+    },
+    {
+      "item_id": "months-july",
+      "english_word": "July",
+      "translation": "июль",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "July",
+      "current_image_ref": "assets/months/months-july.jpg"
+    },
+    {
+      "item_id": "months-june",
+      "english_word": "June",
+      "translation": "июнь",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "June",
+      "current_image_ref": "assets/months/months-june.jpg"
+    },
+    {
+      "item_id": "adjectives-kind",
+      "english_word": "Kind",
+      "translation": "добрый",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Kind",
+      "current_image_ref": "assets/adjectives/adjectives-kind.png"
+    },
+    {
+      "item_id": "fairy-tales-king",
+      "english_word": "King",
+      "translation": "король",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "King",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-king.png"
+    },
+    {
+      "item_id": "drinks-lemonade",
+      "english_word": "Lemonade",
+      "translation": "лимонад",
+      "topic_id": "drinks",
+      "topic_title": "Drinks",
+      "query": "Lemonade",
+      "current_image_ref": "assets/drinks/drinks-lemonade.jpg"
+    },
+    {
+      "item_id": "adjectives-light",
+      "english_word": "Light",
+      "translation": "лёгкий",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Light",
+      "current_image_ref": "assets/adjectives/adjectives-light.jpg"
+    },
+    {
+      "item_id": "colors-light-blue",
+      "english_word": "Light blue",
+      "translation": "голубой",
+      "topic_id": "colors",
+      "topic_title": "Colors",
+      "query": "Light blue",
+      "current_image_ref": "assets/colors/colors-light-blue.jpg"
+    },
+    {
+      "item_id": "flowers-lily",
+      "english_word": "Lily",
+      "translation": "лилия",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Lily",
+      "current_image_ref": "assets/flowers/flowers-lily.png"
+    },
+    {
+      "item_id": "confectionery-liquorice",
+      "english_word": "Liquorice",
+      "translation": "лакрица",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Liquorice",
+      "current_image_ref": "assets/confectionery/confectionery-liquorice.png"
+    },
+    {
+      "item_id": "adjectives-little",
+      "english_word": "Little",
+      "translation": "маленький",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Little",
+      "current_image_ref": "assets/adjectives/adjectives-little.jpg"
+    },
+    {
+      "item_id": "confectionery-lollipop",
+      "english_word": "Lollipop",
+      "translation": "леденец",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Lollipop",
+      "current_image_ref": "assets/confectionery/confectionery-lollipop.png"
+    },
+    {
+      "item_id": "adjectives-long",
+      "english_word": "Long",
+      "translation": "длинный",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Long",
+      "current_image_ref": "assets/adjectives/adjectives-long.jpg"
+    },
+    {
+      "item_id": "fairy-tales-magic-lamp",
+      "english_word": "Magic lamp",
+      "translation": "магическая лампа",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Magic lamp",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-magic-lamp.jpg"
+    },
+    {
+      "item_id": "fairy-tales-magic-potion",
+      "english_word": "Magic potion",
+      "translation": "волшебный эликсир",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Magic potion",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-magic-potion.png"
+    },
+    {
+      "item_id": "months-march",
+      "english_word": "March",
+      "translation": "март",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "March",
+      "current_image_ref": "assets/months/months-march.jpg"
+    },
+    {
+      "item_id": "confectionery-marshmallow",
+      "english_word": "Marshmallow",
+      "translation": "маршмеллоу",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Marshmallow",
+      "current_image_ref": "assets/confectionery/confectionery-marshmallow.jpg"
+    },
+    {
+      "item_id": "months-may",
+      "english_word": "May",
+      "translation": "май",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "May",
+      "current_image_ref": "assets/months/months-may.png"
+    },
+    {
+      "item_id": "meals-meat",
+      "english_word": "Meat",
+      "translation": "мясо",
+      "topic_id": "meals",
+      "topic_title": "Meals",
+      "query": "Meat",
+      "current_image_ref": "assets/meals/meals-meat.png"
+    },
+    {
+      "item_id": "russian-new-year-table-meat-jelly",
+      "english_word": "Meat jelly",
+      "translation": "холодец",
+      "topic_id": "russian-new-year-table",
+      "topic_title": "Russian New Year Table",
+      "query": "Meat jelly",
+      "current_image_ref": "assets/russian-new-year-table/russian-new-year-table-meat-jelly.png"
+    },
+    {
+      "item_id": "fairy-tales-mermaid",
+      "english_word": "Mermaid",
+      "translation": "русалка",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Mermaid",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-mermaid.jpg"
+    },
+    {
+      "item_id": "drinks-milk",
+      "english_word": "Milk",
+      "translation": "молоко",
+      "topic_id": "drinks",
+      "topic_title": "Drinks",
+      "query": "Milk",
+      "current_image_ref": "assets/drinks/drinks-milk.png"
+    },
+    {
+      "item_id": "meals-milk",
+      "english_word": "Milk",
+      "translation": "молоко",
+      "topic_id": "meals",
+      "topic_title": "Meals",
+      "query": "Milk",
+      "current_image_ref": "assets/meals/meals-milk.png"
+    },
+    {
+      "item_id": "christmas-food-mince-pies",
+      "english_word": "Mince pies",
+      "translation": "пирожки с фруктовой начинкой",
+      "topic_id": "christmas-food",
+      "topic_title": "Christmas Food",
+      "query": "Mince pies",
+      "current_image_ref": "assets/christmas-food/christmas-food-mince-pies.jpg"
+    },
+    {
+      "item_id": "confectionery-mint",
+      "english_word": "Mint",
+      "translation": "мята",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Mint",
+      "current_image_ref": "assets/confectionery/confectionery-mint.jpg"
+    },
+    {
+      "item_id": "clothes-mitten",
+      "english_word": "Mitten",
+      "translation": "варежка",
+      "topic_id": "clothes",
+      "topic_title": "Clothes",
+      "query": "Mitten",
+      "current_image_ref": "assets/clothes/clothes-mitten.png"
+    },
+    {
+      "item_id": "fairy-tales-monster",
+      "english_word": "Monster",
+      "translation": "чудовище",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Monster",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-monster.png"
+    },
+    {
+      "item_id": "toys-monster",
+      "english_word": "Monster",
+      "translation": "монстр",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Monster",
+      "current_image_ref": "assets/toys/toys-monster.png"
+    },
+    {
+      "item_id": "flowers-narcissus",
+      "english_word": "Narcissus",
+      "translation": "нарцисс",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Narcissus",
+      "current_image_ref": "assets/flowers/flowers-narcissus.jpg"
+    },
+    {
+      "item_id": "adjectives-narrow",
+      "english_word": "Narrow",
+      "translation": "узкий",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Narrow",
+      "current_image_ref": "assets/adjectives/adjectives-narrow.jpg"
+    },
+    {
+      "item_id": "frequency-never",
+      "english_word": "Never",
+      "translation": "никогда",
+      "topic_id": "frequency",
+      "topic_title": "Frequency",
+      "query": "Never",
+      "current_image_ref": "assets/frequency/frequency-never.png"
+    },
+    {
+      "item_id": "confectionery-nougat",
+      "english_word": "Nougat",
+      "translation": "нуга",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Nougat",
+      "current_image_ref": "assets/confectionery/confectionery-nougat.png"
+    },
+    {
+      "item_id": "months-november",
+      "english_word": "November",
+      "translation": "ноябрь",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "November",
+      "current_image_ref": "assets/months/months-november.png"
+    },
+    {
+      "item_id": "months-october",
+      "english_word": "October",
+      "translation": "октябрь",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "October",
+      "current_image_ref": "assets/months/months-october.png"
+    },
+    {
+      "item_id": "frequency-often",
+      "english_word": "Often",
+      "translation": "часто",
+      "topic_id": "frequency",
+      "topic_title": "Frequency",
+      "query": "Often",
+      "current_image_ref": "assets/frequency/frequency-often.png"
+    },
+    {
+      "item_id": "fairy-tales-ogre",
+      "english_word": "Ogre",
+      "translation": "огр ( великан )",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Ogre",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-ogre.jpg"
+    },
+    {
+      "item_id": "russian-new-year-table-olivier",
+      "english_word": "Olivier",
+      "translation": "оливье",
+      "topic_id": "russian-new-year-table",
+      "topic_title": "Russian New Year Table",
+      "query": "Olivier",
+      "current_image_ref": "assets/russian-new-year-table/russian-new-year-table-olivier.png"
+    },
+    {
+      "item_id": "colors-orange",
+      "english_word": "Orange",
+      "translation": "оранжевый",
+      "topic_id": "colors",
+      "topic_title": "Colors",
+      "query": "Orange",
+      "current_image_ref": "assets/colors/colors-orange.png"
+    },
+    {
+      "item_id": "fruit-and-berries-orange",
+      "english_word": "Orange",
+      "translation": "апельсин",
+      "topic_id": "fruit-and-berries",
+      "topic_title": "Fruit and Berries",
+      "query": "Orange",
+      "current_image_ref": "assets/fruit-and-berries/fruit-and-berries-orange.png"
+    },
+    {
+      "item_id": "drinks-orange-juice",
+      "english_word": "Orange juice",
+      "translation": "апельсиновый сок",
+      "topic_id": "drinks",
+      "topic_title": "Drinks",
+      "query": "Orange juice",
+      "current_image_ref": "assets/drinks/drinks-orange-juice.png"
+    },
+    {
+      "item_id": "flowers-orchid",
+      "english_word": "Orchid",
+      "translation": "орхидея",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Orchid",
+      "current_image_ref": "assets/flowers/flowers-orchid.png"
+    },
+    {
+      "item_id": "toys-panda",
+      "english_word": "Panda",
+      "translation": "панда",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Panda",
+      "current_image_ref": "assets/toys/toys-panda.png"
+    },
+    {
+      "item_id": "fruit-and-berries-pear",
+      "english_word": "Pear",
+      "translation": "груша",
+      "topic_id": "fruit-and-berries",
+      "topic_title": "Fruit and Berries",
+      "query": "Pear",
+      "current_image_ref": "assets/fruit-and-berries/fruit-and-berries-pear.jpg"
+    },
+    {
+      "item_id": "flowers-peony",
+      "english_word": "Peony",
+      "translation": "пион",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Peony",
+      "current_image_ref": "assets/flowers/flowers-peony.png"
+    },
+    {
+      "item_id": "fruit-and-berries-pineapple",
+      "english_word": "Pineapple",
+      "translation": "ананас",
+      "topic_id": "fruit-and-berries",
+      "topic_title": "Fruit and Berries",
+      "query": "Pineapple",
+      "current_image_ref": "assets/fruit-and-berries/fruit-and-berries-pineapple.png"
+    },
+    {
+      "item_id": "colors-pink",
+      "english_word": "Pink",
+      "translation": "розовый",
+      "topic_id": "colors",
+      "topic_title": "Colors",
+      "query": "Pink",
+      "current_image_ref": "assets/colors/colors-pink.jpg"
+    },
+    {
+      "item_id": "meals-pizza",
+      "english_word": "Pizza",
+      "translation": "пицца",
+      "topic_id": "meals",
+      "topic_title": "Meals",
+      "query": "Pizza",
+      "current_image_ref": "assets/meals/meals-pizza.png"
+    },
+    {
+      "item_id": "fruit-and-berries-plum",
+      "english_word": "Plum",
+      "translation": "слива",
+      "topic_id": "fruit-and-berries",
+      "topic_title": "Fruit and Berries",
+      "query": "Plum",
+      "current_image_ref": "assets/fruit-and-berries/fruit-and-berries-plum.png"
+    },
+    {
+      "item_id": "flowers-poppy",
+      "english_word": "Poppy",
+      "translation": "мак",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Poppy",
+      "current_image_ref": "assets/flowers/flowers-poppy.png"
+    },
+    {
+      "item_id": "birthday-presents",
+      "english_word": "Presents",
+      "translation": "подарки",
+      "topic_id": "birthday",
+      "topic_title": "Birthday",
+      "query": "Presents",
+      "current_image_ref": "assets/birthday/birthday-presents.png"
+    },
+    {
+      "item_id": "fairy-tales-prince",
+      "english_word": "Prince",
+      "translation": "принц",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Prince",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-prince.jpg"
+    },
+    {
+      "item_id": "toys-puppet",
+      "english_word": "Puppet",
+      "translation": "кукла",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Puppet",
+      "current_image_ref": "assets/toys/toys-puppet.jpg"
+    },
+    {
+      "item_id": "colors-purple",
+      "english_word": "Purple",
+      "translation": "фиолетовый",
+      "topic_id": "colors",
+      "topic_title": "Colors",
+      "query": "Purple",
+      "current_image_ref": "assets/colors/colors-purple.jpg"
+    },
+    {
+      "item_id": "toys-puzzle",
+      "english_word": "Puzzle",
+      "translation": "пазл",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Puzzle",
+      "current_image_ref": "assets/toys/toys-puzzle.png"
+    },
+    {
+      "item_id": "fairy-tales-queen",
+      "english_word": "Queen",
+      "translation": "королева",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Queen",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-queen.png"
+    },
+    {
+      "item_id": "frequency-rarely",
+      "english_word": "Rarely",
+      "translation": "редко",
+      "topic_id": "frequency",
+      "topic_title": "Frequency",
+      "query": "Rarely",
+      "current_image_ref": "assets/frequency/frequency-rarely.jpg"
+    },
+    {
+      "item_id": "colors-red",
+      "english_word": "Red",
+      "translation": "красный",
+      "topic_id": "colors",
+      "topic_title": "Colors",
+      "query": "Red",
+      "current_image_ref": "assets/colors/colors-red.png"
+    },
+    {
+      "item_id": "cake-flavours-red-velvet",
+      "english_word": "Red velvet",
+      "translation": "красный бархат",
+      "topic_id": "cake-flavours",
+      "topic_title": "Cake Flavours",
+      "query": "Red velvet",
+      "current_image_ref": "assets/cake-flavours/cake-flavours-red-velvet.png"
+    },
+    {
+      "item_id": "toys-robot",
+      "english_word": "Robot",
+      "translation": "робот",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Robot",
+      "current_image_ref": "assets/toys/toys-robot.jpg"
+    },
+    {
+      "item_id": "toys-rocket",
+      "english_word": "Rocket",
+      "translation": "ракета",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Rocket",
+      "current_image_ref": "assets/toys/toys-rocket.jpg"
+    },
+    {
+      "item_id": "flowers-rose",
+      "english_word": "Rose",
+      "translation": "роза",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Rose",
+      "current_image_ref": "assets/flowers/flowers-rose.jpg"
+    },
+    {
+      "item_id": "adjectives-round",
+      "english_word": "Round",
+      "translation": "круглый",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Round",
+      "current_image_ref": "assets/adjectives/adjectives-round.png"
+    },
+    {
+      "item_id": "adjectives-sad",
+      "english_word": "Sad",
+      "translation": "грустный",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Sad",
+      "current_image_ref": "assets/adjectives/adjectives-sad.jpg"
+    },
+    {
+      "item_id": "meals-sandwich",
+      "english_word": "Sandwich",
+      "translation": "бутерброд",
+      "topic_id": "meals",
+      "topic_title": "Meals",
+      "query": "Sandwich",
+      "current_image_ref": "assets/meals/meals-sandwich.png"
+    },
+    {
+      "item_id": "months-september",
+      "english_word": "September",
+      "translation": "сентябрь",
+      "topic_id": "months",
+      "topic_title": "Months",
+      "query": "September",
+      "current_image_ref": "assets/months/months-september.png"
+    },
+    {
+      "item_id": "clothes-shirt",
+      "english_word": "Shirt",
+      "translation": "рубашка",
+      "topic_id": "clothes",
+      "topic_title": "Clothes",
+      "query": "Shirt",
+      "current_image_ref": "assets/clothes/clothes-shirt.png"
+    },
+    {
+      "item_id": "adjectives-short",
+      "english_word": "Short",
+      "translation": "короткий",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Short",
+      "current_image_ref": "assets/adjectives/adjectives-short.jpg"
+    },
+    {
+      "item_id": "clothes-shorts",
+      "english_word": "Shorts",
+      "translation": "шорты",
+      "topic_id": "clothes",
+      "topic_title": "Clothes",
+      "query": "Shorts",
+      "current_image_ref": "assets/clothes/clothes-shorts.png"
+    },
+    {
+      "item_id": "toys-skateboard",
+      "english_word": "Skateboard",
+      "translation": "скейтборд",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Skateboard",
+      "current_image_ref": "assets/toys/toys-skateboard.png"
+    },
+    {
+      "item_id": "clothes-skirt",
+      "english_word": "Skirt",
+      "translation": "юбка",
+      "topic_id": "clothes",
+      "topic_title": "Clothes",
+      "query": "Skirt",
+      "current_image_ref": "assets/clothes/clothes-skirt.jpg"
+    },
+    {
+      "item_id": "adjectives-slow",
+      "english_word": "Slow",
+      "translation": "медленный",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Slow",
+      "current_image_ref": "assets/adjectives/adjectives-slow.png"
+    },
+    {
+      "item_id": "flowers-snowdrop",
+      "english_word": "Snowdrop",
+      "translation": "подснежник",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Snowdrop",
+      "current_image_ref": "assets/flowers/flowers-snowdrop.png"
+    },
+    {
+      "item_id": "clothes-socks",
+      "english_word": "Socks",
+      "translation": "носки",
+      "topic_id": "clothes",
+      "topic_title": "Clothes",
+      "query": "Socks",
+      "current_image_ref": "assets/clothes/clothes-socks.jpg"
+    },
+    {
+      "item_id": "frequency-sometimes",
+      "english_word": "Sometimes",
+      "translation": "иногда",
+      "topic_id": "frequency",
+      "topic_title": "Frequency",
+      "query": "Sometimes",
+      "current_image_ref": "assets/frequency/frequency-sometimes.jpg"
+    },
+    {
+      "item_id": "seasons-spring",
+      "english_word": "Spring",
+      "translation": "весна",
+      "topic_id": "seasons",
+      "topic_title": "Seasons",
+      "query": "Spring",
+      "current_image_ref": "assets/seasons/seasons-spring.png"
+    },
+    {
+      "item_id": "adjectives-square",
+      "english_word": "Square",
+      "translation": "квадратный",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Square",
+      "current_image_ref": "assets/adjectives/adjectives-square.jpg"
+    },
+    {
+      "item_id": "cake-flavours-strawberry",
+      "english_word": "Strawberry",
+      "translation": "клубника",
+      "topic_id": "cake-flavours",
+      "topic_title": "Cake Flavours",
+      "query": "Strawberry",
+      "current_image_ref": "assets/cake-flavours/cake-flavours-strawberry.jpg"
+    },
+    {
+      "item_id": "fruit-and-berries-strawberry",
+      "english_word": "Strawberry",
+      "translation": "клубника",
+      "topic_id": "fruit-and-berries",
+      "topic_title": "Fruit and Berries",
+      "query": "Strawberry",
+      "current_image_ref": "assets/fruit-and-berries/fruit-and-berries-strawberry.jpg"
+    },
+    {
+      "item_id": "adjectives-strong",
+      "english_word": "Strong",
+      "translation": "сильный",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Strong",
+      "current_image_ref": "assets/adjectives/adjectives-strong.jpg"
+    },
+    {
+      "item_id": "seasons-summer",
+      "english_word": "Summer",
+      "translation": "лето",
+      "topic_id": "seasons",
+      "topic_title": "Seasons",
+      "query": "Summer meadow",
+      "current_image_ref": "assets/seasons/seasons-summer.png"
+    },
+    {
+      "item_id": "flowers-sunflower",
+      "english_word": "Sunflower",
+      "translation": "подсолнух",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Sunflower",
+      "current_image_ref": "assets/flowers/flowers-sunflower.png"
+    },
+    {
+      "item_id": "clothes-t-shirt",
+      "english_word": "T-shirt",
+      "translation": "футболка",
+      "topic_id": "clothes",
+      "topic_title": "Clothes",
+      "query": "T-shirt",
+      "current_image_ref": "assets/clothes/clothes-t-shirt.png"
+    },
+    {
+      "item_id": "adjectives-tall",
+      "english_word": "Tall",
+      "translation": "высокий",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Tall",
+      "current_image_ref": "assets/adjectives/adjectives-tall.png"
+    },
+    {
+      "item_id": "russian-new-year-table-tangerines",
+      "english_word": "Tangerines",
+      "translation": "мандарины",
+      "topic_id": "russian-new-year-table",
+      "topic_title": "Russian New Year Table",
+      "query": "Tangerines",
+      "current_image_ref": "assets/russian-new-year-table/russian-new-year-table-tangerines.png"
+    },
+    {
+      "item_id": "drinks-tea",
+      "english_word": "Tea",
+      "translation": "чай",
+      "topic_id": "drinks",
+      "topic_title": "Drinks",
+      "query": "Tea",
+      "current_image_ref": "assets/drinks/drinks-tea.png"
+    },
+    {
+      "item_id": "toys-teddy-bear",
+      "english_word": "Teddy bear",
+      "translation": "плюшевый медведь",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Teddy bear",
+      "current_image_ref": "assets/toys/toys-teddy-bear.png"
+    },
+    {
+      "item_id": "birthday-to-celebrate",
+      "english_word": "To celebrate",
+      "translation": "праздновать",
+      "topic_id": "birthday",
+      "topic_title": "Birthday",
+      "query": "To celebrate",
+      "current_image_ref": "assets/birthday/birthday-to-celebrate.png"
+    },
+    {
+      "item_id": "confectionery-toffee",
+      "english_word": "Toffee",
+      "translation": "ириска",
+      "topic_id": "confectionery",
+      "topic_title": "Confectionery",
+      "query": "Toffee",
+      "current_image_ref": "assets/confectionery/confectionery-toffee.png"
+    },
+    {
+      "item_id": "toys-train",
+      "english_word": "Train",
+      "translation": "поезд",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Train",
+      "current_image_ref": "assets/toys/toys-train.png"
+    },
+    {
+      "item_id": "christmas-food-trifle",
+      "english_word": "Trifle",
+      "translation": "трайфл",
+      "topic_id": "christmas-food",
+      "topic_title": "Christmas Food",
+      "query": "Trifle",
+      "current_image_ref": "assets/christmas-food/christmas-food-trifle.png"
+    },
+    {
+      "item_id": "fairy-tales-troll",
+      "english_word": "Troll",
+      "translation": "тролль",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Troll",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-troll.jpg"
+    },
+    {
+      "item_id": "clothes-trousers",
+      "english_word": "Trousers",
+      "translation": "брюки",
+      "topic_id": "clothes",
+      "topic_title": "Clothes",
+      "query": "Trousers",
+      "current_image_ref": "assets/clothes/clothes-trousers.png"
+    },
+    {
+      "item_id": "flowers-tulip",
+      "english_word": "Tulip",
+      "translation": "тюльпан",
+      "topic_id": "flowers",
+      "topic_title": "Flowers",
+      "query": "Tulip",
+      "current_image_ref": "assets/flowers/flowers-tulip.png"
+    },
+    {
+      "item_id": "christmas-food-turkey",
+      "english_word": "Turkey",
+      "translation": "индейка",
+      "topic_id": "christmas-food",
+      "topic_title": "Christmas Food",
+      "query": "Turkey",
+      "current_image_ref": "assets/christmas-food/christmas-food-turkey.png"
+    },
+    {
+      "item_id": "adjectives-ugly",
+      "english_word": "Ugly",
+      "translation": "уродливый",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Ugly",
+      "current_image_ref": "assets/adjectives/adjectives-ugly.png"
+    },
+    {
+      "item_id": "frequency-usually",
+      "english_word": "Usually",
+      "translation": "обычно",
+      "topic_id": "frequency",
+      "topic_title": "Frequency",
+      "query": "Usually",
+      "current_image_ref": "assets/frequency/frequency-usually.png"
+    },
+    {
+      "item_id": "cake-flavours-vanilla",
+      "english_word": "Vanilla",
+      "translation": "ваниль",
+      "topic_id": "cake-flavours",
+      "topic_title": "Cake Flavours",
+      "query": "Vanilla",
+      "current_image_ref": "assets/cake-flavours/cake-flavours-vanilla.jpg"
+    },
+    {
+      "item_id": "russian-new-year-table-vinaigrette",
+      "english_word": "Vinaigrette",
+      "translation": "винегрет",
+      "topic_id": "russian-new-year-table",
+      "topic_title": "Russian New Year Table",
+      "query": "Vinaigrette",
+      "current_image_ref": "assets/russian-new-year-table/russian-new-year-table-vinaigrette.jpg"
+    },
+    {
+      "item_id": "drinks-water",
+      "english_word": "Water",
+      "translation": "вода",
+      "topic_id": "drinks",
+      "topic_title": "Drinks",
+      "query": "Water",
+      "current_image_ref": "assets/drinks/drinks-water.png"
+    },
+    {
+      "item_id": "adjectives-weak",
+      "english_word": "Weak",
+      "translation": "слабый",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Weak",
+      "current_image_ref": "assets/adjectives/adjectives-weak.png"
+    },
+    {
+      "item_id": "fairy-tales-werewolf",
+      "english_word": "Werewolf",
+      "translation": "оборотень",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Werewolf",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-werewolf.jpg"
+    },
+    {
+      "item_id": "adjectives-wide",
+      "english_word": "Wide",
+      "translation": "широкий",
+      "topic_id": "adjectives",
+      "topic_title": "Adjectives",
+      "query": "Wide",
+      "current_image_ref": "assets/adjectives/adjectives-wide.png"
+    },
+    {
+      "item_id": "seasons-winter",
+      "english_word": "Winter",
+      "translation": "зима",
+      "topic_id": "seasons",
+      "topic_title": "Seasons",
+      "query": "Winter",
+      "current_image_ref": "assets/seasons/seasons-winter.png"
+    },
+    {
+      "item_id": "fairy-tales-wizard",
+      "english_word": "Wizard",
+      "translation": "волшебник",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Wizard",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-wizard.jpg"
+    },
+    {
+      "item_id": "colors-yellow",
+      "english_word": "Yellow",
+      "translation": "жёлтый",
+      "topic_id": "colors",
+      "topic_title": "Colors",
+      "query": "Yellow",
+      "current_image_ref": "assets/colors/colors-yellow.jpg"
+    },
+    {
+      "item_id": "toys-yo-yo",
+      "english_word": "Yo-yo",
+      "translation": "йо-йо",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Yo-yo",
+      "current_image_ref": "assets/toys/toys-yo-yo.png"
+    },
+    {
+      "item_id": "meals-yogurt",
+      "english_word": "Yogurt",
+      "translation": "йогурт",
+      "topic_id": "meals",
+      "topic_title": "Meals",
+      "query": "Yogurt",
+      "current_image_ref": "assets/meals/meals-yogurt.jpg"
+    },
+    {
+      "item_id": "christmas-food-yule-log",
+      "english_word": "Yule log",
+      "translation": "рождественское полено",
+      "topic_id": "christmas-food",
+      "topic_title": "Christmas Food",
+      "query": "Yule log",
+      "current_image_ref": "assets/christmas-food/christmas-food-yule-log.png"
+    },
+    {
+      "item_id": "basic-bad",
+      "english_word": "bad",
+      "translation": "плохой",
+      "topic_id": "basic",
+      "topic_title": "Basic",
+      "query": "bad",
+      "current_image_ref": "assets/basic/basic-bad.png"
+    },
+    {
+      "item_id": "school-bag",
+      "english_word": "bag",
+      "translation": "рюкзак",
+      "topic_id": "school",
+      "topic_title": "School",
+      "query": "bag",
+      "current_image_ref": "assets/school/school-bag.png"
+    },
+    {
+      "item_id": "basic-beautiful",
+      "english_word": "beautiful",
+      "translation": "красивый",
+      "topic_id": "basic",
+      "topic_title": "Basic",
+      "query": "beautiful",
+      "current_image_ref": "assets/basic/basic-beautiful.png"
+    },
+    {
+      "item_id": "school-book",
+      "english_word": "book",
+      "translation": "книга",
+      "topic_id": "school",
+      "topic_title": "School",
+      "query": "book",
+      "current_image_ref": "assets/school/school-book.png"
+    },
+    {
+      "item_id": "weather-cloud",
+      "english_word": "cloud",
+      "translation": "облако",
+      "topic_id": "weather",
+      "topic_title": "Weather",
+      "query": "cloud",
+      "current_image_ref": "assets/weather/weather-cloud.png"
+    },
+    {
+      "item_id": "school-desk",
+      "english_word": "desk",
+      "translation": "парта",
+      "topic_id": "school",
+      "topic_title": "School",
+      "query": "desk",
+      "current_image_ref": "assets/school/school-desk.png"
+    },
+    {
+      "item_id": "basic-good",
+      "english_word": "good",
+      "translation": "хороший",
+      "topic_id": "basic",
+      "topic_title": "Basic",
+      "query": "good",
+      "current_image_ref": "assets/basic/basic-good.png"
+    },
+    {
+      "item_id": "basic-happy",
+      "english_word": "happy",
+      "translation": "счастливый",
+      "topic_id": "basic",
+      "topic_title": "Basic",
+      "query": "happy",
+      "current_image_ref": "assets/basic/basic-happy.jpg"
+    },
+    {
+      "item_id": "school-pencil",
+      "english_word": "pencil",
+      "translation": "карандаш",
+      "topic_id": "school",
+      "topic_title": "School",
+      "query": "pencil",
+      "current_image_ref": "assets/school/school-pencil.png"
+    },
+    {
+      "item_id": "weather-rain",
+      "english_word": "rain",
+      "translation": "дождь",
+      "topic_id": "weather",
+      "topic_title": "Weather",
+      "query": "rain",
+      "current_image_ref": "assets/weather/weather-rain.png"
+    },
+    {
+      "item_id": "basic-sad",
+      "english_word": "sad",
+      "translation": "грустный",
+      "topic_id": "basic",
+      "topic_title": "Basic",
+      "query": "sad",
+      "current_image_ref": "assets/basic/basic-sad.jpg"
+    },
+    {
+      "item_id": "weather-sun",
+      "english_word": "sun",
+      "translation": "солнце",
+      "topic_id": "weather",
+      "topic_title": "Weather",
+      "query": "sun",
+      "current_image_ref": "assets/weather/weather-sun.png"
+    },
+    {
+      "item_id": "basic-ugly",
+      "english_word": "ugly",
+      "translation": "безобразный",
+      "topic_id": "basic",
+      "topic_title": "Basic",
+      "query": "ugly",
+      "current_image_ref": "assets/basic/basic-ugly.png"
+    },
+    {
+      "item_id": "weather-wind",
+      "english_word": "wind",
+      "translation": "ветер",
+      "topic_id": "weather",
+      "topic_title": "Weather",
+      "query": "wind",
+      "current_image_ref": "assets/weather/weather-wind.png"
+    },
+    {
+      "item_id": "fairy-tales-rincess",
+      "english_word": "Рrincess",
+      "translation": "принцесса",
+      "topic_id": "fairy-tales",
+      "topic_title": "Fairy Tales",
+      "query": "Рrincess",
+      "current_image_ref": "assets/fairy-tales/fairy-tales-rincess.png"
+    }
+  ]
+}

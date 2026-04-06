@@ -39,10 +39,19 @@ class FakePixabaySearchClient:
 
 
 class FakeReranker:
+    output_path: Path | None = None
+    call_count = 0
+
     def __init__(self, **_: object) -> None:
         pass
 
     def rerank(self, *, english_word: str, translation: str, topic_title: str, candidates: list[dict[str, object]]):
+        type(self).call_count += 1
+        if type(self).call_count == 2:
+            assert type(self).output_path is not None
+            partial_payload = json.loads(type(self).output_path.read_text(encoding="utf-8"))
+            assert partial_payload["item_count"] == 1
+
         class Decision:
             selected_index = 0
             confidence = 0.8
@@ -69,6 +78,7 @@ def _build_store(tmp_path: Path) -> SQLiteContentStore:
             "lessons": [],
             "vocabulary_items": [
                 {"id": "wind", "english_word": "wind", "translation": "ветер"},
+                {"id": "rain", "english_word": "rain", "translation": "дождь"},
             ],
         }
     )
@@ -103,7 +113,10 @@ def test_export_rerank_apply_cli_flow(tmp_path: Path, monkeypatch) -> None:
     export_result = CliRunner().invoke(export_app, ["--output", str(manifest_path)])
     assert export_result.exit_code == 0
     manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest_payload["item_count"] == 1
+    assert manifest_payload["item_count"] == 2
+
+    FakeReranker.output_path = decisions_path
+    FakeReranker.call_count = 0
 
     rerank_result = CliRunner().invoke(
         rerank_app,
@@ -116,7 +129,7 @@ def test_export_rerank_apply_cli_flow(tmp_path: Path, monkeypatch) -> None:
     )
     assert rerank_result.exit_code == 0
     decisions_payload = json.loads(decisions_path.read_text(encoding="utf-8"))
-    assert decisions_payload["item_count"] == 1
+    assert decisions_payload["item_count"] == 2
 
     apply_result = CliRunner().invoke(
         apply_app,
@@ -131,3 +144,6 @@ def test_export_rerank_apply_cli_flow(tmp_path: Path, monkeypatch) -> None:
     saved = store.get_vocabulary_item("wind")
     assert saved is not None
     assert saved.image_ref == (tmp_path / "assets" / "weather" / "wind.jpg").as_posix()
+    saved = store.get_vocabulary_item("rain")
+    assert saved is not None
+    assert saved.image_ref == (tmp_path / "assets" / "weather" / "rain.jpg").as_posix()

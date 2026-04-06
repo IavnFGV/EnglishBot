@@ -110,7 +110,16 @@ class OllamaPixabayVisionRerankerClient:
         )
         response.raise_for_status()
         content = response.json()["message"]["content"]
-        return _parse_rerank_decision(content=content, candidate_count=len(candidates))
+        try:
+            return _parse_rerank_decision(content=content, candidate_count=len(candidates))
+        except (json.JSONDecodeError, ValueError):
+            logger.exception(
+                "Ollama reranker returned invalid content model=%s candidate_count=%s raw_content=%r",
+                self._model,
+                len(candidates),
+                content,
+            )
+            raise
 
     @staticmethod
     def _build_options(
@@ -130,25 +139,22 @@ class OllamaPixabayVisionRerankerClient:
 
 
 _SYSTEM_PROMPT = (
-    "You help choose the best vocabulary image for children.\n"
-    "You will receive one English word, its translation, the topic title, and six Pixabay preview images.\n"
-    "Choose the image that most literally and clearly matches the target meaning.\n"
-    "Prefer:\n"
-    "- one clear object or scene\n"
-    "- child-friendly, concrete, easy-to-understand imagery\n"
-    "- minimal visual clutter\n"
-    "- the exact intended meaning, not a loosely related concept\n"
-    "Avoid abstract art, decorative typography, collages, or images that only match one tag loosely.\n"
-    'Return JSON only in the form {"selected_index": 0, "confidence": 0.0, "rationale": "..."}.\n'
-    "selected_index must be one of the provided candidate indices."
+    "Choose the best vocabulary image for children.\n"
+    "You will receive one English word, its translation, the topic title, and candidate images.\n"
+    "Pick the most literal, clear, child-friendly match.\n"
+    "Avoid abstract art, text-heavy images, collages, and loosely related concepts.\n"
+    'Return only a JSON object: {"selected_index": 0}\n'
+    "Do not include markdown. Do not include explanation. selected_index must be one of the provided candidate indices."
 )
 
 
 def _parse_rerank_decision(*, content: str, candidate_count: int) -> ImageRerankDecision:
-    parsed = json.loads(content)
+    parsed = _load_json_object(content)
     if not isinstance(parsed, dict):
         raise ValueError("Ollama reranker returned a non-object response.")
     raw_index = parsed.get("selected_index")
+    if isinstance(raw_index, str) and raw_index.strip().isdigit():
+        raw_index = int(raw_index.strip())
     if not isinstance(raw_index, int) or not (0 <= raw_index < candidate_count):
         raise ValueError("Ollama reranker returned an invalid selected_index.")
     raw_rationale = parsed.get("rationale")
@@ -160,3 +166,19 @@ def _parse_rerank_decision(*, content: str, candidate_count: int) -> ImageRerank
         rationale=rationale,
         confidence=confidence,
     )
+
+
+def _load_json_object(content: str) -> object:
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.strip("`")
+        if stripped.startswith("json"):
+            stripped = stripped[4:].strip()
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start != -1 and end != -1 and start < end:
+            return json.loads(stripped[start : end + 1])
+        raise

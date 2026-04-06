@@ -82,6 +82,10 @@ def main(
     decisions = use_case.execute(
         manifest=manifest,
         model_name=resolved_model,
+        progress_callback=lambda partial_decisions: write_image_rerank_decisions(
+            decisions=partial_decisions,
+            output_path=output,
+        ),
     )
     write_image_rerank_decisions(decisions=decisions, output_path=output)
     logging.getLogger(__name__).info(

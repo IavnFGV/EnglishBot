@@ -194,6 +194,73 @@ def test_rerank_image_manifest_use_case_falls_back_to_heuristic(tmp_path: Path) 
     assert decisions.items[0].selected_candidate["source_id"] == "2"
 
 
+def test_rerank_image_manifest_use_case_reports_partial_progress(tmp_path: Path) -> None:
+    manifest = ImageRerankManifest(
+        exported_at="2026-04-06T00:00:00+00:00",
+        item_count=2,
+        items=[
+            ImageRerankManifestItem(
+                item_id="wind",
+                english_word="wind",
+                translation="ветер",
+                topic_id="weather",
+                topic_title="Weather",
+                query="wind",
+            ),
+            ImageRerankManifestItem(
+                item_id="rain",
+                english_word="rain",
+                translation="дождь",
+                topic_id="weather",
+                topic_title="Weather",
+                query="rain",
+            ),
+        ],
+    )
+    client = FakePixabaySearchClient(
+        {
+            "wind": [
+                PixabayImageResult(
+                    source_id="1",
+                    preview_url="https://cdn.example/1.jpg",
+                    full_image_url="https://cdn.example/full-1.jpg",
+                    source_page_url="https://pixabay.example/photos/wind",
+                    width=900,
+                    height=600,
+                    tags=("wind",),
+                ),
+            ],
+            "rain": [
+                PixabayImageResult(
+                    source_id="2",
+                    preview_url="https://cdn.example/2.jpg",
+                    full_image_url="https://cdn.example/full-2.jpg",
+                    source_page_url="https://pixabay.example/photos/rain",
+                    width=900,
+                    height=600,
+                    tags=("rain",),
+                ),
+            ],
+        }
+    )
+    snapshots: list[tuple[int, list[str]]] = []
+
+    decisions = RerankImageManifestUseCase(
+        image_search_client=client,
+        reranker_client=FakeRerankerClient(selected_index=0),
+        candidate_count=1,
+    ).execute(
+        manifest=manifest,
+        model_name="qwen2.5vl:3b",
+        progress_callback=lambda partial: snapshots.append(
+            (partial.item_count, [item.item_id for item in partial.items])
+        ),
+    )
+
+    assert snapshots == [(1, ["wind"]), (2, ["wind", "rain"])]
+    assert decisions.item_count == 2
+
+
 def test_apply_image_rerank_decisions_use_case_downloads_and_updates_store(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     downloader = FakeRemoteImageDownloader()

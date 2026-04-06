@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-04-06T17:33:33+00:00",
+  "model": "qwen2.5vl:7b",
+  "item_count": 1,
+  "items": [
+    {
+      "item_id": "toys-action-figure",
+      "english_word": "Action figure",
+      "translation": "фигурка",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Action figure",
+      "decision_source": "ollama",
+      "selected_index": 2,
+      "confidence": 0.95,
+      "rationale": "The image shows a cartoon character dressed as Superman, which is a type of action figure.",
+      "selected_candidate": {
+        "source_id": "8369143",
+        "preview_url": "https://pixabay.com/get/g188cc22ed08a25e02c6b2ef2c182fd9e162da01f7f52b72a419bff8d77ab6bf287820e56686a39a7f0fadbb5d30ad0ff2f8a82b3a9996975d42581500888867c_640.jpg",
+        "full_image_url": "https://pixabay.com/get/gba53d05c4a88fbe8e5bdf328d9cbd2ecb624f82a59de7f8e470b8d9be5cbded0bb8fb87fbaea4cdcb93149e0d3271e7fb3f03dd70d7b3cd63de0858bc95f478c_1280.jpg",
+        "source_page_url": "https://pixabay.com/illustrations/ai-generated-superman-superhero-8369143/",
+        "width": 2260,
+        "height": 3000,
+        "tags": [
+          "ai generated",
+          "superman",
+          "superhero",
+          "fighter",
+          "cartoon",
+          "action figure",
+          "superman",
+          "superman",
+          "superman",
+          "superman",
+          "superman",
+          "cartoon",
+          "action figure"
+        ]
+      }
+    }
+  ]
+}

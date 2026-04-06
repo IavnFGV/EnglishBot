@@ -1,31 +1,45 @@
 {
-  "name": "EnglishBot Dev (No AI Services)",
+  "name": "EnglishBot Dev (GPU)",
   "build": {
     "dockerfile": "Dockerfile",
     "context": "..",
     "args": {
-      "OLLAMA_INSTALL": "0",
-      "COMFYUI_INSTALL": "0",
-      "PYTHON_EXTRAS": "dev"
+      "COMFYUI_INSTALL": "1",
+      "PYTHON_EXTRAS": "dev,llm",
+      "COMFYUI_TORCH_INDEX_URL": "https://download.pytorch.org/whl/cu124"
     }
   },
+  "initializeCommand": "bash .devcontainer/check-host-gpu.sh && bash .devcontainer/prepare-host-dirs.sh",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/nvidia-cuda:1": {}
+  },
+  "runArgs": [
+    "--env-file",
+    "${localWorkspaceFolder}/.devcontainer/comfyui.env",
+    "--gpus",
+    "all",
+    "--env-file",
+    "${localWorkspaceFolder}/.devcontainer/ollama.env",
+    "--env-file",
+    "${localWorkspaceFolder}/.devcontainer/local-ai.env"
+  ],
   "mounts": [
     "source=englishbot-pip-cache,target=/home/vscode/.cache/pip,type=volume",
+    "source=${localEnv:HOME}/.ollama,target=/home/vscode/.ollama,type=bind",
+    "source=${localEnv:HOME}/.comfyui/models,target=/opt/ComfyUI/models,type=bind",
+    "source=${localEnv:HOME}/.comfyui/output,target=/opt/ComfyUI/output,type=bind",
     "source=${localEnv:HOME}/.codex,target=/home/vscode/.codex,type=bind",
     "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,readonly"
   ],
   "workspaceFolder": "/workspaces/EnglishBot",
   "remoteEnv": {
     "PIP_CACHE_DIR": "/home/vscode/.cache/pip",
-    "ENGLISHBOT_OLLAMA_MODEL_NOTE": "Local AI services are disabled in this profile",
-    "ENGLISHBOT_COMFYUI_NOTE": "Switch to cpu/gpu profile + local-ai=on to enable ComfyUI"
+    "ENGLISHBOT_OLLAMA_MODEL_NOTE": "Change Ollama model in .devcontainer/ollama.env",
+    "ENGLISHBOT_COMFYUI_NOTE": "Optional ComfyUI backend config lives in .devcontainer/comfyui.env"
   },
-  "remoteUser": "vscode",
-  "features": {
-    "ghcr.io/devcontainers/features/git:1": {}
-  },
-  "postCreateCommand": "bash .devcontainer/fix-container-perms.sh && pip install -e .[dev] --no-deps",
-  "postStartCommand": "bash .devcontainer/fix-container-perms.sh",
+  "postCreateCommand": "bash .devcontainer/fix-container-perms.sh && pip install -e .[dev,llm] --no-deps",
+  "postStartCommand": "bash .devcontainer/fix-container-perms.sh && bash .devcontainer/start-ollama.sh && bash .devcontainer/start-comfyui.sh",
   "customizations": {
     "vscode": {
       "settings": {

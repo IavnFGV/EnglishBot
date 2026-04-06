@@ -1,0 +1,15 @@
+{
+  "exported_at": "2026-04-06T17:29:45+00:00",
+  "item_count": 1,
+  "items": [
+    {
+      "item_id": "toys-action-figure",
+      "english_word": "Action figure",
+      "translation": "фигурка",
+      "topic_id": "toys",
+      "topic_title": "Toys",
+      "query": "Action figure",
+      "current_image_ref": null
+    }
+  ]
+}

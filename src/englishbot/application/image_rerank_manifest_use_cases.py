@@ -5,6 +5,7 @@ import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlparse
 
 from englishbot.application.fill_word_images_use_cases import select_best_pixabay_candidate
@@ -234,8 +235,10 @@ class RerankImageManifestUseCase:
         *,
         manifest: ImageRerankManifest,
         model_name: str,
+        progress_callback: Callable[[ImageRerankDecisions], None] | None = None,
     ) -> ImageRerankDecisions:
         items: list[ImageRerankDecisionItem] = []
+        generated_at = _current_timestamp()
         for item in manifest.items:
             normalized_query, candidates = self._image_search_client.search(
                 english_word=item.english_word,
@@ -291,8 +294,17 @@ class RerankImageManifestUseCase:
                     selected_candidate=_candidate_to_payload(candidates[selected_index]),
                 )
             )
+            if progress_callback is not None:
+                progress_callback(
+                    ImageRerankDecisions(
+                        generated_at=generated_at,
+                        model=model_name,
+                        item_count=len(items),
+                        items=list(items),
+                    )
+                )
         return ImageRerankDecisions(
-            generated_at=_current_timestamp(),
+            generated_at=generated_at,
             model=model_name,
             item_count=len(items),
             items=items,
