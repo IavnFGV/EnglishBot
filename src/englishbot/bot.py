@@ -230,6 +230,16 @@ from englishbot.telegram_entry_handlers import (
     start_handler as telegram_start_handler,
     version_handler as telegram_version_handler,
 )
+from englishbot.telegram_navigation_handlers import (
+    assign_menu_callback_handler as telegram_assign_menu_callback_handler,
+    assign_menu_handler as telegram_assign_menu_handler,
+    start_assignment_round_callback_handler as telegram_start_assignment_round_callback_handler,
+    start_assignment_unavailable_callback_handler as telegram_start_assignment_unavailable_callback_handler,
+    start_menu_callback_handler as telegram_start_menu_callback_handler,
+    words_menu_callback_handler as telegram_words_menu_callback_handler,
+    words_menu_handler as telegram_words_menu_handler,
+    words_topics_callback_handler as telegram_words_topics_callback_handler,
+)
 from englishbot.presentation.telegram_menu_access import (
     PERMISSION_WORD_IMAGES_EDIT,
     PERMISSION_WORDS_ADD,
@@ -2621,64 +2631,36 @@ async def clear_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def assign_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or user is None:
-        return
-    _telegram_user_login_repository(context).record(
-        user_id=user.id,
-        username=getattr(user, "username", None),
-        first_name=getattr(user, "first_name", None),
-        last_name=getattr(user, "last_name", None),
-        language_code=getattr(user, "language_code", None),
+    await telegram_assign_menu_handler(
+        update,
+        context,
+        send_view=send_telegram_view,
+        telegram_user_login_repository=_telegram_user_login_repository,
+        tg=_tg,
+        assign_menu_view=_assign_menu_view,
+        ensure_chat_menu_message=_ensure_chat_menu_message,
     )
-    await send_telegram_view(
-        message,
-        _assign_menu_view(
-            text=_tg("assign_menu_prompt", context=context, user=user),
-            context=context,
-            user=user,
-        ),
-    )
-    await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def words_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None:
-        return
-    await send_telegram_view(
-        message,
-        _words_menu_view(
-            text=_tg("words_menu_prompt", context=context, user=user),
-            context=context,
-            user=user,
-        ),
+    await telegram_words_menu_handler(
+        update,
+        context,
+        send_view=send_telegram_view,
+        tg=_tg,
+        words_menu_view=_words_menu_view,
+        ensure_chat_menu_message=_ensure_chat_menu_message,
     )
-    if user is not None:
-        await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def assign_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    try:
-        await edit_telegram_text_view(
-            query,
-            _assign_menu_view(
-                text=_tg("assign_menu_title", context=context, user=update.effective_user),
-                context=context,
-                user=update.effective_user,
-            ),
-        )
-    except BadRequest as error:
-        if "message is not modified" in str(error).lower():
-            logger.debug("Assign menu message unchanged")
-            return
-        raise
+    await telegram_assign_menu_callback_handler(
+        update,
+        context,
+        edit_text_view=edit_telegram_text_view,
+        tg=_tg,
+        assign_menu_view=_assign_menu_view,
+    )
 
 
 async def noop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:  # noqa: ARG001
@@ -2697,24 +2679,13 @@ async def notification_dismiss_callback_handler(update: Update, context: Context
 
 
 async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    try:
-        await edit_telegram_text_view(
-            query,
-            _words_menu_view(
-                text=_tg("words_menu_title", context=context, user=update.effective_user),
-                context=context,
-                user=update.effective_user,
-            ),
-        )
-    except BadRequest as error:
-        if "message is not modified" in str(error).lower():
-            logger.debug("Words menu message unchanged")
-            return
-        raise
+    await telegram_words_menu_callback_handler(
+        update,
+        context,
+        edit_text_view=edit_telegram_text_view,
+        tg=_tg,
+        words_menu_view=_words_menu_view,
+    )
 
 
 def _goal_setup_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
@@ -3430,18 +3401,13 @@ async def words_topics_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    topics = _service(context).list_topics()
-    topic_view = _topic_selection_view(
-        text="Choose a topic to start training.",
-        topics=topics,
-        context=context,
-        user=update.effective_user,
+    await telegram_words_topics_callback_handler(
+        update,
+        context,
+        service=_service,
+        topic_selection_view=_topic_selection_view,
+        edit_text_view=edit_telegram_text_view,
     )
-    await edit_telegram_text_view(query, topic_view)
 
 
 async def words_add_words_callback_handler(
@@ -5259,59 +5225,39 @@ async def restart_session_handler(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def start_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    await edit_telegram_text_view(query, _start_menu_view(context=context, user=user))
+    await telegram_start_menu_callback_handler(
+        update,
+        context,
+        edit_text_view=edit_telegram_text_view,
+        start_menu_view=_start_menu_view,
+    )
 
 
 async def start_assignment_round_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    kind = AssignmentSessionKind.HOMEWORK
-    try:
-        use_case = _start_assignment_round_use_case(context)
-        question = _execute_assignment_start_use_case(
-            use_case,
-            user_id=user.id,
-            kind=kind,
-            ui_language=_telegram_ui_language(context, user),
-        )
-    except ValueError:
-        await query.edit_message_text(
-            _tg("start_assignment_empty", context=context, user=user),
-            reply_markup=_start_submenu_keyboard(language=_telegram_ui_language(context, user)),
-        )
-        return
-    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
-    callback_message = getattr(query, "message", None)
-    if callback_message is not None:
-        await _send_or_update_assignment_progress_message(
-            context,
-            message=callback_message,
-            user=user,
-            kind=kind,
-        )
-    await _send_question(update, context, question)
+    await telegram_start_assignment_round_callback_handler(
+        update,
+        context,
+        start_assignment_round_use_case=_start_assignment_round_use_case,
+        execute_assignment_start_use_case=_execute_assignment_start_use_case,
+        telegram_ui_language=_telegram_ui_language,
+        tg=_tg,
+        start_submenu_keyboard=_start_submenu_keyboard,
+        expects_text_answer_for_question=_expects_text_answer_for_question,
+        send_or_update_assignment_progress_message=_send_or_update_assignment_progress_message,
+        send_question=_send_question,
+    )
 
 
 async def start_assignment_unavailable_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    await query.edit_message_text(
-        _tg("start_assignment_empty", context=context, user=user),
-        reply_markup=_start_submenu_keyboard(language=_telegram_ui_language(context, user)),
+    await telegram_start_assignment_unavailable_callback_handler(
+        update,
+        context,
+        tg=_tg,
+        telegram_ui_language=_telegram_ui_language,
+        start_submenu_keyboard=_start_submenu_keyboard,
     )
 
 

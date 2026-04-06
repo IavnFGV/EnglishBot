@@ -29,6 +29,7 @@ First extraction steps already in place:
 
 - [src/englishbot/telegram_command_menu.py](/workspaces/EnglishBot/src/englishbot/telegram_command_menu.py) owns command visibility and post-init command setup
 - [src/englishbot/telegram_entry_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram_entry_handlers.py) owns `/start`, `/help`, and `/version`
+- [src/englishbot/telegram_navigation_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram_navigation_handlers.py) owns top-level menu navigation such as `/words`, `/assign`, start menu callbacks, and homework launch entry points
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers
 
 ## Current Status
