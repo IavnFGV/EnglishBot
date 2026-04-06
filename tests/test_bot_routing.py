@@ -21,6 +21,41 @@ from englishbot.importing.smart_parsing import DisabledSmartLessonParsingGateway
 from tests.support.config import make_test_config_service
 
 
+def test_build_application_delegates_to_telegram_bootstrap(monkeypatch) -> None:
+    import englishbot.bot as bot_module
+    from englishbot.telegram import bootstrap as bootstrap_module
+
+    settings = Settings(
+        telegram_token="delegated-token",
+        log_level="INFO",
+        content_db_path=Path("delegated.db"),
+    )
+    config_service = make_test_config_service(
+        {
+            "telegram_token": settings.telegram_token,
+            "log_level": settings.log_level,
+            "content_db_path": settings.content_db_path,
+        }
+    )
+    expected_application = object()
+    captured: dict[str, object] = {}
+
+    def fake_build_application(passed_settings, *, config_service):
+        captured["settings"] = passed_settings
+        captured["config_service"] = config_service
+        return expected_application
+
+    monkeypatch.setattr(bootstrap_module, "build_application", fake_build_application)
+
+    result = bot_module.build_application(settings, config_service=config_service)
+
+    assert result is expected_application
+    assert captured == {
+        "settings": settings,
+        "config_service": config_service,
+    }
+
+
 def test_text_answer_handler_is_registered_after_add_words_handler() -> None:
     settings = Settings(
         telegram_token="test-token",
