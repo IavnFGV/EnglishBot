@@ -158,7 +158,7 @@ from englishbot.bot_editor_ui import topic_selection_view as ui_topic_selection_
 from englishbot.bot_editor_ui import words_menu_keyboard as ui_words_menu_keyboard
 from englishbot.bot_editor_ui import words_menu_view as ui_words_menu_view
 from englishbot.config import RuntimeConfigService, Settings
-from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType, SessionItem, Topic, TrainingMode, TrainingQuestion
+from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType, Topic, TrainingMode, TrainingQuestion
 from englishbot.image_generation.clients import ComfyUIImageGenerationClient
 from englishbot.image_generation.clients import LocalPlaceholderImageGenerationClient
 from englishbot.image_generation.pixabay import PixabayImageSearchClient, RemoteImageDownloader
@@ -219,6 +219,12 @@ from englishbot.presentation.telegram_ui_text import (
     telegram_ui_text,
 )
 from englishbot.telegram_buttons import InlineKeyboardButton
+from englishbot.telegram_answer_handlers import (
+    choice_answer_handler as telegram_choice_answer_handler,
+    hard_skip_handler as telegram_hard_skip_handler,
+    medium_answer_callback_handler as telegram_medium_answer_callback_handler,
+    text_answer_handler as telegram_text_answer_handler,
+)
 from englishbot.telegram_command_menu import (
     chat_menu_keyboard as menu_chat_menu_keyboard,
     post_init_command_setup,
@@ -5849,201 +5855,58 @@ async def tts_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    parts = query.data.split(":", 2)
-    if len(parts) != 3:
-        return
-    _, _, token = parts
-    payload = _consume_callback_token(
-        context=context,
-        user_id=int(user.id),
-        action=_HARD_SKIP_CALLBACK_ACTION,
-        token=token,
-        fallback_key="session_id",
+    await telegram_hard_skip_handler(
+        update,
+        context,
+        tg=_tg,
+        consume_callback_token=lambda **kwargs: _consume_callback_token(
+            **kwargs,
+            action=_HARD_SKIP_CALLBACK_ACTION,
+        ),
+        active_training_session=_active_training_session,
+        service=_service,
+        assignment_kind_from_session=_assignment_kind_from_session,
+        process_answer=_process_answer,
+        content_store=_content_store,
+        send_question=_send_question,
     )
-    if payload is None:
-        return
-    session_id = str(payload.get("session_id") or "").strip()
-    if not session_id:
-        return
-    active_session = _active_training_session(context, user_id=user.id)
-    if active_session is None or active_session.id != session_id:
-        return
-    try:
-        current_question = _service(context).get_current_question(user_id=user.id)
-    except InvalidSessionStateError:
-        return
-    if (
-        current_question.session_id != session_id
-        or current_question.mode is not TrainingMode.HARD
-    ):
-        return
-    assignment_kind = _assignment_kind_from_session(active_session)
-    if assignment_kind is not AssignmentSessionKind.HOMEWORK:
-        await _process_answer(update, context, "__skip_hard__")
-        return
-    if active_session.current_index >= len(active_session.items):
-        return
-    current_item = active_session.items[active_session.current_index]
-    active_session.items[active_session.current_index] = SessionItem(
-        order=current_item.order,
-        vocabulary_item_id=current_item.vocabulary_item_id,
-        mode=TrainingMode.MEDIUM,
-    )
-    active_session.combo_correct_streak = 0
-    active_session.combo_hard_active = False
-    active_session.bonus_item_id = None
-    active_session.bonus_mode = None
-    _content_store(context).save_session(active_session)
-    context.user_data["awaiting_text_answer"] = False
-    next_question = _service(context).get_current_question(user_id=user.id)
-    await _send_question(update, context, next_question)
 
 
 async def medium_answer_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    async with _medium_task_lock(context):
-        state = _get_medium_task_state(context)
-        message = getattr(query, "message", None)
-        message_id = getattr(message, "message_id", None)
-        if state is None:
-            logger.debug("Medium callback ignored: no medium state user_id=%s data=%s", user.id, query.data)
-            return
-        if state.message_id is None:
-            logger.debug("Medium callback ignored: state has no message_id user_id=%s data=%s", user.id, query.data)
-            return
-        if message_id != state.message_id:
-            logger.debug(
-                "Medium callback ignored: stale message user_id=%s data=%s callback_message_id=%s state_message_id=%s",
-                user.id,
-                query.data,
-                message_id,
-                state.message_id,
-            )
-            return
-        active_session = _service(context).get_active_session(user_id=user.id)
-        if active_session is None:
-            logger.debug("Medium callback ignored: no active session user_id=%s data=%s", user.id, query.data)
-            return
-        current_question = _service(context).get_current_question(user_id=user.id)
-        if (
-            current_question.mode is not TrainingMode.MEDIUM
-            or current_question.session_id != state.session_id
-            or current_question.item_id != state.item_id
-        ):
-            logger.debug(
-                "Medium callback ignored: question mismatch user_id=%s data=%s current_mode=%s current_session_id=%s state_session_id=%s current_item_id=%s state_item_id=%s",
-                user.id,
-                query.data,
-                current_question.mode.value,
-                current_question.session_id,
-                state.session_id,
-                current_question.item_id,
-                state.item_id,
-            )
-            _clear_medium_task_state(context)
-            return
-        if query.data == "medium:backspace":
-            if not state.selected_letter_indexes:
-                logger.debug("Medium callback ignored: backspace on empty answer user_id=%s", user.id)
-                return
-            state = _MediumTaskState(
-                session_id=state.session_id,
-                item_id=state.item_id,
-                target_word=state.target_word,
-                shuffled_letters=state.shuffled_letters,
-                selected_letter_indexes=state.selected_letter_indexes[:-1],
-                message_id=state.message_id,
-            )
-        elif query.data.startswith("medium:noop:"):
-            logger.debug("Medium callback ignored: noop button user_id=%s data=%s", user.id, query.data)
-            return
-        elif query.data.startswith("medium:pick:"):
-            if _medium_task_is_complete(state):
-                logger.debug("Medium callback ignored: answer already complete user_id=%s data=%s", user.id, query.data)
-                return
-            try:
-                picked_index = int(query.data.rsplit(":", 1)[-1])
-            except ValueError:
-                logger.debug("Medium callback ignored: invalid pick payload user_id=%s data=%s", user.id, query.data)
-                return
-            if picked_index < 0 or picked_index >= len(state.shuffled_letters):
-                logger.debug(
-                    "Medium callback ignored: pick index out of range user_id=%s data=%s index=%s letter_count=%s",
-                    user.id,
-                    query.data,
-                    picked_index,
-                    len(state.shuffled_letters),
-                )
-                return
-            if picked_index in state.selected_letter_indexes:
-                logger.debug(
-                    "Medium callback ignored: letter already used user_id=%s data=%s index=%s",
-                    user.id,
-                    query.data,
-                    picked_index,
-                )
-                return
-            state = _MediumTaskState(
-                session_id=state.session_id,
-                item_id=state.item_id,
-                target_word=state.target_word,
-                shuffled_letters=state.shuffled_letters,
-                selected_letter_indexes=(*state.selected_letter_indexes, picked_index),
-                message_id=state.message_id,
-            )
-        elif query.data == "medium:check":
-            if not _medium_task_is_complete(state):
-                logger.debug("Medium callback ignored: check before complete user_id=%s", user.id)
-                return
-        else:
-            logger.debug("Medium callback ignored: unsupported payload user_id=%s data=%s", user.id, query.data)
-            return
-        _set_medium_task_state(context, state)
-        if query.data == "medium:check":
-            await _edit_training_question_view(
-                query,
-                view=_build_medium_question_view(current_question, state=state, context=context, user=user),
-            )
-            _clear_medium_task_state(context)
-            await _process_answer(update, context, _medium_task_answer_text(state))
-            return
-        await _edit_training_question_view(
-            query,
-            view=_build_medium_question_view(current_question, state=state, context=context, user=user),
-        )
+    await telegram_medium_answer_callback_handler(
+        update,
+        context,
+        service=_service,
+        medium_task_lock=_medium_task_lock,
+        get_medium_task_state=_get_medium_task_state,
+        set_medium_task_state=_set_medium_task_state,
+        clear_medium_task_state=_clear_medium_task_state,
+        medium_task_is_complete=_medium_task_is_complete,
+        build_medium_question_view=_build_medium_question_view,
+        edit_training_question_view=_edit_training_question_view,
+        medium_task_answer_text=_medium_task_answer_text,
+        process_answer=_process_answer,
+        medium_task_state_type=_MediumTaskState,
+    )
 
 
 async def choice_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    answer = query.data.removeprefix("answer:")
-    await _process_answer(update, context, answer)
+    await telegram_choice_answer_handler(
+        update,
+        context,
+        process_answer=_process_answer,
+    )
 
 
 async def text_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not context.user_data.get("awaiting_text_answer"):
-        return
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or message.text is None or user is None:
-        return
-    if _service(context).get_active_session(user_id=user.id) is None:
-        context.user_data["awaiting_text_answer"] = False
-        _clear_medium_task_state(context)
-        await message.reply_text(_tg("no_active_session_begin", context=context, user=user))
-        return
-    await _process_answer(update, context, message.text)
+    await telegram_text_answer_handler(
+        update,
+        context,
+        service=_service,
+        clear_medium_task_state=_clear_medium_task_state,
+        tg=_tg,
+        process_answer=_process_answer,
+    )
 
 
 async def group_text_observer_handler(
