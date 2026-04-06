@@ -25,8 +25,8 @@ def test_cpu_and_gpu_profiles_load_local_ai_switch_env_file() -> None:
     cpu = Path(".devcontainer/devcontainer.cpu.json").read_text(encoding="utf-8")
     gpu = Path(".devcontainer/devcontainer.gpu.json").read_text(encoding="utf-8")
 
-    assert '${localWorkspaceFolder}/.devcontainer/local-ai.env' in cpu
-    assert '${localWorkspaceFolder}/.devcontainer/local-ai.env' in gpu
+    assert '${localWorkspaceFolder}/.devcontainer/local-ai.on.env' in cpu
+    assert '${localWorkspaceFolder}/.devcontainer/local-ai.on.env' in gpu
 
 
 def test_all_devcontainer_profiles_mount_host_ssh_directory_read_only() -> None:
@@ -42,20 +42,11 @@ def test_all_devcontainer_profiles_mount_host_ssh_directory_read_only() -> None:
         assert expected_mount in config
 
 
-def test_switch_local_ai_mode_script_uses_on_off_presets() -> None:
-    script = Path("scripts/switch-local-ai-mode.sh").read_text(encoding="utf-8")
+def test_devcontainer_keeps_explicit_local_ai_on_preset_for_cpu_and_gpu_profiles() -> None:
+    env_content = Path(".devcontainer/local-ai.on.env").read_text(encoding="utf-8")
 
-    assert 'mode="${1:-off}"' in script
-    assert 'local-ai.on.env' in script
-    assert 'local-ai.off.env' in script
-    assert 'Usage: $0 [on|off]' in script
-
-
-def test_local_ai_off_preset_disables_autostart_and_model_pull() -> None:
-    env_content = Path(".devcontainer/local-ai.off.env").read_text(encoding="utf-8")
-
-    assert 'OLLAMA_AUTOSTART=0' in env_content
-    assert 'COMFYUI_AUTOSTART=0' in env_content
+    assert 'OLLAMA_AUTOSTART=1' in env_content
+    assert 'COMFYUI_AUTOSTART=1' in env_content
     assert 'OLLAMA_PULL_MODEL=' in env_content
 
 

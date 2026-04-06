@@ -32,7 +32,7 @@
     "--env-file",
     "${localWorkspaceFolder}/.devcontainer/ollama.env",
     "--env-file",
-    "${localWorkspaceFolder}/.devcontainer/local-ai.env"
+    "${localWorkspaceFolder}/.devcontainer/local-ai.on.env"
   ],
   "remoteUser": "vscode",
   "features": {

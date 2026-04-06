@@ -1,6 +1,29 @@
 # EnglishBot
 
-EnglishBot is a Telegram bot POC for lightweight English vocabulary practice for children, with an editor workflow for importing words and curating pictures before learner practice starts.
+EnglishBot is a Telegram bot for learning foreign words and short expressions.
+The `1.0.0` direction is intentionally narrower than the historical repo surface:
+the core product is now the learner bot itself, with lessons, homework, progress,
+and lightweight teacher or parent administration.
+
+Everything outside that core, such as image pipelines, local AI tooling, TTS,
+and the web app, is treated as optional extension work rather than required
+runtime behavior.
+
+## 1.0.0 Focus
+
+The project is being simplified toward a teachable `1.0.0` architecture:
+
+- one obvious runtime: `python -m englishbot`
+- one obvious default devcontainer: no local AI services
+- one obvious core scope: words, lessons, homework, progress, stats
+- optional tooling kept outside the default path and documented as extensions
+
+Current architecture cleanup rules:
+
+- the default developer workflow must not require Ollama or ComfyUI
+- optional tooling should not leak into the boot path of the Telegram bot
+- large adapter files, especially `src/englishbot/bot.py`, are being split gradually
+- when optional tooling is removed or sidelined, document how to rebuild it later in the cleaner architecture
 
 ## Current Status
 
@@ -17,6 +40,23 @@ What works now:
 - post-publish editing of words
 - post-publish editing of images for a specific word
 - application-level scenario tests that cover the core product flows without using the real Telegram API
+
+What counts as core for `1.0.0`:
+
+- Telegram learner flows
+- words and lessons
+- homework
+- per-user progress
+- learner-facing summaries and stats
+
+What is currently treated as optional:
+
+- raw-text import pipelines
+- image generation and image reranking
+- image review tooling
+- web app administration
+- TTS runtime
+- local Ollama and ComfyUI development services
 
 What is still intentionally simple:
 
@@ -677,7 +717,8 @@ python -m englishbot
 
 ## Ollama Devcontainer Pattern
 
-This repository includes a reusable Ollama devcontainer setup.
+This repository still includes AI-oriented devcontainer profiles, but the
+default path is intentionally lightweight.
 
 What it does:
 
@@ -686,16 +727,18 @@ What it does:
 - installs ComfyUI only when profile build arg `COMFYUI_INSTALL=1`
 - installs Python extras per profile through `PYTHON_EXTRAS` (`dev,llm` for `cpu/gpu`, `dev` for `noai`)
 - reuses pip cache through a named Docker volume mounted to `/home/vscode/.cache/pip`
-- can keep Ollama/ComfyUI disabled in dev mode via one switch file: `.devcontainer/local-ai.env`
+
+Simplified rule for `1.0.0` work:
+
+- use `.devcontainer/devcontainer.json` as the default lightweight profile
+- switch to `cpu` or `gpu` only when you are intentionally working on optional AI tooling
 
 Configuration files:
 
 - `.devcontainer/devcontainer.cpu.json`
 - `.devcontainer/devcontainer.gpu.json`
 - `.devcontainer/devcontainer.noai.json`
-- `.devcontainer/local-ai.env`
 - `.devcontainer/local-ai.on.env`
-- `.devcontainer/local-ai.off.env`
 - `.devcontainer/ollama.env`
 - `.devcontainer/comfyui.env`
 - `.devcontainer/start-ollama.sh`
@@ -705,7 +748,6 @@ Configuration files:
 - `.devcontainer/fix-container-perms.sh`
 - `.devcontainer/check-host-gpu.sh`
 - `scripts/switch-devcontainer-profile.sh`
-- `scripts/switch-local-ai-mode.sh`
 
 Switch profiles:
 
@@ -718,12 +760,10 @@ bash scripts/switch-devcontainer-profile.sh noai
 Switch local AI services:
 
 ```bash
-bash scripts/switch-local-ai-mode.sh off
-bash scripts/switch-local-ai-mode.sh on
-```
-
-The default active profile in `.devcontainer/devcontainer.json` is the `noai` profile for lightweight WSL and non-GPU setups.
-The default local AI mode in `.devcontainer/local-ai.env` is `off`, so Ollama/ComfyUI do not autostart and models are not auto-pulled unless you switch it to `on`.
+The default active profile in `.devcontainer/devcontainer.json` is the `noai`
+profile for lightweight WSL and non-GPU setups.
+The `cpu` and `gpu` profiles explicitly opt into local AI startup through
+`.devcontainer/local-ai.on.env`.
 
 For local image reranking, the devcontainer Ollama presets default to the vision model `qwen2.5vl:7b`. This is intended for batch-style tasks such as choosing the best Pixabay candidate from a small set of previews, not for heavy multimodal chat workloads.
 

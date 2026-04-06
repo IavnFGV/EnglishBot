@@ -15,8 +15,6 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from telegram import (
-    BotCommand,
-    BotCommandScopeChat,
     ForceReply,
     InlineKeyboardMarkup,
     InputFile,
@@ -135,7 +133,6 @@ from englishbot.bot_assignments_ui import render_progress_text as ui_render_prog
 from englishbot.bot_assignments_ui import render_start_menu_text as ui_render_start_menu_text
 from englishbot.bot_assignments_ui import start_assignment_button_label as ui_start_assignment_button_label
 from englishbot.bot_assignments_ui import start_menu_keyboard as ui_start_menu_keyboard
-from englishbot.bot_editor_ui import chat_menu_keyboard as ui_chat_menu_keyboard
 from englishbot.bot_editor_ui import draft_review_keyboard as ui_draft_review_keyboard
 from englishbot.bot_editor_ui import draft_review_view as ui_draft_review_view
 from englishbot.bot_editor_ui import editable_topics_keyboard as ui_editable_topics_keyboard
@@ -223,8 +220,13 @@ from englishbot.presentation.telegram_ui_text import (
     telegram_ui_text,
 )
 from englishbot.telegram_buttons import InlineKeyboardButton
+from englishbot.telegram_command_menu import (
+    chat_menu_keyboard as menu_chat_menu_keyboard,
+    post_init_command_setup,
+    visible_command_rows as menu_visible_command_rows,
+    visible_command_specs as menu_visible_command_specs,
+)
 from englishbot.presentation.telegram_menu_access import (
-    DEFAULT_TELEGRAM_COMMAND_SPECS,
     PERMISSION_WORD_IMAGES_EDIT,
     PERMISSION_WORDS_ADD,
     PERMISSION_WORDS_EDIT,
@@ -1803,9 +1805,9 @@ def _visible_command_specs(
     user_id: int | None,
     only_chat_menu: bool = False,
 ) -> tuple[TelegramCommandSpec, ...]:
-    return _menu_access_policy(context).visible_commands(
-        user_id,
-        command_specs=DEFAULT_TELEGRAM_COMMAND_SPECS,
+    return menu_visible_command_specs(
+        context.application.bot_data,
+        user_id=user_id,
         only_chat_menu=only_chat_menu,
     )
 
@@ -1815,16 +1817,7 @@ def _visible_command_rows(
     *,
     user_id: int | None,
 ) -> list[list[str]]:
-    commands = {spec.command for spec in _visible_command_specs(context, user_id=user_id, only_chat_menu=True)}
-    rows = [
-        ["/start", "/help"],
-        ["/version", "/words"],
-    ]
-    if "assign" in commands:
-        rows.append(["/assign"])
-    if "add_words" in commands:
-        rows.append(["/add_words", "/cancel"])
-    return rows
+    return menu_visible_command_rows(context.application.bot_data, user_id=user_id)
 
 
 def _preview_message_ids(context: ContextTypes.DEFAULT_TYPE) -> dict[int, int]:
@@ -7005,43 +6998,13 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def _post_init(app: Application) -> None:
-    policy = TelegramMenuAccessPolicy.from_bot_data(app.bot_data)
-    public_commands = [
-        BotCommand(spec.command, spec.description)
-        for spec in policy.visible_commands(user_id=None)
-    ]
-    await app.bot.set_my_commands(public_commands)
-
-    elevated_user_ids: set[int] = set()
-    for role_name, user_ids in policy.role_memberships.items():
-        if role_name == "user":
-            continue
-        role_permissions = policy.role_permissions.get(role_name, frozenset())
-        if "*" in role_permissions or PERMISSION_WORDS_ADD in role_permissions:
-            elevated_user_ids.update(user_ids)
-    for user_id in sorted(elevated_user_ids):
-        scoped_commands = [
-            BotCommand(spec.command, spec.description)
-            for spec in policy.visible_commands(user_id=user_id)
-        ]
-        await app.bot.set_my_commands(scoped_commands, scope=BotCommandScopeChat(chat_id=user_id))
-    notification_repository = app.bot_data.get("pending_telegram_notification_repository")
-    job_queue = _job_queue_or_none(app)
-    if notification_repository is not None and job_queue is not None:
-        now = datetime.now(UTC)
-        for notification in notification_repository.list():
-            delay_seconds = max(0.0, (notification.not_before_at - now).total_seconds())
-            job_queue.run_once(
-                _deliver_pending_notification_job,
-                when=delay_seconds,
-                data={"notification_key": notification.key},
-                name=notification.key,
-            )
-        job_queue.run_daily(
-            _homework_assignment_reminder_job,
-            time=_DAILY_ASSIGNMENT_REMINDER_TIME,
-            name="homework-assignment-reminder",
-        )
+    await post_init_command_setup(
+        app,
+        deliver_pending_notification_job=_deliver_pending_notification_job,
+        homework_assignment_reminder_job=_homework_assignment_reminder_job,
+        daily_assignment_reminder_time=_DAILY_ASSIGNMENT_REMINDER_TIME,
+        job_queue_or_none=_job_queue_or_none,
+    )
 
 
 async def _run_status_heartbeat(
@@ -8063,7 +8026,7 @@ def _editable_word_button_label(
 
 
 def _chat_menu_keyboard(*, command_rows: list[list[str]]) -> ReplyKeyboardMarkup:
-    return ui_chat_menu_keyboard(command_rows=command_rows)
+    return menu_chat_menu_keyboard(command_rows=command_rows)
 
 
 def _topic_keyboard(
