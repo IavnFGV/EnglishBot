@@ -353,10 +353,10 @@ def _telegram_ui_language(context: ContextTypes.DEFAULT_TYPE | None, user=None) 
     user_data = None
     if context is not None:
         configured = _normalize_telegram_ui_language(
-            context.application.bot_data.get("telegram_ui_language")
+            _optional_bot_data(context, "telegram_ui_language")
         )
-        maybe_user_data = getattr(context, "user_data", None)
-        if isinstance(maybe_user_data, dict):
+        maybe_user_data = _user_data_or_none(context)
+        if maybe_user_data is not None:
             user_data = maybe_user_data
             stored_language = _supported_telegram_ui_language_or_none(
                 user_data.get(_TELEGRAM_UI_LANGUAGE_KEY)
@@ -778,7 +778,7 @@ def _assignment_round_progress_view(
     goal_id: str | None = None,
     active_session=None,
 ) -> _AssignmentRoundProgressView | None:
-    if goal_id is not None and context.application.bot_data.get("content_store") is not None:
+    if goal_id is not None and _optional_bot_data(context, "content_store") is not None:
         store = _content_store(context)
         goals = store.list_user_goals(
             user_id=user_id,
@@ -815,8 +815,9 @@ def _assignment_round_progress_view(
             remaining_word_count=remaining_word_count,
             variant_key=goal.id,
         )
-    launch_summary_use_case = context.application.bot_data.get(
-        "learner_assignment_launch_summary_use_case"
+    launch_summary_use_case = _optional_bot_data(
+        context,
+        "learner_assignment_launch_summary_use_case",
     )
     if launch_summary_use_case is None:
         return None
@@ -929,7 +930,7 @@ def _build_assignment_progress_snapshot(
     goal_id: str | None = None,
     active_session=None,
 ) -> AssignmentProgressSnapshot | None:
-    if context.application.bot_data.get("content_store") is None:
+    if _optional_bot_data(context, "content_store") is None:
         return None
     store = _content_store(context)
     goals = store.list_user_goals(
@@ -1184,13 +1185,13 @@ async def _send_or_update_assignment_progress_message(
 def _start_assignment_round_use_case(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> StartAssignmentRoundUseCase:
-    return context.application.bot_data["start_assignment_round_use_case"]
+    return _required_bot_data(context, "start_assignment_round_use_case")
 
 
 def _start_assignment_round_use_case_or_none(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> StartAssignmentRoundUseCase | None:
-    return context.application.bot_data.get("start_assignment_round_use_case")
+    return _optional_bot_data(context, "start_assignment_round_use_case")
 
 
 def _execute_assignment_start_use_case(
@@ -1258,7 +1259,7 @@ def _start_training_session_with_ui_language(
 
 
 def _assign_goal_to_users_use_case(context: ContextTypes.DEFAULT_TYPE) -> AssignGoalToUsersUseCase:
-    return context.application.bot_data["assign_goal_to_users_use_case"]
+    return _required_bot_data(context, "assign_goal_to_users_use_case")
 
 
 def _admin_users_progress_overview_use_case(
@@ -2644,7 +2645,7 @@ async def _finish_admin_goal_creation(*, query_or_message, context: ContextTypes
         "admin_goal_recipients_page",
         "words_flow_mode",
     ):
-        context.user_data.pop(key, None)
+        _pop_user_data(context, key, default=None)
     _clear_expected_user_input(context)
 
 
