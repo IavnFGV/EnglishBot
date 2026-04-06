@@ -1844,11 +1844,11 @@ async def noop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def notification_dismiss_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    await _delete_message_if_possible(context, message=query.message)
+    from englishbot.telegram_notifications import (
+        notification_dismiss_callback_handler as telegram_notification_dismiss_callback_handler,
+    )
+
+    await telegram_notification_dismiss_callback_handler(update, context)
 
 
 async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3603,19 +3603,21 @@ def _assignment_assigned_notification_emoji(*, goal_id: str) -> str:
 
 
 def _pending_notifications(context: ContextTypes.DEFAULT_TYPE) -> dict[str, _PendingNotification]:
-    return _mutable_bot_data_dict(context, "pending_notifications")
+    from englishbot.telegram_notifications import pending_notifications
+
+    return pending_notifications(context)
 
 
 def _pending_notification_repository(context: ContextTypes.DEFAULT_TYPE):
-    return _optional_bot_data(context, "pending_telegram_notification_repository")
+    from englishbot.telegram_notifications import pending_notification_repository
+
+    return pending_notification_repository(context)
 
 
 def _recent_assignment_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> dict[int, datetime]:
-    return _mutable_bot_data_dict(
-        context,
-        "recent_assignment_activity_by_user",
-        fallback_key="recent_quiz_activity_by_user",
-    )
+    from englishbot.telegram_notifications import recent_assignment_activity_by_user
+
+    return recent_assignment_activity_by_user(context)
 
 
 def _notification_action_button_for_user(
@@ -3624,20 +3626,12 @@ def _notification_action_button_for_user(
     notification_key: str,
     user_id: int,
 ) -> InlineKeyboardButton:
-    language = _telegram_ui_language_for_user_id(context, user_id=user_id)
-    if notification_key.startswith("assignment-completed:"):
-        return InlineKeyboardButton(
-            _tg("notification_open_users_progress", language=language),
-            callback_data="assign:users",
-        )
-    if notification_key.startswith("assignment-assigned:homework:"):
-        return InlineKeyboardButton(
-            _tg("notification_start_homework", language=language),
-            callback_data="start:launch:homework",
-        )
-    return InlineKeyboardButton(
-        _tg("notification_open_assignments", language=language),
-        callback_data="assign:menu",
+    from englishbot.telegram_notifications import notification_action_button_for_user
+
+    return notification_action_button_for_user(
+        context,
+        notification_key=notification_key,
+        user_id=user_id,
     )
 
 
@@ -3647,19 +3641,12 @@ def _dismiss_notification_keyboard(
     notification_key: str,
     user_id: int,
 ) -> InlineKeyboardMarkup:
-    language = _telegram_ui_language_for_user_id(context, user_id=user_id)
-    return InlineKeyboardMarkup(
-        [[
-            _notification_action_button_for_user(
-                context,
-                notification_key=notification_key,
-                user_id=user_id,
-            ),
-            InlineKeyboardButton(
-                _tg("notification_dismiss", language=language),
-                callback_data=_NOTIFICATION_DISMISS_CALLBACK,
-            ),
-        ]]
+    from englishbot.telegram_notifications import dismiss_notification_keyboard
+
+    return dismiss_notification_keyboard(
+        context,
+        notification_key=notification_key,
+        user_id=user_id,
     )
 
 
@@ -3668,19 +3655,9 @@ def _notification_wait_seconds(
     *,
     user_id: int,
 ) -> float:
-    recent_activity_at = _recent_assignment_activity_by_user(context).get(user_id)
-    if recent_activity_at is None:
-        return 0.0
-    now = datetime.now(UTC)
-    elapsed = now - recent_activity_at
-    active_session = _service(context).get_active_session(user_id=user_id)
-    if active_session is not None and elapsed < _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW:
-        remaining = _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW - elapsed
-        return max(0.0, remaining.total_seconds())
-    if elapsed < _NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD:
-        remaining = _NOTIFICATION_DELAY_AFTER_RECENT_ANSWER - elapsed
-        return max(0.0, remaining.total_seconds())
-    return 0.0
+    from englishbot.telegram_notifications import notification_wait_seconds
+
+    return notification_wait_seconds(context, user_id=user_id)
 
 
 def _notification_should_wait(
@@ -3688,11 +3665,15 @@ def _notification_should_wait(
     *,
     user_id: int,
 ) -> bool:
-    return _notification_wait_seconds(context, user_id=user_id) > 0.0
+    from englishbot.telegram_notifications import notification_should_wait
+
+    return notification_should_wait(context, user_id=user_id)
 
 
 def _record_assignment_activity(context: ContextTypes.DEFAULT_TYPE, *, user_id: int) -> None:
-    _recent_assignment_activity_by_user(context)[user_id] = datetime.now(UTC)
+    from englishbot.telegram_notifications import record_assignment_activity
+
+    record_assignment_activity(context, user_id=user_id)
 
 
 def _schedule_notification(
@@ -3700,33 +3681,11 @@ def _schedule_notification(
     *,
     notification: _PendingNotification,
 ) -> None:
-    delay_seconds = _notification_wait_seconds(context, user_id=notification.recipient_user_id)
-    not_before_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
-    repository = _pending_notification_repository(context)
-    if repository is not None:
-        repository.save(
-            notification_key=notification.key,
-            recipient_user_id=notification.recipient_user_id,
-            text=notification.text,
-            not_before_at=not_before_at,
-        )
-    else:
-        pending = _pending_notifications(context)
-        pending[notification.key] = _PendingNotification(
-            key=notification.key,
-            recipient_user_id=notification.recipient_user_id,
-            text=notification.text,
-            not_before_at=not_before_at,
-            created_at=datetime.now(UTC),
-        )
-    job_queue = _job_queue_or_none(context.application)
-    if job_queue is None:
-        return
-    job_queue.run_once(
-        _deliver_pending_notification_job,
-        when=delay_seconds,
-        data={"notification_key": notification.key},
-        name=notification.key,
+    from englishbot.telegram_notifications import schedule_notification
+
+    schedule_notification(
+        context,
+        notification=notification,
     )
 
 
@@ -3736,91 +3695,25 @@ async def _deliver_notification_now(
     notification_key: str,
     force: bool = False,
 ) -> bool:
-    repository = _pending_notification_repository(context)
-    notification = (
-        repository.get(notification_key=notification_key)
-        if repository is not None
-        else _pending_notifications(context).get(notification_key)
+    from englishbot.telegram_notifications import deliver_notification_now
+
+    return await deliver_notification_now(
+        context,
+        notification_key=notification_key,
+        force=force,
     )
-    if notification is None:
-        return False
-    if not force and _notification_should_wait(context, user_id=notification.recipient_user_id):
-        return False
-    try:
-        await context.bot.send_message(
-            chat_id=notification.recipient_user_id,
-            text=notification.text,
-            reply_markup=_dismiss_notification_keyboard(
-                context,
-                notification_key=notification.key,
-                user_id=notification.recipient_user_id,
-            ),
-        )
-    except BadRequest:
-        logger.debug("Failed to deliver notification key=%s", notification.key, exc_info=True)
-    finally:
-        if repository is not None:
-            repository.remove(notification_key=notification_key)
-        else:
-            _pending_notifications(context).pop(notification_key, None)
-    return True
 
 
 async def _deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    job = getattr(context, "job", None)
-    data = getattr(job, "data", None)
-    notification_key = data.get("notification_key") if isinstance(data, dict) else None
-    if not isinstance(notification_key, str):
-        return
-    delivered = await _deliver_notification_now(context, notification_key=notification_key)
-    if delivered:
-        return
-    repository = _pending_notification_repository(context)
-    if repository is not None:
-        if repository.get(notification_key=notification_key) is None:
-            return
-    elif notification_key not in _pending_notifications(context):
-        return
-    job_queue = _job_queue_or_none(context.application)
-    if job_queue is None:
-        return
-    job_queue.run_once(
-        _deliver_pending_notification_job,
-        when=_notification_wait_seconds(
-            context,
-            user_id=(
-                repository.get(notification_key=notification_key).recipient_user_id
-                if repository is not None
-                else _pending_notifications(context)[notification_key].recipient_user_id
-            ),
-        ),
-        data={"notification_key": notification_key},
-        name=notification_key,
-    )
+    from englishbot.telegram_notifications import deliver_pending_notification_job
+
+    await deliver_pending_notification_job(context)
 
 
 async def _homework_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    rows = _content_store(context).list_users_goal_overview()
-    today = datetime.now(UTC).date().isoformat()
-    for row in rows:
-        user_id = int(row["user_id"])
-        active_goals_count = int(row["active_goals_count"])
-        if active_goals_count <= 0:
-            continue
-        _schedule_notification(
-            context,
-            notification=_PendingNotification(
-                key=f"assignment-reminder:{today}:{user_id}",
-                recipient_user_id=user_id,
-                text=_tg(
-                    "homework_assignment_reminder"
-                    if active_goals_count != 1
-                    else "homework_assignment_reminder_one",
-                    language=_telegram_ui_language_for_user_id(context, user_id=user_id),
-                    goal_count=active_goals_count,
-                ),
-            ),
-        )
+    from englishbot.telegram_notifications import homework_assignment_reminder_job
+
+    await homework_assignment_reminder_job(context)
 
 
 async def _flush_pending_notifications_for_user(
@@ -3828,18 +3721,9 @@ async def _flush_pending_notifications_for_user(
     *,
     user_id: int,
 ) -> None:
-    repository = _pending_notification_repository(context)
-    pending_keys = (
-        [item.key for item in repository.list(recipient_user_id=user_id)]
-        if repository is not None
-        else [
-            key
-            for key, notification in _pending_notifications(context).items()
-            if notification.recipient_user_id == user_id
-        ]
-    )
-    for notification_key in pending_keys:
-        await _deliver_notification_now(context, notification_key=notification_key, force=True)
+    from englishbot.telegram_notifications import flush_pending_notifications_for_user
+
+    await flush_pending_notifications_for_user(context, user_id=user_id)
 
 
 def _schedule_assignment_assigned_notifications(
@@ -3847,37 +3731,12 @@ def _schedule_assignment_assigned_notifications(
     *,
     goals: list,
 ) -> None:
-    for goal in goals:
-        language = _telegram_ui_language_for_user_id(context, user_id=int(goal.user_id))
-        goal_type_key = {
-            GoalType.NEW_WORDS.value: "goal_type_new_words",
-            GoalType.WORD_LEVEL_HOMEWORK.value: "goal_type_word_level_homework",
-        }.get(goal.goal_type.value)
-        period_label = _tg("goal_period_homework", language=language)
-        goal_type_label = _tg(goal_type_key, language=language) if goal_type_key is not None else goal.goal_type.value
-        emoji = _assignment_assigned_notification_emoji(goal_id=str(goal.id))
-        text = "\n".join(
-            [
-                _tg("assignment_assigned_title", language=language, emoji=emoji),
-                _tg(
-                    (
-                        "assignment_assigned_word_level_homework"
-                        if goal.goal_type.value == GoalType.WORD_LEVEL_HOMEWORK.value
-                        else "assignment_assigned_new_words"
-                    ),
-                    language=language,
-                    period=period_label,
-                    goal_type=goal_type_label,
-                    target=int(goal.target_count),
-                ),
-            ]
-        )
-        notification = _PendingNotification(
-            key=f"assignment-assigned:{goal.goal_period.value}:{goal.id}:{goal.user_id}",
-            recipient_user_id=goal.user_id,
-            text=text,
-        )
-        _schedule_notification(context, notification=notification)
+    from englishbot.telegram_notifications import schedule_assignment_assigned_notifications
+
+    schedule_assignment_assigned_notifications(
+        context,
+        goals=goals,
+    )
 
 
 def _schedule_goal_completed_notifications(
@@ -3886,25 +3745,13 @@ def _schedule_goal_completed_notifications(
     learner,
     completed_goals: tuple[GoalProgressView, ...],
 ) -> None:
-    role_repository = _optional_bot_data(context, "telegram_user_role_repository")
-    if role_repository is None:
-        return
-    memberships = role_repository.list_memberships()
-    admin_ids = memberships.get("admin", frozenset())
-    learner_name = getattr(learner, "username", None) or getattr(learner, "first_name", None) or str(learner.id)
-    for admin_user_id in admin_ids:
-        for goal in completed_goals:
-            notification = _PendingNotification(
-                key=f"assignment-completed:{goal.goal.id}:{admin_user_id}",
-                recipient_user_id=admin_user_id,
-                text=(
-                    "Assignment completed: "
-                    f"{learner_name} finished "
-                    f"{goal.goal.goal_period.value}/{goal.goal.goal_type.value} "
-                    f"{goal.goal.progress_count}/{goal.goal.target_count}."
-                ),
-            )
-            _schedule_notification(context, notification=notification)
+    from englishbot.telegram_notifications import schedule_goal_completed_notifications
+
+    schedule_goal_completed_notifications(
+        context,
+        learner=learner,
+        completed_goals=completed_goals,
+    )
 
 
 async def _delete_tracked_messages(
