@@ -52,10 +52,11 @@ First extraction steps already in place:
 
 Checkpoint after this cleanup wave:
 
-- `src/englishbot/bot.py` is down to roughly `5k` lines instead of the earlier `7.5k+`
+- `src/englishbot/bot.py` is down to about `4.6k` lines instead of the earlier `7.5k+`
 - direct raw `context.application.bot_data[...]` access outside the shared accessor helpers has been eliminated
 - direct raw `context.user_data[...]` access has been reduced to the shared helper layer and a few intentionally local cases
 - the repo currently passes the full test suite: `520 passed, 3 skipped`
+- the biggest extracted infrastructure and optional tooling slices now already live outside `bot.py`
 
 ## Next Wave Candidates
 
@@ -64,8 +65,20 @@ If cleanup continues after this point, the next steps should be chosen by respon
 Best candidates for the next wave:
 
 - image-review support helpers still clustered in `src/englishbot/bot.py`
-  - examples: tracked-message cleanup, image-review preview sending, review-step rendering
+  - examples: image-review preview sending, local-candidate generation step, review-step rendering
   - reason: this is optional editor tooling, not learner-core behavior
+
+- notification delivery helpers still clustered in `src/englishbot/bot.py`
+  - examples: pending notification delivery, reminder scheduling, dismiss keyboard handling
+  - reason: this is reusable Telegram delivery infrastructure, not lesson/session logic
+
+- game-mode helpers still clustered in `src/englishbot/bot.py`
+  - examples: next-round flow, game feedback, game completion summary
+  - reason: this is a separate learner mode with its own state transitions and UX copy
+
+- medium-task UI helpers still clustered in `src/englishbot/bot.py`
+  - examples: medium keyboard state, slot rendering, check/backspace interactions
+  - reason: this is a coherent Telegram interaction pattern that can be taught as one unit
 
 What should not be split just for appearance:
 
