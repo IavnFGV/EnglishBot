@@ -199,7 +199,6 @@ from englishbot.presentation.add_words_text import (
 from englishbot.presentation.telegram_views import (
     TelegramPhotoView,
     TelegramTextView,
-    build_active_session_exists_view,
     build_assignment_menu_view,
     build_answer_feedback_view,
     build_current_image_preview_view,
@@ -225,6 +224,11 @@ from englishbot.telegram_command_menu import (
     post_init_command_setup,
     visible_command_rows as menu_visible_command_rows,
     visible_command_specs as menu_visible_command_specs,
+)
+from englishbot.telegram_entry_handlers import (
+    help_handler as telegram_help_handler,
+    start_handler as telegram_start_handler,
+    version_handler as telegram_version_handler,
 )
 from englishbot.presentation.telegram_menu_access import (
     PERMISSION_WORD_IMAGES_EDIT,
@@ -948,7 +952,7 @@ def _tts_voice_label(context: ContextTypes.DEFAULT_TYPE, *, user, voice_name: st
     return voice_name
 
 
-def _tts_client_or_none(context: ContextTypes.DEFAULT_TYPE) -> TtsServiceClient | None:
+def _tts_client_or_none(context: ContextTypes.DEFAULT_TYPE) -> object | None:
     if not _tts_service_enabled(context):
         return None
     cached_client = context.application.bot_data.get("tts_service_client")
@@ -2409,131 +2413,42 @@ def _is_group_chat(update: Update) -> bool:
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    if message is None:
-        return
-    user = update.effective_user
-    if user is not None:
-        _telegram_user_login_repository(context).record(
-            user_id=user.id,
-            username=getattr(user, "username", None),
-            first_name=getattr(user, "first_name", None),
-            last_name=getattr(user, "last_name", None),
-            language_code=getattr(user, "language_code", None),
-        )
-        logger.info("User %s opened /start", user.id)
-        active_session = _service(context).get_active_session(user_id=user.id)
-        if active_session is not None:
-            context.user_data["awaiting_text_answer"] = active_session.mode is TrainingMode.HARD
-            await send_telegram_view(
-                message,
-                build_active_session_exists_view(
-                    text=_tg(
-                        "active_session_exists",
-                        context=context,
-                        user=user,
-                        topic_id=_active_session_topic_label(
-                            context=context,
-                            user=user,
-                            topic_id=active_session.topic_id,
-                            source_tag=active_session.source_tag,
-                            lesson_id=active_session.lesson_id,
-                        ),
-                        lesson_id=_active_session_lesson_label(
-                            context=context,
-                            user=user,
-                            topic_id=active_session.topic_id,
-                            lesson_id=active_session.lesson_id,
-                            source_tag=active_session.source_tag,
-                        ),
-                        mode=active_session.mode.value,
-                        current_position=active_session.current_position,
-                        total_items=active_session.total_items,
-                    ),
-                    reply_markup=_active_session_keyboard(
-                        language=_telegram_ui_language(context, user),
-                    ),
-                ),
-            )
-            return
-    await send_telegram_view(
-        message,
-        _start_menu_view(context=context, user=user),
+    await telegram_start_handler(
+        update,
+        context,
+        send_view=send_telegram_view,
+        telegram_user_login_repository=_telegram_user_login_repository,
+        service=_service,
+        tg=_tg,
+        active_session_topic_label=_active_session_topic_label,
+        active_session_lesson_label=_active_session_lesson_label,
+        active_session_keyboard=_active_session_keyboard,
+        telegram_ui_language=_telegram_ui_language,
+        start_menu_view=_start_menu_view,
+        ensure_chat_menu_message=_ensure_chat_menu_message,
     )
-    if user is not None:
-        await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None:
-        return
-    visible_commands = _visible_command_specs(
+    await telegram_help_handler(
+        update,
         context,
-        user_id=(user.id if user is not None else None),
+        send_view=send_telegram_view,
+        visible_command_specs=_visible_command_specs,
+        help_command_text=_HELP_COMMAND_TEXT,
+        tg=_tg,
+        help_view=_help_view,
+        ensure_chat_menu_message=_ensure_chat_menu_message,
     )
-    commands = [
-        f"/{spec.command} - {_HELP_COMMAND_TEXT.get(spec.command, spec.description.lower())}"
-        for spec in visible_commands
-    ]
-    await send_telegram_view(
-        message,
-        _help_view(
-            text=_tg("help_title", context=context, user=user, commands="\n".join(commands)),
-            context=context,
-            user=user,
-        ),
-    )
-    if user is not None:
-        await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def version_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None:
-        return
-    version_info = _runtime_version_info(context)
-    lines = [
-        _tg("version_title", context=context, user=user),
-        _tg(
-            "version_line",
-            context=context,
-            user=user,
-            version=version_info.package_version,
-        ),
-    ]
-    if version_info.build_number:
-        lines.append(
-            _tg(
-                "build_line",
-                context=context,
-                user=user,
-                build_number=version_info.build_number,
-            )
-        )
-    if version_info.git_sha:
-        lines.append(
-            _tg(
-                "git_sha_line",
-                context=context,
-                user=user,
-                git_sha=version_info.git_sha,
-            )
-        )
-    if version_info.git_branch:
-        lines.append(
-            _tg(
-                "git_branch_line",
-                context=context,
-                user=user,
-                branch=version_info.git_branch,
-            )
-        )
-    await send_telegram_view(
-        message,
-        build_status_view(text="\n".join(lines)),
+    await telegram_version_handler(
+        update,
+        context,
+        send_view=send_telegram_view,
+        runtime_version_info=_runtime_version_info,
+        tg=_tg,
     )
 
 

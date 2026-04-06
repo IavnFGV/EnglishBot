@@ -25,6 +25,12 @@ Current architecture cleanup rules:
 - large adapter files, especially `src/englishbot/bot.py`, are being split gradually
 - when optional tooling is removed or sidelined, document how to rebuild it later in the cleaner architecture
 
+First extraction steps already in place:
+
+- [src/englishbot/telegram_command_menu.py](/workspaces/EnglishBot/src/englishbot/telegram_command_menu.py) owns command visibility and post-init command setup
+- [src/englishbot/telegram_entry_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram_entry_handlers.py) owns `/start`, `/help`, and `/version`
+- [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers
+
 ## Current Status
 
 The current project is already beyond the original narrow training MVP.
