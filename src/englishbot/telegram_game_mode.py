@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from datetime import UTC, datetime
 
 from telegram import Update
@@ -134,7 +135,7 @@ async def finish_game_session(
     if not isinstance(game_state, dict):
         return
     session_stars = int(game_state.get("session_stars", 0))
-    chest_stars = bot_module.random.choice(bot_module._GAME_CHEST_REWARDS)
+    chest_stars = random.choice(bot_module._GAME_CHEST_REWARDS)
     total_earned = session_stars + chest_stars
     total_stars = bot_module._content_store(context).add_game_stars(user_id=user.id, stars=total_earned)
     streak_days = bot_module._content_store(context).update_game_streak(

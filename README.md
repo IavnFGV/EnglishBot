@@ -45,6 +45,7 @@ First extraction steps already in place:
 - [src/englishbot/telegram_notifications.py](/workspaces/EnglishBot/src/englishbot/telegram_notifications.py) owns pending-notification scheduling, delivery, reminder jobs, and dismiss-button rendering, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_image_review_support.py](/workspaces/EnglishBot/src/englishbot/telegram_image_review_support.py) owns image-review preview sending, local-candidate generation step handling, and review-step rendering helpers, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_game_mode.py](/workspaces/EnglishBot/src/englishbot/telegram_game_mode.py) owns game-mode round restart, repeat flow, per-answer game feedback, and game completion summary, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram_medium_task_ui.py](/workspaces/EnglishBot/src/englishbot/telegram_medium_task_ui.py) owns medium-mode state helpers, keyboard rendering, and medium question-view building, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers; dead compatibility leftovers are removed incrementally once they have no in-repo callers
 - repeated `context.application.bot_data[...]` access in `bot.py` is being centralized gradually through shared helper accessors so the remaining facade stays easier to teach and scan
 - repeated `context.user_data[...]` access in `bot.py` is also being centralized gradually so per-user Telegram state reads like one concept instead of many tiny ad hoc patterns
@@ -67,9 +68,8 @@ If cleanup continues after this point, the next steps should be chosen by respon
 
 Best candidates for the next wave:
 
-- medium-task UI helpers still clustered in `src/englishbot/bot.py`
-  - examples: medium keyboard state, slot rendering, check/backspace interactions
-  - reason: this is a coherent Telegram interaction pattern that can be taught as one unit
+- no new large, high-confidence split is currently required
+  - reason: the remaining code in `src/englishbot/bot.py` is now closer to shared learner/runtime glue than to a clearly separate subsystem
 
 What should not be split just for appearance:
 

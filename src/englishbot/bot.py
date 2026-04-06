@@ -160,10 +160,7 @@ from englishbot.telegram_answer_processing import (
     send_feedback as delivery_send_feedback,
 )
 from englishbot.telegram_question_delivery import (
-    build_medium_question_view as delivery_build_medium_question_view,
     edit_training_question_view as delivery_edit_training_question_view,
-    medium_task_answer_text as delivery_medium_task_answer_text,
-    medium_task_is_complete as delivery_medium_task_is_complete,
     send_question as delivery_send_question,
 )
 from englishbot.telegram_command_menu import (
@@ -3212,7 +3209,9 @@ def _expects_text_answer_for_question(question: TrainingQuestion) -> bool:
 
 
 def _clear_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    _pop_user_data(context, _MEDIUM_TASK_STATE_KEY, default=None)
+    from englishbot.telegram_medium_task_ui import clear_medium_task_state
+
+    clear_medium_task_state(context)
 
 
 def _build_medium_task_state(
@@ -3220,39 +3219,27 @@ def _build_medium_task_state(
     *,
     message_id: int | None = None,
 ) -> _MediumTaskState:
-    letter_source = question.letter_hint or question.correct_answer
-    shuffled_letters = tuple(character for character in letter_source if not character.isspace())
-    return _MediumTaskState(
-        session_id=question.session_id,
-        item_id=question.item_id,
-        target_word=question.correct_answer,
-        shuffled_letters=shuffled_letters,
-        selected_letter_indexes=(),
-        message_id=message_id,
-    )
+    from englishbot.telegram_medium_task_ui import build_medium_task_state
+
+    return build_medium_task_state(question, message_id=message_id)
 
 
 def _get_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> _MediumTaskState | None:
-    state = _optional_user_data(context, _MEDIUM_TASK_STATE_KEY)
-    if isinstance(state, _MediumTaskState):
-        return state
-    return None
+    from englishbot.telegram_medium_task_ui import get_medium_task_state
+
+    return get_medium_task_state(context)
 
 
 def _set_medium_task_state(context: ContextTypes.DEFAULT_TYPE, state: _MediumTaskState) -> None:
-    _set_user_data(context, _MEDIUM_TASK_STATE_KEY, state)
+    from englishbot.telegram_medium_task_ui import set_medium_task_state
+
+    set_medium_task_state(context, state)
 
 
 def _medium_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
-    user_data = _user_data_or_none(context)
-    if user_data is None:
-        return asyncio.Lock()
-    lock = user_data.get(_MEDIUM_TASK_LOCK_KEY)
-    if isinstance(lock, asyncio.Lock):
-        return lock
-    created_lock = asyncio.Lock()
-    user_data[_MEDIUM_TASK_LOCK_KEY] = created_lock
-    return created_lock
+    from englishbot.telegram_medium_task_ui import medium_task_lock
+
+    return medium_task_lock(context)
 
 
 def _tts_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
@@ -3335,11 +3322,15 @@ def _set_tts_recent_request(
 
 
 def _medium_task_is_complete(state: _MediumTaskState) -> bool:
-    return delivery_medium_task_is_complete(state)
+    from englishbot.telegram_medium_task_ui import medium_task_is_complete
+
+    return medium_task_is_complete(state)
 
 
 def _medium_task_answer_text(state: _MediumTaskState) -> str:
-    return delivery_medium_task_answer_text(state)
+    from englishbot.telegram_medium_task_ui import medium_task_answer_text
+
+    return medium_task_answer_text(state)
 
 
 def _medium_task_keyboard(
@@ -3348,43 +3339,9 @@ def _medium_task_keyboard(
     context: ContextTypes.DEFAULT_TYPE | None = None,
     user=None,
 ) -> InlineKeyboardMarkup:
-    selected_indexes = set(state.selected_letter_indexes)
-    buttons = [
-        InlineKeyboardButton(
-            "·" if index in selected_indexes else letter,
-            callback_data=(
-                f"medium:noop:{index}"
-                if index in selected_indexes
-                else f"medium:pick:{index}"
-            ),
-        )
-        for index, letter in enumerate(state.shuffled_letters)
-    ]
-    rows: list[list[InlineKeyboardButton]] = []
-    row_width = 4
-    for start in range(0, len(buttons), row_width):
-        rows.append(buttons[start : start + row_width])
-    check_callback = "medium:check" if _medium_task_is_complete(state) else "medium:noop:check"
-    rows.append(
-        [
-            InlineKeyboardButton("⌫", callback_data="medium:backspace"),
-        ]
-    )
-    if context is not None and _tts_service_enabled(context):
-        rows[-1].extend(_tts_buttons(context=context, user=user))
-    rows.append(
-        [
-            InlineKeyboardButton(
-                (
-                    _tg("medium_check_button", context=context, user=user)
-                    if context is not None
-                    else telegram_ui_text("medium_check_button")
-                ),
-                callback_data=check_callback,
-            )
-        ]
-    )
-    return InlineKeyboardMarkup(rows)
+    from englishbot.telegram_medium_task_ui import medium_task_keyboard
+
+    return medium_task_keyboard(state, context=context, user=user)
 
 
 def _build_medium_question_view(
@@ -3394,16 +3351,13 @@ def _build_medium_question_view(
     context: ContextTypes.DEFAULT_TYPE | None = None,
     user=None,
 ) -> TelegramTextView | TelegramPhotoView:
-    return delivery_build_medium_question_view(
+    from englishbot.telegram_medium_task_ui import build_medium_question_view
+
+    return build_medium_question_view(
         question,
         state=state,
         context=context,
         user=user,
-        resolve_existing_image_path=resolve_existing_image_path,
-        tts_service_enabled=_tts_service_enabled,
-        tts_buttons=_tts_buttons,
-        tg=_tg,
-        inline_keyboard_button_type=InlineKeyboardButton,
     )
 
 
