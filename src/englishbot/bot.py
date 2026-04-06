@@ -67,12 +67,10 @@ from englishbot.application.homework_progress_use_cases import (
     GetAdminUsersProgressOverviewUseCase,
     GetLearnerAssignmentLaunchSummaryUseCase,
     GetGoalWordCandidatesUseCase,
-    GetUserProgressSummaryUseCase,
     GoalProgressView,
     GoalWordSource,
     HomeworkProgressUseCase,
     LearnerProgressSummary,
-    ListUserGoalsUseCase,
     StartAssignmentRoundUseCase,
 )
 from englishbot.application.published_content_use_cases import (
@@ -93,7 +91,6 @@ from englishbot.bot_assignments_admin_ui import assignment_goal_detail_keyboard 
 from englishbot.bot_assignments_admin_ui import assignment_user_goals_keyboard as ui_assignment_user_goals_keyboard
 from englishbot.bot_assignments_admin_ui import assignment_user_label as ui_assignment_user_label
 from englishbot.bot_assignments_admin_ui import assignment_users_keyboard as ui_assignment_users_keyboard
-from englishbot.bot_assignments_admin_ui import page_range_label as ui_page_range_label
 from englishbot.bot_assignments_admin_ui import render_assignment_goal_detail_text as ui_render_assignment_goal_detail_text
 from englishbot.bot_assignments_admin_ui import render_assignment_user_detail_text as ui_render_assignment_user_detail_text
 from englishbot.bot_assignments_ui import admin_goal_custom_target_keyboard as ui_admin_goal_custom_target_keyboard
@@ -106,12 +103,9 @@ from englishbot.bot_assignments_ui import assignment_kind_label as ui_assignment
 from englishbot.bot_assignments_ui import assignment_round_complete_keyboard as ui_assignment_round_complete_keyboard
 from englishbot.bot_assignments_ui import goal_custom_target_keyboard as ui_goal_custom_target_keyboard
 from englishbot.bot_assignments_ui import goal_list_keyboard as ui_goal_list_keyboard
-from englishbot.bot_assignments_ui import goal_period_label as ui_goal_period_label
-from englishbot.bot_assignments_ui import goal_rule_text as ui_goal_rule_text
 from englishbot.bot_assignments_ui import goal_setup_keyboard as ui_goal_setup_keyboard
 from englishbot.bot_assignments_ui import goal_source_keyboard as ui_goal_source_keyboard
 from englishbot.bot_assignments_ui import goal_target_keyboard as ui_goal_target_keyboard
-from englishbot.bot_assignments_ui import goal_type_label as ui_goal_type_label
 from englishbot.bot_assignments_ui import render_goal_progress_line as ui_render_goal_progress_line
 from englishbot.bot_assignments_ui import render_progress_text as ui_render_progress_text
 from englishbot.bot_assignments_ui import render_start_menu_text as ui_render_start_menu_text
@@ -560,10 +554,6 @@ def _reload_training_service(context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-def _lesson_import_pipeline(context: ContextTypes.DEFAULT_TYPE):
-    return context.application.bot_data["lesson_import_pipeline"]
-
-
 def _start_add_words_flow(context: ContextTypes.DEFAULT_TYPE) -> StartAddWordsFlowUseCase:
     return context.application.bot_data["add_words_start_use_case"]
 
@@ -616,30 +606,10 @@ def _homework_progress_use_case(context: ContextTypes.DEFAULT_TYPE) -> HomeworkP
     return context.application.bot_data["homework_progress_use_case"]
 
 
-def _user_goals_use_case(context: ContextTypes.DEFAULT_TYPE) -> ListUserGoalsUseCase:
-    return context.application.bot_data["list_user_goals_use_case"]
-
-
-def _user_progress_summary_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetUserProgressSummaryUseCase:
-    return context.application.bot_data["get_user_progress_summary_use_case"]
-
-
 def _learner_assignment_launch_summary_use_case(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GetLearnerAssignmentLaunchSummaryUseCase:
     return context.application.bot_data["learner_assignment_launch_summary_use_case"]
-
-
-def _goal_period_label(*, context: ContextTypes.DEFAULT_TYPE, user, value: str) -> str:
-    return ui_goal_period_label(tg=_tg, context=context, user=user, value=value)
-
-
-def _goal_type_label(*, context: ContextTypes.DEFAULT_TYPE, user, value: str) -> str:
-    return ui_goal_type_label(tg=_tg, context=context, user=user, value=value)
-
-
-def _goal_rule_text(*, context: ContextTypes.DEFAULT_TYPE, user, goal_type: GoalType) -> str:
-    return ui_goal_rule_text(tg=_tg, context=context, user=user, goal_type=goal_type)
 
 
 def _list_goal_history(
@@ -2551,16 +2521,6 @@ def _assignment_goal_detail_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user
         tg=_tg,
         user_id=user_id,
         language=_telegram_ui_language(context, user),
-    )
-
-
-def _page_range_label(*, page: int, page_size: int, total: int, language: str) -> str:
-    return ui_page_range_label(
-        tg=_tg,
-        page=page,
-        page_size=page_size,
-        total=total,
-        language=language,
     )
 
 
