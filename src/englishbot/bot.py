@@ -979,17 +979,6 @@ def _session_combo_target_word_id(active_session) -> str | None:
         return None
 
 
-def _session_combo_target_word_id(active_session) -> str | None:
-    if active_session is None or not bool(getattr(active_session, "combo_hard_active", False)):
-        return None
-    if not hasattr(active_session, "current_item_id"):
-        return None
-    try:
-        return active_session.current_item_id()
-    except ValueError:
-        return None
-
-
 def _assignment_progress_caption(
     *,
     context: ContextTypes.DEFAULT_TYPE,
