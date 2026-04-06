@@ -4147,26 +4147,12 @@ async def _delete_tracked_messages(
     *,
     tracked_messages,
 ) -> None:
-    registry = _telegram_flow_messages(context)
-    bot = getattr(context, "bot", None)
-    if registry is None:
-        return
-    for tracked in tracked_messages:
-        if bot is not None:
-            try:
-                await bot.delete_message(chat_id=tracked.chat_id, message_id=tracked.message_id)
-            except BadRequest:
-                logger.debug(
-                    "Tracked Telegram message already missing flow_id=%s chat_id=%s message_id=%s",
-                    tracked.flow_id,
-                    tracked.chat_id,
-                    tracked.message_id,
-                )
-        registry.remove(
-            flow_id=tracked.flow_id,
-            chat_id=tracked.chat_id,
-            message_id=tracked.message_id,
-        )
+    from englishbot.telegram_flow_tracking import delete_tracked_messages
+
+    await delete_tracked_messages(
+        context,
+        tracked_messages=tracked_messages,
+    )
 
 
 async def _delete_tracked_flow_messages(
@@ -4175,12 +4161,12 @@ async def _delete_tracked_flow_messages(
     flow_id: str,
     tag: str,
 ) -> None:
-    registry = _telegram_flow_messages(context)
-    if registry is None:
-        return
-    await _delete_tracked_messages(
+    from englishbot.telegram_flow_tracking import delete_tracked_flow_messages
+
+    await delete_tracked_flow_messages(
         context,
-        tracked_messages=registry.list(flow_id=flow_id, tag=tag),
+        flow_id=flow_id,
+        tag=tag,
     )
 
 
@@ -4190,27 +4176,12 @@ async def _ensure_chat_menu_message(
     message,
     user,
 ) -> None:
-    user_id = getattr(user, "id", None)
-    if not isinstance(user_id, int):
-        return
-    flow_id = _chat_menu_flow_id(user_id=user_id)
-    await _delete_tracked_flow_messages(
+    from englishbot.telegram_flow_tracking import ensure_chat_menu_message
+
+    await ensure_chat_menu_message(
         context,
-        flow_id=flow_id,
-        tag=_CHAT_MENU_TAG,
-    )
-    sent_message = await send_telegram_view(
-        message,
-        _quick_actions_view(context=context, user=user),
-    )
-    if sent_message is None:
-        return
-    _track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=_CHAT_MENU_TAG,
-        message=sent_message,
-        fallback_chat_id=_message_chat_id(message),
+        message=message,
+        user=user,
     )
 
 
@@ -4219,34 +4190,21 @@ async def _delete_message_if_possible(
     *,
     message,
 ) -> None:
-    bot = getattr(context, "bot", None)
-    chat_id = _message_chat_id(message)
-    message_id = getattr(message, "message_id", None)
-    if bot is None or not isinstance(chat_id, int) or not isinstance(message_id, int):
-        return
-    try:
-        await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except BadRequest:
-        logger.debug(
-            "Telegram message already missing chat_id=%s message_id=%s",
-            chat_id,
-            message_id,
-        )
+    from englishbot.telegram_flow_tracking import delete_message_if_possible
+
+    await delete_message_if_possible(
+        context,
+        message=message,
+    )
 
 
 def _tracked_messages_except_source_message(*, tracked_messages, message) -> list:
-    source_chat_id = _message_chat_id(message)
-    source_message_id = getattr(message, "message_id", None)
-    if not isinstance(source_chat_id, int) or not isinstance(source_message_id, int):
-        return list(tracked_messages)
-    return [
-        tracked
-        for tracked in tracked_messages
-        if not (
-            tracked.chat_id == source_chat_id
-            and tracked.message_id == source_message_id
-        )
-    ]
+    from englishbot.telegram_flow_tracking import tracked_messages_except_source_message
+
+    return tracked_messages_except_source_message(
+        tracked_messages=tracked_messages,
+        message=message,
+    )
 
 
 def _track_flow_message(
@@ -4257,26 +4215,27 @@ def _track_flow_message(
     message,
     fallback_chat_id: int | None = None,
 ) -> None:
-    registry = _telegram_flow_messages(context)
-    if registry is None:
-        return
-    message_id = getattr(message, "message_id", None)
-    if not isinstance(message_id, int):
-        return
-    chat_id = _message_chat_id(message)
-    if chat_id is None:
-        chat_id = fallback_chat_id
-    if not isinstance(chat_id, int):
-        return
-    registry.track(flow_id=flow_id, chat_id=chat_id, message_id=message_id, tag=tag)
+    from englishbot.telegram_flow_tracking import track_flow_message
+
+    track_flow_message(
+        context,
+        flow_id=flow_id,
+        tag=tag,
+        message=message,
+        fallback_chat_id=fallback_chat_id,
+    )
 
 
 def _published_word_edit_flow_id(*, user_id: int) -> str:
-    return f"published-word-edit:{user_id}"
+    from englishbot.telegram_flow_tracking import published_word_edit_flow_id
+
+    return published_word_edit_flow_id(user_id=user_id)
 
 
 def _tts_voice_flow_id(*, user_id: int) -> str:
-    return f"tts-voice:{user_id}"
+    from englishbot.telegram_flow_tracking import tts_voice_flow_id
+
+    return tts_voice_flow_id(user_id=user_id)
 
 
 async def _reply_voice_replacing_previous_tts(
@@ -4286,21 +4245,14 @@ async def _reply_voice_replacing_previous_tts(
     message,
     voice,
 ):
-    flow_id = _tts_voice_flow_id(user_id=user_id)
-    await _delete_tracked_flow_messages(
-        context,
-        flow_id=flow_id,
-        tag=_TTS_VOICE_TAG,
+    from englishbot.telegram_flow_tracking import reply_voice_replacing_previous_tts
+
+    return await reply_voice_replacing_previous_tts(
+        context=context,
+        user_id=user_id,
+        message=message,
+        voice=voice,
     )
-    sent_message = await message.reply_voice(voice=voice)
-    _track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=_TTS_VOICE_TAG,
-        message=sent_message,
-        fallback_chat_id=_message_chat_id(message),
-    )
-    return sent_message
 
 
 async def _prepare_and_send_image_review_step(

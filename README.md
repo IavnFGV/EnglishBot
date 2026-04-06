@@ -40,6 +40,7 @@ First extraction steps already in place:
 - [src/englishbot/telegram_tts.py](/workspaces/EnglishBot/src/englishbot/telegram_tts.py) owns TTS callbacks and current-question audio sending, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_homework_admin.py](/workspaces/EnglishBot/src/englishbot/telegram_homework_admin.py) owns homework goal/admin callbacks and assignment drill-down screens, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_admin_utils.py](/workspaces/EnglishBot/src/englishbot/telegram_admin_utils.py) owns operational admin commands such as `/makeadmin` and `/clearuser`, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram_flow_tracking.py](/workspaces/EnglishBot/src/englishbot/telegram_flow_tracking.py) owns tracked Telegram flow-message registration, cleanup, and replacement helpers, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers; dead compatibility leftovers are removed incrementally once they have no in-repo callers
 - repeated `context.application.bot_data[...]` access in `bot.py` is being centralized gradually through shared helper accessors so the remaining facade stays easier to teach and scan
 - repeated `context.user_data[...]` access in `bot.py` is also being centralized gradually so per-user Telegram state reads like one concept instead of many tiny ad hoc patterns
@@ -68,10 +69,6 @@ Best candidates for the next wave:
 - assignment progress rendering helpers still in `src/englishbot/bot.py`
   - examples: progress snapshot building, progress image sending, round-progress text
   - reason: this is a coherent subdomain and could become one teachable module
-
-- shared Telegram flow-message helpers
-  - examples: tracked flow message registration, deletion, replacement
-  - reason: this is adapter infrastructure used by multiple optional flows and can be taught as one reusable Telegram utility layer
 
 What should not be split just for appearance:
 
