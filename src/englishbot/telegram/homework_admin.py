@@ -144,6 +144,8 @@ async def admin_goal_target_menu_callback_handler(update: Update, context: Conte
 
 
 async def admin_goal_target_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import start_admin_goal_prompt_interaction
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None or query.data is None:
@@ -151,9 +153,9 @@ async def admin_goal_target_callback_handler(update: Update, context: ContextTyp
     await query.answer()
     target = query.data.split(":")[-1]
     if target == "custom":
-        context.user_data["words_flow_mode"] = bot_module._ADMIN_GOAL_AWAITING_TARGET_TEXT
-        bot_module._remember_expected_user_input(
+        start_admin_goal_prompt_interaction(
             context,
+            mode=bot_module._ADMIN_GOAL_AWAITING_TARGET_TEXT,
             chat_id=getattr(getattr(query, "message", None), "chat_id", None),
             message_id=getattr(getattr(query, "message", None), "message_id", None),
         )
@@ -266,6 +268,11 @@ async def admin_goal_manual_done_callback_handler(update: Update, context: Conte
 
 
 async def admin_goal_recipients_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import (
+        clear_admin_goal_prompt_interaction,
+        start_admin_goal_prompt_interaction,
+    )
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None or query.data is None:
@@ -273,17 +280,16 @@ async def admin_goal_recipients_callback_handler(update: Update, context: Contex
     await query.answer()
     if query.data.startswith("assign:admin_goal_recipients:page:"):
         if context.user_data.get("words_flow_mode") == bot_module._ADMIN_GOAL_AWAITING_DEADLINE_TEXT:
-            context.user_data.pop("words_flow_mode", None)
-            bot_module._clear_expected_user_input(context)
+            clear_admin_goal_prompt_interaction(context)
         page = int(query.data.split(":")[-1])
     elif query.data == "assign:admin_goal_recipients:done":
         if not context.user_data.get("admin_goal_recipient_user_ids"):
             await query.edit_message_text(bot_module._tg("assign_select_users_empty", context=context, user=user))
             return
         context.user_data.pop("admin_goal_deadline_date", None)
-        context.user_data["words_flow_mode"] = bot_module._ADMIN_GOAL_AWAITING_DEADLINE_TEXT
-        bot_module._remember_expected_user_input(
+        start_admin_goal_prompt_interaction(
             context,
+            mode=bot_module._ADMIN_GOAL_AWAITING_DEADLINE_TEXT,
             chat_id=getattr(getattr(query, "message", None), "chat_id", None),
             message_id=getattr(getattr(query, "message", None), "message_id", None),
         )
@@ -310,6 +316,8 @@ async def admin_goal_recipients_callback_handler(update: Update, context: Contex
 
 
 async def admin_goal_deadline_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import start_admin_goal_prompt_interaction
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None or query.data is None:
@@ -317,9 +325,9 @@ async def admin_goal_deadline_callback_handler(update: Update, context: ContextT
     await query.answer()
     option = query.data.split(":")[-1]
     if option == "custom":
-        context.user_data["words_flow_mode"] = bot_module._ADMIN_GOAL_AWAITING_DEADLINE_TEXT
-        bot_module._remember_expected_user_input(
+        start_admin_goal_prompt_interaction(
             context,
+            mode=bot_module._ADMIN_GOAL_AWAITING_DEADLINE_TEXT,
             chat_id=getattr(getattr(query, "message", None), "chat_id", None),
             message_id=getattr(getattr(query, "message", None), "message_id", None),
         )
@@ -439,6 +447,8 @@ async def assign_goal_detail_callback_handler(update: Update, context: ContextTy
 
 
 async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import clear_admin_goal_prompt_interaction
+
     message = update.effective_message
     user = update.effective_user
     if message is None or message.text is None or user is None:
@@ -494,7 +504,7 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 )
             return
         context.user_data["admin_goal_target_count"] = target_count
-        context.user_data.pop("words_flow_mode", None)
+        clear_admin_goal_prompt_interaction(context)
         next_reply_markup = bot_module._admin_goal_source_keyboard(
             language=bot_module._telegram_ui_language(context, user)
         )
@@ -509,7 +519,6 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 reply_markup=next_reply_markup,
             )
         await bot_module._delete_message_if_possible(context, message=message)
-        bot_module._clear_expected_user_input(context)
         return
 
     deadline_text = message.text.strip()
@@ -531,6 +540,6 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             )
         return
     context.user_data["admin_goal_deadline_date"] = parsed_deadline
-    context.user_data.pop("words_flow_mode", None)
+    clear_admin_goal_prompt_interaction(context)
     await bot_module._delete_message_if_possible(context, message=message)
     await bot_module._finish_admin_goal_creation(query_or_message=message, context=context, user=user)

@@ -72,6 +72,30 @@ def clear_image_review_text_edit_interaction(context: ContextTypes.DEFAULT_TYPE)
     clear_expected_user_input(context)
 
 
+def start_admin_goal_prompt_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    mode: str,
+    chat_id: int | None,
+    message_id: int | None,
+) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data["words_flow_mode"] = mode
+    remember_expected_user_input(
+        context,
+        chat_id=chat_id,
+        message_id=message_id,
+    )
+
+
+def clear_admin_goal_prompt_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data.pop("words_flow_mode", None)
+    clear_expected_user_input(context)
+
+
 async def replace_lesson_question_message(
     context: ContextTypes.DEFAULT_TYPE,
     *,

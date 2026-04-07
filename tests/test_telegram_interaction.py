@@ -17,6 +17,7 @@ from englishbot.telegram.interaction import (
     TelegramExpectedInputPrompt,
     TTS_VOICE_TAG,
     chat_menu_interaction_id,
+    clear_admin_goal_prompt_interaction,
     clear_expected_user_input,
     clear_image_review_text_edit_interaction,
     edit_expected_user_input_prompt,
@@ -30,6 +31,7 @@ from englishbot.telegram.interaction import (
     replace_lesson_question_message,
     remember_expected_user_input,
     replace_flow_message,
+    start_admin_goal_prompt_interaction,
     start_image_review_text_edit_interaction,
     start_published_word_edit_interaction,
     tts_voice_interaction_id,
@@ -100,6 +102,28 @@ def test_start_and_clear_image_review_text_edit_interaction() -> None:
     assert context.user_data.get("words_flow_mode") is None
     assert context.user_data.get("image_review_flow_id") is None
     assert context.user_data.get("image_review_item_id") is None
+    assert get_expected_user_input_prompt(context) is None
+
+
+def test_start_and_clear_admin_goal_prompt_interaction() -> None:
+    context = SimpleNamespace(user_data={})
+
+    start_admin_goal_prompt_interaction(
+        context,
+        mode="awaiting_admin_goal_deadline_text",
+        chat_id=7,
+        message_id=8,
+    )
+
+    assert context.user_data["words_flow_mode"] == "awaiting_admin_goal_deadline_text"
+    assert get_expected_user_input_prompt(context) == TelegramExpectedInputPrompt(
+        chat_id=7,
+        message_id=8,
+    )
+
+    clear_admin_goal_prompt_interaction(context)
+
+    assert context.user_data.get("words_flow_mode") is None
     assert get_expected_user_input_prompt(context) is None
 
 

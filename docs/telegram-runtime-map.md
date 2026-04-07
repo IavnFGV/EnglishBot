@@ -64,6 +64,7 @@ It is not a scene engine or a general Telegram framework. It currently owns:
 - lesson interaction lifecycle helpers
 - published-word edit lifecycle helpers
 - image-review text-edit transient state helpers
+- admin goal prompt/deadline transient state helpers
 
 This gives the project one reusable Telegram lifecycle layer without pulling business logic out of the existing EnglishBot use cases.
 - [src/englishbot/telegram/tts.py](/workspaces/EnglishBot/src/englishbot/telegram/tts.py)
