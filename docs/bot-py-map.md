@@ -26,6 +26,7 @@ The same direction now applies to shared runtime lookups: feature modules should
 That migration is now underway in the heaviest Telegram feature modules too, especially homework-admin and editor/image-review flows.
 At this point the biggest remaining `bot_module._...` clusters in those modules are no longer generic runtime lookups, but more domain-specific cross-flow helpers such as active draft/image-review flow operations and editor publish orchestration.
 That editor-specific migration has now started moving into [src/englishbot/telegram/editor_runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_runtime.py), so the next reductions in `bot.py` should come from that layer rather than from more generic runtime-access cleanup.
+The `editor_add_words.py` module is now close to the end of that cleanup wave: most of its old direct `bot_module._...` usage is gone, and the main leftovers are now small constants, callback-data helpers, and a few leaf editor checks rather than broad orchestration.
 
 ## Main Sections
 

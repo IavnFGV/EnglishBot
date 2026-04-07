@@ -273,11 +273,11 @@ async def words_edit_cancel_callback_handler(
         source_message=query.message,
     )
     clear_published_word_edit_prompt_interaction(context)
-    words = bot_module._list_editable_words(context).execute(topic_id=topic_id)
+    words = tg_runtime.list_editable_words(context).execute(topic_id=topic_id)
     await query.edit_message_text(
         "Edit cancelled. Choose a word to edit.",
         reply_markup=ui_editable_words_keyboard(
-            tg=bot_module._tg,
+            tg=tg_runtime.tg,
             topic_id=topic_id,
             words=words,
         ),
@@ -511,7 +511,7 @@ async def add_words_text_handler(
             )
             await status_message.edit_text(
                 build_status_view(
-                    text=bot_module._tg(
+                    text=tg_runtime.tg(
                         "updating_image_prompt_failed",
                         context=context,
                         user=user,
@@ -544,20 +544,16 @@ async def add_words_text_handler(
         ):
             clear_image_review_text_edit_interaction(context)
             await message.reply_text(
-                bot_module._tg("image_review_task_inactive", context=context, user=user)
+                tg_runtime.tg("image_review_task_inactive", context=context, user=user)
             )
             return
         clear_image_review_text_edit_interaction(context)
         status_message = await message.reply_text(
-            bot_module._tg("searching_pixabay", context=context, user=user)
+            tg_runtime.tg("searching_pixabay", context=context, user=user)
         )
         stop_event = asyncio.Event()
         heartbeat_task = asyncio.create_task(
-            bot_module._run_status_heartbeat(
-                status_message,
-                stage="Searching Pixabay",
-                stop_event=stop_event,
-            )
+            tg_runtime.run_status_heartbeat(status_message, stage="Searching Pixabay", stop_event=stop_event)
         )
         try:
             updated_flow = await asyncio.to_thread(
@@ -575,7 +571,7 @@ async def add_words_text_handler(
             )
             await status_message.edit_text(
                 build_status_view(
-                    text=bot_module._tg(
+                    text=tg_runtime.tg(
                         "searching_pixabay_failed",
                         context=context,
                         user=user,
@@ -588,7 +584,7 @@ async def add_words_text_handler(
         await delete_message_if_possible(context, message=message)
         await status_message.edit_text(
             build_status_view(
-                text=bot_module._tg(
+                text=tg_runtime.tg(
                     "pixabay_candidates_updated",
                     context=context,
                     user=user,
@@ -599,7 +595,7 @@ async def add_words_text_handler(
         return
     if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_PHOTO:
         await message.reply_text(
-            bot_module._tg("send_photo_not_text", context=context, user=user)
+            tg_runtime.tg("send_photo_not_text", context=context, user=user)
         )
         return
     if words_flow_mode == bot_module._ADD_WORDS_AWAITING_EDIT_TEXT:
@@ -609,7 +605,7 @@ async def add_words_text_handler(
         if flow is None or flow.flow_id != active_flow_id:
             clear_add_words_draft_edit_interaction(context)
             await message.reply_text(
-                bot_module._tg("add_words_flow_inactive", context=context, user=user)
+                tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
             )
             return
         flow = editor_rt.apply_add_words_edit(context).execute(
@@ -627,7 +623,7 @@ async def add_words_text_handler(
         )
         preview_message_id = editor_rt.get_preview_message_id(user.id, context)
         await message.reply_text(
-            f"{bot_module._tg('draft_updated_from_text', context=context, user=user)}\n\n{preview_view.text}",
+            f"{tg_runtime.tg('draft_updated_from_text', context=context, user=user)}\n\n{preview_view.text}",
             reply_markup=preview_view.reply_markup,
         )
         if preview_message_id is not None:
@@ -661,15 +657,11 @@ async def add_words_text_handler(
         user.id,
     )
     status_message = await message.reply_text(
-        bot_module._tg("parsing_draft", context=context, user=user)
+        tg_runtime.tg("parsing_draft", context=context, user=user)
     )
     stop_event = asyncio.Event()
     heartbeat_task = asyncio.create_task(
-        bot_module._run_status_heartbeat(
-            status_message,
-            stage="Parsing draft",
-            stop_event=stop_event,
-        )
+        tg_runtime.run_status_heartbeat(status_message, stage="Parsing draft", stop_event=stop_event)
     )
     try:
         flow = await asyncio.to_thread(
@@ -684,7 +676,7 @@ async def add_words_text_handler(
         )
         await status_message.edit_text(
             build_status_view(
-                text=bot_module._tg(
+                text=tg_runtime.tg(
                     "parsing_draft_failed_generic",
                     context=context,
                     user=user,
@@ -805,11 +797,7 @@ async def add_words_regenerate_draft_handler(
     )
     stop_event = asyncio.Event()
     heartbeat_task = asyncio.create_task(
-        bot_module._run_status_heartbeat(
-            query,
-            stage="Re-recognizing draft",
-            stop_event=stop_event,
-        )
+        tg_runtime.run_status_heartbeat(query, stage="Re-recognizing draft", stop_event=stop_event)
     )
     try:
         flow = await asyncio.to_thread(
@@ -825,7 +813,7 @@ async def add_words_regenerate_draft_handler(
         await edit_telegram_text_view(
             query,
             build_status_view(
-                text=bot_module._tg(
+                text=tg_runtime.tg(
                     "parsing_draft_failed_generic",
                     context=context,
                     user=user,
@@ -1024,7 +1012,7 @@ async def add_words_approve_auto_images_handler(
             tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
         )
         return
-    if not bot_module._local_image_generation_available(context):
+    if not tg_runtime.local_image_generation_available(context):
         await query.edit_message_text(tg_runtime.tg("auto_images_unavailable", context=context, user=user))
         return
     result = flow.draft_result
@@ -1091,11 +1079,11 @@ async def add_words_approve_auto_images_handler(
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg(
+            text=tg_runtime.tg(
                 "content_pack_published_generating_images",
                 context=context,
                 user=user,
-                destination=bot_module._publish_destination_text(
+                destination=tg_runtime.publish_destination_text(
                     context,
                     output_path=approved.output_path,
                     topic_id=approved.published_topic_id,
@@ -1142,7 +1130,7 @@ async def add_words_approve_auto_images_handler(
     topic_id = approved.published_topic_id
     try:
         enrichment_result = await asyncio.to_thread(
-            bot_module._generate_content_pack_images(context).execute,
+            editor_rt.generate_content_pack_images(context).execute,
             topic_id=topic_id,
             assets_dir=bot_module.Path("assets"),
             progress_callback=lambda processed_count, total_count: loop.call_soon_threadsafe(

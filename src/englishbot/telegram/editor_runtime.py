@@ -189,3 +189,9 @@ def image_review_origin(flow) -> str:
     import englishbot.bot as bot_module
 
     return bot_module._image_review_origin(flow)
+
+
+def generate_content_pack_images(context: ContextTypes.DEFAULT_TYPE):
+    import englishbot.bot as bot_module
+
+    return bot_module._generate_content_pack_images(context)
