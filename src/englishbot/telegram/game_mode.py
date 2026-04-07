@@ -7,6 +7,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from englishbot import bot as bot_module
+from englishbot.presentation.telegram_game_ui import game_result_keyboard
+from englishbot.presentation.telegram_views import build_start_menu_view
 
 
 async def game_next_round_handler(
@@ -82,9 +84,18 @@ async def game_repeat_handler(
     bot_module._pop_user_data(context, bot_module._GAME_STATE_KEY, default=None)
     bot_module._clear_medium_task_state(context)
     await query.edit_message_text(bot_module._tg("start_menu_title", context=context, user=user))
+    summary = bot_module._learner_assignment_launch_summary_use_case(context).execute(user_id=user.id)
     await bot_module.send_telegram_view(
         query.message,
-        bot_module._start_menu_view(context=context, user=user),
+        build_start_menu_view(
+            text=bot_module._render_start_menu_text(context=context, user=user, summary=summary),
+            reply_markup=bot_module._start_menu_keyboard(
+                summary=summary,
+                guide_web_app_url=bot_module._assignment_guide_web_app_url(context, user=user),
+                admin_web_app_url=bot_module._admin_web_app_url(context, user=user),
+                language=bot_module._telegram_ui_language(context, user),
+            ),
+        ),
     )
 
 
@@ -153,8 +164,9 @@ async def finish_game_session(
             total_stars=total_stars,
             streak_days=streak_days,
         ),
-        reply_markup=bot_module._game_result_keyboard(
-            language=bot_module._telegram_ui_language(context, user)
+        reply_markup=game_result_keyboard(
+            tg=bot_module._tg,
+            language=bot_module._telegram_ui_language(context, user),
         ),
     )
     bot_module._set_user_data(
