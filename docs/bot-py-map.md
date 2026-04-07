@@ -6,6 +6,12 @@ This document exists because [src/englishbot/bot.py](/workspaces/EnglishBot/src/
 
 `bot.py` is no longer the whole Telegram application.
 
+Current checkpoint:
+
+- about `4058` lines
+- about `326` top-level `def/async def`
+- `0` direct `view/keyboard/status` helper dependencies from Telegram feature modules back into `bot.py`
+
 Today it is mostly:
 
 - shared Telegram helper functions
@@ -98,9 +104,12 @@ Checkpoint: Telegram feature modules no longer depend on `bot.py` for direct `vi
 
 - facade wrappers
 - Telegram interaction plumbing
-- residual view and keyboard helpers
+- residual shared helper blocks that are still useful across multiple flows
 
 So the size is no longer only “too many handlers”. A lot of it is helper surface.
+
+The important improvement is that it is no longer the presentation hub for Telegram modules.
+That responsibility has moved to `presentation/...` and focused modules under `telegram/...`.
 
 ## What To Do With `bot.py`
 
@@ -116,6 +125,19 @@ That means:
 
 If the file is reduced further after `1.0.0`, the best targets are:
 
-- shared Telegram interaction state
-- residual keyboard-builder blocks
-- remaining notification or tracked-message plumbing that can live in focused Telegram modules
+- shared runtime accessor blocks if they can be grouped into a smaller runtime/context helper module without harming readability
+- notification and tracked-message plumbing if we decide to stop exposing compatibility wrappers from `bot.py`
+- assignment progress helpers if we want to separate rendering glue from runtime access even further
+- larger cross-flow orchestration helpers such as `_known_assignment_users(...)` or `_finish_admin_goal_creation(...)` if we find a clean home for them
+
+## What Probably Stays
+
+Some large pieces are now reasonable to keep in `bot.py` for `1.0.0`:
+
+- typed runtime access to `bot_data` and `user_data`
+- compatibility wrappers that keep the refactor incremental and testable
+- shared Telegram glue used across several feature modules
+- a small number of cross-feature orchestration helpers that do not belong cleanly to one Telegram submodule yet
+
+That means the next wave should not aim for “smallest possible file”.
+It should only move a block when the new home is clearly more understandable than the current facade placement.
