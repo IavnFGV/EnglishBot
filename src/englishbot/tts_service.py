@@ -313,6 +313,22 @@ def build_tts_service(settings: Settings) -> TtsHttpService:
     )
 
 
+def log_tts_service_settings(settings: Settings) -> None:
+    tts = settings.tts
+    logger.info(
+        "TTS service settings host=%s port=%s voice_name=%s voice_variants=%s "
+        "cache_dir=%s voice_dir=%s voice_model_path=%s voice_config_path=%s",
+        tts.host,
+        tts.port,
+        tts.voice_name,
+        tts.voice_variants,
+        tts.cache_dir,
+        tts.voice_dir,
+        tts.voice_model_path,
+        tts.voice_config_path,
+    )
+
+
 def main() -> None:
     env_file_path = _REPO_ROOT / ".env"
     load_dotenv(env_file_path, override=True)
@@ -324,6 +340,7 @@ def main() -> None:
         log_max_bytes=settings.log_max_bytes,
         log_backup_count=settings.log_backup_count,
     )
+    log_tts_service_settings(settings)
     service = build_tts_service(settings)
     handler = create_tts_http_handler(service)
     tts = settings.tts

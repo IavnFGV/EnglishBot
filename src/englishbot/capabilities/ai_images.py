@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from englishbot.application.content_pack_image_use_cases import GenerateContentPackImagesUseCase
@@ -34,6 +35,19 @@ from englishbot.image_generation.smart_generation import (
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.sqlite_store import SQLiteImageReviewFlowRepository
+
+
+logger = logging.getLogger(__name__)
+
+
+def log_ai_image_capability_settings(*, settings) -> None:
+    ai_images = settings.ai_images
+    logger.info(
+        "AI image capability settings enabled=%s pixabay_base_url=%s pixabay_configured=%s",
+        ai_images.enabled,
+        ai_images.pixabay_base_url,
+        bool(ai_images.pixabay_api_key),
+    )
 
 
 def build_image_generation_gateway(*, settings, config_service):
@@ -79,6 +93,7 @@ def build_content_pack_image_enricher(*, settings, config_service):
 
 
 def register_ai_image_capability(*, app, settings, config_service, content_store) -> None:
+    log_ai_image_capability_settings(settings=settings)
     image_generation_gateway = build_image_generation_gateway(
         settings=settings,
         config_service=config_service,

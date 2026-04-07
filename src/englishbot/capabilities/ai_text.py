@@ -1,11 +1,39 @@
 from __future__ import annotations
 
+import logging
+
 from englishbot.importing.runtime import build_lesson_import_pipeline
 from englishbot.importing.clients import OllamaLessonExtractionClient
 from englishbot.importing.smart_parsing import (
     DisabledSmartLessonParsingGateway,
     OllamaSmartLessonParsingGateway,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+def log_ai_text_capability_settings(*, settings) -> None:
+    ai_text = settings.ai_text
+    logger.info(
+        "AI text capability settings enabled=%s model=%s model_file_path=%s "
+        "trace_file_path=%s base_url=%s timeout_sec=%s extraction_mode=%s "
+        "temperature=%s top_p=%s num_predict=%s extract_line_prompt_path=%s "
+        "extract_text_prompt_path=%s image_prompt_path=%s",
+        ai_text.enabled,
+        ai_text.model,
+        ai_text.model_file_path,
+        ai_text.trace_file_path,
+        ai_text.base_url,
+        ai_text.timeout_sec,
+        ai_text.extraction_mode,
+        ai_text.temperature,
+        ai_text.top_p,
+        ai_text.num_predict,
+        ai_text.extract_line_prompt_path,
+        ai_text.extract_text_prompt_path,
+        ai_text.image_prompt_path,
+    )
 
 
 def build_smart_parsing_gateway(*, settings, config_service):
@@ -51,6 +79,7 @@ def build_ai_text_import_pipeline(*, settings, config_service):
 
 
 def register_ai_text_capability(*, app, settings, config_service) -> object:
+    log_ai_text_capability_settings(settings=settings)
     smart_parsing_gateway = build_smart_parsing_gateway(
         settings=settings,
         config_service=config_service,

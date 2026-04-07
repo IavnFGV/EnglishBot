@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
 from pathlib import Path
 
 import englishbot.__main__ as main_module
-from englishbot.__main__ import configure_logging
+from englishbot.__main__ import configure_logging, log_core_runtime_settings
+from englishbot.config import Settings
 
 
 def test_configure_logging_writes_to_log_file(tmp_path: Path) -> None:
@@ -80,3 +80,29 @@ def test_main_loads_env_file_with_override_and_prefers_file_values(
 
     assert captured["ollama_base_url"] == "http://127.0.0.1:12434"
     assert captured["config_ollama_base_url"] == "http://127.0.0.1:12434"
+
+
+def test_log_core_runtime_settings_logs_only_core_runtime_fields(caplog) -> None:
+    settings = Settings(
+        telegram_token="token",
+        log_level="INFO",
+        content_db_path=Path("data/test.db"),
+        telegram_ui_language="ru",
+        admin_user_ids=(1, 2),
+        editor_user_ids=(3,),
+        web_app_base_url="https://example.com/webapp",
+        ollama_model="should-not-appear",
+        tts_voice_name="should-not-appear",
+    )
+
+    caplog.set_level(logging.INFO, logger="englishbot.__main__")
+
+    log_core_runtime_settings(settings)
+
+    assert "Core runtime settings" in caplog.text
+    assert "content_db_path=data/test.db" in caplog.text
+    assert "telegram_ui_language=ru" in caplog.text
+    assert "admin_user_count=2" in caplog.text
+    assert "editor_user_count=1" in caplog.text
+    assert "web_app_enabled=True" in caplog.text
+    assert "should-not-appear" not in caplog.text
