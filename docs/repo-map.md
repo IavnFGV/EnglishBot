@@ -16,6 +16,8 @@ If you are new to the project, read files in this order:
 
 - [src/englishbot/__main__.py](/workspaces/EnglishBot/src/englishbot/__main__.py)
   The main bot entrypoint. Loads `.env`, builds `Settings`, configures logging, builds the Telegram application, and starts polling.
+- [.devcontainer/README.md](/workspaces/EnglishBot/.devcontainer/README.md)
+  Short map of the default, `cpu`, and `gpu` devcontainer profiles.
 - [docker-compose.yml](/workspaces/EnglishBot/docker-compose.yml)
   Core Docker runtime for the Telegram bot only.
 - [docker-compose.optional.yml](/workspaces/EnglishBot/docker-compose.optional.yml)

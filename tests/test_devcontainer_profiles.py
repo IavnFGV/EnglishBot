@@ -6,7 +6,19 @@ def test_switch_devcontainer_profile_supports_default_profile() -> None:
 
     assert 'default)' in script
     assert 'devcontainer.default.json' in script
-    assert 'Usage: $0 [default|cpu|gpu]' in script
+    assert 'status)' in script
+    assert 'show_profile()' in script
+    assert 'Usage: $0 [default|cpu|gpu|status]' in script
+
+
+def test_devcontainer_readme_documents_active_and_named_profiles() -> None:
+    readme = Path(".devcontainer/README.md").read_text(encoding="utf-8")
+
+    assert "devcontainer.json" in readme
+    assert "devcontainer.default.json" in readme
+    assert "devcontainer.cpu.json" in readme
+    assert "devcontainer.gpu.json" in readme
+    assert "switch-devcontainer-profile.sh status" in readme
 
 
 def test_default_devcontainer_disables_local_ai_build_and_startup() -> None:

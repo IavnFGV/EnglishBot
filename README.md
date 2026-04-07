@@ -45,6 +45,8 @@ docker compose -f docker-compose.yml -f docker-compose.optional.yml up -d --buil
 Use the `cpu` or `gpu` devcontainer profiles only when you are actively working
 with optional local AI tooling such as Ollama or ComfyUI.
 
+Profile details live in [.devcontainer/README.md](/workspaces/EnglishBot/.devcontainer/README.md).
+
 Current architecture cleanup rules:
 
 - the default developer workflow must not require Ollama or ComfyUI
@@ -861,11 +863,9 @@ Switch profiles:
 bash scripts/switch-devcontainer-profile.sh cpu
 bash scripts/switch-devcontainer-profile.sh gpu
 bash scripts/switch-devcontainer-profile.sh default
+bash scripts/switch-devcontainer-profile.sh status
 ```
 
-Switch local AI services:
-
-```bash
 The default active profile in `.devcontainer/devcontainer.json` is the lightweight
 no-AI profile for WSL and non-GPU setups.
 The `cpu` and `gpu` profiles explicitly opt into local AI startup through

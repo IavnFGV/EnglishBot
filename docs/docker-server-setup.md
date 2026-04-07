@@ -89,6 +89,12 @@ cd /srv/englishbot/app
 docker compose -f docker-compose.yml -f docker-compose.optional.yml up -d --build --force-recreate
 ```
 
+Operational rule:
+
+- `docker-compose.yml` is the core bot runtime
+- `docker-compose.optional.yml` is an explicit overlay for Web App, TTS, and nginx
+- use the overlay only when you intentionally need those optional services
+
 ## GitHub Actions auto-deploy
 
 This repo includes [deploy.yml](../.github/workflows/deploy.yml).
