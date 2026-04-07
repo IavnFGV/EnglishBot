@@ -71,9 +71,22 @@ It is not a scene engine or a general Telegram framework. It currently owns:
 - published-word edit prompt transient state helpers
 - image-review text-edit transient state helpers
 - admin goal prompt/deadline transient state helpers
+- admin goal creation transient state helpers
 - assignment-progress interaction ids
 
 This gives the project one reusable Telegram lifecycle layer without pulling business logic out of the existing EnglishBot use cases.
+
+## Rule For New Telegram Features
+
+New Telegram features should reuse the interaction layer for transient UI state and tracked-message lifecycle.
+
+That means new flows should prefer:
+
+- named interaction ids and tags in [src/englishbot/telegram/interaction.py](/workspaces/EnglishBot/src/englishbot/telegram/interaction.py)
+- explicit interaction helper functions for prompt state, screen replacement, and flow cleanup
+- explicit dataclasses or getter/update/clear helpers for temporary `user_data` state
+
+Avoid introducing new ad hoc `context.user_data["some_flow_mode"]` branches directly inside handlers when the state belongs to a reusable Telegram interaction pattern.
 - [src/englishbot/telegram/tts.py](/workspaces/EnglishBot/src/englishbot/telegram/tts.py)
   learner TTS buttons and current-question audio flow
 

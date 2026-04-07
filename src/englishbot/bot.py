@@ -2125,8 +2125,10 @@ async def admin_goal_source_menu_callback_handler(update: Update, context: Conte
 
 
 def _admin_goal_manual_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user, page: int) -> InlineKeyboardMarkup:
+    from englishbot.telegram.interaction import get_admin_goal_creation_state
+
     items = _content_store(context).list_all_vocabulary()
-    selected = set(_admin_goal_user_state(context, "admin_goal_manual_word_ids", default=set()))
+    selected = set(get_admin_goal_creation_state(context).manual_word_ids)
     keyboard, normalized_page = ui_admin_goal_manual_keyboard(
         tg=_tg,
         items=items,
@@ -2144,12 +2146,14 @@ def _admin_goal_recipients_keyboard(
     user,
     page: int,
 ) -> InlineKeyboardMarkup:
+    from englishbot.telegram.interaction import get_admin_goal_creation_state
+
     items = _known_assignment_users(
         context,
         viewer_user_id=user.id,
         viewer_username=getattr(user, "username", None),
     )
-    selected = set(_admin_goal_user_state(context, "admin_goal_recipient_user_ids", default=set()))
+    selected = set(get_admin_goal_creation_state(context).recipient_user_ids)
     keyboard, normalized_page = ui_admin_goal_recipients_keyboard(
         tg=_tg,
         items=items,
@@ -2232,18 +2236,21 @@ async def admin_goal_deadline_callback_handler(update: Update, context: ContextT
 
 
 def _create_admin_goals_from_context(*, context: ContextTypes.DEFAULT_TYPE) -> list:
-    source_raw = str(_admin_goal_user_state(context, "admin_goal_source", default=GoalWordSource.RECENT.value))
+    from englishbot.telegram.interaction import get_admin_goal_creation_state
+
+    state = get_admin_goal_creation_state(context)
+    source_raw = str(state.source or GoalWordSource.RECENT.value)
     topic_id = source_raw.split(":", 1)[1] if source_raw.startswith("topic:") else None
     source = GoalWordSource.TOPIC if topic_id else GoalWordSource(source_raw)
     return _assign_goal_to_users_use_case(context).execute(
-        user_ids=list(_admin_goal_user_state(context, "admin_goal_recipient_user_ids", default=[])),
-        goal_period=GoalPeriod(str(_admin_goal_user_state(context, "admin_goal_period", default=GoalPeriod.HOMEWORK.value))),
-        goal_type=GoalType(str(_admin_goal_user_state(context, "admin_goal_type", default=GoalType.WORD_LEVEL_HOMEWORK.value))),
+        user_ids=list(state.recipient_user_ids),
+        goal_period=GoalPeriod(str(state.goal_period or GoalPeriod.HOMEWORK.value)),
+        goal_type=GoalType(str(state.goal_type or GoalType.WORD_LEVEL_HOMEWORK.value)),
         target_count=None,
         source=source,
         topic_id=topic_id,
-        manual_word_ids=list(_admin_goal_user_state(context, "admin_goal_manual_word_ids", default=[])),
-        deadline_date=_admin_goal_user_state(context, "admin_goal_deadline_date"),
+        manual_word_ids=list(state.manual_word_ids),
+        deadline_date=state.deadline_date,
     )
 
 
@@ -2253,6 +2260,8 @@ async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAUL
 
 
 async def _finish_admin_goal_creation(*, query_or_message, context: ContextTypes.DEFAULT_TYPE, user) -> None:
+    from englishbot.telegram.interaction import clear_admin_goal_creation_state
+
     created = _create_admin_goals_from_context(context=context)
     _schedule_assignment_assigned_notifications(context, goals=created)
     for recipient_user_id in {int(goal.user_id) for goal in created}:
@@ -2278,19 +2287,7 @@ async def _finish_admin_goal_creation(*, query_or_message, context: ContextTypes
                 target=assigned_word_count,
             )
         )
-    for key in (
-        "admin_goal_period",
-        "admin_goal_type",
-        "admin_goal_target_count",
-        "admin_goal_source",
-        "admin_goal_deadline_date",
-        "admin_goal_manual_word_ids",
-        "admin_goal_recipient_user_ids",
-        "admin_goal_recipients_page",
-        "words_flow_mode",
-    ):
-        _pop_user_data(context, key, default=None)
-    _clear_expected_user_input(context)
+    clear_admin_goal_creation_state(context, clear_prompt=True)
 
 
 async def admin_users_progress_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

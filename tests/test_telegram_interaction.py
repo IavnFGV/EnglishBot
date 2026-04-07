@@ -9,7 +9,9 @@ from telegram.error import BadRequest
 from englishbot.telegram.interaction import (
     ADD_WORDS_AWAITING_EDIT_TEXT_MODE,
     ADD_WORDS_AWAITING_TEXT_MODE,
+    ADMIN_GOAL_STATE_KEYS,
     ASSIGNMENT_PROGRESS_TAG,
+    AdminGoalCreationState,
     CHAT_MENU_TAG,
     IMAGE_REVIEW_CONTEXT_TAG,
     IMAGE_REVIEW_STEP_TAG,
@@ -24,6 +26,7 @@ from englishbot.telegram.interaction import (
     TTS_VOICE_TAG,
     assignment_progress_interaction_id,
     chat_menu_interaction_id,
+    clear_admin_goal_creation_state,
     clear_admin_goal_prompt_interaction,
     clear_add_words_draft_edit_interaction,
     clear_add_words_text_interaction,
@@ -36,6 +39,7 @@ from englishbot.telegram.interaction import (
     finish_image_review_interaction,
     finish_lesson_interaction,
     finish_published_word_edit_interaction,
+    get_admin_goal_creation_state,
     get_image_review_photo_attach_interaction,
     get_expected_user_input_prompt,
     get_add_words_draft_edit_interaction,
@@ -51,6 +55,7 @@ from englishbot.telegram.interaction import (
     replace_tts_voice_message,
     remember_expected_user_input,
     replace_flow_message,
+    start_admin_goal_creation_state,
     start_admin_goal_prompt_interaction,
     start_add_words_draft_edit_interaction,
     start_add_words_text_interaction,
@@ -59,6 +64,7 @@ from englishbot.telegram.interaction import (
     start_published_word_edit_prompt_interaction,
     start_published_word_edit_interaction,
     tts_voice_interaction_id,
+    update_admin_goal_creation_state,
 )
 
 
@@ -99,6 +105,19 @@ def test_named_editor_interaction_modes_are_stable() -> None:
     assert ADD_WORDS_AWAITING_TEXT_MODE == "awaiting_raw_text"
     assert ADD_WORDS_AWAITING_EDIT_TEXT_MODE == "awaiting_edit_text"
     assert PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE == "awaiting_published_word_edit_text"
+
+
+def test_admin_goal_state_keys_are_stable() -> None:
+    assert ADMIN_GOAL_STATE_KEYS == (
+        "admin_goal_period",
+        "admin_goal_type",
+        "admin_goal_target_count",
+        "admin_goal_source",
+        "admin_goal_deadline_date",
+        "admin_goal_manual_word_ids",
+        "admin_goal_recipient_user_ids",
+        "admin_goal_recipients_page",
+    )
 
 
 def test_clear_expected_user_input_prompt() -> None:
@@ -228,6 +247,42 @@ def test_start_and_clear_admin_goal_prompt_interaction() -> None:
 
     assert context.user_data.get("words_flow_mode") is None
     assert get_expected_user_input_prompt(context) is None
+
+
+def test_start_update_get_and_clear_admin_goal_creation_state() -> None:
+    context = SimpleNamespace(user_data={})
+
+    start_admin_goal_creation_state(context)
+    assert get_admin_goal_creation_state(context) == AdminGoalCreationState(
+        recipient_user_ids=frozenset()
+    )
+
+    update_admin_goal_creation_state(
+        context,
+        goal_period="homework",
+        goal_type="word_level_homework",
+        target_count=7,
+        source="recent",
+        deadline_date="2026-04-07",
+        manual_word_ids={"cloud", "sun"},
+        recipient_user_ids={77, 88},
+        recipients_page=2,
+    )
+
+    assert get_admin_goal_creation_state(context) == AdminGoalCreationState(
+        goal_period="homework",
+        goal_type="word_level_homework",
+        target_count=7,
+        source="recent",
+        deadline_date="2026-04-07",
+        manual_word_ids=frozenset({"cloud", "sun"}),
+        recipient_user_ids=frozenset({77, 88}),
+        recipients_page=2,
+    )
+
+    clear_admin_goal_creation_state(context)
+
+    assert get_admin_goal_creation_state(context) == AdminGoalCreationState()
 
 
 def test_edit_expected_user_input_prompt_returns_false_without_prompt() -> None:

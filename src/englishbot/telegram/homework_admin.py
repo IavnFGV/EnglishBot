@@ -85,6 +85,8 @@ async def goal_reset_callback_handler(update: Update, context: ContextTypes.DEFA
 
 
 async def admin_assign_goal_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import start_admin_goal_creation_state
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
@@ -93,18 +95,7 @@ async def admin_assign_goal_start_handler(update: Update, context: ContextTypes.
     if not bot_module._is_admin(user.id, context):
         await query.edit_message_text(bot_module._tg("admin_only", context=context, user=user))
         return
-    for key in (
-        "admin_goal_period",
-        "admin_goal_type",
-        "admin_goal_target_count",
-        "admin_goal_source",
-        "admin_goal_deadline_date",
-        "admin_goal_manual_word_ids",
-        "admin_goal_recipient_user_ids",
-        "admin_goal_recipients_page",
-    ):
-        context.user_data.pop(key, None)
-    context.user_data["admin_goal_recipient_user_ids"] = set()
+    start_admin_goal_creation_state(context)
     await query.edit_message_text(
         bot_module._tg("assign_setup_intro", context=context, user=user),
         reply_markup=bot_module._admin_goal_period_keyboard(
@@ -114,13 +105,18 @@ async def admin_assign_goal_start_handler(update: Update, context: ContextTypes.
 
 
 async def admin_goal_period_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import update_admin_goal_creation_state
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None or query.data is None:
         return
     await query.answer()
-    context.user_data["admin_goal_period"] = GoalPeriod.HOMEWORK.value
-    context.user_data["admin_goal_type"] = GoalType.WORD_LEVEL_HOMEWORK.value
+    update_admin_goal_creation_state(
+        context,
+        goal_period=GoalPeriod.HOMEWORK.value,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK.value,
+    )
     await query.edit_message_text(
         bot_module._tg("goal_source_prompt", context=context, user=user),
         reply_markup=bot_module._admin_goal_source_keyboard(
@@ -145,6 +141,7 @@ async def admin_goal_target_menu_callback_handler(update: Update, context: Conte
 
 async def admin_goal_target_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from englishbot.telegram.interaction import start_admin_goal_prompt_interaction
+    from englishbot.telegram.interaction import update_admin_goal_creation_state
 
     query = update.callback_query
     user = update.effective_user
@@ -166,7 +163,7 @@ async def admin_goal_target_callback_handler(update: Update, context: ContextTyp
             ),
         )
         return
-    context.user_data["admin_goal_target_count"] = int(target)
+    update_admin_goal_creation_state(context, target_count=int(target))
     await query.edit_message_text(
         bot_module._tg("goal_source_prompt", context=context, user=user),
         reply_markup=bot_module._admin_goal_source_keyboard(
@@ -190,20 +187,25 @@ async def admin_goal_source_menu_callback_handler(update: Update, context: Conte
 
 
 async def admin_goal_source_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import update_admin_goal_creation_state
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None or query.data is None:
         return
     await query.answer()
     if query.data.startswith("words:admin_goal_source:topic:"):
-        context.user_data["admin_goal_source"] = f"topic:{query.data.split(':', 4)[-1]}"
+        update_admin_goal_creation_state(
+            context,
+            source=f"topic:{query.data.split(':', 4)[-1]}",
+        )
         await query.edit_message_text(
             bot_module._tg("assign_select_users_prompt", context=context, user=user),
             reply_markup=bot_module._admin_goal_recipients_keyboard(context=context, user=user, page=0),
         )
         return
     source = query.data.split(":")[-1]
-    context.user_data["admin_goal_source"] = source
+    update_admin_goal_creation_state(context, source=source)
     if source == GoalWordSource.TOPIC.value:
         topics = bot_module._service(context).list_topics()
         keyboard = bot_module.ui_goal_source_topic_keyboard(
@@ -217,7 +219,7 @@ async def admin_goal_source_callback_handler(update: Update, context: ContextTyp
         )
         return
     if source == GoalWordSource.MANUAL.value:
-        context.user_data["admin_goal_manual_word_ids"] = set()
+        update_admin_goal_creation_state(context, manual_word_ids=set())
         await query.edit_message_text(
             bot_module._tg("goal_source_manual_prompt", context=context, user=user),
             reply_markup=bot_module._admin_goal_manual_keyboard(context=context, user=user, page=0),
@@ -230,22 +232,28 @@ async def admin_goal_source_callback_handler(update: Update, context: ContextTyp
 
 
 async def admin_goal_manual_toggle_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import (
+        get_admin_goal_creation_state,
+        update_admin_goal_creation_state,
+    )
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None or query.data is None:
         return
     await query.answer()
+    state = get_admin_goal_creation_state(context)
     if query.data.startswith("words:admin_goal_manual:page:"):
         page = int(query.data.split(":")[-1])
     else:
         word_id = query.data.split(":", 4)[-1]
-        selected = set(context.user_data.get("admin_goal_manual_word_ids", set()))
+        selected = set(state.manual_word_ids)
         if word_id in selected:
             selected.remove(word_id)
         else:
             selected.add(word_id)
-        context.user_data["admin_goal_manual_word_ids"] = selected
         page = int(context.user_data.get("admin_goal_manual_page", 0))
+        update_admin_goal_creation_state(context, manual_word_ids=selected)
     await query.edit_message_text(
         bot_module._tg("goal_source_manual_prompt", context=context, user=user),
         reply_markup=bot_module._admin_goal_manual_keyboard(context=context, user=user, page=page),
@@ -253,12 +261,14 @@ async def admin_goal_manual_toggle_callback_handler(update: Update, context: Con
 
 
 async def admin_goal_manual_done_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import get_admin_goal_creation_state
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
         return
     await query.answer()
-    if not context.user_data.get("admin_goal_manual_word_ids"):
+    if not get_admin_goal_creation_state(context).manual_word_ids:
         await query.edit_message_text(bot_module._tg("goal_manual_empty", context=context, user=user))
         return
     await query.edit_message_text(
@@ -270,7 +280,9 @@ async def admin_goal_manual_done_callback_handler(update: Update, context: Conte
 async def admin_goal_recipients_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from englishbot.telegram.interaction import (
         clear_admin_goal_prompt_interaction,
+        get_admin_goal_creation_state,
         start_admin_goal_prompt_interaction,
+        update_admin_goal_creation_state,
     )
 
     query = update.callback_query
@@ -283,7 +295,7 @@ async def admin_goal_recipients_callback_handler(update: Update, context: Contex
             clear_admin_goal_prompt_interaction(context)
         page = int(query.data.split(":")[-1])
     elif query.data == "assign:admin_goal_recipients:done":
-        if not context.user_data.get("admin_goal_recipient_user_ids"):
+        if not get_admin_goal_creation_state(context).recipient_user_ids:
             await query.edit_message_text(bot_module._tg("assign_select_users_empty", context=context, user=user))
             return
         context.user_data.pop("admin_goal_deadline_date", None)
@@ -302,13 +314,14 @@ async def admin_goal_recipients_callback_handler(update: Update, context: Contex
         return
     else:
         target_user_id = int(query.data.split(":")[-1])
-        selected = set(context.user_data.get("admin_goal_recipient_user_ids", set()))
+        state = get_admin_goal_creation_state(context)
+        selected = set(state.recipient_user_ids)
         if target_user_id in selected:
             selected.remove(target_user_id)
         else:
             selected.add(target_user_id)
-        context.user_data["admin_goal_recipient_user_ids"] = selected
-        page = int(context.user_data.get("admin_goal_recipients_page", 0))
+        update_admin_goal_creation_state(context, recipient_user_ids=selected)
+        page = state.recipients_page
     await query.edit_message_text(
         bot_module._tg("assign_select_users_prompt", context=context, user=user),
         reply_markup=bot_module._admin_goal_recipients_keyboard(context=context, user=user, page=page),
@@ -317,6 +330,7 @@ async def admin_goal_recipients_callback_handler(update: Update, context: Contex
 
 async def admin_goal_deadline_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from englishbot.telegram.interaction import start_admin_goal_prompt_interaction
+    from englishbot.telegram.interaction import update_admin_goal_creation_state
 
     query = update.callback_query
     user = update.effective_user
@@ -341,22 +355,34 @@ async def admin_goal_deadline_callback_handler(update: Update, context: ContextT
     if option == "none":
         context.user_data["admin_goal_deadline_date"] = None
     elif option == "today":
-        context.user_data["admin_goal_deadline_date"] = bot_module.datetime.now(bot_module.UTC).date().isoformat()
+        update_admin_goal_creation_state(
+            context,
+            deadline_date=bot_module.datetime.now(bot_module.UTC).date().isoformat(),
+        )
     elif option == "tomorrow":
-        context.user_data["admin_goal_deadline_date"] = (
+        update_admin_goal_creation_state(
+            context,
+            deadline_date=(
             bot_module.datetime.now(bot_module.UTC).date() + bot_module.timedelta(days=1)
-        ).isoformat()
+        ).isoformat(),
+        )
     elif option == "week_end":
         today = bot_module.datetime.now(bot_module.UTC).date()
         days_until_sunday = 6 - today.weekday()
-        context.user_data["admin_goal_deadline_date"] = (
+        update_admin_goal_creation_state(
+            context,
+            deadline_date=(
             today + bot_module.timedelta(days=max(days_until_sunday, 0))
-        ).isoformat()
+        ).isoformat(),
+        )
     else:
         days = int(option.removesuffix("d"))
-        context.user_data["admin_goal_deadline_date"] = (
+        update_admin_goal_creation_state(
+            context,
+            deadline_date=(
             bot_module.datetime.now(bot_module.UTC).date() + bot_module.timedelta(days=days)
-        ).isoformat()
+        ).isoformat(),
+        )
     await bot_module._finish_admin_goal_creation(query_or_message=query, context=context, user=user)
 
 
@@ -447,7 +473,10 @@ async def assign_goal_detail_callback_handler(update: Update, context: ContextTy
 
 
 async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram.interaction import clear_admin_goal_prompt_interaction
+    from englishbot.telegram.interaction import (
+        clear_admin_goal_prompt_interaction,
+        update_admin_goal_creation_state,
+    )
 
     message = update.effective_message
     user = update.effective_user
@@ -503,7 +532,7 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     reply_markup=prompt_reply_markup,
                 )
             return
-        context.user_data["admin_goal_target_count"] = target_count
+        update_admin_goal_creation_state(context, target_count=target_count)
         clear_admin_goal_prompt_interaction(context)
         next_reply_markup = bot_module._admin_goal_source_keyboard(
             language=bot_module._telegram_ui_language(context, user)
@@ -539,7 +568,7 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 reply_markup=prompt_reply_markup,
             )
         return
-    context.user_data["admin_goal_deadline_date"] = parsed_deadline
+    update_admin_goal_creation_state(context, deadline_date=parsed_deadline)
     clear_admin_goal_prompt_interaction(context)
     await bot_module._delete_message_if_possible(context, message=message)
     await bot_module._finish_admin_goal_creation(query_or_message=message, context=context, user=user)

@@ -46,6 +46,30 @@ class PublishedWordEditPromptInteraction:
     item_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class AdminGoalCreationState:
+    goal_period: str | None = None
+    goal_type: str | None = None
+    target_count: int | None = None
+    source: str | None = None
+    deadline_date: str | None = None
+    manual_word_ids: frozenset[str] = frozenset()
+    recipient_user_ids: frozenset[int] = frozenset()
+    recipients_page: int = 0
+
+
+ADMIN_GOAL_STATE_KEYS = (
+    "admin_goal_period",
+    "admin_goal_type",
+    "admin_goal_target_count",
+    "admin_goal_source",
+    "admin_goal_deadline_date",
+    "admin_goal_manual_word_ids",
+    "admin_goal_recipient_user_ids",
+    "admin_goal_recipients_page",
+)
+
+
 def lesson_interaction_id(*, session_id: str) -> str:
     return session_id
 
@@ -340,6 +364,102 @@ def clear_published_word_edit_prompt_interaction(context: ContextTypes.DEFAULT_T
         user_data.pop("published_edit_topic_id", None)
         user_data.pop("published_edit_item_id", None)
     clear_expected_user_input(context)
+
+
+def get_admin_goal_creation_state(context: ContextTypes.DEFAULT_TYPE) -> AdminGoalCreationState:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return AdminGoalCreationState()
+    raw_manual_word_ids = user_data.get("admin_goal_manual_word_ids", set())
+    raw_recipient_user_ids = user_data.get("admin_goal_recipient_user_ids", set())
+    raw_recipients_page = user_data.get("admin_goal_recipients_page", 0)
+    manual_word_ids = frozenset(
+        str(value) for value in raw_manual_word_ids if isinstance(value, str) and value
+    )
+    recipient_user_ids = frozenset(
+        int(value)
+        for value in raw_recipient_user_ids
+        if isinstance(value, int)
+    )
+    recipients_page = raw_recipients_page if isinstance(raw_recipients_page, int) else 0
+    target_count = user_data.get("admin_goal_target_count")
+    return AdminGoalCreationState(
+        goal_period=(
+            user_data.get("admin_goal_period")
+            if isinstance(user_data.get("admin_goal_period"), str)
+            else None
+        ),
+        goal_type=(
+            user_data.get("admin_goal_type")
+            if isinstance(user_data.get("admin_goal_type"), str)
+            else None
+        ),
+        target_count=(target_count if isinstance(target_count, int) else None),
+        source=(
+            user_data.get("admin_goal_source")
+            if isinstance(user_data.get("admin_goal_source"), str)
+            else None
+        ),
+        deadline_date=(
+            user_data.get("admin_goal_deadline_date")
+            if isinstance(user_data.get("admin_goal_deadline_date"), str)
+            else None
+        ),
+        manual_word_ids=manual_word_ids,
+        recipient_user_ids=recipient_user_ids,
+        recipients_page=recipients_page,
+    )
+
+
+def update_admin_goal_creation_state(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    goal_period: str | None = None,
+    goal_type: str | None = None,
+    target_count: int | None = None,
+    source: str | None = None,
+    deadline_date: str | None = None,
+    manual_word_ids: set[str] | frozenset[str] | None = None,
+    recipient_user_ids: set[int] | frozenset[int] | None = None,
+    recipients_page: int | None = None,
+) -> None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return
+    if goal_period is not None:
+        user_data["admin_goal_period"] = goal_period
+    if goal_type is not None:
+        user_data["admin_goal_type"] = goal_type
+    if target_count is not None:
+        user_data["admin_goal_target_count"] = target_count
+    if source is not None:
+        user_data["admin_goal_source"] = source
+    if deadline_date is not None:
+        user_data["admin_goal_deadline_date"] = deadline_date
+    if manual_word_ids is not None:
+        user_data["admin_goal_manual_word_ids"] = set(manual_word_ids)
+    if recipient_user_ids is not None:
+        user_data["admin_goal_recipient_user_ids"] = set(recipient_user_ids)
+    if recipients_page is not None:
+        user_data["admin_goal_recipients_page"] = recipients_page
+
+
+def start_admin_goal_creation_state(context: ContextTypes.DEFAULT_TYPE) -> None:
+    clear_admin_goal_creation_state(context)
+    update_admin_goal_creation_state(context, recipient_user_ids=set())
+
+
+def clear_admin_goal_creation_state(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    clear_prompt: bool = False,
+) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        for key in ADMIN_GOAL_STATE_KEYS:
+            user_data.pop(key, None)
+    if clear_prompt:
+        clear_admin_goal_prompt_interaction(context)
 
 
 def start_image_review_text_edit_interaction(
