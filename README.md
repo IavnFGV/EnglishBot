@@ -42,6 +42,11 @@ Optional Docker overlay for Web App, TTS, and nginx:
 docker compose -f docker-compose.yml -f docker-compose.optional.yml up -d --build
 ```
 
+Server deploy scripts follow the same rule:
+
+- default deploy is core bot only
+- set `DEPLOY_OPTIONAL_SERVICES=true` to include the optional overlay during deploy or rollback
+
 Use the `cpu` or `gpu` devcontainer profiles only when you are actively working
 with optional local AI tooling such as Ollama or ComfyUI.
 

@@ -127,6 +127,9 @@ def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
 
     assert 'APP_DIR="${APP_DIR:-/srv/englishbot/app}"' in script
     assert 'DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"' in script
+    assert 'CORE_COMPOSE_FILE="${CORE_COMPOSE_FILE:-docker-compose.yml}"' in script
+    assert 'OPTIONAL_COMPOSE_FILE="${OPTIONAL_COMPOSE_FILE:-docker-compose.optional.yml}"' in script
+    assert 'DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-false}"' in script
     assert 'git fetch origin "${DEPLOY_BRANCH}"' in script
     assert 'git reset --hard "origin/${DEPLOY_BRANCH}"' in script
     assert 'BUILD_COUNTER_FILE="${BUILD_COUNTER_FILE:-${SHARED_DIR}/deploy/build-counter.env}"' in script
@@ -142,10 +145,12 @@ def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
     assert 'ENGLISHBOT_BUILD_VERSION=${APP_VERSION}' in script
     assert 'ENGLISHBOT_BUILD_NUMBER=${ENGLISHBOT_BUILD_NUMBER}' in script
     assert 'ENGLISHBOT_DEPLOY_TAG=${ENGLISHBOT_DEPLOY_TAG}' in script
+    assert 'ENGLISHBOT_DEPLOY_OPTIONAL_SERVICES=${DEPLOY_OPTIONAL_SERVICES}' in script
     assert 'ENGLISHBOT_GIT_SHA="$(git rev-parse --short HEAD)"' in script
     assert 'ENGLISHBOT_GIT_BRANCH="${DEPLOY_BRANCH}"' in script
     assert "export ENGLISHBOT_GIT_BRANCH" in script
-    assert "docker compose up -d --build" in script
+    assert 'compose_args=(-f "${CORE_COMPOSE_FILE}")' in script
+    assert 'docker compose "${compose_args[@]}" up -d --build --force-recreate' in script
 
 
 def test_server_backup_script_keeps_only_latest_five_versions() -> None:
@@ -214,12 +219,17 @@ def test_server_rollback_script_supports_previous_or_explicit_deploy_tag() -> No
 
     assert 'CURRENT_RELEASE_FILE="${CURRENT_RELEASE_FILE:-${SHARED_DIR}/deploy/current-release.env}"' in script
     assert 'DEPLOY_TAG_PREFIX="${DEPLOY_TAG_PREFIX:-deploy-v}"' in script
+    assert 'CORE_COMPOSE_FILE="${CORE_COMPOSE_FILE:-docker-compose.yml}"' in script
+    assert 'OPTIONAL_COMPOSE_FILE="${OPTIONAL_COMPOSE_FILE:-docker-compose.optional.yml}"' in script
+    assert 'DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-}"' in script
     assert 'git fetch --tags origin' in script
     assert 'TARGET_TAG="${1:-}"' in script
     assert 'git for-each-ref --sort=-creatordate --format=' in script
     assert 'git checkout --detach "${TARGET_TAG}"' in script
     assert 'ENGLISHBOT_GIT_BRANCH="rollback:${TARGET_TAG}"' in script
-    assert "docker compose up -d --build" in script
+    assert 'ENGLISHBOT_DEPLOY_OPTIONAL_SERVICES=${DEPLOY_OPTIONAL_SERVICES}' in script
+    assert 'compose_args=(-f "${CORE_COMPOSE_FILE}")' in script
+    assert 'docker compose "${compose_args[@]}" up -d --build' in script
 
 
 def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
@@ -234,10 +244,12 @@ def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
     assert "PYTHONPATH=. pytest -q" in workflow
     assert "ssh-keyscan" in workflow
     assert "DEPLOY_SSH_KEY" in workflow
+    assert "DEPLOY_OPTIONAL_SERVICES" in workflow
     assert "cd /srv/englishbot/app" in workflow
     assert "git fetch origin ${DEPLOY_BRANCH}" in workflow
     assert "git reset --hard origin/${DEPLOY_BRANCH}" in workflow
     assert "bash scripts/deploy-docker-app.sh" in workflow
+    assert "DEPLOY_OPTIONAL_SERVICES=${DEPLOY_OPTIONAL_SERVICES}" in workflow
     assert "current-release.env" in workflow
     assert "git tag -a" in workflow
     assert "git push origin" in workflow
@@ -256,4 +268,4 @@ def test_ci_workflow_uses_pip_cache_for_repeated_runner_installs() -> None:
 def test_deploy_script_recreates_runtime_containers() -> None:
     script = Path("scripts/deploy-docker-app.sh").read_text(encoding="utf-8")
 
-    assert 'docker compose up -d --build --force-recreate' in script
+    assert 'docker compose "${compose_args[@]}" up -d --build --force-recreate' in script
