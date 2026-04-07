@@ -14,9 +14,12 @@ from englishbot.presentation.add_words_text import (
     parse_edited_vocabulary_line,
 )
 from englishbot.presentation.telegram_editor_ui import (
+    draft_review_keyboard as ui_draft_review_keyboard,
+    draft_review_view as ui_draft_review_view,
     editable_topics_keyboard as ui_editable_topics_keyboard,
     editable_words_keyboard as ui_editable_words_keyboard,
     published_image_topics_keyboard as ui_published_image_topics_keyboard,
+    published_images_menu_keyboard as ui_published_images_menu_keyboard,
     published_word_edit_keyboard as ui_published_word_edit_keyboard,
     chat_menu_keyboard as ui_chat_menu_keyboard,
 )
@@ -28,6 +31,21 @@ from englishbot.presentation.telegram_views import (
     edit_telegram_text_view,
     send_telegram_view,
 )
+
+
+def _draft_review_view(*, flow_id: str, result, is_valid: bool, context: ContextTypes.DEFAULT_TYPE, user):
+    capabilities = bot_module._editor_ai_capabilities(context)
+    return ui_draft_review_view(
+        result=result,
+        reply_markup=ui_draft_review_keyboard(
+            flow_id,
+            is_valid,
+            tg=bot_module._tg,
+            show_auto_image_button=capabilities.local_image_generation_available,
+            show_regenerate_button=capabilities.smart_parsing_available,
+            language=bot_module._telegram_ui_language(context, user),
+        ),
+    )
 
 
 async def words_add_words_callback_handler(
@@ -594,7 +612,7 @@ async def add_words_text_handler(
             edited_text=message.text,
         )
         clear_add_words_draft_edit_interaction(context)
-        preview_view = bot_module._draft_review_view(
+        preview_view = _draft_review_view(
             flow_id=flow.flow_id,
             result=flow.draft_result,
             is_valid=flow.draft_result.validation.is_valid,
@@ -682,7 +700,7 @@ async def add_words_text_handler(
             text=bot_module._draft_status_text(flow.draft_result)
         ).text
     )
-    preview_view = bot_module._draft_review_view(
+    preview_view = _draft_review_view(
         flow_id=flow.flow_id,
         result=flow.draft_result,
         is_valid=flow.draft_result.validation.is_valid,
@@ -812,7 +830,7 @@ async def add_words_regenerate_draft_handler(
     finally:
         stop_event.set()
         await heartbeat_task
-    review_view = bot_module._draft_review_view(
+    review_view = _draft_review_view(
         flow_id=flow.flow_id,
         result=flow.draft_result,
         is_valid=flow.draft_result.validation.is_valid,
@@ -843,7 +861,7 @@ async def add_words_publish_without_images_handler(
         return
     result = flow.draft_result
     if not result.validation.is_valid:
-        review_view = bot_module._draft_review_view(
+        review_view = _draft_review_view(
             flow_id=flow.flow_id,
             result=result,
             is_valid=False,
@@ -907,7 +925,7 @@ async def add_words_approve_draft_handler(
         return
     result = flow.draft_result
     if not result.validation.is_valid:
-        review_view = bot_module._draft_review_view(
+        review_view = _draft_review_view(
             flow_id=flow.flow_id,
             result=result,
             is_valid=False,
@@ -1007,7 +1025,7 @@ async def add_words_approve_auto_images_handler(
         return
     result = flow.draft_result
     if not result.validation.is_valid:
-        review_view = bot_module._draft_review_view(
+        review_view = _draft_review_view(
             flow_id=flow.flow_id,
             result=result,
             is_valid=False,
@@ -1159,7 +1177,8 @@ async def add_words_approve_auto_images_handler(
         )
         + generation_notice,
         reply_markup=(
-            bot_module._published_images_menu_keyboard(
+            ui_published_images_menu_keyboard(
+                tg=bot_module._tg,
                 topic_id=topic_id,
                 language=bot_module._telegram_ui_language(context, user),
             )
