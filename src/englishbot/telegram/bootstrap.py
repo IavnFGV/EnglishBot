@@ -70,6 +70,7 @@ def build_application(
     config_service: RuntimeConfigService,
 ) -> Application:
     from englishbot import bot as bot_module
+    from englishbot.telegram.notifications import NOTIFICATION_DISMISS_CALLBACK
 
     app = Application.builder().token(settings.telegram_token).build()
     content_store = SQLiteContentStore(db_path=settings.content_db_path)
@@ -252,7 +253,7 @@ def build_application(
     app.add_handler(
         CallbackQueryHandler(
             bot_module.notification_dismiss_callback_handler,
-            pattern=rf"^{bot_module._NOTIFICATION_DISMISS_CALLBACK}$",
+            pattern=rf"^{NOTIFICATION_DISMISS_CALLBACK}$",
         )
     )
     app.add_handler(CallbackQueryHandler(bot_module.words_goals_callback_handler, pattern=r"^assign:goals$"))

@@ -107,6 +107,7 @@ The same is now true for the common tracked-message and notification helper surf
 Tracked-message registry access has also been normalized one level deeper: modules such as `flow_tracking`, `interaction`, `assignment_progress`, and `image_review_support` now go through [src/englishbot/telegram/runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/runtime.py) for flow-message registry and `chat_id` lookup instead of pulling those bot-private helpers directly.
 The same is now true for the main editor modules: direct editor runtime, interaction-mode, and tokenized callback work no longer flows through `bot.py`.
 Assignment progress is one step more conservative: the real implementation already lives in [src/englishbot/telegram/assignment_progress.py](/workspaces/EnglishBot/src/englishbot/telegram/assignment_progress.py), but a small bot-level wrapper surface is still intentionally kept because existing bot-handler tests and monkeypatch-based compatibility checks use it directly.
+Notifications are similar: the module now owns its fixed dismiss callback, timing windows, and requeue wiring, but the `_PendingNotification` compatibility surface is still intentionally preserved in `bot.py` for wrapper-level tests and callers.
 
 ## Why It Still Feels Big
 

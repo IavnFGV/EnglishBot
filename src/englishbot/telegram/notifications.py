@@ -11,6 +11,11 @@ from englishbot.telegram import runtime as tg_runtime
 from englishbot.telegram.buttons import InlineKeyboardButton
 from englishbot.telegram.flow_tracking import delete_message_if_possible
 
+NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
+NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW = timedelta(minutes=5)
+NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD = timedelta(minutes=1)
+NOTIFICATION_DELAY_AFTER_RECENT_ANSWER = timedelta(minutes=2)
+
 
 def pending_notifications(context: ContextTypes.DEFAULT_TYPE) -> dict[str, object]:
     return tg_runtime.mutable_bot_data_dict(context, "pending_notifications")
@@ -26,6 +31,12 @@ def recent_assignment_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> di
         "recent_assignment_activity_by_user",
         fallback_key="recent_quiz_activity_by_user",
     )
+
+
+def assignment_assigned_notification_emoji(*, goal_id: str) -> str:
+    emojis = ("🎒", "✨", "🚀", "🌟", "📚", "🧠")
+    digest = bot_module.hashlib.sha256(goal_id.encode("utf-8")).digest()
+    return emojis[int.from_bytes(digest[:2], "big") % len(emojis)]
 
 
 def notification_action_button_for_user(
@@ -67,7 +78,7 @@ def dismiss_notification_keyboard(
             ),
             InlineKeyboardButton(
                 tg_runtime.tg("notification_dismiss", language=language),
-                callback_data=bot_module._NOTIFICATION_DISMISS_CALLBACK,
+                callback_data=NOTIFICATION_DISMISS_CALLBACK,
             ),
         ]]
     )
@@ -84,13 +95,12 @@ def notification_wait_seconds(
     now = datetime.now(UTC)
     elapsed = now - recent_activity_at
     active_session = tg_runtime.service(context).get_active_session(user_id=user_id)
-    import englishbot.bot as bot_module
 
-    if active_session is not None and elapsed < bot_module._NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW:
-        remaining = bot_module._NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW - elapsed
+    if active_session is not None and elapsed < NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW:
+        remaining = NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW - elapsed
         return max(0.0, remaining.total_seconds())
-    if elapsed < bot_module._NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD:
-        remaining = bot_module._NOTIFICATION_DELAY_AFTER_RECENT_ANSWER - elapsed
+    if elapsed < NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD:
+        remaining = NOTIFICATION_DELAY_AFTER_RECENT_ANSWER - elapsed
         return max(0.0, remaining.total_seconds())
     return 0.0
 
@@ -137,7 +147,7 @@ def schedule_notification(
     if job_queue is None:
         return
     job_queue.run_once(
-        bot_module._deliver_pending_notification_job,
+        deliver_pending_notification_job,
         when=delay_seconds,
         data={"notification_key": notification.key},
         name=notification.key,
@@ -183,8 +193,6 @@ async def deliver_notification_now(
 
 
 async def deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    import englishbot.bot as bot_module
-
     job = getattr(context, "job", None)
     data = getattr(job, "data", None)
     notification_key = data.get("notification_key") if isinstance(data, dict) else None
@@ -203,7 +211,7 @@ async def deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) -
     if job_queue is None:
         return
     job_queue.run_once(
-        bot_module._deliver_pending_notification_job,
+        deliver_pending_notification_job,
         when=notification_wait_seconds(
             context,
             user_id=(
@@ -277,7 +285,7 @@ def schedule_assignment_assigned_notifications(
         }.get(goal.goal_type.value)
         period_label = tg_runtime.tg("goal_period_homework", language=language)
         goal_type_label = tg_runtime.tg(goal_type_key, language=language) if goal_type_key is not None else goal.goal_type.value
-        emoji = bot_module._assignment_assigned_notification_emoji(goal_id=str(goal.id))
+        emoji = assignment_assigned_notification_emoji(goal_id=str(goal.id))
         text = "\n".join(
             [
                 tg_runtime.tg("assignment_assigned_title", language=language, emoji=emoji),
