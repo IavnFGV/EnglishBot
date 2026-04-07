@@ -13,6 +13,9 @@ from englishbot.presentation.add_words_text import (
     format_draft_edit_text,
     parse_edited_vocabulary_line,
 )
+from englishbot.presentation.telegram_editor_ui import (
+    editable_words_keyboard as ui_editable_words_keyboard,
+)
 from englishbot.presentation.telegram_views import (
     build_published_word_edit_prompt_view,
     edit_telegram_text_view,
@@ -219,7 +222,11 @@ async def words_edit_cancel_callback_handler(
     words = bot_module._list_editable_words(context).execute(topic_id=topic_id)
     await query.edit_message_text(
         "Edit cancelled. Choose a word to edit.",
-        reply_markup=bot_module._editable_words_keyboard(topic_id=topic_id, words=words),
+        reply_markup=ui_editable_words_keyboard(
+            tg=bot_module._tg,
+            topic_id=topic_id,
+            words=words,
+        ),
     )
 
 
@@ -389,11 +396,16 @@ async def add_words_text_handler(
         )
         await message.reply_text(
             bot_module._tg("choose_another_word_to_edit", context=context, user=user),
-            reply_markup=bot_module._editable_words_keyboard(
+            reply_markup=ui_editable_words_keyboard(
+                tg=bot_module._tg,
                 topic_id=topic_id,
                 words=words,
-                context=context,
-                user_id=int(user.id),
+                callback_data_for_item=lambda index: bot_module._editable_word_callback_data(
+                    context=context,
+                    user_id=int(user.id),
+                    topic_id=topic_id,
+                    item_index=index,
+                ),
                 language=bot_module._telegram_ui_language(context, user),
             ),
         )

@@ -84,6 +84,8 @@ The file still owns some cross-cutting Telegram glue:
 - assignment notification scheduling
 - some keyboard composition that is still reused across flows
 
+New editor Telegram flows should prefer calling presentation-layer keyboard builders directly and use `bot.py` only when a compatibility wrapper is still needed.
+
 ## Why It Still Feels Big
 
 `bot.py` is still large because it mixes three kinds of code in one file:

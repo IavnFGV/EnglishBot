@@ -7,6 +7,9 @@ from telegram import ForceReply, Update
 from telegram.ext import ContextTypes
 
 from englishbot import bot as bot_module
+from englishbot.presentation.telegram_editor_ui import (
+    published_image_items_keyboard as ui_published_image_items_keyboard,
+)
 from englishbot.presentation.telegram_views import (
     build_image_review_attach_photo_view,
     build_image_review_prompt_edit_view,
@@ -48,11 +51,16 @@ async def published_images_menu_handler(
         return
     await query.edit_message_text(
         bot_module._tg("choose_word_edit_image", context=context, user=user),
-        reply_markup=bot_module._published_image_items_keyboard(
+        reply_markup=ui_published_image_items_keyboard(
+            tg=bot_module._tg,
             topic_id=topic_id,
             raw_items=raw_items,
-            context=context,
-            user_id=int(user.id),
+            callback_data_for_item=lambda index: bot_module._published_image_item_callback_data(
+                context=context,
+                user_id=int(user.id),
+                topic_id=topic_id,
+                item_index=index,
+            ),
             language=bot_module._telegram_ui_language(context, user),
         ),
     )
@@ -431,7 +439,8 @@ async def image_review_pick_handler(
                         bot_module._tg("choose_another_word_to_edit", context=context, user=user),
                     )
                 ),
-                reply_markup=bot_module._published_image_items_keyboard(
+                reply_markup=ui_published_image_items_keyboard(
+                    tg=bot_module._tg,
                     topic_id=topic_id,
                     raw_items=raw_items if isinstance(raw_items, list) else [],
                     language=bot_module._telegram_ui_language(context, user),
@@ -510,7 +519,8 @@ async def image_review_skip_handler(
             raw_items = updated_flow.content_pack.get("vocabulary_items", [])
             await query.edit_message_text(
                 bot_module._tg("no_changes_choose_another_word", context=context, user=user),
-                reply_markup=bot_module._published_image_items_keyboard(
+                reply_markup=ui_published_image_items_keyboard(
+                    tg=bot_module._tg,
                     topic_id=topic_id,
                     raw_items=raw_items if isinstance(raw_items, list) else [],
                     language=bot_module._telegram_ui_language(context, user),
