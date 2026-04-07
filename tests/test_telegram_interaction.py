@@ -558,8 +558,16 @@ async def test_replace_chat_menu_message_uses_named_chat_menu_flow(
 
     monkeypatch.setattr("englishbot.bot.send_telegram_view", fake_send_telegram_view)
     monkeypatch.setattr(
-        "englishbot.bot._quick_actions_view",
-        lambda *, context, user: {"kind": "quick-actions", "user_id": user.id},
+        "englishbot.telegram.interaction.quick_actions_view",
+        lambda **kwargs: {"kind": "quick-actions", "user_id": kwargs["user"].id},
+    )
+    monkeypatch.setattr(
+        "englishbot.bot._visible_command_rows",
+        lambda context, user_id=None: [["/start"]],  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "englishbot.bot.menu_chat_menu_keyboard",
+        lambda *, command_rows: {"kind": "chat-menu-markup", "rows": command_rows},
     )
 
     context = SimpleNamespace(

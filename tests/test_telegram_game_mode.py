@@ -58,7 +58,7 @@ async def test_game_repeat_handler_builds_start_menu_without_bot_start_menu_view
         lambda **kwargs: "Start menu body",
     )
     monkeypatch.setattr(
-        "englishbot.telegram.game_mode.bot_module._start_menu_keyboard",
+        "englishbot.telegram.game_mode.start_menu_keyboard",
         lambda **kwargs: "markup",
     )
     monkeypatch.setattr(

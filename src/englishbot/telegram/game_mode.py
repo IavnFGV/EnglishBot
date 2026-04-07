@@ -7,6 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from englishbot import bot as bot_module
+from englishbot.presentation.telegram_assignments_ui import start_menu_keyboard
 from englishbot.presentation.telegram_game_ui import game_result_keyboard
 from englishbot.presentation.telegram_views import build_start_menu_view
 
@@ -89,7 +90,8 @@ async def game_repeat_handler(
         query.message,
         build_start_menu_view(
             text=bot_module._render_start_menu_text(context=context, user=user, summary=summary),
-            reply_markup=bot_module._start_menu_keyboard(
+            reply_markup=start_menu_keyboard(
+                tg=bot_module._tg,
                 summary=summary,
                 guide_web_app_url=bot_module._assignment_guide_web_app_url(context, user=user),
                 admin_web_app_url=bot_module._admin_web_app_url(context, user=user),

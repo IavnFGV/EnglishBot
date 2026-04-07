@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
+from englishbot.presentation.telegram_editor_ui import quick_actions_view
+
 
 logger = logging.getLogger(__name__)
 
@@ -115,9 +117,18 @@ async def replace_chat_menu_message(
         return
     import englishbot.bot as bot_module
 
+    command_rows = bot_module._visible_command_rows(
+        context,
+        user_id=user_id,
+    )
     sent_message = await bot_module.send_telegram_view(
         message,
-        bot_module._quick_actions_view(context=context, user=user),
+        quick_actions_view(
+            tg=bot_module._tg,
+            context=context,
+            user=user,
+            reply_markup=bot_module.menu_chat_menu_keyboard(command_rows=command_rows),
+        ),
     )
     if sent_message is None:
         return

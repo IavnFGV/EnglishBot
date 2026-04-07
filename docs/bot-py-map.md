@@ -90,6 +90,7 @@ Topic/word list views and editor cancel menus should follow the same rule: build
 Small game-mode UI pieces such as result keyboards should also live in presentation modules instead of growing new Telegram-specific wrappers in `bot.py`.
 Admin/homework Telegram modules should also prefer direct assignment presentation imports for menus and detail keyboards, keeping `bot.py` focused on shared runtime access and true cross-flow helpers.
 Draft review previews and follow-up editor menus belong to the same rule: editor modules should compose them from presentation helpers directly instead of routing through `bot.py`.
+Checkpoint: Telegram feature modules no longer depend on `bot.py` for direct `view/keyboard/status` builders; remaining `bot.py` usage is mostly runtime access, wrapper compatibility, and shared cross-flow glue.
 
 ## Why It Still Feels Big
 
