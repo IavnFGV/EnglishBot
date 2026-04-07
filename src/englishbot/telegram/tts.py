@@ -7,6 +7,7 @@ from telegram import InputFile, Update
 from telegram.ext import ContextTypes
 
 from englishbot import bot as bot_module
+from englishbot.telegram import runtime as tg_runtime
 from englishbot.telegram.flow_tracking import reply_voice_replacing_previous_tts
 from englishbot.telegram.training_markup import (
     question_reply_markup as training_question_reply_markup,
@@ -22,17 +23,17 @@ async def tts_voice_menu_handler(
     user = update.effective_user
     if query is None or user is None:
         return
-    if not bot_module._tts_has_multiple_voices(context):
+    if not tg_runtime.tts_has_multiple_voices(context):
         await query.answer()
         return
     try:
-        active_session = bot_module._service(context).get_active_session(user_id=user.id)
-        current_question = bot_module._service(context).get_current_question(user_id=user.id)
+        active_session = tg_runtime.service(context).get_active_session(user_id=user.id)
+        current_question = tg_runtime.service(context).get_current_question(user_id=user.id)
     except bot_module.InvalidSessionStateError:
-        await query.answer(bot_module._tg("no_active_session_begin", context=context, user=user))
+        await query.answer(tg_runtime.tg("no_active_session_begin", context=context, user=user))
         return
     except Exception:
-        await query.answer(bot_module._tg("no_active_session_begin", context=context, user=user))
+        await query.answer(tg_runtime.tg("no_active_session_begin", context=context, user=user))
         return
     await query.answer()
     await query.edit_message_reply_markup(
@@ -40,10 +41,10 @@ async def tts_voice_menu_handler(
             context=context,
             user=user,
             item_id=current_question.item_id,
-            tg=bot_module._tg,
-            tts_voice_variants=bot_module._tts_voice_variants,
-            tts_selected_voice_name=bot_module._tts_selected_voice_name,
-            tts_voice_label=bot_module._tts_voice_label,
+            tg=tg_runtime.tg,
+            tts_voice_variants=tg_runtime.tts_voice_variants,
+            tts_selected_voice_name=tg_runtime.tts_selected_voice_name,
+            tts_voice_label=tg_runtime.tts_voice_label,
         )
     )
 
@@ -57,17 +58,17 @@ async def tts_voice_select_handler(
     if query is None or user is None or query.data is None:
         return
     try:
-        active_session = bot_module._service(context).get_active_session(user_id=user.id)
-        current_question = bot_module._service(context).get_current_question(user_id=user.id)
+        active_session = tg_runtime.service(context).get_active_session(user_id=user.id)
+        current_question = tg_runtime.service(context).get_current_question(user_id=user.id)
     except bot_module.InvalidSessionStateError:
-        await query.answer(bot_module._tg("no_active_session_begin", context=context, user=user))
+        await query.answer(tg_runtime.tg("no_active_session_begin", context=context, user=user))
         return
     except Exception:
-        await query.answer(bot_module._tg("no_active_session_begin", context=context, user=user))
+        await query.answer(tg_runtime.tg("no_active_session_begin", context=context, user=user))
         return
     suffix = query.data.removeprefix("tts:voice:")
     if suffix != "back":
-        variants = bot_module._tts_voice_variants(context)
+        variants = tg_runtime.tts_voice_variants(context)
         if not suffix.isdigit():
             await query.answer()
             return
@@ -76,9 +77,7 @@ async def tts_voice_select_handler(
             await query.answer()
             return
         bot_module._tts_selected_voice_store(context)[current_question.item_id] = variants[index]
-        await query.answer(
-            bot_module._tts_voice_label(context, user=user, voice_name=variants[index])
-        )
+        await query.answer(tg_runtime.tts_voice_label(context, user=user, voice_name=variants[index]))
     else:
         await query.answer()
     await query.edit_message_reply_markup(
@@ -90,7 +89,7 @@ async def tts_voice_select_handler(
             get_medium_task_state=bot_module._get_medium_task_state,
             build_medium_task_state=bot_module._build_medium_task_state,
             medium_task_keyboard=bot_module._medium_task_keyboard,
-            tts_service_enabled=bot_module._tts_service_enabled,
+            tts_service_enabled=tg_runtime.tts_service_enabled,
             tts_buttons_builder=bot_module._tts_buttons,
             hard_skip_keyboard_builder=bot_module._hard_skip_keyboard,
         )
@@ -109,19 +108,19 @@ async def send_tts_for_current_question(
         return
     client = bot_module._tts_client_or_none(context)
     if client is None:
-        await query.answer(bot_module._tg("tts_unavailable", context=context, user=user))
+        await query.answer(tg_runtime.tg("tts_unavailable", context=context, user=user))
         return
     try:
-        active_session = bot_module._service(context).get_active_session(user_id=user.id)
+        active_session = tg_runtime.service(context).get_active_session(user_id=user.id)
     except Exception:
         active_session = None
     if active_session is None:
-        await query.answer(bot_module._tg("no_active_session_begin", context=context, user=user))
+        await query.answer(tg_runtime.tg("no_active_session_begin", context=context, user=user))
         return
     try:
-        current_question = bot_module._service(context).get_current_question(user_id=user.id)
+        current_question = tg_runtime.service(context).get_current_question(user_id=user.id)
     except bot_module.InvalidSessionStateError:
-        await query.answer(bot_module._tg("no_active_session_begin", context=context, user=user))
+        await query.answer(tg_runtime.tg("no_active_session_begin", context=context, user=user))
         return
     if advance_voice:
         selected_voice_name = bot_module._advance_tts_selected_voice_name(
@@ -129,18 +128,18 @@ async def send_tts_for_current_question(
             item_id=current_question.item_id,
         )
     else:
-        selected_voice_name = bot_module._tts_selected_voice_name(
+        selected_voice_name = tg_runtime.tts_selected_voice_name(
             context,
             item_id=current_question.item_id,
         )
     if selected_voice_name is None:
-        await query.answer(bot_module._tg("tts_unavailable", context=context, user=user))
+        await query.answer(tg_runtime.tg("tts_unavailable", context=context, user=user))
         return
     lock = bot_module._tts_task_lock(context)
     if lock.locked():
-        await query.answer(bot_module._tg("tts_already_sending", context=context, user=user))
+        await query.answer(tg_runtime.tg("tts_already_sending", context=context, user=user))
         return
-    recent_request = bot_module._tts_recent_request(context)
+    recent_request = tg_runtime.tts_recent_request(context)
     loop = asyncio.get_running_loop()
     now = loop.time()
     if recent_request is not None:
@@ -150,10 +149,10 @@ async def send_tts_for_current_question(
             and recent_voice_name == selected_voice_name
             and now - recent_sent_at < bot_module._TTS_REPEAT_COOLDOWN_SEC
         ):
-            await query.answer(bot_module._tg("tts_recently_sent", context=context, user=user))
+            await query.answer(tg_runtime.tg("tts_recently_sent", context=context, user=user))
             return
     async with lock:
-        recent_request = bot_module._tts_recent_request(context)
+        recent_request = tg_runtime.tts_recent_request(context)
         now = loop.time()
         if recent_request is not None:
             recent_item_id, recent_voice_name, recent_sent_at = recent_request
@@ -162,20 +161,18 @@ async def send_tts_for_current_question(
                 and recent_voice_name == selected_voice_name
                 and now - recent_sent_at < bot_module._TTS_REPEAT_COOLDOWN_SEC
             ):
-                await query.answer(
-                    bot_module._tg("tts_recently_sent", context=context, user=user)
-                )
+                await query.answer(tg_runtime.tg("tts_recently_sent", context=context, user=user))
                 return
         item = None
         try:
-            item = bot_module._content_store(context).get_vocabulary_item(current_question.item_id)
+            item = tg_runtime.content_store(context).get_vocabulary_item(current_question.item_id)
         except Exception:
             item = None
         primary_voice_name = bot_module._tts_primary_voice_name(context)
         variant = None
         if item is not None:
             try:
-                variant = bot_module._content_store(context).get_word_audio_variant(
+                variant = tg_runtime.content_store(context).get_word_audio_variant(
                     item_id=item.id,
                     voice_name=selected_voice_name,
                 )
@@ -198,13 +195,13 @@ async def send_tts_for_current_question(
                     message=query.message,
                     voice=cached_voice_file_id,
                 )
-                bot_module._content_store(context).update_word_audio_variant(
+                tg_runtime.content_store(context).update_word_audio_variant(
                     item_id=item.id,
                     voice_name=selected_voice_name,
                     audio_ref=cached_audio_ref,
                     telegram_voice_file_id=cached_voice_file_id,
                 )
-                bot_module._set_tts_recent_request(
+                tg_runtime.set_tts_recent_request(
                     context,
                     item_id=current_question.item_id,
                     voice_name=selected_voice_name,
@@ -233,18 +230,18 @@ async def send_tts_for_current_question(
                         )
                     voice_file_id = bot_module._extract_sent_voice_file_id(sent_message)
                     if voice_file_id is not None:
-                        bot_module._content_store(context).update_word_audio_variant(
+                        tg_runtime.content_store(context).update_word_audio_variant(
                             item_id=item.id,
                             voice_name=selected_voice_name,
                             audio_ref=cached_audio_ref,
                             telegram_voice_file_id=voice_file_id,
                         )
                     if voice_file_id is not None and selected_voice_name == primary_voice_name:
-                        bot_module._content_store(context).update_word_audio(
+                        tg_runtime.content_store(context).update_word_audio(
                             item_id=item.id,
                             telegram_voice_file_id=voice_file_id,
                         )
-                    bot_module._set_tts_recent_request(
+                    tg_runtime.set_tts_recent_request(
                         context,
                         item_id=current_question.item_id,
                         voice_name=selected_voice_name,
@@ -272,7 +269,7 @@ async def send_tts_for_current_question(
                 selected_voice_name,
                 error,
             )
-            await query.answer(bot_module._tg("tts_unavailable", context=context, user=user))
+            await query.answer(tg_runtime.tg("tts_unavailable", context=context, user=user))
             return
         audio_ref: str | None = None
         if item is not None and item.topic_id:
@@ -301,19 +298,19 @@ async def send_tts_for_current_question(
         )
         voice_file_id = bot_module._extract_sent_voice_file_id(sent_message)
         if item is not None and (audio_ref is not None or voice_file_id is not None):
-            bot_module._content_store(context).update_word_audio_variant(
+            tg_runtime.content_store(context).update_word_audio_variant(
                 item_id=item.id,
                 voice_name=selected_voice_name,
                 audio_ref=audio_ref,
                 telegram_voice_file_id=voice_file_id,
             )
             if selected_voice_name == primary_voice_name:
-                bot_module._content_store(context).update_word_audio(
+                tg_runtime.content_store(context).update_word_audio(
                     item_id=item.id,
                     audio_ref=audio_ref,
                     telegram_voice_file_id=voice_file_id,
                 )
-        bot_module._set_tts_recent_request(
+        tg_runtime.set_tts_recent_request(
             context,
             item_id=current_question.item_id,
             voice_name=selected_voice_name,

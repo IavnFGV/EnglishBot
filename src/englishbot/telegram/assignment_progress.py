@@ -13,6 +13,7 @@ from englishbot.presentation.assignment_progress_image import (
     AssignmentProgressSnapshot,
     render_assignment_progress_image,
 )
+from englishbot.telegram import runtime as tg_runtime
 from englishbot.telegram.flow_tracking import (
     delete_tracked_flow_messages,
     delete_tracked_messages,
@@ -30,8 +31,8 @@ def assignment_round_progress_view(
 ):
     import englishbot.bot as bot_module
 
-    if goal_id is not None and bot_module._optional_bot_data(context, "content_store") is not None:
-        store = bot_module._content_store(context)
+    if goal_id is not None and tg_runtime.optional_bot_data(context, "content_store") is not None:
+        store = tg_runtime.content_store(context)
         goals = store.list_user_goals(
             user_id=user_id,
             statuses=(bot_module.GoalStatus.ACTIVE, bot_module.GoalStatus.COMPLETED),
@@ -67,7 +68,7 @@ def assignment_round_progress_view(
             remaining_word_count=remaining_word_count,
             variant_key=goal.id,
         )
-    launch_summary_use_case = bot_module._optional_bot_data(
+    launch_summary_use_case = tg_runtime.optional_bot_data(
         context,
         "learner_assignment_launch_summary_use_case",
     )
@@ -134,24 +135,22 @@ def render_assignment_round_progress_text(
     kind,
     progress,
 ) -> str:
-    import englishbot.bot as bot_module
-
     if progress.total_word_count <= 0:
         return ""
     return "\n".join(
         [
-            bot_module._tg(
+            tg_runtime.tg(
                 "assignment_round_progress_title",
                 context=context,
                 user=user,
-                label=bot_module._assignment_kind_label(kind, context=context, user=user),
+                label=tg_runtime.assignment_kind_label(kind, context=context, user=user),
             ),
             render_assignment_progress_track(
                 completed=progress.completed_word_count,
                 total=progress.total_word_count,
                 variant_key=progress.variant_key,
             ),
-            bot_module._tg(
+            tg_runtime.tg(
                 "assignment_round_progress_status",
                 context=context,
                 user=user,
@@ -195,9 +194,9 @@ def build_assignment_progress_snapshot(
 ) -> AssignmentProgressSnapshot | None:
     import englishbot.bot as bot_module
 
-    if bot_module._optional_bot_data(context, "content_store") is None:
+    if tg_runtime.optional_bot_data(context, "content_store") is None:
         return None
-    store = bot_module._content_store(context)
+    store = tg_runtime.content_store(context)
     goals = store.list_user_goals(
         user_id=user_id,
         statuses=((bot_module.GoalStatus.ACTIVE, bot_module.GoalStatus.COMPLETED) if goal_id is not None else (bot_module.GoalStatus.ACTIVE,)),
@@ -234,14 +233,14 @@ def build_assignment_progress_snapshot(
     completed_word_count = sum(1 for item in segments if item.progress_value >= 1.0)
     remaining_word_count = max(0, len(segments) - completed_word_count)
     return AssignmentProgressSnapshot(
-        center_label=bot_module._tg("assignment_progress_center_label", context=context, user=user),
+        center_label=tg_runtime.tg("assignment_progress_center_label", context=context, user=user),
         legend_labels=(
-            bot_module._tg("assignment_progress_legend_start", context=context, user=user),
-            bot_module._tg("assignment_progress_legend_warmup", context=context, user=user),
-            bot_module._tg("assignment_progress_legend_almost", context=context, user=user),
-            bot_module._tg("assignment_progress_legend_done", context=context, user=user),
+            tg_runtime.tg("assignment_progress_legend_start", context=context, user=user),
+            tg_runtime.tg("assignment_progress_legend_warmup", context=context, user=user),
+            tg_runtime.tg("assignment_progress_legend_almost", context=context, user=user),
+            tg_runtime.tg("assignment_progress_legend_done", context=context, user=user),
         ),
-        hard_legend_label=bot_module._tg("assignment_progress_legend_hard_note", context=context, user=user),
+        hard_legend_label=tg_runtime.tg("assignment_progress_legend_hard_note", context=context, user=user),
         completed_word_count=completed_word_count,
         total_word_count=len(segments),
         remaining_word_count=remaining_word_count,
@@ -310,12 +309,10 @@ def assignment_progress_caption(
     user,
     remaining_word_count: int,
 ) -> str:
-    import englishbot.bot as bot_module
-
     return "\n".join(
         [
-            f"<b>{html.escape(bot_module._assignment_kind_label(kind, context=context, user=user))}</b>",
-            bot_module._tg(
+            f"<b>{html.escape(tg_runtime.assignment_kind_label(kind, context=context, user=user))}</b>",
+            tg_runtime.tg(
                 "assignment_round_progress_status",
                 context=context,
                 user=user,
@@ -343,8 +340,8 @@ async def send_or_update_assignment_progress_message(
     if not hasattr(message, "reply_photo"):
         return
     if active_session is None:
-        active_session = bot_module._service(context).get_active_session(user_id=user_id)
-    raw_active_session = bot_module._active_training_session(context, user_id=user_id)
+        active_session = tg_runtime.service(context).get_active_session(user_id=user_id)
+    raw_active_session = tg_runtime.active_training_session(user_id, context)
     _, goal_id = bot_module._assignment_kind_and_goal_id_from_source_tag(
         getattr(active_session, "source_tag", None),
     )
@@ -384,7 +381,7 @@ async def send_or_update_assignment_progress_message(
     )
     latest_tracked = tracked_messages[-1] if tracked_messages else None
     older_tracked = tracked_messages[:-1] if tracked_messages else []
-    fallback_chat_id = bot_module._message_chat_id(message)
+    fallback_chat_id = tg_runtime.message_chat_id(message)
     if older_tracked:
         await delete_tracked_messages(context, tracked_messages=older_tracked)
     sent_message = None

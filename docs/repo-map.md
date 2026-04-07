@@ -34,6 +34,8 @@ If you are new to the project, read files in this order:
 
 - [src/englishbot/telegram/](/workspaces/EnglishBot/src/englishbot/telegram)
   Telegram-specific handlers and helpers, split by responsibility.
+- [src/englishbot/telegram/runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/runtime.py)
+  Thin shared runtime-access layer for Telegram modules.
 - [src/englishbot/presentation/](/workspaces/EnglishBot/src/englishbot/presentation)
   Telegram-facing text, views, keyboards, and progress rendering.
 

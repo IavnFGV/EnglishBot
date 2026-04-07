@@ -24,6 +24,7 @@ from englishbot.presentation.telegram_assignments_ui import (
     goal_list_keyboard as ui_goal_list_keyboard,
 )
 from englishbot.presentation.telegram_views import build_assignment_menu_view
+from englishbot.telegram.flow_tracking import delete_message_if_possible
 
 
 def _admin_goal_manual_keyboard(
@@ -640,7 +641,7 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 bot_module._tg("goal_source_prompt", context=context, user=user),
                 reply_markup=next_reply_markup,
             )
-        await bot_module._delete_message_if_possible(context, message=message)
+        await delete_message_if_possible(context, message=message)
         return
 
     deadline_text = message.text.strip()
@@ -664,5 +665,5 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     update_admin_goal_creation_state(context, deadline_date=parsed_deadline)
     clear_admin_goal_prompt_interaction(context)
-    await bot_module._delete_message_if_possible(context, message=message)
+    await delete_message_if_possible(context, message=message)
     await bot_module._finish_admin_goal_creation(query_or_message=message, context=context, user=user)

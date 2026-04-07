@@ -6,25 +6,22 @@ from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
+from englishbot import bot as bot_module
+from englishbot.telegram import runtime as tg_runtime
 from englishbot.telegram.buttons import InlineKeyboardButton
+from englishbot.telegram.flow_tracking import delete_message_if_possible
 
 
 def pending_notifications(context: ContextTypes.DEFAULT_TYPE) -> dict[str, object]:
-    import englishbot.bot as bot_module
-
-    return bot_module._mutable_bot_data_dict(context, "pending_notifications")
+    return tg_runtime.mutable_bot_data_dict(context, "pending_notifications")
 
 
 def pending_notification_repository(context: ContextTypes.DEFAULT_TYPE):
-    import englishbot.bot as bot_module
-
-    return bot_module._optional_bot_data(context, "pending_telegram_notification_repository")
+    return tg_runtime.optional_bot_data(context, "pending_telegram_notification_repository")
 
 
 def recent_assignment_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> dict[int, datetime]:
-    import englishbot.bot as bot_module
-
-    return bot_module._mutable_bot_data_dict(
+    return tg_runtime.mutable_bot_data_dict(
         context,
         "recent_assignment_activity_by_user",
         fallback_key="recent_quiz_activity_by_user",
@@ -37,21 +34,19 @@ def notification_action_button_for_user(
     notification_key: str,
     user_id: int,
 ):
-    import englishbot.bot as bot_module
-
-    language = bot_module._telegram_ui_language_for_user_id(context, user_id=user_id)
+    language = tg_runtime.telegram_ui_language_for_user_id(context, user_id=user_id)
     if notification_key.startswith("assignment-completed:"):
         return InlineKeyboardButton(
-            bot_module._tg("notification_open_users_progress", language=language),
+            tg_runtime.tg("notification_open_users_progress", language=language),
             callback_data="assign:users",
         )
     if notification_key.startswith("assignment-assigned:homework:"):
         return InlineKeyboardButton(
-            bot_module._tg("notification_start_homework", language=language),
+            tg_runtime.tg("notification_start_homework", language=language),
             callback_data="start:launch:homework",
         )
     return InlineKeyboardButton(
-        bot_module._tg("notification_open_assignments", language=language),
+        tg_runtime.tg("notification_open_assignments", language=language),
         callback_data="assign:menu",
     )
 
@@ -62,9 +57,7 @@ def dismiss_notification_keyboard(
     notification_key: str,
     user_id: int,
 ) -> InlineKeyboardMarkup:
-    import englishbot.bot as bot_module
-
-    language = bot_module._telegram_ui_language_for_user_id(context, user_id=user_id)
+    language = tg_runtime.telegram_ui_language_for_user_id(context, user_id=user_id)
     return InlineKeyboardMarkup(
         [[
             notification_action_button_for_user(
@@ -73,7 +66,7 @@ def dismiss_notification_keyboard(
                 user_id=user_id,
             ),
             InlineKeyboardButton(
-                bot_module._tg("notification_dismiss", language=language),
+                tg_runtime.tg("notification_dismiss", language=language),
                 callback_data=bot_module._NOTIFICATION_DISMISS_CALLBACK,
             ),
         ]]
@@ -85,14 +78,14 @@ def notification_wait_seconds(
     *,
     user_id: int,
 ) -> float:
-    import englishbot.bot as bot_module
-
     recent_activity_at = recent_assignment_activity_by_user(context).get(user_id)
     if recent_activity_at is None:
         return 0.0
     now = datetime.now(UTC)
     elapsed = now - recent_activity_at
-    active_session = bot_module._service(context).get_active_session(user_id=user_id)
+    active_session = tg_runtime.service(context).get_active_session(user_id=user_id)
+    import englishbot.bot as bot_module
+
     if active_session is not None and elapsed < bot_module._NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW:
         remaining = bot_module._NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW - elapsed
         return max(0.0, remaining.total_seconds())
@@ -140,7 +133,7 @@ def schedule_notification(
             not_before_at=not_before_at,
             created_at=datetime.now(UTC),
         )
-    job_queue = bot_module._job_queue_or_none(context.application)
+    job_queue = tg_runtime.job_queue_or_none(context.application)
     if job_queue is None:
         return
     job_queue.run_once(
@@ -206,7 +199,7 @@ async def deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) -
             return
     elif notification_key not in pending_notifications(context):
         return
-    job_queue = bot_module._job_queue_or_none(context.application)
+    job_queue = tg_runtime.job_queue_or_none(context.application)
     if job_queue is None:
         return
     job_queue.run_once(
@@ -227,7 +220,7 @@ async def deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) -
 async def homework_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     import englishbot.bot as bot_module
 
-    rows = bot_module._content_store(context).list_users_goal_overview()
+    rows = tg_runtime.content_store(context).list_users_goal_overview()
     today = datetime.now(UTC).date().isoformat()
     for row in rows:
         user_id = int(row["user_id"])
@@ -239,11 +232,11 @@ async def homework_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -
             notification=bot_module._PendingNotification(
                 key=f"assignment-reminder:{today}:{user_id}",
                 recipient_user_id=user_id,
-                text=bot_module._tg(
+                text=tg_runtime.tg(
                     "homework_assignment_reminder"
                     if active_goals_count != 1
                     else "homework_assignment_reminder_one",
-                    language=bot_module._telegram_ui_language_for_user_id(context, user_id=user_id),
+                    language=tg_runtime.telegram_ui_language_for_user_id(context, user_id=user_id),
                     goal_count=active_goals_count,
                 ),
             ),
@@ -277,18 +270,18 @@ def schedule_assignment_assigned_notifications(
     import englishbot.bot as bot_module
 
     for goal in goals:
-        language = bot_module._telegram_ui_language_for_user_id(context, user_id=int(goal.user_id))
+        language = tg_runtime.telegram_ui_language_for_user_id(context, user_id=int(goal.user_id))
         goal_type_key = {
             bot_module.GoalType.NEW_WORDS.value: "goal_type_new_words",
             bot_module.GoalType.WORD_LEVEL_HOMEWORK.value: "goal_type_word_level_homework",
         }.get(goal.goal_type.value)
-        period_label = bot_module._tg("goal_period_homework", language=language)
-        goal_type_label = bot_module._tg(goal_type_key, language=language) if goal_type_key is not None else goal.goal_type.value
+        period_label = tg_runtime.tg("goal_period_homework", language=language)
+        goal_type_label = tg_runtime.tg(goal_type_key, language=language) if goal_type_key is not None else goal.goal_type.value
         emoji = bot_module._assignment_assigned_notification_emoji(goal_id=str(goal.id))
         text = "\n".join(
             [
-                bot_module._tg("assignment_assigned_title", language=language, emoji=emoji),
-                bot_module._tg(
+                tg_runtime.tg("assignment_assigned_title", language=language, emoji=emoji),
+                tg_runtime.tg(
                     (
                         "assignment_assigned_word_level_homework"
                         if goal.goal_type.value == bot_module.GoalType.WORD_LEVEL_HOMEWORK.value
@@ -317,7 +310,7 @@ def schedule_goal_completed_notifications(
 ) -> None:
     import englishbot.bot as bot_module
 
-    role_repository = bot_module._optional_bot_data(context, "telegram_user_role_repository")
+    role_repository = tg_runtime.optional_bot_data(context, "telegram_user_role_repository")
     if role_repository is None:
         return
     memberships = role_repository.list_memberships()
@@ -339,10 +332,8 @@ def schedule_goal_completed_notifications(
 
 
 async def notification_dismiss_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    import englishbot.bot as bot_module
-
     query = update.callback_query
     if query is None:
         return
     await query.answer()
-    await bot_module._delete_message_if_possible(context, message=query.message)
+    await delete_message_if_possible(context, message=query.message)

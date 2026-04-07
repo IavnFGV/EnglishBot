@@ -22,6 +22,7 @@ Today it is mostly:
 
 After the Telegram interaction-layer work, `bot.py` no longer owns most prompt state or tracked-message lifecycle rules directly.
 Those are expected to live in [src/englishbot/telegram/interaction.py](/workspaces/EnglishBot/src/englishbot/telegram/interaction.py).
+The same direction now applies to shared runtime lookups: feature modules should prefer [src/englishbot/telegram/runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/runtime.py) for common `tg`, `service`, `content_store`, and UI-language access instead of treating `bot.py` as a global service locator.
 
 ## Main Sections
 
@@ -39,6 +40,7 @@ Near the top of the file:
 - `_pop_user_data(...)`
 
 These are the normalized access points for Telegram runtime state.
+New Telegram feature modules should usually consume them indirectly through [src/englishbot/telegram/runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/runtime.py), not by importing `bot.py` as a grab bag.
 
 ### 2. Runtime service accessors
 
@@ -97,7 +99,7 @@ Small game-mode UI pieces such as result keyboards should also live in presentat
 Admin/homework Telegram modules should also prefer direct assignment presentation imports for menus and detail keyboards, keeping `bot.py` focused on shared runtime access and true cross-flow helpers.
 Draft review previews and follow-up editor menus belong to the same rule: editor modules should compose them from presentation helpers directly instead of routing through `bot.py`.
 Checkpoint: Telegram feature modules no longer depend on `bot.py` for direct `view/keyboard/status` builders; remaining `bot.py` usage is mostly runtime access, wrapper compatibility, and shared cross-flow glue.
-Notification and tracked-message wrapper usage has also been reduced to a small residual surface; most Telegram feature modules now import `flow_tracking` / `notifications` helpers directly when they need them.
+The same is now true for the common tracked-message and notification helper surface: Telegram feature modules call `flow_tracking` / `notifications` helpers directly instead of routing those operations back through `bot.py`.
 
 ## Why It Still Feels Big
 
@@ -127,7 +129,6 @@ That means:
 If the file is reduced further after `1.0.0`, the best targets are:
 
 - shared runtime accessor blocks if they can be grouped into a smaller runtime/context helper module without harming readability
-- notification and tracked-message plumbing if we decide to stop exposing compatibility wrappers from `bot.py`
 - assignment progress helpers if we want to separate rendering glue from runtime access even further
 - larger cross-flow orchestration helpers such as `_known_assignment_users(...)` or `_finish_admin_goal_creation(...)` if we find a clean home for them
 
