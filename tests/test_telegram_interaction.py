@@ -30,6 +30,7 @@ from englishbot.telegram.interaction import (
     replace_chat_menu_message,
     replace_lesson_feedback_message,
     replace_lesson_question_message,
+    replace_tts_voice_message,
     remember_expected_user_input,
     replace_flow_message,
     start_admin_goal_prompt_interaction,
@@ -371,6 +372,41 @@ async def test_replace_chat_menu_message_uses_named_chat_menu_flow(
     assert deleted == [(10, 19)]
     assert [(item.flow_id, item.tag, item.message_id) for item in registry.items] == [
         ("chat-menu:7", "chat_menu", 20)
+    ]
+
+
+@pytest.mark.anyio
+async def test_replace_tts_voice_message_uses_named_tts_flow() -> None:
+    registry = _FakeRegistry()
+    registry.track(flow_id="tts-voice:7", chat_id=10, message_id=19, tag="tts_voice")
+    deleted: list[tuple[int, int]] = []
+    reply_calls: list[object] = []
+
+    async def fake_delete_message(*, chat_id: int, message_id: int) -> None:
+        deleted.append((chat_id, message_id))
+
+    async def fake_reply_voice(*, voice):
+        reply_calls.append(voice)
+        return SimpleNamespace(chat_id=10, message_id=20)
+
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(bot_data={"telegram_flow_message_repository": registry}),
+        bot=SimpleNamespace(delete_message=fake_delete_message),
+    )
+
+    sent_message = await replace_tts_voice_message(
+        context,
+        user_id=7,
+        message=SimpleNamespace(chat_id=10, message_id=5, reply_voice=fake_reply_voice),
+        voice="voice-file-id",
+    )
+
+    assert sent_message.message_id == 20
+    assert reply_calls == ["voice-file-id"]
+    assert deleted == [(10, 19)]
+    assert [(item.flow_id, item.tag, item.message_id) for item in registry.items] == [
+        ("tts-voice:7", "tts_voice", 20)
     ]
 
 

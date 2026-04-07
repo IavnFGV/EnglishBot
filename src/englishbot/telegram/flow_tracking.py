@@ -151,20 +151,11 @@ async def reply_voice_replacing_previous_tts(
     message,
     voice,
 ):
-    import englishbot.bot as bot_module
+    from englishbot.telegram.interaction import replace_tts_voice_message
 
-    flow_id = tts_voice_flow_id(user_id=user_id)
-    await delete_tracked_flow_messages(
+    return await replace_tts_voice_message(
         context,
-        flow_id=flow_id,
-        tag=bot_module._TTS_VOICE_TAG,
+        user_id=user_id,
+        message=message,
+        voice=voice,
     )
-    sent_message = await message.reply_voice(voice=voice)
-    track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=bot_module._TTS_VOICE_TAG,
-        message=sent_message,
-        fallback_chat_id=bot_module._message_chat_id(message),
-    )
-    return sent_message

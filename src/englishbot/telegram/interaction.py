@@ -68,6 +68,26 @@ async def replace_chat_menu_message(
     )
 
 
+async def replace_tts_voice_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int,
+    message,
+    voice,
+):
+    import englishbot.bot as bot_module
+
+    sent_message = await message.reply_voice(voice=voice)
+    await replace_flow_message(
+        context,
+        flow_id=tts_voice_interaction_id(user_id=user_id),
+        tag=TTS_VOICE_TAG,
+        message=sent_message,
+        fallback_chat_id=bot_module._message_chat_id(message),
+    )
+    return sent_message
+
+
 def start_image_review_text_edit_interaction(
     context: ContextTypes.DEFAULT_TYPE,
     *,
