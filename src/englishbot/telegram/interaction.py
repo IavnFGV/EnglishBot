@@ -18,6 +18,9 @@ TRAINING_FEEDBACK_TAG = "training_feedback"
 TTS_VOICE_TAG = "tts_voice"
 ASSIGNMENT_PROGRESS_TAG = "assignment_progress"
 CHAT_MENU_TAG = "chat_menu"
+ADD_WORDS_AWAITING_TEXT_MODE = "awaiting_raw_text"
+ADD_WORDS_AWAITING_EDIT_TEXT_MODE = "awaiting_edit_text"
+PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE = "awaiting_published_word_edit_text"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +32,17 @@ class TelegramExpectedInputPrompt:
 @dataclass(frozen=True, slots=True)
 class ImageReviewPhotoAttachInteraction:
     flow_id: str
+    item_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class AddWordsDraftEditInteraction:
+    flow_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedWordEditPromptInteraction:
+    topic_id: str
     item_id: str
 
 
@@ -229,6 +243,103 @@ def clear_image_review_photo_attach_interaction(context: ContextTypes.DEFAULT_TY
         user_data.pop("words_flow_mode", None)
         user_data.pop("image_review_flow_id", None)
         user_data.pop("image_review_item_id", None)
+
+
+def start_add_words_text_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data["words_flow_mode"] = ADD_WORDS_AWAITING_TEXT_MODE
+
+
+def is_add_words_text_interaction(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user_data = getattr(context, "user_data", None)
+    return isinstance(user_data, dict) and user_data.get("words_flow_mode") == ADD_WORDS_AWAITING_TEXT_MODE
+
+
+def clear_add_words_text_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict) and user_data.get("words_flow_mode") == ADD_WORDS_AWAITING_TEXT_MODE:
+        user_data.pop("words_flow_mode", None)
+
+
+def start_add_words_draft_edit_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    flow_id: str,
+) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data["words_flow_mode"] = ADD_WORDS_AWAITING_EDIT_TEXT_MODE
+        user_data["edit_flow_id"] = flow_id
+
+
+def get_add_words_draft_edit_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> AddWordsDraftEditInteraction | None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return None
+    if user_data.get("words_flow_mode") != ADD_WORDS_AWAITING_EDIT_TEXT_MODE:
+        return None
+    flow_id = user_data.get("edit_flow_id")
+    if not isinstance(flow_id, str) or not flow_id:
+        return None
+    return AddWordsDraftEditInteraction(flow_id=flow_id)
+
+
+def clear_add_words_draft_edit_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        if user_data.get("words_flow_mode") == ADD_WORDS_AWAITING_EDIT_TEXT_MODE:
+            user_data.pop("words_flow_mode", None)
+        user_data.pop("edit_flow_id", None)
+
+
+def start_published_word_edit_prompt_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    topic_id: str,
+    item_id: str,
+    chat_id: int | None,
+    message_id: int | None,
+) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data["words_flow_mode"] = PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE
+        user_data["published_edit_topic_id"] = topic_id
+        user_data["published_edit_item_id"] = item_id
+    remember_expected_user_input(
+        context,
+        chat_id=chat_id,
+        message_id=message_id,
+    )
+
+
+def get_published_word_edit_prompt_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> PublishedWordEditPromptInteraction | None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return None
+    if user_data.get("words_flow_mode") != PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE:
+        return None
+    topic_id = user_data.get("published_edit_topic_id")
+    item_id = user_data.get("published_edit_item_id")
+    if not isinstance(topic_id, str) or not topic_id:
+        return None
+    if not isinstance(item_id, str) or not item_id:
+        return None
+    return PublishedWordEditPromptInteraction(topic_id=topic_id, item_id=item_id)
+
+
+def clear_published_word_edit_prompt_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        if user_data.get("words_flow_mode") == PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE:
+            user_data.pop("words_flow_mode", None)
+        user_data.pop("published_edit_topic_id", None)
+        user_data.pop("published_edit_item_id", None)
+    clear_expected_user_input(context)
 
 
 def start_image_review_text_edit_interaction(

@@ -24,6 +24,8 @@ async def words_add_words_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import start_add_words_text_interaction
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
@@ -38,7 +40,7 @@ async def words_add_words_callback_handler(
             bot_module._tg("only_editors_add_words", context=context, user=user)
         )
         return
-    context.user_data["words_flow_mode"] = bot_module._ADD_WORDS_AWAITING_TEXT
+    start_add_words_text_interaction(context)
     await query.edit_message_text(
         bot_module._tg("send_raw_lesson_text", context=context, user=user)
     )
@@ -138,7 +140,10 @@ async def words_edit_item_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram.interaction import start_published_word_edit_interaction
+    from englishbot.telegram.interaction import (
+        start_published_word_edit_interaction,
+        start_published_word_edit_prompt_interaction,
+    )
 
     query = update.callback_query
     user = update.effective_user
@@ -154,9 +159,6 @@ async def words_edit_item_callback_handler(
             bot_module._tg("selected_word_unavailable", context=context, user=user)
         )
         return
-    context.user_data["words_flow_mode"] = bot_module._PUBLISHED_WORD_AWAITING_EDIT_TEXT
-    context.user_data["published_edit_topic_id"] = topic_id
-    context.user_data["published_edit_item_id"] = selected_word.id
     instruction_view, current_value_view = build_published_word_edit_prompt_view(
         instruction_text=bot_module._tg("send_updated_word_format", context=context, user=user),
         current_value_text=bot_module._tg(
@@ -175,8 +177,10 @@ async def words_edit_item_callback_handler(
         instruction_view.text,
         reply_markup=instruction_view.reply_markup,
     )
-    bot_module._remember_expected_user_input(
+    start_published_word_edit_prompt_interaction(
         context,
+        topic_id=topic_id,
+        item_id=selected_word.id,
         chat_id=bot_module._message_chat_id(query.message),
         message_id=getattr(query.message, "message_id", None),
     )
@@ -194,7 +198,10 @@ async def words_edit_cancel_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram.interaction import finish_published_word_edit_interaction
+    from englishbot.telegram.interaction import (
+        clear_published_word_edit_prompt_interaction,
+        finish_published_word_edit_interaction,
+    )
 
     query = update.callback_query
     user = update.effective_user
@@ -208,9 +215,7 @@ async def words_edit_cancel_callback_handler(
         keep_source_message=True,
         source_message=query.message,
     )
-    context.user_data.pop("words_flow_mode", None)
-    context.user_data.pop("published_edit_topic_id", None)
-    context.user_data.pop("published_edit_item_id", None)
+    clear_published_word_edit_prompt_interaction(context)
     words = bot_module._list_editable_words(context).execute(topic_id=topic_id)
     await query.edit_message_text(
         "Edit cancelled. Choose a word to edit.",
@@ -222,6 +227,8 @@ async def add_words_start_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import start_add_words_text_interaction
+
     message = update.effective_message
     user = update.effective_user
     if message is None or user is None:
@@ -240,9 +247,9 @@ async def add_words_start_handler(
         await message.reply_text(
             bot_module._tg("active_add_words_flow_exists", context=context, user=user)
         )
-        context.user_data["words_flow_mode"] = bot_module._ADD_WORDS_AWAITING_TEXT
+        start_add_words_text_interaction(context)
         return
-    context.user_data["words_flow_mode"] = bot_module._ADD_WORDS_AWAITING_TEXT
+    start_add_words_text_interaction(context)
     await message.reply_text(
         bot_module._tg("send_raw_lesson_text_with_menu", context=context, user=user),
         reply_markup=bot_module._chat_menu_keyboard(
@@ -255,12 +262,14 @@ async def add_words_cancel_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import clear_add_words_text_interaction
+
     message = update.effective_message
     user = update.effective_user
     if message is None or user is None:
         return
     bot_module._clear_active_word_flow(user.id, context)
-    context.user_data.pop("words_flow_mode", None)
+    clear_add_words_text_interaction(context)
     await message.reply_text(
         bot_module._tg("add_words_flow_cancelled", context=context, user=user),
         reply_markup=bot_module._chat_menu_keyboard(
@@ -273,6 +282,8 @@ async def add_words_cancel_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import clear_add_words_text_interaction
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
@@ -286,7 +297,7 @@ async def add_words_cancel_callback_handler(
         )
         return
     bot_module._clear_active_word_flow(user.id, context)
-    context.user_data.pop("words_flow_mode", None)
+    clear_add_words_text_interaction(context)
     await query.edit_message_text(
         bot_module._tg("add_words_flow_cancelled", context=context, user=user)
     )
@@ -297,7 +308,14 @@ async def add_words_text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram.interaction import finish_published_word_edit_interaction
+    from englishbot.telegram.interaction import (
+        clear_add_words_draft_edit_interaction,
+        clear_add_words_text_interaction,
+        clear_published_word_edit_prompt_interaction,
+        finish_published_word_edit_interaction,
+        get_add_words_draft_edit_interaction,
+        get_published_word_edit_prompt_interaction,
+    )
 
     words_flow_mode = context.user_data.get("words_flow_mode")
     if words_flow_mode not in {
@@ -322,17 +340,15 @@ async def add_words_text_handler(
         bot_module._clear_expected_user_input(context)
         return
     if words_flow_mode == bot_module._PUBLISHED_WORD_AWAITING_EDIT_TEXT:
-        topic_id = context.user_data.get("published_edit_topic_id")
-        item_id = context.user_data.get("published_edit_item_id")
-        if not isinstance(topic_id, str) or not isinstance(item_id, str):
-            context.user_data.pop("words_flow_mode", None)
-            context.user_data.pop("published_edit_topic_id", None)
-            context.user_data.pop("published_edit_item_id", None)
-            bot_module._clear_expected_user_input(context)
+        edit_interaction = get_published_word_edit_prompt_interaction(context)
+        if edit_interaction is None:
+            clear_published_word_edit_prompt_interaction(context)
             await message.reply_text(
                 bot_module._tg("word_edit_task_inactive", context=context, user=user)
             )
             return
+        topic_id = edit_interaction.topic_id
+        item_id = edit_interaction.item_id
         parsed_pair = parse_edited_vocabulary_line(message.text)
         if parsed_pair is None:
             await message.reply_text(
@@ -352,9 +368,7 @@ async def add_words_text_handler(
             await message.reply_text(str(error))
             return
         bot_module._reload_training_service(context)
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("published_edit_topic_id", None)
-        context.user_data.pop("published_edit_item_id", None)
+        clear_published_word_edit_prompt_interaction(context)
         await finish_published_word_edit_interaction(
             context,
             user_id=user.id,
@@ -518,11 +532,11 @@ async def add_words_text_handler(
         )
         return
     if words_flow_mode == bot_module._ADD_WORDS_AWAITING_EDIT_TEXT:
-        active_flow_id = context.user_data.get("edit_flow_id")
+        draft_edit_interaction = get_add_words_draft_edit_interaction(context)
+        active_flow_id = draft_edit_interaction.flow_id if draft_edit_interaction is not None else None
         flow = bot_module._active_word_flow_for_user(user.id, context)
         if flow is None or flow.flow_id != active_flow_id:
-            context.user_data.pop("words_flow_mode", None)
-            context.user_data.pop("edit_flow_id", None)
+            clear_add_words_draft_edit_interaction(context)
             await message.reply_text(
                 bot_module._tg("add_words_flow_inactive", context=context, user=user)
             )
@@ -532,8 +546,7 @@ async def add_words_text_handler(
             flow_id=flow.flow_id,
             edited_text=message.text,
         )
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("edit_flow_id", None)
+        clear_add_words_draft_edit_interaction(context)
         preview_view = bot_module._draft_review_view(
             flow_id=flow.flow_id,
             result=flow.draft_result,
@@ -607,12 +620,12 @@ async def add_words_text_handler(
                 )
             ).text
         )
-        context.user_data.pop("words_flow_mode", None)
+        clear_add_words_text_interaction(context)
         return
     finally:
         stop_event.set()
         await heartbeat_task
-    context.user_data.pop("words_flow_mode", None)
+    clear_add_words_text_interaction(context)
     failure_message = bot_module._draft_failure_message(flow.draft_result)
     if failure_message is not None:
         await status_message.edit_text(bot_module._status_view(text=failure_message).text)
@@ -637,6 +650,8 @@ async def add_words_edit_text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import start_add_words_draft_edit_interaction
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
@@ -649,8 +664,7 @@ async def add_words_edit_text_handler(
             bot_module._tg("add_words_flow_inactive", context=context, user=user)
         )
         return
-    context.user_data["words_flow_mode"] = bot_module._ADD_WORDS_AWAITING_EDIT_TEXT
-    context.user_data["edit_flow_id"] = flow.flow_id
+    start_add_words_draft_edit_interaction(context, flow_id=flow.flow_id)
     await query.message.reply_text(
         bot_module._tg("edit_word_list_instruction", context=context, user=user),
         reply_markup=ForceReply(selective=True),

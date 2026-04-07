@@ -50,7 +50,7 @@ This is the main runtime dependency container for Telegram handlers.
 - [src/englishbot/telegram/flow_tracking.py](/workspaces/EnglishBot/src/englishbot/telegram/flow_tracking.py)
   tracked Telegram messages and cleanup
 - [src/englishbot/telegram/interaction.py](/workspaces/EnglishBot/src/englishbot/telegram/interaction.py)
-  Telegram interaction lifecycle helpers such as expected-input prompt state, named interaction ids and tags, lesson, chat-menu, TTS, image-review, and assignment-progress interaction policies, published-word edit policy, and image-review text/photo subflow state
+  Telegram interaction lifecycle helpers such as expected-input prompt state, named interaction ids and tags, lesson, chat-menu, TTS, image-review, and assignment-progress interaction policies, plus editor prompt/draft/image-review subflow state
 
 ## Telegram Interaction Layer
 
@@ -67,6 +67,8 @@ It is not a scene engine or a general Telegram framework. It currently owns:
 - image-review screen lifecycle helpers
 - image-review photo-attach transient state helpers
 - published-word edit lifecycle helpers
+- add-words raw-text and draft-edit transient state helpers
+- published-word edit prompt transient state helpers
 - image-review text-edit transient state helpers
 - admin goal prompt/deadline transient state helpers
 - assignment-progress interaction ids

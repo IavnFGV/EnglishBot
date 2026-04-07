@@ -7,12 +7,17 @@ import pytest
 from telegram.error import BadRequest
 
 from englishbot.telegram.interaction import (
+    ADD_WORDS_AWAITING_EDIT_TEXT_MODE,
+    ADD_WORDS_AWAITING_TEXT_MODE,
     ASSIGNMENT_PROGRESS_TAG,
     CHAT_MENU_TAG,
     IMAGE_REVIEW_CONTEXT_TAG,
     IMAGE_REVIEW_STEP_TAG,
+    AddWordsDraftEditInteraction,
     ImageReviewPhotoAttachInteraction,
     PUBLISHED_WORD_EDIT_TAG,
+    PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE,
+    PublishedWordEditPromptInteraction,
     TRAINING_FEEDBACK_TAG,
     TRAINING_QUESTION_TAG,
     TelegramExpectedInputPrompt,
@@ -20,9 +25,12 @@ from englishbot.telegram.interaction import (
     assignment_progress_interaction_id,
     chat_menu_interaction_id,
     clear_admin_goal_prompt_interaction,
+    clear_add_words_draft_edit_interaction,
+    clear_add_words_text_interaction,
     clear_expected_user_input,
     clear_image_review_photo_attach_interaction,
     clear_image_review_text_edit_interaction,
+    clear_published_word_edit_prompt_interaction,
     edit_expected_user_input_prompt,
     finish_interaction,
     finish_image_review_interaction,
@@ -30,6 +38,9 @@ from englishbot.telegram.interaction import (
     finish_published_word_edit_interaction,
     get_image_review_photo_attach_interaction,
     get_expected_user_input_prompt,
+    get_add_words_draft_edit_interaction,
+    get_published_word_edit_prompt_interaction,
+    is_add_words_text_interaction,
     lesson_interaction_id,
     published_word_edit_interaction_id,
     replace_chat_menu_message,
@@ -41,8 +52,11 @@ from englishbot.telegram.interaction import (
     remember_expected_user_input,
     replace_flow_message,
     start_admin_goal_prompt_interaction,
+    start_add_words_draft_edit_interaction,
+    start_add_words_text_interaction,
     start_image_review_photo_attach_interaction,
     start_image_review_text_edit_interaction,
+    start_published_word_edit_prompt_interaction,
     start_published_word_edit_interaction,
     tts_voice_interaction_id,
 )
@@ -79,6 +93,12 @@ def test_named_interaction_tags_are_stable() -> None:
     assert TTS_VOICE_TAG == "tts_voice"
     assert ASSIGNMENT_PROGRESS_TAG == "assignment_progress"
     assert CHAT_MENU_TAG == "chat_menu"
+
+
+def test_named_editor_interaction_modes_are_stable() -> None:
+    assert ADD_WORDS_AWAITING_TEXT_MODE == "awaiting_raw_text"
+    assert ADD_WORDS_AWAITING_EDIT_TEXT_MODE == "awaiting_edit_text"
+    assert PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE == "awaiting_published_word_edit_text"
 
 
 def test_clear_expected_user_input_prompt() -> None:
@@ -136,6 +156,56 @@ def test_start_get_and_clear_image_review_photo_attach_interaction() -> None:
     clear_image_review_photo_attach_interaction(context)
 
     assert get_image_review_photo_attach_interaction(context) is None
+
+
+def test_start_and_clear_add_words_text_interaction() -> None:
+    context = SimpleNamespace(user_data={})
+
+    start_add_words_text_interaction(context)
+    assert is_add_words_text_interaction(context) is True
+
+    clear_add_words_text_interaction(context)
+    assert is_add_words_text_interaction(context) is False
+
+
+def test_start_get_and_clear_add_words_draft_edit_interaction() -> None:
+    context = SimpleNamespace(user_data={})
+
+    start_add_words_draft_edit_interaction(context, flow_id="flow-1")
+
+    assert get_add_words_draft_edit_interaction(context) == AddWordsDraftEditInteraction(
+        flow_id="flow-1"
+    )
+
+    clear_add_words_draft_edit_interaction(context)
+
+    assert get_add_words_draft_edit_interaction(context) is None
+
+
+def test_start_get_and_clear_published_word_edit_prompt_interaction() -> None:
+    context = SimpleNamespace(user_data={})
+
+    start_published_word_edit_prompt_interaction(
+        context,
+        topic_id="weather",
+        item_id="cloud",
+        chat_id=10,
+        message_id=11,
+    )
+
+    assert get_published_word_edit_prompt_interaction(context) == PublishedWordEditPromptInteraction(
+        topic_id="weather",
+        item_id="cloud",
+    )
+    assert get_expected_user_input_prompt(context) == TelegramExpectedInputPrompt(
+        chat_id=10,
+        message_id=11,
+    )
+
+    clear_published_word_edit_prompt_interaction(context)
+
+    assert get_published_word_edit_prompt_interaction(context) is None
+    assert get_expected_user_input_prompt(context) is None
 
 
 def test_start_and_clear_admin_goal_prompt_interaction() -> None:
