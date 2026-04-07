@@ -13,6 +13,7 @@ from englishbot.presentation.telegram_views import (
     build_status_view,
     send_telegram_view,
 )
+from englishbot.telegram import runtime as tg_runtime
 from englishbot.telegram.interaction import (
     replace_image_review_context_message,
     replace_image_review_step_messages,
@@ -99,7 +100,7 @@ async def send_current_published_image_preview(
     current_item = flow.current_item
     if current_item is None:
         return
-    fallback_chat_id = bot_module._message_chat_id(message)
+    fallback_chat_id = tg_runtime.message_chat_id(message)
     raw_items = flow.content_pack.get("vocabulary_items", [])
     if not isinstance(raw_items, list):
         return
@@ -157,7 +158,7 @@ async def send_image_review_step(
             )
         )
         return
-    fallback_chat_id = bot_module._message_chat_id(message)
+    fallback_chat_id = tg_runtime.message_chat_id(message)
     total_items = len(flow.items)
     current_position = flow.current_index + 1
     generation_lines: list[str] = []

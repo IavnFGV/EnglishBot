@@ -5,6 +5,8 @@ import logging
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
+from englishbot.telegram import runtime as tg_runtime
+
 logger = logging.getLogger(__name__)
 
 
@@ -13,9 +15,7 @@ async def delete_tracked_messages(
     *,
     tracked_messages,
 ) -> None:
-    import englishbot.bot as bot_module
-
-    registry = bot_module._telegram_flow_messages(context)
+    registry = tg_runtime.telegram_flow_messages(context)
     bot = getattr(context, "bot", None)
     if registry is None:
         return
@@ -43,9 +43,7 @@ async def delete_tracked_flow_messages(
     flow_id: str,
     tag: str,
 ) -> None:
-    import englishbot.bot as bot_module
-
-    registry = bot_module._telegram_flow_messages(context)
+    registry = tg_runtime.telegram_flow_messages(context)
     if registry is None:
         return
     await delete_tracked_messages(
@@ -74,10 +72,8 @@ async def delete_message_if_possible(
     *,
     message,
 ) -> None:
-    import englishbot.bot as bot_module
-
     bot = getattr(context, "bot", None)
-    chat_id = bot_module._message_chat_id(message)
+    chat_id = tg_runtime.message_chat_id(message)
     message_id = getattr(message, "message_id", None)
     if bot is None or not isinstance(chat_id, int) or not isinstance(message_id, int):
         return
@@ -92,9 +88,7 @@ async def delete_message_if_possible(
 
 
 def tracked_messages_except_source_message(*, tracked_messages, message) -> list:
-    import englishbot.bot as bot_module
-
-    source_chat_id = bot_module._message_chat_id(message)
+    source_chat_id = tg_runtime.message_chat_id(message)
     source_message_id = getattr(message, "message_id", None)
     if not isinstance(source_chat_id, int) or not isinstance(source_message_id, int):
         return list(tracked_messages)
@@ -116,15 +110,13 @@ def track_flow_message(
     message,
     fallback_chat_id: int | None = None,
 ) -> None:
-    import englishbot.bot as bot_module
-
-    registry = bot_module._telegram_flow_messages(context)
+    registry = tg_runtime.telegram_flow_messages(context)
     if registry is None:
         return
     message_id = getattr(message, "message_id", None)
     if not isinstance(message_id, int):
         return
-    chat_id = bot_module._message_chat_id(message)
+    chat_id = tg_runtime.message_chat_id(message)
     if chat_id is None:
         chat_id = fallback_chat_id
     if not isinstance(chat_id, int):

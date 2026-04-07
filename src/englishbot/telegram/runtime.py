@@ -31,6 +31,12 @@ def message_chat_id(message) -> int | None:
     return bot_module._message_chat_id(message)
 
 
+def telegram_flow_messages(context: ContextTypes.DEFAULT_TYPE):
+    import englishbot.bot as bot_module
+
+    return bot_module._telegram_flow_messages(context)
+
+
 def service(context: ContextTypes.DEFAULT_TYPE):
     import englishbot.bot as bot_module
 

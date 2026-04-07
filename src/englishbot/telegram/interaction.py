@@ -7,6 +7,7 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from englishbot.presentation.telegram_editor_ui import quick_actions_view
+from englishbot.telegram import runtime as tg_runtime
 
 
 logger = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ async def replace_chat_menu_message(
         flow_id=chat_menu_interaction_id(user_id=user_id),
         tag=CHAT_MENU_TAG,
         message=sent_message,
-        fallback_chat_id=bot_module._message_chat_id(message),
+        fallback_chat_id=tg_runtime.message_chat_id(message),
     )
 
 
@@ -151,15 +152,13 @@ async def replace_tts_voice_message(
     message,
     voice,
 ):
-    import englishbot.bot as bot_module
-
     sent_message = await message.reply_voice(voice=voice)
     await replace_flow_message(
         context,
         flow_id=tts_voice_interaction_id(user_id=user_id),
         tag=TTS_VOICE_TAG,
         message=sent_message,
-        fallback_chat_id=bot_module._message_chat_id(message),
+        fallback_chat_id=tg_runtime.message_chat_id(message),
     )
     return sent_message
 
@@ -235,9 +234,7 @@ async def finish_image_review_interaction(
         delete_tracked_messages,
         tracked_messages_except_source_message,
     )
-    import englishbot.bot as bot_module
-
-    registry = bot_module._telegram_flow_messages(context)
+    registry = tg_runtime.telegram_flow_messages(context)
     if registry is None:
         return
     tracked_messages = registry.list(flow_id=flow_id)
@@ -681,9 +678,7 @@ async def finish_published_word_edit_interaction(
         delete_tracked_messages,
         tracked_messages_except_source_message,
     )
-    import englishbot.bot as bot_module
-
-    registry = bot_module._telegram_flow_messages(context)
+    registry = tg_runtime.telegram_flow_messages(context)
     if registry is None:
         clear_expected_user_input(context)
         return

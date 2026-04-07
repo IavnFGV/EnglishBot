@@ -333,6 +333,7 @@ async def send_or_update_assignment_progress_message(
     active_session=None,
 ) -> None:
     import englishbot.bot as bot_module
+    from englishbot.telegram.interaction import ASSIGNMENT_PROGRESS_TAG
 
     user_id = getattr(user, "id", None)
     if not isinstance(user_id, int):
@@ -358,7 +359,7 @@ async def send_or_update_assignment_progress_message(
         await delete_tracked_flow_messages(
             context,
             flow_id=flow_id,
-            tag=bot_module._ASSIGNMENT_PROGRESS_TAG,
+            tag=ASSIGNMENT_PROGRESS_TAG,
         )
         return
     output_path = render_assignment_progress_image(
@@ -373,9 +374,9 @@ async def send_or_update_assignment_progress_message(
         user=user,
         remaining_word_count=remaining_word_count,
     )
-    registry = bot_module._telegram_flow_messages(context)
+    registry = tg_runtime.telegram_flow_messages(context)
     tracked_messages = (
-        registry.list(flow_id=flow_id, tag=bot_module._ASSIGNMENT_PROGRESS_TAG)
+        registry.list(flow_id=flow_id, tag=ASSIGNMENT_PROGRESS_TAG)
         if registry is not None
         else []
     )
@@ -423,7 +424,7 @@ async def send_or_update_assignment_progress_message(
     track_flow_message(
         context,
         flow_id=flow_id,
-        tag=bot_module._ASSIGNMENT_PROGRESS_TAG,
+        tag=ASSIGNMENT_PROGRESS_TAG,
         message=sent_message,
         fallback_chat_id=fallback_chat_id,
     )

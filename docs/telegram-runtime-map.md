@@ -52,7 +52,7 @@ This is the main runtime dependency container for Telegram handlers.
 - [src/englishbot/telegram/interaction.py](/workspaces/EnglishBot/src/englishbot/telegram/interaction.py)
   Telegram interaction lifecycle helpers such as expected-input prompt state, named interaction ids and tags, lesson, chat-menu, TTS, image-review, and assignment-progress interaction policies, plus editor prompt/draft/image-review subflow state
 - [src/englishbot/telegram/runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/runtime.py)
-  thin access layer for shared Telegram runtime dependencies such as `tg`, `service`, `content_store`, UI language, and small `bot_data` or `user_data` helpers
+  thin access layer for shared Telegram runtime dependencies such as `tg`, `service`, `content_store`, UI language, tracked-message registry access, message chat-id resolution, and small `bot_data` or `user_data` helpers
 - [src/englishbot/telegram/editor_runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_runtime.py)
   thin editor-specific orchestration layer for active draft flows, image-review use cases, preview or checkpoint helpers, editable-word updates, editor AI availability checks, and publish-related helper calls
 - [src/englishbot/telegram/callback_tokens.py](/workspaces/EnglishBot/src/englishbot/telegram/callback_tokens.py)
@@ -99,6 +99,7 @@ This runtime layer is now the preferred way to access shared Telegram runtime de
 The migration is intentionally incremental: feature modules can still call true cross-flow helpers from `bot.py`, but routine `tg` / UI-language / runtime-service access should move through `runtime.py`.
 For editor-heavy flows, that next layer now lives in [src/englishbot/telegram/editor_runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_runtime.py), while interaction modes live in [src/englishbot/telegram/interaction.py](/workspaces/EnglishBot/src/englishbot/telegram/interaction.py) and unstable callback payloads live in [src/englishbot/telegram/callback_tokens.py](/workspaces/EnglishBot/src/englishbot/telegram/callback_tokens.py).
 At this checkpoint, [src/englishbot/telegram/editor_add_words.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_add_words.py) and [src/englishbot/telegram/editor_images.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_images.py) no longer depend on direct `bot_module._...` calls.
+The same is now true for tracked-message registry access in [src/englishbot/telegram/flow_tracking.py](/workspaces/EnglishBot/src/englishbot/telegram/flow_tracking.py), [src/englishbot/telegram/interaction.py](/workspaces/EnglishBot/src/englishbot/telegram/interaction.py), [src/englishbot/telegram/assignment_progress.py](/workspaces/EnglishBot/src/englishbot/telegram/assignment_progress.py), and [src/englishbot/telegram/image_review_support.py](/workspaces/EnglishBot/src/englishbot/telegram/image_review_support.py): they use `runtime.py` instead of reaching into `bot.py` for flow-message registry and `chat_id` plumbing.
 
 ## Rule For New Telegram Features
 
