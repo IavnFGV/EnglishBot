@@ -138,6 +138,8 @@ async def words_edit_item_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import start_published_word_edit_interaction
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
@@ -152,25 +154,9 @@ async def words_edit_item_callback_handler(
             bot_module._tg("selected_word_unavailable", context=context, user=user)
         )
         return
-    registry = bot_module._telegram_flow_messages(context)
-    flow_id = bot_module._published_word_edit_flow_id(user_id=user.id)
-    if registry is not None:
-        await bot_module._delete_tracked_messages(
-            context,
-            tracked_messages=registry.list(
-                flow_id=flow_id,
-                tag=bot_module._PUBLISHED_WORD_EDIT_TAG,
-            ),
-        )
     context.user_data["words_flow_mode"] = bot_module._PUBLISHED_WORD_AWAITING_EDIT_TEXT
     context.user_data["published_edit_topic_id"] = topic_id
     context.user_data["published_edit_item_id"] = selected_word.id
-    bot_module._track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=bot_module._PUBLISHED_WORD_EDIT_TAG,
-        message=query.message,
-    )
     instruction_view, current_value_view = build_published_word_edit_prompt_view(
         instruction_text=bot_module._tg("send_updated_word_format", context=context, user=user),
         current_value_text=bot_module._tg(
@@ -195,11 +181,11 @@ async def words_edit_item_callback_handler(
         message_id=getattr(query.message, "message_id", None),
     )
     helper_message = await send_telegram_view(query.message, current_value_view)
-    bot_module._track_flow_message(
+    await start_published_word_edit_interaction(
         context,
-        flow_id=flow_id,
-        tag=bot_module._PUBLISHED_WORD_EDIT_TAG,
-        message=helper_message,
+        user_id=user.id,
+        source_message=query.message,
+        helper_message=helper_message,
         fallback_chat_id=bot_module._message_chat_id(query.message),
     )
 
@@ -208,36 +194,28 @@ async def words_edit_cancel_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import finish_published_word_edit_interaction
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
         return
     await query.answer()
     _, _, topic_id = query.data.split(":")
-    registry = bot_module._telegram_flow_messages(context)
-    flow_id = bot_module._published_word_edit_flow_id(user_id=user.id)
-    if registry is not None:
-        await bot_module._delete_tracked_messages(
-            context,
-            tracked_messages=bot_module._tracked_messages_except_source_message(
-                tracked_messages=registry.list(
-                    flow_id=flow_id,
-                    tag=bot_module._PUBLISHED_WORD_EDIT_TAG,
-                ),
-                message=query.message,
-            ),
-        )
+    await finish_published_word_edit_interaction(
+        context,
+        user_id=user.id,
+        keep_source_message=True,
+        source_message=query.message,
+    )
     context.user_data.pop("words_flow_mode", None)
     context.user_data.pop("published_edit_topic_id", None)
     context.user_data.pop("published_edit_item_id", None)
-    bot_module._clear_expected_user_input(context)
     words = bot_module._list_editable_words(context).execute(topic_id=topic_id)
     await query.edit_message_text(
         "Edit cancelled. Choose a word to edit.",
         reply_markup=bot_module._editable_words_keyboard(topic_id=topic_id, words=words),
     )
-    if registry is not None:
-        registry.clear(flow_id=flow_id, tag=bot_module._PUBLISHED_WORD_EDIT_TAG)
 
 
 async def add_words_start_handler(

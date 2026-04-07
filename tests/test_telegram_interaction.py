@@ -21,6 +21,7 @@ from englishbot.telegram.interaction import (
     edit_expected_user_input_prompt,
     finish_interaction,
     finish_lesson_interaction,
+    finish_published_word_edit_interaction,
     get_expected_user_input_prompt,
     lesson_interaction_id,
     published_word_edit_interaction_id,
@@ -28,6 +29,7 @@ from englishbot.telegram.interaction import (
     replace_lesson_question_message,
     remember_expected_user_input,
     replace_flow_message,
+    start_published_word_edit_interaction,
     tts_voice_interaction_id,
 )
 
@@ -166,6 +168,13 @@ class _FakeRegistry:
             )
         ]
 
+    def clear(self, *, flow_id: str, tag: str | None = None) -> None:
+        self.items = [
+            item
+            for item in self.items
+            if not (item.flow_id == flow_id and (tag is None or item.tag == tag))
+        ]
+
 
 @pytest.mark.anyio
 async def test_replace_flow_message_replaces_previous_tracked_message() -> None:
@@ -264,5 +273,46 @@ async def test_lesson_interaction_helpers_use_named_lesson_tags() -> None:
     )
 
     assert deleted == [(10, 20), (10, 21)]
+    assert registry.items == []
+    assert get_expected_user_input_prompt(context) is None
+
+
+@pytest.mark.anyio
+async def test_published_word_edit_interaction_tracks_and_finishes() -> None:
+    registry = _FakeRegistry()
+    deleted: list[tuple[int, int]] = []
+
+    async def fake_delete_message(*, chat_id: int, message_id: int) -> None:
+        deleted.append((chat_id, message_id))
+
+    source_message = SimpleNamespace(chat_id=10, message_id=20)
+    helper_message = SimpleNamespace(chat_id=10, message_id=21)
+    context = SimpleNamespace(
+        user_data={"expected_user_input_state": {"chat_id": 10, "message_id": 99}},
+        application=SimpleNamespace(bot_data={"telegram_flow_message_repository": registry}),
+        bot=SimpleNamespace(delete_message=fake_delete_message),
+    )
+
+    await start_published_word_edit_interaction(
+        context,
+        user_id=7,
+        source_message=source_message,
+        helper_message=helper_message,
+        fallback_chat_id=10,
+    )
+
+    assert [(item.tag, item.message_id) for item in registry.items] == [
+        ("published_word_edit", 20),
+        ("published_word_edit", 21),
+    ]
+
+    await finish_published_word_edit_interaction(
+        context,
+        user_id=7,
+        keep_source_message=True,
+        source_message=source_message,
+    )
+
+    assert deleted == [(10, 21)]
     assert registry.items == []
     assert get_expected_user_input_prompt(context) is None

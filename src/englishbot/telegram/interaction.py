@@ -88,6 +88,75 @@ async def finish_lesson_interaction(
     )
 
 
+async def start_published_word_edit_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int,
+    source_message,
+    helper_message=None,
+    fallback_chat_id: int | None = None,
+) -> None:
+    await finish_published_word_edit_interaction(
+        context,
+        user_id=user_id,
+        keep_source_message=True,
+        source_message=source_message,
+    )
+    from englishbot.telegram.flow_tracking import track_flow_message
+
+    flow_id = published_word_edit_interaction_id(user_id=user_id)
+    track_flow_message(
+        context,
+        flow_id=flow_id,
+        tag=PUBLISHED_WORD_EDIT_TAG,
+        message=source_message,
+        fallback_chat_id=fallback_chat_id,
+    )
+    if helper_message is not None:
+        track_flow_message(
+            context,
+            flow_id=flow_id,
+            tag=PUBLISHED_WORD_EDIT_TAG,
+            message=helper_message,
+            fallback_chat_id=fallback_chat_id,
+        )
+
+
+async def finish_published_word_edit_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int,
+    keep_source_message: bool = False,
+    source_message=None,
+) -> None:
+    from englishbot.telegram.flow_tracking import (
+        delete_tracked_messages,
+        tracked_messages_except_source_message,
+    )
+    import englishbot.bot as bot_module
+
+    registry = bot_module._telegram_flow_messages(context)
+    if registry is None:
+        clear_expected_user_input(context)
+        return
+    flow_id = published_word_edit_interaction_id(user_id=user_id)
+    tracked_messages = registry.list(
+        flow_id=flow_id,
+        tag=PUBLISHED_WORD_EDIT_TAG,
+    )
+    if keep_source_message and source_message is not None:
+        tracked_messages = tracked_messages_except_source_message(
+            tracked_messages=tracked_messages,
+            message=source_message,
+        )
+    await delete_tracked_messages(
+        context,
+        tracked_messages=tracked_messages,
+    )
+    registry.clear(flow_id=flow_id, tag=PUBLISHED_WORD_EDIT_TAG)
+    clear_expected_user_input(context)
+
+
 def remember_expected_user_input(
     context: ContextTypes.DEFAULT_TYPE,
     *,
