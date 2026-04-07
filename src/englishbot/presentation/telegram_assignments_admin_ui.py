@@ -6,7 +6,7 @@ from telegram import InlineKeyboardMarkup
 
 from englishbot.domain.models import GoalPeriod
 from englishbot.presentation.telegram_ui_text import DEFAULT_TELEGRAM_UI_LANGUAGE
-from englishbot.telegram_buttons import InlineKeyboardButton
+from englishbot.telegram.buttons import InlineKeyboardButton
 
 TelegramTextGetter = Callable[..., str]
 

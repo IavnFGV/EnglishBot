@@ -22,7 +22,7 @@
     "--env-file",
     "${localWorkspaceFolder}/.devcontainer/ollama.env",
     "--env-file",
-    "${localWorkspaceFolder}/.devcontainer/local-ai.env"
+    "${localWorkspaceFolder}/.devcontainer/local-ai.on.env"
   ],
   "mounts": [
     "source=englishbot-pip-cache,target=/home/vscode/.cache/pip,type=volume",

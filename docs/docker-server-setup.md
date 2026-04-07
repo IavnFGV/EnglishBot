@@ -75,12 +75,27 @@ WEB_APP_BASE_URL=https://204.168.193.232.nip.io
 9. Put TLS certificate files into `/srv/englishbot/shared/nginx/certs/`:
    - `fullchain.pem`
    - `privkey.pem`
-10. Start the runtime:
+10. Start the core bot runtime:
 
 ```bash
 cd /srv/englishbot/app
 docker compose up -d --build --force-recreate
 ```
+
+11. If you also want the optional Web App, TTS service, and nginx proxy, start the optional overlay explicitly:
+
+```bash
+cd /srv/englishbot/app
+docker compose -f docker-compose.yml -f docker-compose.optional.yml up -d --build --force-recreate
+```
+
+Operational rule:
+
+- `docker-compose.yml` is the core bot runtime
+- `docker-compose.optional.yml` is an explicit overlay for Web App, TTS, and nginx
+- use the overlay only when you intentionally need those optional services
+- `scripts/deploy-docker-app.sh` deploys only the core bot by default
+- set `DEPLOY_OPTIONAL_SERVICES=true` when you want deploy or rollback to include the optional overlay too
 
 ## GitHub Actions auto-deploy
 
@@ -91,13 +106,13 @@ It runs on every push to `main` and does:
 1. `pytest -q`
 2. SSH into the Hetzner server
 3. Run [deploy-docker-app.sh](../scripts/deploy-docker-app.sh)
-4. Rebuild and recreate the Docker services with `docker compose up -d --build --force-recreate`
+4. Rebuild and recreate the core bot container with `docker compose up -d --build --force-recreate`
 5. Create a git tag for the successful deploy, for example `deploy-v0.1.0-b3`
 6. Keep the latest 5 rolling SQLite backups in `shared/backups/db/`
 
 Backup behavior detail:
 
-- `docker-compose.yml` mounts backup directories explicitly:
+- `docker-compose.yml` mounts backup directories explicitly for the core bot:
   - `shared/backups/db -> /app/backups/db`
   - `shared/backups/db-versioned -> /app/backups/db-versioned`
 - `scripts/backup-runtime-db.sh` writes the live SQLite backup directly to `/app/backups/db/...` inside the running container, so the file appears immediately in `shared/backups/db/...` on the host.
@@ -111,6 +126,12 @@ Backup behavior detail:
 - `DEPLOY_PORT`: optional SSH port, usually `22`
 - `DEPLOY_USER`: `deploy`
 - `DEPLOY_SSH_KEY`: private SSH key that can log in as `deploy`
+
+Optional GitHub repository variable:
+
+- `DEPLOY_OPTIONAL_SERVICES`
+  - set to `true` if the deploy workflow should also recreate the optional Web App, TTS, and nginx overlay
+  - leave unset or set to `false` for core bot-only deploys
 
 ### First-time server preparation for auto-deploy
 
@@ -127,6 +148,17 @@ docker compose up -d --build --force-recreate
 
 After that, GitHub Actions can deploy updates by SSH.
 
+If that environment also needs Web App, TTS, and nginx during auto-deploy, run deploy with:
+
+```bash
+DEPLOY_OPTIONAL_SERVICES=true bash scripts/deploy-docker-app.sh
+```
+
+The same flag is respected by:
+
+- `scripts/rollback-docker-app.sh`
+- `scripts/deploy-docker-app.sh`
+
 Runner cache note:
 
 - GitHub-hosted runners are ephemeral, so each workflow starts on a fresh temporary VM.
@@ -136,9 +168,11 @@ Runner cache note:
 Runtime note:
 
 - `englishbot` runs the Telegram bot process
+- `docker-compose.yml` is the core bot-only runtime
 - `englishbot-webapp` runs the admin Web App process
 - `englishbot-tts` runs the separate Piper-backed HTTP TTS service on `8090`
 - `englishbot-nginx` terminates TLS on `443` and proxies to `englishbot-webapp:8080`
+- `docker-compose.optional.yml` is the optional overlay that adds `englishbot-webapp`, `englishbot-tts`, and `englishbot-nginx`
 - both share the same runtime SQLite database and assets directory
 - `englishbot-tts` persists downloaded voice models in `shared/tts/voices/`
 - `englishbot-tts` persists synthesized OGG cache in `shared/tts/cache/`
@@ -213,7 +247,7 @@ Manual fallback if needed:
 
 ```bash
 cd /srv/englishbot/app
-docker compose restart englishbot-nginx
+docker compose -f docker-compose.yml -f docker-compose.optional.yml restart englishbot-nginx
 ```
 
 If the server IP changes:
@@ -256,14 +290,15 @@ bash scripts/restore-runtime-db.sh /srv/englishbot/shared/backups/db/englishbot-
 cd /srv/englishbot/app
 docker compose ps
 docker compose logs -f englishbot
-docker compose logs -f englishbot-webapp
-docker compose logs -f englishbot-tts
-docker compose logs -f englishbot-nginx
+docker compose -f docker-compose.yml -f docker-compose.optional.yml logs -f englishbot-webapp
+docker compose -f docker-compose.yml -f docker-compose.optional.yml logs -f englishbot-tts
+docker compose -f docker-compose.yml -f docker-compose.optional.yml logs -f englishbot-nginx
 docker compose restart englishbot
-docker compose restart englishbot-webapp
-docker compose restart englishbot-tts
-docker compose restart englishbot-nginx
+docker compose -f docker-compose.yml -f docker-compose.optional.yml restart englishbot-webapp
+docker compose -f docker-compose.yml -f docker-compose.optional.yml restart englishbot-tts
+docker compose -f docker-compose.yml -f docker-compose.optional.yml restart englishbot-nginx
 docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.optional.yml up -d --build
 curl http://127.0.0.1:8090/healthz
 bash scripts/backup-runtime-db.sh manual
 bash scripts/deploy-docker-app.sh

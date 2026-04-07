@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from englishbot.__main__ import configure_logging
+from englishbot.cli import create_cli_runtime_config_service
 from englishbot.application.add_words_flow import AddWordsFlowHarness
 from englishbot.application.add_words_use_cases import (
     ApplyAddWordsEditUseCase,
     ApproveAddWordsDraftUseCase,
     StartAddWordsFlowUseCase,
 )
-from englishbot.bootstrap import build_lesson_import_pipeline
-from englishbot.config import RuntimeConfigService, create_runtime_config_service
+from englishbot.importing.runtime import build_lesson_import_pipeline
+from englishbot.config import RuntimeConfigService
+from englishbot.importing.cli import run_simulate_add_words_flow
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.sqlite_store import SQLiteAddWordsFlowRepository, SQLiteContentStore
@@ -29,8 +30,11 @@ app = typer.Typer(
     help="Run add-words scenarios locally without Telegram.",
 )
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
 def _runtime_config_service() -> RuntimeConfigService:
-    return create_runtime_config_service()
+    return create_cli_runtime_config_service(repo_root=_REPO_ROOT)
 
 
 @app.command("run")
@@ -129,94 +133,38 @@ def run_scenario(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    configure_logging(log_level.upper())
-    config_service = _runtime_config_service()
-    resolved_db_path = db_path or config_service.get_path("content_db_path") or Path("data/englishbot.db")
-    resolved_ollama_model = ollama_model or config_service.get_str("ollama_model")
-    resolved_ollama_model_file_path = (
-        ollama_model_file_path or config_service.get_path("ollama_model_file_path")
+    run_simulate_add_words_flow(
+        input_path=input_path,
+        edited_input_path=edited_input_path,
+        output_path=output_path,
+        db_path=db_path,
+        user_id=user_id,
+        ollama_model=ollama_model,
+        ollama_model_file_path=ollama_model_file_path,
+        ollama_base_url=ollama_base_url,
+        ollama_timeout_sec=ollama_timeout_sec,
+        ollama_extraction_mode=ollama_extraction_mode,
+        ollama_temperature=ollama_temperature,
+        ollama_top_p=ollama_top_p,
+        ollama_num_predict=ollama_num_predict,
+        ollama_extract_line_prompt_path=ollama_extract_line_prompt_path,
+        ollama_extract_text_prompt_path=ollama_extract_text_prompt_path,
+        ollama_image_prompt_path=ollama_image_prompt_path,
+        log_level=log_level,
+        configure_logging_fn=configure_logging,
+        runtime_config_service_fn=_runtime_config_service,
+        build_lesson_import_pipeline_fn=build_lesson_import_pipeline,
+        sqlite_content_store_cls=SQLiteContentStore,
+        sqlite_add_words_flow_repository_cls=SQLiteAddWordsFlowRepository,
+        add_words_flow_harness_cls=AddWordsFlowHarness,
+        lesson_extraction_validator_cls=LessonExtractionValidator,
+        json_content_pack_writer_cls=JsonContentPackWriter,
+        start_add_words_flow_use_case_cls=StartAddWordsFlowUseCase,
+        apply_add_words_edit_use_case_cls=ApplyAddWordsEditUseCase,
+        approve_add_words_draft_use_case_cls=ApproveAddWordsDraftUseCase,
+        format_draft_preview_fn=format_draft_preview,
+        format_draft_edit_text_fn=format_draft_edit_text,
     )
-    resolved_ollama_base_url = ollama_base_url or config_service.get_str("ollama_base_url")
-    resolved_ollama_timeout_sec = ollama_timeout_sec or config_service.get_int("ollama_timeout_sec")
-    resolved_ollama_extraction_mode = (
-        ollama_extraction_mode or config_service.get_str("ollama_extraction_mode")
-    )
-    resolved_ollama_temperature = (
-        ollama_temperature
-        if ollama_temperature is not None
-        else config_service.get_float("ollama_temperature")
-    )
-    resolved_ollama_top_p = (
-        ollama_top_p if ollama_top_p is not None else config_service.get_float("ollama_top_p")
-    )
-    resolved_ollama_num_predict = (
-        ollama_num_predict
-        if ollama_num_predict is not None
-        else config_service.get("ollama_num_predict")
-    )
-    resolved_extract_line_prompt_path = (
-        ollama_extract_line_prompt_path
-        or config_service.get_path("ollama_extract_line_prompt_path")
-        or Path("prompts/ollama_extract_line_prompt.txt")
-    )
-    resolved_extract_text_prompt_path = (
-        ollama_extract_text_prompt_path
-        or config_service.get_path("ollama_extract_text_prompt_path")
-        or Path("prompts/ollama_extract_text_prompt.txt")
-    )
-    resolved_image_prompt_path = (
-        ollama_image_prompt_path
-        or config_service.get_path("ollama_image_prompt_path")
-        or Path("prompts/ollama_image_prompt_prompt.txt")
-    )
-    content_store = SQLiteContentStore(db_path=resolved_db_path)
-    content_store.initialize()
-    pipeline = build_lesson_import_pipeline(
-        config_service=config_service,
-        ollama_model=resolved_ollama_model,
-        ollama_model_file_path=resolved_ollama_model_file_path,
-        ollama_base_url=resolved_ollama_base_url,
-        ollama_timeout_sec=resolved_ollama_timeout_sec,
-        ollama_extraction_mode=resolved_ollama_extraction_mode,
-        ollama_temperature=resolved_ollama_temperature,
-        ollama_top_p=resolved_ollama_top_p,
-        ollama_num_predict=resolved_ollama_num_predict,
-        ollama_extract_line_prompt_path=resolved_extract_line_prompt_path,
-        ollama_extract_text_prompt_path=resolved_extract_text_prompt_path,
-        ollama_image_prompt_path=resolved_image_prompt_path,
-    )
-    repository = SQLiteAddWordsFlowRepository(content_store)
-    harness = AddWordsFlowHarness(
-        pipeline=pipeline,
-        validator=LessonExtractionValidator(),
-        writer=JsonContentPackWriter(),
-        content_store=content_store,
-    )
-    start_flow = StartAddWordsFlowUseCase(harness=harness, flow_repository=repository)
-    apply_edit = ApplyAddWordsEditUseCase(harness=harness, flow_repository=repository)
-    approve = ApproveAddWordsDraftUseCase(harness=harness, flow_repository=repository)
-
-    raw_text = input_path.read_text(encoding="utf-8")
-    logging.getLogger(__name__).info("Scenario step=extract input=%s", input_path)
-    flow = start_flow.execute(user_id=user_id, raw_text=raw_text)
-    typer.echo(format_draft_preview(flow.draft_result))
-    typer.echo("\n--- Editable Draft ---\n")
-    typer.echo(format_draft_edit_text(flow.draft_result.draft))
-
-    if edited_input_path is not None:
-        logging.getLogger(__name__).info("Scenario step=edit input=%s", edited_input_path)
-        edited_text = edited_input_path.read_text(encoding="utf-8")
-        flow = apply_edit.execute(user_id=user_id, flow_id=flow.flow_id, edited_text=edited_text)
-        typer.echo("\n--- Updated Preview ---\n")
-        typer.echo(format_draft_preview(flow.draft_result))
-
-    if output_path is not None:
-        logging.getLogger(__name__).info("Scenario step=approve output=%s", output_path)
-        approved = approve.execute(user_id=user_id, flow_id=flow.flow_id, output_path=output_path)
-        typer.echo("\n--- Approved ---\n")
-        typer.echo(f"Topic: {approved.published_topic_id}")
-        if approved.output_path is not None:
-            typer.echo(str(approved.output_path))
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ from englishbot.domain.image_review_models import (
     ImageReviewFlowState,
     ImageReviewItem,
 )
-from englishbot.bootstrap import build_training_service
+from englishbot.application.training_runtime import build_training_service
 from englishbot.domain.models import (
     GoalPeriod,
     GoalStatus,

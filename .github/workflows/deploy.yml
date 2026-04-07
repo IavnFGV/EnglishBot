@@ -53,13 +53,14 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_BRANCH: main
+          DEPLOY_OPTIONAL_SERVICES: ${{ vars.DEPLOY_OPTIONAL_SERVICES || 'false' }}
         run: |
           ssh -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "cd /srv/englishbot/app && \
              git fetch origin ${DEPLOY_BRANCH} && \
              git checkout ${DEPLOY_BRANCH} && \
              git reset --hard origin/${DEPLOY_BRANCH} && \
-             DEPLOY_BRANCH=${DEPLOY_BRANCH} bash scripts/deploy-docker-app.sh"
+             DEPLOY_BRANCH=${DEPLOY_BRANCH} DEPLOY_OPTIONAL_SERVICES=${DEPLOY_OPTIONAL_SERVICES} bash scripts/deploy-docker-app.sh"
 
       - name: Read deployed release metadata
         id: release_meta

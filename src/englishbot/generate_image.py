@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -12,6 +11,7 @@ from englishbot.image_generation.clients import (
     DEFAULT_COMFYUI_CHECKPOINT_NAME,
     LocalPlaceholderImageGenerationClient,
 )
+from englishbot.image_tooling import run_generate_image
 
 app = typer.Typer(
     add_completion=False,
@@ -66,32 +66,20 @@ def main(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    configure_logging(log_level.upper())
-    if backend == "placeholder":
-        image_client = LocalPlaceholderImageGenerationClient()
-    elif backend == "comfyui":
-        image_client = ComfyUIImageGenerationClient(
-            base_url=comfyui_base_url,
-            checkpoint_name=comfyui_checkpoint,
-            vae_name=comfyui_vae,
-            width=width,
-            height=height,
-        )
-    else:
-        raise typer.BadParameter(
-            "Backend must be one of: placeholder, comfyui.",
-            param_hint="--backend",
-        )
-
-    image_client.generate(
+    run_generate_image(
         prompt=prompt,
-        english_word=english_word,
         output_path=output_path,
-    )
-    logging.getLogger(__name__).info(
-        "Single image generation completed output_path=%s english_word=%s",
-        output_path,
-        english_word,
+        english_word=english_word,
+        backend=backend,
+        comfyui_base_url=comfyui_base_url,
+        comfyui_checkpoint=comfyui_checkpoint,
+        comfyui_vae=comfyui_vae,
+        width=width,
+        height=height,
+        log_level=log_level,
+        configure_logging_fn=configure_logging,
+        comfyui_client_cls=ComfyUIImageGenerationClient,
+        placeholder_client_factory=LocalPlaceholderImageGenerationClient,
     )
 
 

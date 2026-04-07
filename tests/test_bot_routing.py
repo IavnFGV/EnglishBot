@@ -21,6 +21,41 @@ from englishbot.importing.smart_parsing import DisabledSmartLessonParsingGateway
 from tests.support.config import make_test_config_service
 
 
+def test_build_application_delegates_to_telegram_bootstrap(monkeypatch) -> None:
+    import englishbot.bot as bot_module
+    from englishbot.telegram import bootstrap as bootstrap_module
+
+    settings = Settings(
+        telegram_token="delegated-token",
+        log_level="INFO",
+        content_db_path=Path("delegated.db"),
+    )
+    config_service = make_test_config_service(
+        {
+            "telegram_token": settings.telegram_token,
+            "log_level": settings.log_level,
+            "content_db_path": settings.content_db_path,
+        }
+    )
+    expected_application = object()
+    captured: dict[str, object] = {}
+
+    def fake_build_application(passed_settings, *, config_service):
+        captured["settings"] = passed_settings
+        captured["config_service"] = config_service
+        return expected_application
+
+    monkeypatch.setattr(bootstrap_module, "build_application", fake_build_application)
+
+    result = bot_module.build_application(settings, config_service=config_service)
+
+    assert result is expected_application
+    assert captured == {
+        "settings": settings,
+        "config_service": config_service,
+    }
+
+
 def test_text_answer_handler_is_registered_after_add_words_handler() -> None:
     settings = Settings(
         telegram_token="test-token",
@@ -180,3 +215,46 @@ def test_build_application_uses_disabled_gateways_when_ai_is_turned_off() -> Non
     assert isinstance(app.bot_data["image_generation_gateway"], DisabledImageGenerationGateway)
     assert app.bot_data["smart_parsing_gateway"].check_availability().is_available is False
     assert app.bot_data["image_generation_gateway"].check_availability().is_available is False
+
+
+def test_build_application_registers_capability_modules(monkeypatch) -> None:
+    from englishbot.telegram import bootstrap as bootstrap_module
+
+    settings = Settings(
+        telegram_token="test-token",
+        log_level="INFO",
+        content_db_path=Path("test-capabilities.db"),
+    )
+    config_service = make_test_config_service(
+        {
+            "telegram_token": settings.telegram_token,
+            "log_level": settings.log_level,
+            "content_db_path": settings.content_db_path,
+        }
+    )
+    calls: list[tuple[str, object]] = []
+
+    def fake_register_ai_text_capability(*, app, settings, config_service):
+        calls.append(("ai_text", app))
+        app.bot_data["smart_parsing_gateway"] = object()
+        app.bot_data["lesson_import_pipeline"] = object()
+        return app.bot_data["lesson_import_pipeline"]
+
+    def fake_register_ai_image_capability(*, app, settings, config_service, content_store):
+        calls.append(("ai_images", content_store))
+        app.bot_data["image_generation_gateway"] = object()
+
+    def fake_register_tts_capability(*, app, settings):
+        calls.append(("tts", app))
+        app.bot_data["tts_enabled"] = settings.tts.enabled
+
+    monkeypatch.setattr(bootstrap_module, "register_ai_text_capability", fake_register_ai_text_capability)
+    monkeypatch.setattr(bootstrap_module, "register_ai_image_capability", fake_register_ai_image_capability)
+    monkeypatch.setattr(bootstrap_module, "register_tts_capability", fake_register_tts_capability)
+
+    app = build_application(settings, config_service=config_service)
+
+    assert [name for name, _payload in calls] == ["ai_text", "ai_images", "tts"]
+    assert "lesson_import_pipeline" in app.bot_data
+    assert "image_generation_gateway" in app.bot_data
+    assert app.bot_data["tts_enabled"] is False

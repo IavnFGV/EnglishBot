@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from englishbot.__main__ import configure_logging
-from englishbot.config import create_runtime_config_service
+from englishbot.cli import configure_cli_logging, create_cli_runtime_config_service
 from englishbot.importing.bulk_topics import parse_bulk_topic_text, write_bulk_topic_content_packs
+from englishbot.importing.cli import run_bulk_import_topics
 
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
     help="Bulk-import multiple topic word lists from one text file.",
 )
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @app.command()
@@ -52,41 +53,17 @@ def run(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    configure_logging(log_level.upper())
-    config_service = create_runtime_config_service()
-    resolved_db_path = None if no_db_import else (db_path or config_service.get_path("content_db_path"))
-    if no_db_import and output_dir is None:
-        raise typer.BadParameter(
-            "Use --output-dir when --no-db-import is set.",
-            param_hint="--output-dir",
-        )
-
-    text = input_path.read_text(encoding="utf-8")
-    drafts = parse_bulk_topic_text(text)
-    results = write_bulk_topic_content_packs(
-        drafts=drafts,
+    run_bulk_import_topics(
+        input_path=input_path,
         output_dir=output_dir,
-        db_path=resolved_db_path,
-    )
-
-    typer.echo(
-        json.dumps(
-            [
-                {
-                    "topic_title": result.topic_title,
-                    "topic_id": result.topic_id,
-                    **(
-                        {"output_path": str(result.output_path)}
-                        if result.output_path is not None
-                        else {}
-                    ),
-                    "item_count": result.item_count,
-                }
-                for result in results
-            ],
-            ensure_ascii=False,
-            indent=2,
-        )
+        db_path=db_path,
+        no_db_import=no_db_import,
+        log_level=log_level,
+        repo_root=_REPO_ROOT,
+        create_runtime_config_service_fn=create_cli_runtime_config_service,
+        configure_cli_logging_fn=configure_cli_logging,
+        parse_bulk_topic_text_fn=parse_bulk_topic_text,
+        write_bulk_topic_content_packs_fn=write_bulk_topic_content_packs,
     )
 
 

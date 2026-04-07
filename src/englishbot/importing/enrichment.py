@@ -9,7 +9,7 @@ from pathlib import Path
 from englishbot.config import RuntimeConfigService
 from englishbot.importing.prompt_loader import load_prompt_text
 from englishbot.logging_utils import logged_service_call
-from englishbot.ollama_runtime import resolve_runtime_ollama_model
+from englishbot.importing.ollama_runtime import resolve_runtime_ollama_model
 
 logger = logging.getLogger(__name__)
 _WHITESPACE_RE = re.compile(r"\s+")

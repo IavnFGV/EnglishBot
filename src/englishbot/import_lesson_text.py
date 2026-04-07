@@ -1,16 +1,22 @@
 from __future__ import annotations
 
-import json
-import logging
-from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from englishbot.__main__ import configure_logging
-from englishbot.config import RuntimeConfigService, create_runtime_config_service
+from englishbot.cli import create_cli_runtime_config_service
+from englishbot.config import RuntimeConfigService
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
+from englishbot.importing.cli import (
+    run_export_topic_from_db,
+    run_extract_draft,
+    run_finalize_draft,
+    run_import_json_to_db,
+    run_reset_db,
+    run_show_topics,
+)
 from englishbot.importing.clients import OllamaLessonExtractionClient, StubLessonExtractionClient
 from englishbot.importing.draft_io import JsonDraftReader, JsonDraftWriter
 from englishbot.importing.enrichment import OllamaImagePromptEnricher
@@ -28,8 +34,11 @@ app = typer.Typer(
     help="Extract editable lesson drafts from text and finalize reviewed drafts.",
 )
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
 def _runtime_config_service() -> RuntimeConfigService:
-    return create_runtime_config_service()
+    return create_cli_runtime_config_service(repo_root=_REPO_ROOT)
 
 
 def _build_pipeline(
@@ -90,25 +99,6 @@ def _build_pipeline(
             else None
         ),
     )
-
-
-def _print_validation_errors(errors: list[object]) -> None:
-    typer.echo(
-        json.dumps(
-            [asdict(error) for error in errors],
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
-
-
-def _resolve_db_path(
-    db_path: Path | None,
-    *,
-    config_service: RuntimeConfigService | None = None,
-) -> Path:
-    service = config_service or _runtime_config_service()
-    return db_path or service.get_path("content_db_path") or Path("data/englishbot.db")
 
 
 @app.command("extract-draft")
@@ -213,83 +203,28 @@ def extract_draft(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    if extractor not in {"ollama", "stub"}:
-        raise typer.BadParameter(
-            "Extractor must be one of: ollama, stub.",
-            param_hint="--extractor",
-        )
-
-    configure_logging(log_level.upper())
-    config_service = _runtime_config_service()
-    resolved_ollama_model = ollama_model or config_service.get_str("ollama_model")
-    resolved_ollama_base_url = ollama_base_url or config_service.get_str("ollama_base_url")
-    resolved_ollama_model_file_path = (
-        ollama_model_file_path or config_service.get_path("ollama_model_file_path")
-    )
-    resolved_ollama_timeout_sec = ollama_timeout_sec or config_service.get_int("ollama_timeout_sec")
-    resolved_image_prompt_timeout_sec = image_prompt_timeout_sec or config_service.get_int(
-        "ollama_image_prompt_timeout_sec"
-    )
-    resolved_ollama_extraction_mode = (
-        ollama_extraction_mode or config_service.get_str("ollama_extraction_mode")
-    )
-    resolved_ollama_temperature = (
-        ollama_temperature
-        if ollama_temperature is not None
-        else config_service.get_float("ollama_temperature")
-    )
-    resolved_ollama_top_p = (
-        ollama_top_p if ollama_top_p is not None else config_service.get_float("ollama_top_p")
-    )
-    resolved_ollama_num_predict = (
-        ollama_num_predict
-        if ollama_num_predict is not None
-        else config_service.get("ollama_num_predict")
-    )
-    resolved_extract_line_prompt_path = (
-        ollama_extract_line_prompt_path
-        or config_service.get_path("ollama_extract_line_prompt_path")
-        or Path("prompts/ollama_extract_line_prompt.txt")
-    )
-    resolved_extract_text_prompt_path = (
-        ollama_extract_text_prompt_path
-        or config_service.get_path("ollama_extract_text_prompt_path")
-        or Path("prompts/ollama_extract_text_prompt.txt")
-    )
-    resolved_image_prompt_path = (
-        ollama_image_prompt_path
-        or config_service.get_path("ollama_image_prompt_path")
-        or Path("prompts/ollama_image_prompt_prompt.txt")
-    )
-    raw_text = input_path.read_text(encoding="utf-8")
-    pipeline = _build_pipeline(
-        extractor=extractor,
-        ollama_model=resolved_ollama_model,
-        ollama_model_file_path=resolved_ollama_model_file_path,
-        ollama_base_url=resolved_ollama_base_url,
-        ollama_timeout_sec=resolved_ollama_timeout_sec,
-        image_prompt_timeout_sec=resolved_image_prompt_timeout_sec,
-        ollama_extraction_mode=resolved_ollama_extraction_mode,
-        ollama_temperature=resolved_ollama_temperature,
-        ollama_top_p=resolved_ollama_top_p,
-        ollama_num_predict=resolved_ollama_num_predict,
-        ollama_extract_line_prompt_path=resolved_extract_line_prompt_path,
-        ollama_extract_text_prompt_path=resolved_extract_text_prompt_path,
-        ollama_image_prompt_path=resolved_image_prompt_path,
-    )
-    result = pipeline.extract_draft(
-        raw_text=raw_text,
+    run_extract_draft(
+        input_path=input_path,
         output_path=output_path,
-        intermediate_output_path=parsed_output_path,
-        enrich_image_prompts=include_image_prompts,
-    )
-    if not result.validation.is_valid:
-        _print_validation_errors(result.validation.errors)
-        raise typer.Exit(code=1)
-    logging.getLogger(__name__).info(
-        "Draft extraction completed item_count=%s output_path=%s",
-        len(result.draft.vocabulary_items),
-        output_path,
+        parsed_output_path=parsed_output_path,
+        extractor=extractor,
+        ollama_model=ollama_model,
+        ollama_base_url=ollama_base_url,
+        ollama_model_file_path=ollama_model_file_path,
+        ollama_timeout_sec=ollama_timeout_sec,
+        ollama_extraction_mode=ollama_extraction_mode,
+        include_image_prompts=include_image_prompts,
+        image_prompt_timeout_sec=image_prompt_timeout_sec,
+        ollama_temperature=ollama_temperature,
+        ollama_top_p=ollama_top_p,
+        ollama_num_predict=ollama_num_predict,
+        ollama_extract_line_prompt_path=ollama_extract_line_prompt_path,
+        ollama_extract_text_prompt_path=ollama_extract_text_prompt_path,
+        ollama_image_prompt_path=ollama_image_prompt_path,
+        log_level=log_level,
+        configure_logging_fn=configure_logging,
+        runtime_config_service_fn=_runtime_config_service,
+        build_pipeline_fn=_build_pipeline,
     )
 
 
@@ -317,30 +252,20 @@ def finalize_draft(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    configure_logging(log_level.upper())
-    pipeline = LessonImportPipeline(
-        smart_parser=LegacySmartLessonParsingGateway(StubLessonExtractionClient()),
-        fallback_parser=TemplateLessonFallbackParser(),
-        validator=LessonExtractionValidator(),
-        canonicalizer=DraftToContentPackCanonicalizer(),
-        writer=JsonContentPackWriter(),
-        draft_writer=JsonDraftWriter(),
-        draft_reader=JsonDraftReader(),
-    )
-    result = pipeline.finalize_draft_from_file(
+    run_finalize_draft(
         input_path=input_path,
         output_path=output_path,
-    )
-    if not result.validation.is_valid:
-        _print_validation_errors(result.validation.errors)
-        raise typer.Exit(code=1)
-    warning_count = (
-        len(result.canonicalization.warnings) if result.canonicalization is not None else 0
-    )
-    logging.getLogger(__name__).info(
-        "Draft finalization completed warnings=%s output_path=%s",
-        warning_count,
-        output_path,
+        log_level=log_level,
+        configure_logging_fn=configure_logging,
+        lesson_import_pipeline_cls=LessonImportPipeline,
+        legacy_smart_lesson_parsing_gateway_cls=LegacySmartLessonParsingGateway,
+        stub_lesson_extraction_client_cls=StubLessonExtractionClient,
+        template_lesson_fallback_parser_cls=TemplateLessonFallbackParser,
+        lesson_extraction_validator_cls=LessonExtractionValidator,
+        draft_to_content_pack_canonicalizer_cls=DraftToContentPackCanonicalizer,
+        json_content_pack_writer_cls=JsonContentPackWriter,
+        json_draft_writer_cls=JsonDraftWriter,
+        json_draft_reader_cls=JsonDraftReader,
     )
 
 
@@ -355,13 +280,13 @@ def reset_db(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    configure_logging(log_level.upper())
-    resolved_db_path = _resolve_db_path(db_path)
-    store = SQLiteContentStore(db_path=resolved_db_path)
-    store.initialize()
-    store.import_json_directories([], replace=True)
-    logging.getLogger(__name__).info("SQLite runtime database reset db_path=%s", resolved_db_path)
-    typer.echo(str(resolved_db_path))
+    run_reset_db(
+        db_path=db_path,
+        log_level=log_level,
+        configure_logging_fn=configure_logging,
+        runtime_config_service_fn=_runtime_config_service,
+        sqlite_content_store_cls=SQLiteContentStore,
+    )
 
 
 @app.command("import-json-to-db")
@@ -389,20 +314,15 @@ def import_json_to_db(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    if not input_dir:
-        raise typer.BadParameter("Specify at least one --input-dir.", param_hint="--input-dir")
-    configure_logging(log_level.upper())
-    resolved_db_path = _resolve_db_path(db_path)
-    store = SQLiteContentStore(db_path=resolved_db_path)
-    store.import_json_directories(input_dir, replace=replace)
-    topics = store.list_topics()
-    logging.getLogger(__name__).info(
-        "Imported JSON content packs into SQLite db_path=%s topic_count=%s",
-        resolved_db_path,
-        len(topics),
+    run_import_json_to_db(
+        input_dir=input_dir,
+        db_path=db_path,
+        replace=replace,
+        log_level=log_level,
+        configure_logging_fn=configure_logging,
+        runtime_config_service_fn=_runtime_config_service,
+        sqlite_content_store_cls=SQLiteContentStore,
     )
-    typer.echo(f"db={resolved_db_path}")
-    typer.echo(f"topics={len(topics)}")
 
 
 @app.command("show-topics")
@@ -416,16 +336,12 @@ def show_topics(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    configure_logging(log_level.upper())
-    resolved_db_path = _resolve_db_path(db_path)
-    store = SQLiteContentStore(db_path=resolved_db_path)
-    topics = store.list_topics()
-    typer.echo(
-        json.dumps(
-            [{"id": topic.id, "title": topic.title} for topic in topics],
-            ensure_ascii=False,
-            indent=2,
-        )
+    run_show_topics(
+        db_path=db_path,
+        log_level=log_level,
+        configure_logging_fn=configure_logging,
+        runtime_config_service_fn=_runtime_config_service,
+        sqlite_content_store_cls=SQLiteContentStore,
     )
 
 
@@ -448,21 +364,17 @@ def export_topic_from_db(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    configure_logging(log_level.upper())
-    resolved_db_path = _resolve_db_path(db_path)
-    store = SQLiteContentStore(db_path=resolved_db_path)
-    content_pack = store.get_content_pack(topic_id)
-    JsonContentPackWriter().write(
-        content_pack=CanonicalContentPack(content_pack),
+    run_export_topic_from_db(
+        topic_id=topic_id,
         output_path=output_path,
+        db_path=db_path,
+        log_level=log_level,
+        configure_logging_fn=configure_logging,
+        runtime_config_service_fn=_runtime_config_service,
+        sqlite_content_store_cls=SQLiteContentStore,
+        json_content_pack_writer_cls=JsonContentPackWriter,
+        canonical_content_pack_cls=CanonicalContentPack,
     )
-    logging.getLogger(__name__).info(
-        "Exported topic from SQLite db_path=%s topic_id=%s output_path=%s",
-        resolved_db_path,
-        topic_id,
-        output_path,
-    )
-    typer.echo(str(output_path))
 
 
 if __name__ == "__main__":

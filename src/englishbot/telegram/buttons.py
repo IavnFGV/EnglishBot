@@ -11,4 +11,3 @@ def InlineKeyboardButton(*args, **kwargs) -> TelegramInlineKeyboardButton:
     """
 
     return TelegramInlineKeyboardButton(*args, **kwargs)
-

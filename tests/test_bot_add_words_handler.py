@@ -9,7 +9,6 @@ from englishbot.importing.models import (
     ExtractedVocabularyItemDraft,
     ImportLessonResult,
     LessonExtractionDraft,
-    ValidationError,
     ValidationResult,
 )
 

@@ -19,6 +19,7 @@ from englishbot.tts_service import (
     TtsVoiceSelectionError,
     build_tts_service,
     create_tts_http_handler,
+    log_tts_service_settings,
     validate_tts_text,
 )
 
@@ -198,3 +199,31 @@ def test_build_tts_service_uses_settings_paths(tmp_path: Path) -> None:
 
     assert service.health_payload()["voice_name"] == "en_US-lessac-medium"
     assert service.health_payload()["voice_variants"] == ["en_US-lessac-medium", "en_GB-alan-medium"]
+
+
+def test_log_tts_service_settings_logs_service_config(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = Settings(
+        telegram_token="token",
+        log_level="INFO",
+        tts_host="127.0.0.1",
+        tts_port=9000,
+        tts_voice_name="en_US-lessac-medium",
+        tts_voice_variants=("en_GB-alan-medium",),
+        tts_cache_dir=tmp_path / "cache",
+        tts_voice_dir=tmp_path / "voices",
+        tts_voice_model_path=tmp_path / "voice.onnx",
+        tts_voice_config_path=tmp_path / "voice.onnx.json",
+    )
+
+    caplog.set_level("INFO", logger="englishbot.tts_service")
+
+    log_tts_service_settings(settings)
+
+    assert "TTS service settings" in caplog.text
+    assert "host=127.0.0.1" in caplog.text
+    assert "port=9000" in caplog.text
+    assert "voice_name=en_US-lessac-medium" in caplog.text
+    assert "voice_variants=('en_GB-alan-medium',)" in caplog.text

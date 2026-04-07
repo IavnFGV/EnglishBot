@@ -1,6 +1,137 @@
 # EnglishBot
 
-EnglishBot is a Telegram bot POC for lightweight English vocabulary practice for children, with an editor workflow for importing words and curating pictures before learner practice starts.
+EnglishBot is a Telegram bot for learning foreign words and short expressions.
+The `1.0.0` direction is intentionally narrower than the historical repo surface:
+the core product is now the learner bot itself, with lessons, homework, progress,
+and lightweight teacher or parent administration.
+
+Everything outside that core, such as image pipelines, local AI tooling, TTS,
+and the web app, is treated as optional extension work rather than required
+runtime behavior.
+
+## 1.0.0 Focus
+
+The project is being simplified toward a teachable `1.0.0` architecture:
+
+- one obvious runtime: `python -m englishbot`
+- one obvious default devcontainer: no local AI services
+- one obvious core scope: words, lessons, homework, progress, stats
+- optional tooling kept outside the default path and documented as extensions
+
+## Quick Start
+
+For the `1.0.0` core product, the shortest path is:
+
+1. Open the default lightweight devcontainer: `.devcontainer/devcontainer.json`
+2. Configure your bot settings in `.env`
+3. Start the bot:
+
+```bash
+python -m englishbot
+```
+
+Core Docker runtime:
+
+```bash
+docker compose up -d --build
+```
+
+Optional Docker overlay for Web App, TTS, and nginx:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.optional.yml up -d --build
+```
+
+Server deploy scripts follow the same rule:
+
+- default deploy is core bot only
+- set `DEPLOY_OPTIONAL_SERVICES=true` to include the optional overlay during deploy or rollback
+
+Use the `cpu` or `gpu` devcontainer profiles only when you are actively working
+with optional local AI tooling such as Ollama or ComfyUI.
+
+Profile details live in [.devcontainer/README.md](/workspaces/EnglishBot/.devcontainer/README.md).
+
+Current architecture cleanup rules:
+
+- the default developer workflow must not require Ollama or ComfyUI
+- optional tooling should not leak into the boot path of the Telegram bot
+- large adapter files, especially `src/englishbot/bot.py`, are being split gradually
+- when optional tooling is removed or sidelined, document how to rebuild it later in the cleaner architecture
+
+First extraction steps already in place:
+
+- [src/englishbot/telegram/bootstrap.py](/workspaces/EnglishBot/src/englishbot/telegram/bootstrap.py) owns Telegram application wiring and handler registration, while `bot.py` keeps a compatibility `build_application(...)` facade
+- [src/englishbot/telegram/command_menu.py](/workspaces/EnglishBot/src/englishbot/telegram/command_menu.py) owns command visibility and post-init command setup
+- [src/englishbot/telegram/entry_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram/entry_handlers.py) owns `/start`, `/help`, and `/version`
+- [src/englishbot/telegram/navigation_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram/navigation_handlers.py) owns top-level menu navigation such as `/words`, `/assign`, start menu callbacks, and homework launch entry points
+- [src/englishbot/telegram/learner_entry_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram/learner_entry_handlers.py) owns learner training entry points such as continue/restart session, topic selection, lesson selection, and mode selection
+- [src/englishbot/telegram/answer_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram/answer_handlers.py) owns Telegram answer-entry handlers such as choice answers, text answers, medium-letter callbacks, and hard-skip entry handling
+- [src/englishbot/telegram/question_delivery.py](/workspaces/EnglishBot/src/englishbot/telegram/question_delivery.py) owns question rendering and delivery helpers for medium-mode letter UI and question message sending
+- [src/englishbot/telegram/answer_processing.py](/workspaces/EnglishBot/src/englishbot/telegram/answer_processing.py) owns learner answer processing and feedback delivery orchestration, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/editor_add_words.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_add_words.py) owns the editor add-words flow, draft review actions, and published word text editing, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/editor_images.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_images.py) owns published-image editing and image-review callbacks, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/tts.py](/workspaces/EnglishBot/src/englishbot/telegram/tts.py) owns TTS callbacks and current-question audio sending, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/homework_admin.py](/workspaces/EnglishBot/src/englishbot/telegram/homework_admin.py) owns homework goal/admin callbacks and assignment drill-down screens, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/admin_utils.py](/workspaces/EnglishBot/src/englishbot/telegram/admin_utils.py) owns operational admin commands such as `/makeadmin` and `/clearuser`, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/flow_tracking.py](/workspaces/EnglishBot/src/englishbot/telegram/flow_tracking.py) owns tracked Telegram flow-message registration, cleanup, and replacement helpers, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/assignment_progress.py](/workspaces/EnglishBot/src/englishbot/telegram/assignment_progress.py) owns assignment progress snapshot building, track rendering, and progress-image send/update helpers, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/notifications.py](/workspaces/EnglishBot/src/englishbot/telegram/notifications.py) owns pending-notification scheduling, delivery, reminder jobs, and dismiss-button rendering, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/image_review_support.py](/workspaces/EnglishBot/src/englishbot/telegram/image_review_support.py) owns image-review preview sending, local-candidate generation step handling, and review-step rendering helpers, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/game_mode.py](/workspaces/EnglishBot/src/englishbot/telegram/game_mode.py) owns game-mode round restart, repeat flow, per-answer game feedback, and game completion summary, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/medium_task_ui.py](/workspaces/EnglishBot/src/englishbot/telegram/medium_task_ui.py) owns medium-mode state helpers, keyboard rendering, and medium question-view building, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/capabilities/ai_text.py](/workspaces/EnglishBot/src/englishbot/capabilities/ai_text.py) owns optional Ollama-backed smart parsing and lesson-import pipeline wiring, while Telegram bootstrap only registers the capability
+- [src/englishbot/capabilities/ai_images.py](/workspaces/EnglishBot/src/englishbot/capabilities/ai_images.py) owns optional image-generation and image-review wiring, while Telegram bootstrap only registers the capability
+- [src/englishbot/capabilities/tts.py](/workspaces/EnglishBot/src/englishbot/capabilities/tts.py) owns optional TTS capability registration, while Telegram runtime reads TTS through a grouped settings view
+- [src/englishbot/cli/runtime.py](/workspaces/EnglishBot/src/englishbot/cli/runtime.py) owns shared CLI runtime bootstrapping such as `.env` loading, centralized config creation, logging setup, and SQLite store opening for batch tools
+- [src/englishbot/audio_tooling/cli.py](/workspaces/EnglishBot/src/englishbot/audio_tooling/cli.py) owns shared audio batch-tool orchestration, while legacy root CLI entrypoints stay as thin compatible facades for existing commands and tests
+- [src/englishbot/image_tooling/cli.py](/workspaces/EnglishBot/src/englishbot/image_tooling/cli.py) owns shared image batch-tool orchestration, while legacy root CLI entrypoints stay as thin compatible facades for existing commands and tests
+- [src/englishbot/importing/cli.py](/workspaces/EnglishBot/src/englishbot/importing/cli.py) owns shared import and editor-simulation CLI orchestration, while legacy root entrypoints stay as thin compatible facades for existing commands and tests
+- [src/englishbot/application/training_runtime.py](/workspaces/EnglishBot/src/englishbot/application/training_runtime.py) owns training-service runtime wiring
+- [src/englishbot/importing/runtime.py](/workspaces/EnglishBot/src/englishbot/importing/runtime.py) owns lesson-import pipeline runtime wiring
+- [src/englishbot/importing/ollama_runtime.py](/workspaces/EnglishBot/src/englishbot/importing/ollama_runtime.py) owns Ollama model-file resolution
+- [src/englishbot/presentation/telegram_assignments_ui.py](/workspaces/EnglishBot/src/englishbot/presentation/telegram_assignments_ui.py), [src/englishbot/presentation/telegram_assignments_admin_ui.py](/workspaces/EnglishBot/src/englishbot/presentation/telegram_assignments_admin_ui.py), and [src/englishbot/presentation/telegram_editor_ui.py](/workspaces/EnglishBot/src/englishbot/presentation/telegram_editor_ui.py) own the shared Telegram keyboard and view helpers
+- [src/englishbot/presentation/assignment_progress_image.py](/workspaces/EnglishBot/src/englishbot/presentation/assignment_progress_image.py) owns the homework progress PNG renderer
+- [src/englishbot/telegram/buttons.py](/workspaces/EnglishBot/src/englishbot/telegram/buttons.py) owns the project-local inline button wrapper
+- [src/englishbot/webapp_server.py](/workspaces/EnglishBot/src/englishbot/webapp_server.py) owns Web App WSGI routing, request auth/session checks, and JSON or HTML response helpers, while `src/englishbot/webapp.py` stays a thin entrypoint facade
+- [src/englishbot/webapp_pages.py](/workspaces/EnglishBot/src/englishbot/webapp_pages.py) owns Web App page rendering for the admin panel and assignment guide, so the server layer no longer mixes routing with long inline HTML blocks
+- [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers; dead compatibility leftovers are removed incrementally once they have no in-repo callers
+- [src/englishbot/config.py](/workspaces/EnglishBot/src/englishbot/config.py) now exposes grouped capability views such as `settings.ai_text`, `settings.ai_images`, and `settings.tts` on top of the existing flat env-backed settings, so optional runtime modules can be wired without reintroducing one giant settings blob
+- repeated `context.application.bot_data[...]` access in `bot.py` is being centralized gradually through shared helper accessors so the remaining facade stays easier to teach and scan
+- repeated `context.user_data[...]` access in `bot.py` is also being centralized gradually so per-user Telegram state reads like one concept instead of many tiny ad hoc patterns
+- mutable runtime stores inside `bot.py` such as pending notifications or recent activity maps are also being normalized through shared helper accessors so domain code is easier to distinguish from storage plumbing
+- ad hoc Telegram state for game rounds and admin goal setup is also being folded behind shared user-state helpers so these flows are easier to explain as named concepts instead of raw dictionary keys
+- remaining startup and assignment helper accessors are also being moved onto the same shared bot-state helpers so the leftover facade follows one consistent runtime-access style
+- by this stage, direct raw `bot_data` access outside the shared accessor helpers is being eliminated, so the remaining facade is easier to read as a teaching example
+
+Checkpoint after this cleanup wave:
+
+- `src/englishbot/bot.py` is down to about `4.6k` lines instead of the earlier `7.5k+`
+- direct raw `context.application.bot_data[...]` access outside the shared accessor helpers has been eliminated
+- direct raw `context.user_data[...]` access has been reduced to the shared helper layer and a few intentionally local cases
+- the repo currently passes the full test suite: `520 passed, 3 skipped`
+- the biggest extracted infrastructure and optional tooling slices now already live outside `bot.py`
+
+## Next Wave Candidates
+
+If cleanup continues after this point, the next steps should be chosen by responsibility, not by line count.
+
+Best candidates for the next wave:
+
+- no new large, high-confidence split is currently required
+  - reason: the remaining code in `src/englishbot/bot.py` is now closer to shared learner/runtime glue than to a clearly separate subsystem
+
+Current optional capability rule:
+
+- the core Telegram bot should only register optional capabilities such as TTS, AI text parsing, and AI image tooling
+- capability-specific client construction and disabled/fallback wiring should live in `src/englishbot/capabilities/...`
+- grouped settings views should be preferred when capability code needs runtime config, even while legacy flat `Settings(...)` fields remain for compatibility
+- batch CLI entrypoints should prefer the shared helper in `src/englishbot/cli/runtime.py` instead of each script reimplementing its own `.env` loading and logging/bootstrap boilerplate
+
+What should not be split just for appearance:
+
+- learner entry, question delivery, and answer flow, as long as they still read as one coherent study session story
+- single-theme keyboard/view helper blocks that are easier to explain together than apart
 
 ## Current Status
 
@@ -17,6 +148,23 @@ What works now:
 - post-publish editing of words
 - post-publish editing of images for a specific word
 - application-level scenario tests that cover the core product flows without using the real Telegram API
+
+What counts as core for `1.0.0`:
+
+- Telegram learner flows
+- words and lessons
+- homework
+- per-user progress
+- learner-facing summaries and stats
+
+What is currently treated as optional:
+
+- raw-text import pipelines
+- image generation and image reranking
+- image review tooling
+- web app administration
+- TTS runtime
+- local Ollama and ComfyUI development services
 
 What is still intentionally simple:
 
@@ -78,8 +226,11 @@ The project is a simple modular monolith:
 - `englishbot.domain`: entities and repository interfaces
 - `englishbot.application`: small use cases plus focused logic components
 - `englishbot.infrastructure`: SQLite-backed runtime store, JSON content-pack loading, and persistence adapters
-- `englishbot.bot`: Telegram handlers and UI mapping
-- `englishbot.bootstrap`: dependency wiring
+- `englishbot.bot`: transitional Telegram facade plus shared adapter helpers
+- `englishbot.telegram`: package-based Telegram wiring, handlers, and runtime helpers
+- `englishbot.presentation`: Telegram-facing text, views, keyboards, and progress rendering helpers
+- `englishbot.application.training_runtime`: training-service runtime wiring
+- `englishbot.importing.runtime`: lesson-import runtime wiring
 
 The application layer is split into clear responsibilities:
 
@@ -95,6 +246,8 @@ The application layer is split into clear responsibilities:
 
 More details are in `ARCHITECTURE.md` and `docs/homework-progress.md`.
 The admin Telegram Web App MVP is documented in `docs/telegram-webapp-admin.md`.
+The `1.0.0` scope and release-surface policy are documented in `docs/1.0.0-plan.md`.
+Project-reading shortcuts live in `docs/repo-map.md`, `docs/telegram-runtime-map.md`, and `docs/bot-py-map.md`.
 
 ## Optional TTS Service
 
@@ -217,7 +370,7 @@ Supported callback routes:
 
 `/assign` is now the dedicated homework area.
 
-What changed in `0.8.x`:
+What changed in the simplified `1.0.0` direction:
 
 - learners no longer choose between `daily`, `weekly`, and `all assignments`
 - the bot shows one homework entry point and one active homework summary
@@ -677,25 +830,28 @@ python -m englishbot
 
 ## Ollama Devcontainer Pattern
 
-This repository includes a reusable Ollama devcontainer setup.
+This repository still includes AI-oriented devcontainer profiles, but the
+default path is intentionally lightweight.
 
 What it does:
 
-- supports three devcontainer profiles: `cpu`, `gpu`, and `noai`
+- supports one default devcontainer plus optional `cpu` and `gpu` AI profiles
 - installs Ollama only when profile build arg `OLLAMA_INSTALL=1`
 - installs ComfyUI only when profile build arg `COMFYUI_INSTALL=1`
-- installs Python extras per profile through `PYTHON_EXTRAS` (`dev,llm` for `cpu/gpu`, `dev` for `noai`)
+- installs Python extras per profile through `PYTHON_EXTRAS` (`dev,llm` for `cpu/gpu`, `dev` for the default no-AI profile)
 - reuses pip cache through a named Docker volume mounted to `/home/vscode/.cache/pip`
-- can keep Ollama/ComfyUI disabled in dev mode via one switch file: `.devcontainer/local-ai.env`
+
+Simplified rule for `1.0.0` work:
+
+- use `.devcontainer/devcontainer.json` as the default lightweight profile
+- switch to `cpu` or `gpu` only when you are intentionally working on optional AI tooling
 
 Configuration files:
 
+- `.devcontainer/devcontainer.json`
 - `.devcontainer/devcontainer.cpu.json`
 - `.devcontainer/devcontainer.gpu.json`
-- `.devcontainer/devcontainer.noai.json`
-- `.devcontainer/local-ai.env`
 - `.devcontainer/local-ai.on.env`
-- `.devcontainer/local-ai.off.env`
 - `.devcontainer/ollama.env`
 - `.devcontainer/comfyui.env`
 - `.devcontainer/start-ollama.sh`
@@ -705,25 +861,38 @@ Configuration files:
 - `.devcontainer/fix-container-perms.sh`
 - `.devcontainer/check-host-gpu.sh`
 - `scripts/switch-devcontainer-profile.sh`
-- `scripts/switch-local-ai-mode.sh`
 
 Switch profiles:
 
 ```bash
 bash scripts/switch-devcontainer-profile.sh cpu
 bash scripts/switch-devcontainer-profile.sh gpu
-bash scripts/switch-devcontainer-profile.sh noai
+bash scripts/switch-devcontainer-profile.sh default
+bash scripts/switch-devcontainer-profile.sh status
 ```
 
-Switch local AI services:
+The default active profile in `.devcontainer/devcontainer.json` is the lightweight
+no-AI profile for WSL and non-GPU setups.
+The `cpu` and `gpu` profiles explicitly opt into local AI startup through
+`.devcontainer/local-ai.on.env`.
+
+## Docker Runtime Surface
+
+The Docker runtime is now split into:
+
+- `docker-compose.yml`
+  core bot runtime only
+- `docker-compose.optional.yml`
+  optional `webapp`, `tts`, and `nginx` services
+
+That means:
+
+- `docker compose up -d --build` starts only the Telegram bot
+- optional HTTP services start explicitly with:
 
 ```bash
-bash scripts/switch-local-ai-mode.sh off
-bash scripts/switch-local-ai-mode.sh on
+docker compose -f docker-compose.yml -f docker-compose.optional.yml up -d --build
 ```
-
-The default active profile in `.devcontainer/devcontainer.json` is the `noai` profile for lightweight WSL and non-GPU setups.
-The default local AI mode in `.devcontainer/local-ai.env` is `off`, so Ollama/ComfyUI do not autostart and models are not auto-pulled unless you switch it to `on`.
 
 For local image reranking, the devcontainer Ollama presets default to the vision model `qwen2.5vl:7b`. This is intended for batch-style tasks such as choosing the best Pixabay candidate from a small set of previews, not for heavy multimodal chat workloads.
 

@@ -392,6 +392,48 @@ class Settings:
     tts_voice_model_path: Path | None = None
     tts_voice_config_path: Path | None = None
 
+    @property
+    def ai_text(self) -> "AITextSettings":
+        return AITextSettings(
+            enabled=self.ollama_enabled,
+            base_url=self.ollama_base_url,
+            model=self.ollama_model,
+            model_file_path=self.ollama_model_file_path,
+            timeout_sec=self.ollama_timeout_sec,
+            trace_file_path=self.ollama_trace_file_path,
+            extraction_mode=self.ollama_extraction_mode,
+            temperature=self.ollama_temperature,
+            top_p=self.ollama_top_p,
+            num_predict=self.ollama_num_predict,
+            extract_line_prompt_path=self.ollama_extract_line_prompt_path,
+            extract_text_prompt_path=self.ollama_extract_text_prompt_path,
+            image_prompt_path=self.ollama_image_prompt_path,
+        )
+
+    @property
+    def ai_images(self) -> "AIImageSettings":
+        return AIImageSettings(
+            enabled=self.comfyui_enabled,
+            pixabay_api_key=self.pixabay_api_key,
+            pixabay_base_url=self.pixabay_base_url,
+        )
+
+    @property
+    def tts(self) -> "TTSSettings":
+        return TTSSettings(
+            enabled=self.tts_service_enabled,
+            service_base_url=self.tts_service_base_url,
+            service_timeout_sec=self.tts_service_timeout_sec,
+            host=self.tts_host,
+            port=self.tts_port,
+            cache_dir=self.tts_cache_dir,
+            voice_dir=self.tts_voice_dir,
+            voice_name=self.tts_voice_name,
+            voice_variants=self.tts_voice_variants,
+            voice_model_path=self.tts_voice_model_path,
+            voice_config_path=self.tts_voice_config_path,
+        )
+
     @classmethod
     def from_config_service(cls, service: RuntimeConfigService) -> "Settings":
         raw_tts_voice_variants = service.get_str("tts_voice_variants")
@@ -450,3 +492,42 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         return cls.from_config_service(create_runtime_config_service())
+
+
+@dataclass(frozen=True, slots=True)
+class AITextSettings:
+    enabled: bool
+    base_url: str
+    model: str
+    model_file_path: Path | None
+    timeout_sec: int
+    trace_file_path: Path | None
+    extraction_mode: str
+    temperature: float | None
+    top_p: float | None
+    num_predict: int | None
+    extract_line_prompt_path: Path
+    extract_text_prompt_path: Path
+    image_prompt_path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class AIImageSettings:
+    enabled: bool
+    pixabay_api_key: str
+    pixabay_base_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class TTSSettings:
+    enabled: bool
+    service_base_url: str
+    service_timeout_sec: int
+    host: str
+    port: int
+    cache_dir: Path
+    voice_dir: Path
+    voice_name: str
+    voice_variants: tuple[str, ...]
+    voice_model_path: Path | None
+    voice_config_path: Path | None

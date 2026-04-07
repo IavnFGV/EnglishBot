@@ -1,0 +1,68 @@
+services:
+  englishbot-webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENGLISHBOT_BUILD_VERSION: ${ENGLISHBOT_BUILD_VERSION:-unknown}
+        ENGLISHBOT_BUILD_NUMBER: ${ENGLISHBOT_BUILD_NUMBER:-0}
+        ENGLISHBOT_GIT_SHA: ${ENGLISHBOT_GIT_SHA:-unknown}
+        ENGLISHBOT_GIT_BRANCH: ${ENGLISHBOT_GIT_BRANCH:-main}
+    container_name: englishbot-webapp
+    restart: unless-stopped
+    command: ["python", "-m", "englishbot.webapp"]
+    environment:
+      WEB_APP_HOST: 0.0.0.0
+      WEB_APP_PORT: 8080
+    env_file:
+      - /srv/englishbot/shared/.env
+    volumes:
+      - /srv/englishbot/shared/.env:/app/.env:ro
+      - /srv/englishbot/shared/data:/app/data
+      - /srv/englishbot/shared/assets:/app/assets
+      - /srv/englishbot/shared/backups/db:/app/backups/db
+      - /srv/englishbot/shared/backups/db-versioned:/app/backups/db-versioned
+      - /srv/englishbot/shared/logs:/app/logs
+      - /srv/englishbot/shared/content/custom:/app/content/custom
+    expose:
+      - "8080"
+
+  englishbot-tts:
+    build:
+      context: .
+      dockerfile: Dockerfile.tts
+      args:
+        ENGLISHBOT_BUILD_VERSION: ${ENGLISHBOT_BUILD_VERSION:-unknown}
+        ENGLISHBOT_BUILD_NUMBER: ${ENGLISHBOT_BUILD_NUMBER:-0}
+        ENGLISHBOT_GIT_SHA: ${ENGLISHBOT_GIT_SHA:-unknown}
+        ENGLISHBOT_GIT_BRANCH: ${ENGLISHBOT_GIT_BRANCH:-main}
+    container_name: englishbot-tts
+    restart: unless-stopped
+    env_file:
+      - /srv/englishbot/shared/.env
+    volumes:
+      - /srv/englishbot/shared/.env:/app/.env:ro
+      - /srv/englishbot/shared/logs:/app/logs
+      - /srv/englishbot/shared/tts/cache:/app/data/tts-cache
+      - /srv/englishbot/shared/tts/voices:/app/data/tts-voices
+    expose:
+      - "8090"
+
+  englishbot-nginx:
+    image: nginx:1.27-alpine
+    container_name: englishbot-nginx
+    restart: unless-stopped
+    depends_on:
+      - englishbot-webapp
+    command:
+      - /bin/sh
+      - -c
+      - sh /docker-entrypoint.d/40-render-nginx-config.sh && nginx -g 'daemon off;'
+    volumes:
+      - ./deploy/nginx/englishbot-webapp.conf.template:/etc/nginx/templates/englishbot-webapp.conf.template:ro
+      - ./deploy/nginx/render-nginx-config.sh:/docker-entrypoint.d/40-render-nginx-config.sh:ro
+      - /srv/englishbot/shared/nginx/acme:/var/www/certbot:ro
+      - /srv/englishbot/shared/nginx/certs:/etc/nginx/certs:ro
+    ports:
+      - "80:80"
+      - "443:443"

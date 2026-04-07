@@ -6,6 +6,9 @@ SHARED_DIR="${SHARED_DIR:-/srv/englishbot/shared}"
 CURRENT_RELEASE_FILE="${CURRENT_RELEASE_FILE:-${SHARED_DIR}/deploy/current-release.env}"
 DEPLOY_TAG_PREFIX="${DEPLOY_TAG_PREFIX:-deploy-v}"
 TARGET_TAG="${1:-}"
+CORE_COMPOSE_FILE="${CORE_COMPOSE_FILE:-docker-compose.yml}"
+OPTIONAL_COMPOSE_FILE="${OPTIONAL_COMPOSE_FILE:-docker-compose.optional.yml}"
+DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-}"
 
 if [[ ! -d "${APP_DIR}" ]]; then
   echo "App directory does not exist: ${APP_DIR}" >&2
@@ -19,8 +22,8 @@ if [[ ! -d .git ]]; then
   exit 1
 fi
 
-if [[ ! -f docker-compose.yml ]]; then
-  echo "docker-compose.yml not found in ${APP_DIR}" >&2
+if [[ ! -f "${CORE_COMPOSE_FILE}" ]]; then
+  echo "${CORE_COMPOSE_FILE} not found in ${APP_DIR}" >&2
   exit 1
 fi
 
@@ -30,6 +33,22 @@ git fetch --tags origin
 CURRENT_DEPLOY_TAG=""
 if [[ -f "${CURRENT_RELEASE_FILE}" ]]; then
   CURRENT_DEPLOY_TAG="$(grep '^ENGLISHBOT_DEPLOY_TAG=' "${CURRENT_RELEASE_FILE}" | cut -d= -f2- || true)"
+  if [[ -z "${DEPLOY_OPTIONAL_SERVICES}" ]]; then
+    DEPLOY_OPTIONAL_SERVICES="$(grep '^ENGLISHBOT_DEPLOY_OPTIONAL_SERVICES=' "${CURRENT_RELEASE_FILE}" | cut -d= -f2- || true)"
+  fi
+fi
+
+if [[ -z "${DEPLOY_OPTIONAL_SERVICES}" ]]; then
+  DEPLOY_OPTIONAL_SERVICES="false"
+fi
+
+compose_args=(-f "${CORE_COMPOSE_FILE}")
+if [[ "${DEPLOY_OPTIONAL_SERVICES}" == "true" ]]; then
+  if [[ ! -f "${OPTIONAL_COMPOSE_FILE}" ]]; then
+    echo "${OPTIONAL_COMPOSE_FILE} not found in ${APP_DIR}" >&2
+    exit 1
+  fi
+  compose_args+=(-f "${OPTIONAL_COMPOSE_FILE}")
 fi
 
 if [[ -z "${TARGET_TAG}" ]]; then
@@ -82,6 +101,7 @@ ENGLISHBOT_BUILD_NUMBER=${ENGLISHBOT_BUILD_NUMBER}
 ENGLISHBOT_GIT_SHA=${ENGLISHBOT_GIT_SHA}
 ENGLISHBOT_GIT_BRANCH=${ENGLISHBOT_GIT_BRANCH}
 ENGLISHBOT_DEPLOY_TAG=${ENGLISHBOT_DEPLOY_TAG}
+ENGLISHBOT_DEPLOY_OPTIONAL_SERVICES=${DEPLOY_OPTIONAL_SERVICES}
 EOF
 
 export ENGLISHBOT_BUILD_VERSION
@@ -89,9 +109,10 @@ export ENGLISHBOT_BUILD_NUMBER
 export ENGLISHBOT_GIT_SHA
 export ENGLISHBOT_GIT_BRANCH
 export ENGLISHBOT_DEPLOY_TAG
+export DEPLOY_OPTIONAL_SERVICES
 
 echo "==> Rolling back to tag=${ENGLISHBOT_DEPLOY_TAG} version=${ENGLISHBOT_BUILD_VERSION} build=${ENGLISHBOT_BUILD_NUMBER}"
-docker compose up -d --build
+docker compose "${compose_args[@]}" up -d --build
 
 echo "==> Current container status"
-docker compose ps
+docker compose "${compose_args[@]}" ps

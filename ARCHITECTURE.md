@@ -9,8 +9,11 @@ The current codebase should be treated as a working POC with real editor and lea
 - `englishbot.domain`: core entities and repository contracts
 - `englishbot.application`: small use cases and focused services for topic listing, lesson listing, session startup, question retrieval, answer submission, selection, checking, and summary calculation
 - `englishbot.infrastructure`: SQLite-backed runtime store, JSON content-pack loading, and persistence adapters
-- `englishbot.bot`: Telegram adapter with thin handlers
-- `englishbot.bootstrap`: composition root for wiring dependencies
+- `englishbot.bot`: transitional Telegram facade plus shared adapter helpers
+- `englishbot.telegram`: package-based Telegram wiring, handlers, and runtime helpers
+- `englishbot.presentation`: Telegram-facing text, views, keyboards, and progress rendering helpers
+- `englishbot.application.training_runtime`: training-service runtime wiring
+- `englishbot.importing.runtime`: lesson-import runtime wiring
 - `englishbot.config`: centralized runtime configuration service for env-backed settings and file-backed overrides
 
 ## Runtime configuration

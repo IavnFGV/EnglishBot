@@ -1,44 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-import html
 import hashlib
-import hmac
-import json
 import logging
-import random
-import tempfile
-from io import BytesIO
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
-from telegram import (
-    BotCommand,
-    BotCommandScopeChat,
-    ForceReply,
-    InlineKeyboardMarkup,
-    InputFile,
-    InputMediaPhoto,
-    ReplyKeyboardMarkup,
-    Update,
-)
-from telegram.error import BadRequest, NetworkError, RetryAfter
+from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
+from telegram.error import NetworkError, RetryAfter
 from telegram.ext import (
     Application,
-    CallbackQueryHandler,
-    ChatMemberHandler,
-    CommandHandler,
     ContextTypes,
-    MessageHandler,
-    TypeHandler,
-    filters,
+)
+from englishbot.telegram.callback_tokens import (
+    HARD_SKIP_CALLBACK_ACTION as _HARD_SKIP_CALLBACK_ACTION,
 )
 
-from englishbot.application.add_words_flow import (
-    AddWordsFlowHarness,
-)
 from englishbot.application.add_words_use_cases import (
     ApplyAddWordsEditUseCase,
     ApproveAddWordsDraftUseCase,
@@ -50,15 +29,9 @@ from englishbot.application.add_words_use_cases import (
     SaveApprovedAddWordsDraftUseCase,
     StartAddWordsFlowUseCase,
 )
-from englishbot.assignment_progress_image import (
-    AssignmentProgressSegment,
-    AssignmentProgressSnapshot,
-    render_assignment_progress_image,
-)
 from englishbot.application.content_pack_image_use_cases import (
     GenerateContentPackImagesUseCase,
 )
-from englishbot.application.image_review_flow import ImageReviewFlowHarness
 from englishbot.application.image_review_use_cases import (
     AttachUploadedImageUseCase,
     CancelImageReviewFlowUseCase,
@@ -82,13 +55,10 @@ from englishbot.application.homework_progress_use_cases import (
     GetAdminUserGoalsUseCase,
     GetAdminUsersProgressOverviewUseCase,
     GetLearnerAssignmentLaunchSummaryUseCase,
-    GetGoalWordCandidatesUseCase,
-    GetUserProgressSummaryUseCase,
     GoalProgressView,
     GoalWordSource,
     HomeworkProgressUseCase,
     LearnerProgressSummary,
-    ListUserGoalsUseCase,
     StartAssignmentRoundUseCase,
 )
 from englishbot.application.published_content_use_cases import (
@@ -100,120 +70,79 @@ from englishbot.application.services import (
     AnswerOutcome,
     ApplicationError,
     InvalidSessionStateError,
-    QuestionFactory,
     TrainingFacade,
 )
-from englishbot.bootstrap import build_lesson_import_pipeline, build_training_service
-from englishbot.bot_assignments_admin_ui import admin_goal_manual_keyboard as ui_admin_goal_manual_keyboard
-from englishbot.bot_assignments_admin_ui import admin_goal_recipients_keyboard as ui_admin_goal_recipients_keyboard
-from englishbot.bot_assignments_admin_ui import assignment_goal_detail_keyboard as ui_assignment_goal_detail_keyboard
-from englishbot.bot_assignments_admin_ui import assignment_user_goals_keyboard as ui_assignment_user_goals_keyboard
-from englishbot.bot_assignments_admin_ui import assignment_user_label as ui_assignment_user_label
-from englishbot.bot_assignments_admin_ui import assignment_users_keyboard as ui_assignment_users_keyboard
-from englishbot.bot_assignments_admin_ui import goal_source_topic_keyboard as ui_goal_source_topic_keyboard
-from englishbot.bot_assignments_admin_ui import page_range_label as ui_page_range_label
-from englishbot.bot_assignments_admin_ui import render_assignment_goal_detail_text as ui_render_assignment_goal_detail_text
-from englishbot.bot_assignments_admin_ui import render_assignment_user_detail_text as ui_render_assignment_user_detail_text
-from englishbot.bot_assignments_ui import admin_goal_custom_target_keyboard as ui_admin_goal_custom_target_keyboard
-from englishbot.bot_assignments_ui import admin_goal_deadline_keyboard as ui_admin_goal_deadline_keyboard
-from englishbot.bot_assignments_ui import admin_goal_period_keyboard as ui_admin_goal_period_keyboard
-from englishbot.bot_assignments_ui import admin_goal_source_keyboard as ui_admin_goal_source_keyboard
-from englishbot.bot_assignments_ui import admin_goal_target_keyboard as ui_admin_goal_target_keyboard
-from englishbot.bot_assignments_ui import assign_menu_keyboard as ui_assign_menu_keyboard
-from englishbot.bot_assignments_ui import assignment_kind_label as ui_assignment_kind_label
-from englishbot.bot_assignments_ui import assignment_round_complete_keyboard as ui_assignment_round_complete_keyboard
-from englishbot.bot_assignments_ui import goal_custom_target_keyboard as ui_goal_custom_target_keyboard
-from englishbot.bot_assignments_ui import goal_list_keyboard as ui_goal_list_keyboard
-from englishbot.bot_assignments_ui import goal_period_label as ui_goal_period_label
-from englishbot.bot_assignments_ui import goal_rule_text as ui_goal_rule_text
-from englishbot.bot_assignments_ui import goal_setup_keyboard as ui_goal_setup_keyboard
-from englishbot.bot_assignments_ui import goal_source_keyboard as ui_goal_source_keyboard
-from englishbot.bot_assignments_ui import goal_target_keyboard as ui_goal_target_keyboard
-from englishbot.bot_assignments_ui import goal_type_label as ui_goal_type_label
-from englishbot.bot_assignments_ui import render_goal_progress_line as ui_render_goal_progress_line
-from englishbot.bot_assignments_ui import render_progress_text as ui_render_progress_text
-from englishbot.bot_assignments_ui import render_start_menu_text as ui_render_start_menu_text
-from englishbot.bot_assignments_ui import start_assignment_button_label as ui_start_assignment_button_label
-from englishbot.bot_assignments_ui import start_menu_keyboard as ui_start_menu_keyboard
-from englishbot.bot_editor_ui import chat_menu_keyboard as ui_chat_menu_keyboard
-from englishbot.bot_editor_ui import draft_review_keyboard as ui_draft_review_keyboard
-from englishbot.bot_editor_ui import draft_review_view as ui_draft_review_view
-from englishbot.bot_editor_ui import editable_topics_keyboard as ui_editable_topics_keyboard
-from englishbot.bot_editor_ui import editable_topics_view as ui_editable_topics_view
-from englishbot.bot_editor_ui import editable_word_button_label as ui_editable_word_button_label
-from englishbot.bot_editor_ui import editable_words_keyboard as ui_editable_words_keyboard
-from englishbot.bot_editor_ui import editable_words_view as ui_editable_words_view
-from englishbot.bot_editor_ui import game_mode_keyboard as ui_game_mode_keyboard
-from englishbot.bot_editor_ui import help_view as ui_help_view
-from englishbot.bot_editor_ui import image_review_keyboard as ui_image_review_keyboard
-from englishbot.bot_editor_ui import lesson_keyboard as ui_lesson_keyboard
-from englishbot.bot_editor_ui import lesson_selection_view as ui_lesson_selection_view
-from englishbot.bot_editor_ui import mode_keyboard as ui_mode_keyboard
-from englishbot.bot_editor_ui import mode_selection_view as ui_mode_selection_view
-from englishbot.bot_editor_ui import published_image_items_keyboard as ui_published_image_items_keyboard
-from englishbot.bot_editor_ui import published_image_topics_keyboard as ui_published_image_topics_keyboard
-from englishbot.bot_editor_ui import published_images_menu_keyboard as ui_published_images_menu_keyboard
-from englishbot.bot_editor_ui import published_word_edit_keyboard as ui_published_word_edit_keyboard
-from englishbot.bot_editor_ui import quick_actions_view as ui_quick_actions_view
-from englishbot.bot_editor_ui import topic_button_label as ui_topic_button_label
-from englishbot.bot_editor_ui import topic_keyboard as ui_topic_keyboard
-from englishbot.bot_editor_ui import topic_selection_view as ui_topic_selection_view
-from englishbot.bot_editor_ui import words_menu_keyboard as ui_words_menu_keyboard
-from englishbot.bot_editor_ui import words_menu_view as ui_words_menu_view
+from englishbot.application.training_runtime import build_training_service
+from englishbot.presentation.telegram_assignments_admin_ui import admin_goal_manual_keyboard as ui_admin_goal_manual_keyboard
+from englishbot.presentation.telegram_assignments_admin_ui import admin_goal_recipients_keyboard as ui_admin_goal_recipients_keyboard
+from englishbot.presentation.telegram_assignments_admin_ui import assignment_goal_detail_keyboard as ui_assignment_goal_detail_keyboard
+from englishbot.presentation.telegram_assignments_admin_ui import assignment_user_goals_keyboard as ui_assignment_user_goals_keyboard
+from englishbot.presentation.telegram_assignments_admin_ui import assignment_users_keyboard as ui_assignment_users_keyboard
+from englishbot.presentation.telegram_assignments_admin_ui import render_assignment_goal_detail_text as ui_render_assignment_goal_detail_text
+from englishbot.presentation.telegram_assignments_admin_ui import render_assignment_user_detail_text as ui_render_assignment_user_detail_text
+from englishbot.presentation.telegram_assignments_ui import admin_goal_custom_target_keyboard as ui_admin_goal_custom_target_keyboard
+from englishbot.presentation.telegram_assignments_ui import admin_goal_deadline_keyboard as ui_admin_goal_deadline_keyboard
+from englishbot.presentation.telegram_assignments_ui import admin_goal_period_keyboard as ui_admin_goal_period_keyboard
+from englishbot.presentation.telegram_assignments_ui import admin_goal_source_keyboard as ui_admin_goal_source_keyboard
+from englishbot.presentation.telegram_assignments_ui import admin_goal_target_keyboard as ui_admin_goal_target_keyboard
+from englishbot.presentation.telegram_assignments_ui import assign_menu_keyboard as ui_assign_menu_keyboard
+from englishbot.presentation.telegram_assignments_ui import assignment_kind_label as ui_assignment_kind_label
+from englishbot.presentation.telegram_assignments_ui import assignment_round_complete_keyboard as ui_assignment_round_complete_keyboard
+from englishbot.presentation.telegram_assignments_ui import goal_list_keyboard as ui_goal_list_keyboard
+from englishbot.presentation.telegram_assignments_ui import goal_setup_keyboard as ui_goal_setup_keyboard
+from englishbot.presentation.telegram_assignments_ui import goal_source_keyboard as ui_goal_source_keyboard
+from englishbot.presentation.telegram_assignments_ui import goal_target_keyboard as ui_goal_target_keyboard
+from englishbot.presentation.telegram_assignments_ui import render_goal_progress_line as ui_render_goal_progress_line
+from englishbot.presentation.telegram_assignments_ui import render_progress_text as ui_render_progress_text
+from englishbot.presentation.telegram_assignments_ui import render_start_menu_text as ui_render_start_menu_text
+from englishbot.presentation.telegram_assignments_ui import start_menu_keyboard as ui_start_menu_keyboard
+from englishbot.presentation.telegram_editor_ui import draft_review_keyboard as ui_draft_review_keyboard
+from englishbot.presentation.telegram_editor_ui import draft_review_view as ui_draft_review_view
+from englishbot.presentation.telegram_editor_ui import editable_topics_keyboard as ui_editable_topics_keyboard
+from englishbot.presentation.telegram_editor_ui import editable_topics_view as ui_editable_topics_view
+from englishbot.presentation.telegram_editor_ui import editable_word_button_label as ui_editable_word_button_label
+from englishbot.presentation.telegram_editor_ui import editable_words_keyboard as ui_editable_words_keyboard
+from englishbot.presentation.telegram_editor_ui import editable_words_view as ui_editable_words_view
+from englishbot.presentation.telegram_editor_ui import game_mode_keyboard as ui_game_mode_keyboard
+from englishbot.presentation.telegram_editor_ui import help_view as ui_help_view
+from englishbot.presentation.telegram_editor_ui import image_review_keyboard as ui_image_review_keyboard
+from englishbot.presentation.telegram_editor_ui import lesson_keyboard as ui_lesson_keyboard
+from englishbot.presentation.telegram_editor_ui import lesson_selection_view as ui_lesson_selection_view
+from englishbot.presentation.telegram_editor_ui import mode_keyboard as ui_mode_keyboard
+from englishbot.presentation.telegram_editor_ui import mode_selection_view as ui_mode_selection_view
+from englishbot.presentation.telegram_editor_ui import published_image_items_keyboard as ui_published_image_items_keyboard
+from englishbot.presentation.telegram_editor_ui import published_image_topics_keyboard as ui_published_image_topics_keyboard
+from englishbot.presentation.telegram_editor_ui import published_images_menu_keyboard as ui_published_images_menu_keyboard
+from englishbot.presentation.telegram_editor_ui import published_word_edit_keyboard as ui_published_word_edit_keyboard
+from englishbot.presentation.telegram_editor_ui import quick_actions_view as ui_quick_actions_view
+from englishbot.presentation.telegram_editor_ui import topic_keyboard as ui_topic_keyboard
+from englishbot.presentation.telegram_editor_ui import topic_selection_view as ui_topic_selection_view
+from englishbot.presentation.telegram_editor_ui import words_menu_keyboard as ui_words_menu_keyboard
+from englishbot.presentation.telegram_editor_ui import words_menu_view as ui_words_menu_view
 from englishbot.config import RuntimeConfigService, Settings
-from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType, SessionItem, Topic, TrainingMode, TrainingQuestion
-from englishbot.image_generation.clients import ComfyUIImageGenerationClient
-from englishbot.image_generation.clients import LocalPlaceholderImageGenerationClient
-from englishbot.image_generation.pixabay import PixabayImageSearchClient, RemoteImageDownloader
+from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType, Topic, TrainingMode, TrainingQuestion
 from englishbot.image_generation.paths import resolve_existing_image_path
 from englishbot.image_generation.paths import (
-    build_item_audio_path,
-    build_item_audio_ref,
-    resolve_existing_audio_path,
+    build_item_audio_path as _build_item_audio_path_impl,
 )
-from englishbot.image_generation.pipeline import ContentPackImageEnricher
-from englishbot.image_generation.previews import ensure_numbered_candidate_strip
-from englishbot.image_generation.resilient import ResilientImageGenerator
-from englishbot.image_generation.review import ComfyUIImageCandidateGenerator
-from englishbot.image_generation.smart_generation import ComfyUIImageGenerationGateway
-from englishbot.image_generation.smart_generation import DisabledImageGenerationGateway
-from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
-from englishbot.importing.clients import OllamaLessonExtractionClient
-from englishbot.importing.draft_io import draft_to_data
-from englishbot.importing.smart_parsing import OllamaSmartLessonParsingGateway
-from englishbot.importing.smart_parsing import DisabledSmartLessonParsingGateway
-from englishbot.importing.writer import JsonContentPackWriter
+from englishbot.image_generation.paths import (
+    build_item_audio_ref as _build_item_audio_ref_impl,
+)
+from englishbot.image_generation.paths import (
+    resolve_existing_audio_path as _resolve_existing_audio_path_impl,
+)
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.infrastructure.sqlite_store import (
-    SQLiteAddWordsFlowRepository,
-    SQLiteImageReviewFlowRepository,
-    SQLiteSessionRepository,
-    SQLiteTelegramFlowMessageRepository,
     SQLiteTelegramUserLoginRepository,
-    SQLitePendingTelegramNotificationRepository,
     SQLiteTelegramUserRoleRepository,
-    SQLiteUserProgressRepository,
-    SQLiteVocabularyRepository,
-)
-from englishbot.presentation.add_words_text import (
-    format_draft_edit_text,
-    parse_edited_vocabulary_line,
 )
 from englishbot.presentation.telegram_views import (
     TelegramPhotoView,
     TelegramTextView,
-    build_active_session_exists_view,
     build_assignment_menu_view,
     build_answer_feedback_view,
-    build_current_image_preview_view,
-    build_image_review_attach_photo_view,
-    build_image_review_prompt_edit_view,
-    build_image_review_search_query_edit_view,
-    build_image_review_step_view,
-    build_published_word_edit_prompt_view,
     build_start_menu_view,
     build_status_view,
-    build_training_question_view,
     edit_telegram_text_view,
     send_telegram_view,
 )
@@ -222,16 +151,70 @@ from englishbot.presentation.telegram_ui_text import (
     supported_telegram_ui_languages,
     telegram_ui_text,
 )
-from englishbot.telegram_buttons import InlineKeyboardButton
+from englishbot.telegram.buttons import InlineKeyboardButton
+from englishbot.telegram.interaction import ASSIGNMENT_PROGRESS_TAG as _INTERACTION_ASSIGNMENT_PROGRESS_TAG
+from englishbot.telegram.interaction import CHAT_MENU_TAG as _INTERACTION_CHAT_MENU_TAG
+from englishbot.telegram.interaction import IMAGE_REVIEW_CONTEXT_TAG as _INTERACTION_IMAGE_REVIEW_CONTEXT_TAG
+from englishbot.telegram.interaction import IMAGE_REVIEW_STEP_TAG as _INTERACTION_IMAGE_REVIEW_STEP_TAG
+from englishbot.telegram.interaction import PUBLISHED_WORD_EDIT_TAG as _INTERACTION_PUBLISHED_WORD_EDIT_TAG
+from englishbot.telegram.interaction import TRAINING_FEEDBACK_TAG as _INTERACTION_TRAINING_FEEDBACK_TAG
+from englishbot.telegram.interaction import TRAINING_QUESTION_TAG as _INTERACTION_TRAINING_QUESTION_TAG
+from englishbot.telegram.interaction import TTS_VOICE_TAG as _INTERACTION_TTS_VOICE_TAG
+from englishbot.telegram.answer_handlers import (
+    choice_answer_handler as telegram_choice_answer_handler,
+    hard_skip_handler as telegram_hard_skip_handler,
+    medium_answer_callback_handler as telegram_medium_answer_callback_handler,
+    text_answer_handler as telegram_text_answer_handler,
+)
+from englishbot.telegram.models import (
+    AssignmentRoundProgressView as _AssignmentRoundProgressView,
+)
+from englishbot.telegram.models import PendingNotification as _PendingNotification
+from englishbot.telegram.answer_processing import (
+    process_answer as delivery_process_answer,
+    send_feedback as delivery_send_feedback,
+)
+from englishbot.telegram.question_delivery import (
+    edit_training_question_view as delivery_edit_training_question_view,
+    send_question as delivery_send_question,
+)
+from englishbot.telegram.command_menu import (
+    chat_menu_keyboard as menu_chat_menu_keyboard,
+    post_init_command_setup,
+    visible_command_rows as menu_visible_command_rows,
+    visible_command_specs as menu_visible_command_specs,
+)
+from englishbot.telegram.entry_handlers import (
+    help_handler as telegram_help_handler,
+    start_handler as telegram_start_handler,
+    version_handler as telegram_version_handler,
+)
+from englishbot.telegram.learner_entry_handlers import (
+    continue_session_handler as telegram_continue_session_handler,
+    game_mode_placeholder_callback_handler as telegram_game_mode_placeholder_callback_handler,
+    lesson_selected_handler as telegram_lesson_selected_handler,
+    mode_selected_handler as telegram_mode_selected_handler,
+    restart_session_handler as telegram_restart_session_handler,
+    topic_selected_handler as telegram_topic_selected_handler,
+)
+from englishbot.telegram.navigation_handlers import (
+    assign_menu_callback_handler as telegram_assign_menu_callback_handler,
+    assign_menu_handler as telegram_assign_menu_handler,
+    start_assignment_round_callback_handler as telegram_start_assignment_round_callback_handler,
+    start_assignment_unavailable_callback_handler as telegram_start_assignment_unavailable_callback_handler,
+    start_menu_callback_handler as telegram_start_menu_callback_handler,
+    words_menu_callback_handler as telegram_words_menu_callback_handler,
+    words_menu_handler as telegram_words_menu_handler,
+    words_topics_callback_handler as telegram_words_topics_callback_handler,
+)
 from englishbot.presentation.telegram_menu_access import (
-    DEFAULT_TELEGRAM_COMMAND_SPECS,
     PERMISSION_WORD_IMAGES_EDIT,
     PERMISSION_WORDS_ADD,
     PERMISSION_WORDS_EDIT,
     TelegramCommandSpec,
     TelegramMenuAccessPolicy,
 )
-from englishbot.runtime_version import RuntimeVersionInfo, get_runtime_version_info
+from englishbot.runtime_version import RuntimeVersionInfo
 
 logger = logging.getLogger(__name__)
 
@@ -244,15 +227,14 @@ _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
 _GOAL_AWAITING_TARGET_TEXT = "awaiting_goal_target_text"
 _ADMIN_GOAL_AWAITING_TARGET_TEXT = "awaiting_admin_goal_target_text"
 _ADMIN_GOAL_AWAITING_DEADLINE_TEXT = "awaiting_admin_goal_deadline_text"
-_EXPECTED_USER_INPUT_STATE_KEY = "expected_user_input_state"
-_IMAGE_REVIEW_STEP_TAG = "image_review_step"
-_IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
-_PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
-_TRAINING_QUESTION_TAG = "training_question"
-_TRAINING_FEEDBACK_TAG = "training_feedback"
-_TTS_VOICE_TAG = "tts_voice"
-_ASSIGNMENT_PROGRESS_TAG = "assignment_progress"
-_CHAT_MENU_TAG = "chat_menu"
+_IMAGE_REVIEW_STEP_TAG = _INTERACTION_IMAGE_REVIEW_STEP_TAG
+_IMAGE_REVIEW_CONTEXT_TAG = _INTERACTION_IMAGE_REVIEW_CONTEXT_TAG
+_PUBLISHED_WORD_EDIT_TAG = _INTERACTION_PUBLISHED_WORD_EDIT_TAG
+_TRAINING_QUESTION_TAG = _INTERACTION_TRAINING_QUESTION_TAG
+_TRAINING_FEEDBACK_TAG = _INTERACTION_TRAINING_FEEDBACK_TAG
+_TTS_VOICE_TAG = _INTERACTION_TTS_VOICE_TAG
+_ASSIGNMENT_PROGRESS_TAG = _INTERACTION_ASSIGNMENT_PROGRESS_TAG
+_CHAT_MENU_TAG = _INTERACTION_CHAT_MENU_TAG
 _NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"
@@ -276,10 +258,6 @@ _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW = timedelta(minutes=5)
 _NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD = timedelta(minutes=1)
 _NOTIFICATION_DELAY_AFTER_RECENT_ANSWER = timedelta(minutes=2)
 _DAILY_ASSIGNMENT_REMINDER_TIME = time(hour=13, minute=0, tzinfo=UTC)
-_CALLBACK_TOKEN_TTL_SECONDS = 48 * 60 * 60
-_HARD_SKIP_CALLBACK_ACTION = "hard_skip"
-_EDITABLE_WORD_CALLBACK_ACTION = "editable_word"
-_PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION = "published_image_item"
 _HELP_COMMAND_TEXT: dict[str, str] = {
     "start": "open your personal start menu",
     "help": "show commands",
@@ -311,14 +289,6 @@ class _GoalFeedbackUpdate:
 
 
 @dataclass(frozen=True, slots=True)
-class _AssignmentRoundProgressView:
-    completed_word_count: int
-    total_word_count: int
-    remaining_word_count: int
-    variant_key: str
-
-
-@dataclass(frozen=True, slots=True)
 class _MediumTaskState:
     session_id: str
     item_id: str
@@ -326,13 +296,6 @@ class _MediumTaskState:
     shuffled_letters: tuple[str, ...]
     selected_letter_indexes: tuple[int, ...]
     message_id: int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class _PendingNotification:
-    key: str
-    recipient_user_id: int
-    text: str
 
 
 def _draft_checkpoint_text(flow) -> str:
@@ -365,10 +328,10 @@ def _telegram_ui_language(context: ContextTypes.DEFAULT_TYPE | None, user=None) 
     user_data = None
     if context is not None:
         configured = _normalize_telegram_ui_language(
-            context.application.bot_data.get("telegram_ui_language")
+            _optional_bot_data(context, "telegram_ui_language")
         )
-        maybe_user_data = getattr(context, "user_data", None)
-        if isinstance(maybe_user_data, dict):
+        maybe_user_data = _user_data_or_none(context)
+        if maybe_user_data is not None:
             user_data = maybe_user_data
             stored_language = _supported_telegram_ui_language_or_none(
                 user_data.get(_TELEGRAM_UI_LANGUAGE_KEY)
@@ -386,7 +349,109 @@ def _telegram_ui_language(context: ContextTypes.DEFAULT_TYPE | None, user=None) 
 
 
 def _runtime_version_info(context: ContextTypes.DEFAULT_TYPE) -> RuntimeVersionInfo:
-    return context.application.bot_data["runtime_version_info"]
+    return _required_bot_data(context, "runtime_version_info")
+
+
+def _required_bot_data(context: ContextTypes.DEFAULT_TYPE, key: str):
+    return context.application.bot_data[key]
+
+
+def _optional_bot_data(
+    context: ContextTypes.DEFAULT_TYPE | None,
+    key: str,
+    *,
+    default=None,
+):
+    if context is None or getattr(context, "application", None) is None:
+        return default
+    bot_data = getattr(context.application, "bot_data", None)
+    if not isinstance(bot_data, dict):
+        return default
+    return bot_data.get(key, default)
+
+
+def _mutable_bot_data_dict(
+    context: ContextTypes.DEFAULT_TYPE,
+    key: str,
+    *,
+    fallback_key: str | None = None,
+):
+    stored = _optional_bot_data(context, key)
+    if stored is None and fallback_key is not None:
+        stored = _optional_bot_data(context, fallback_key)
+    if isinstance(stored, dict):
+        context.application.bot_data[key] = stored
+        return stored
+    replacement: dict = {}
+    context.application.bot_data[key] = replacement
+    return replacement
+
+
+def _set_bot_data(
+    context: ContextTypes.DEFAULT_TYPE,
+    key: str,
+    value,
+):
+    context.application.bot_data[key] = value
+    return value
+
+
+def _user_data_or_none(context: ContextTypes.DEFAULT_TYPE | None) -> dict | None:
+    if context is None:
+        return None
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        return user_data
+    return None
+
+
+def _optional_user_data(
+    context: ContextTypes.DEFAULT_TYPE | None,
+    key: str,
+    *,
+    default=None,
+):
+    user_data = _user_data_or_none(context)
+    if user_data is None:
+        return default
+    return user_data.get(key, default)
+
+
+def _set_user_data(
+    context: ContextTypes.DEFAULT_TYPE | None,
+    key: str,
+    value,
+) -> bool:
+    user_data = _user_data_or_none(context)
+    if user_data is None:
+        return False
+    user_data[key] = value
+    return True
+
+
+def _pop_user_data(
+    context: ContextTypes.DEFAULT_TYPE | None,
+    key: str,
+    *,
+    default=None,
+):
+    user_data = _user_data_or_none(context)
+    if user_data is None:
+        return default
+    return user_data.pop(key, default)
+
+
+def _game_state(context: ContextTypes.DEFAULT_TYPE) -> dict:
+    current = _optional_user_data(context, _GAME_STATE_KEY, default={})
+    if isinstance(current, dict):
+        return current
+    created: dict = {}
+    _set_user_data(context, _GAME_STATE_KEY, created)
+    return created
+
+
+def _admin_goal_user_state(context: ContextTypes.DEFAULT_TYPE, key: str, *, default=None):
+    return _optional_user_data(context, key, default=default)
 
 
 def _tg(
@@ -410,480 +475,21 @@ def build_application(
     *,
     config_service: RuntimeConfigService,
 ) -> Application:
-    app = Application.builder().token(settings.telegram_token).build()
-    content_store = SQLiteContentStore(db_path=settings.content_db_path)
-    content_store.initialize()
-    app.bot_data["content_store"] = content_store
-    app.bot_data["config_service"] = config_service
-    app.bot_data["settings"] = settings
-    app.bot_data["runtime_version_info"] = get_runtime_version_info()
-    app.bot_data["smart_parsing_gateway"] = (
-        DisabledSmartLessonParsingGateway()
-        if not settings.ollama_enabled
-        else OllamaSmartLessonParsingGateway(
-            OllamaLessonExtractionClient(
-                config_service=config_service,
-                model=settings.ollama_model,
-                model_file_path=settings.ollama_model_file_path,
-                base_url=settings.ollama_base_url,
-                timeout=settings.ollama_timeout_sec,
-                trace_file_path=settings.ollama_trace_file_path,
-                extraction_mode=settings.ollama_extraction_mode,
-                temperature=settings.ollama_temperature,
-                top_p=settings.ollama_top_p,
-                num_predict=settings.ollama_num_predict,
-                extract_line_prompt_path=settings.ollama_extract_line_prompt_path,
-                extract_text_prompt_path=settings.ollama_extract_text_prompt_path,
-            )
-        )
-    )
-    app.bot_data["image_generation_gateway"] = (
-        DisabledImageGenerationGateway()
-        if not settings.comfyui_enabled
-        else ComfyUIImageGenerationGateway(
-            ComfyUIImageGenerationClient(config_service=config_service)
-        )
-    )
-    app.bot_data["training_service"] = build_training_service(db_path=settings.content_db_path)
-    lesson_import_pipeline = build_lesson_import_pipeline(
-        config_service=config_service,
-        ollama_enabled=settings.ollama_enabled,
-        ollama_model=settings.ollama_model,
-        ollama_model_file_path=settings.ollama_model_file_path,
-        ollama_base_url=settings.ollama_base_url,
-        ollama_timeout_sec=settings.ollama_timeout_sec,
-        ollama_trace_file_path=settings.ollama_trace_file_path,
-        ollama_extraction_mode=settings.ollama_extraction_mode,
-        ollama_temperature=settings.ollama_temperature,
-        ollama_top_p=settings.ollama_top_p,
-        ollama_num_predict=settings.ollama_num_predict,
-        ollama_extract_line_prompt_path=settings.ollama_extract_line_prompt_path,
-        ollama_extract_text_prompt_path=settings.ollama_extract_text_prompt_path,
-        ollama_image_prompt_path=settings.ollama_image_prompt_path,
-    )
-    add_words_flow_repository = SQLiteAddWordsFlowRepository(content_store)
-    add_words_harness = AddWordsFlowHarness(
-        pipeline=lesson_import_pipeline,
-        content_store=content_store,
-    )
-    image_review_repository = SQLiteImageReviewFlowRepository(content_store)
-    telegram_flow_message_repository = SQLiteTelegramFlowMessageRepository(content_store)
-    telegram_user_login_repository = SQLiteTelegramUserLoginRepository(content_store)
-    pending_notification_repository = SQLitePendingTelegramNotificationRepository(content_store)
-    telegram_user_role_repository = SQLiteTelegramUserRoleRepository(content_store)
-    image_review_harness = ImageReviewFlowHarness(
-        canonicalizer=DraftToContentPackCanonicalizer(),
-        writer=JsonContentPackWriter(),
-        candidate_generator=ComfyUIImageCandidateGenerator(),
-        image_search_client=(
-            PixabayImageSearchClient(
-                config_service=config_service,
-                api_key=settings.pixabay_api_key,
-                base_url=settings.pixabay_base_url,
-            )
-            if settings.pixabay_api_key
-            else None
-        ),
-        remote_image_downloader=RemoteImageDownloader(),
-        assets_dir=Path("assets"),
-        content_store=content_store,
-    )
-    content_pack_image_enricher = ContentPackImageEnricher(
-        ResilientImageGenerator(
-            external_gateway=(
-                DisabledImageGenerationGateway()
-                if not settings.comfyui_enabled
-                else ComfyUIImageGenerationGateway(
-                    ComfyUIImageGenerationClient(config_service=config_service)
-                )
-            ),
-            fallback_client=LocalPlaceholderImageGenerationClient(),
-        )
-    )
-    app.bot_data["lesson_import_pipeline"] = lesson_import_pipeline
-    app.bot_data["admin_user_ids"] = set(settings.admin_user_ids)
-    app.bot_data["editor_user_ids"] = set(settings.editor_user_ids)
-    app.bot_data["telegram_user_role_repository"] = telegram_user_role_repository
-    for user_id in settings.admin_user_ids:
-        telegram_user_role_repository.grant(user_id=user_id, role="admin")
-    for user_id in settings.editor_user_ids:
-        telegram_user_role_repository.grant(user_id=user_id, role="editor")
-    app.bot_data["telegram_ui_language"] = _normalize_telegram_ui_language(
-        settings.telegram_ui_language
-    )
-    app.bot_data["web_app_base_url"] = settings.web_app_base_url.rstrip("/")
-    app.bot_data["admin_bootstrap_secret"] = settings.admin_bootstrap_secret
-    app.bot_data["add_words_start_use_case"] = StartAddWordsFlowUseCase(
-        harness=add_words_harness,
-        flow_repository=add_words_flow_repository,
-    )
-    app.bot_data["add_words_get_active_use_case"] = GetActiveAddWordsFlowUseCase(
-        add_words_flow_repository
-    )
-    app.bot_data["add_words_apply_edit_use_case"] = ApplyAddWordsEditUseCase(
-        harness=add_words_harness,
-        flow_repository=add_words_flow_repository,
-    )
-    app.bot_data["add_words_regenerate_use_case"] = RegenerateAddWordsDraftUseCase(
-        harness=add_words_harness,
-        flow_repository=add_words_flow_repository,
-    )
-    app.bot_data["add_words_approve_use_case"] = ApproveAddWordsDraftUseCase(
-        harness=add_words_harness,
-        flow_repository=add_words_flow_repository,
-    )
-    app.bot_data["add_words_save_approved_draft_use_case"] = SaveApprovedAddWordsDraftUseCase(
-        harness=add_words_harness,
-        flow_repository=add_words_flow_repository,
-    )
-    app.bot_data["add_words_generate_image_prompts_use_case"] = (
-        GenerateAddWordsImagePromptsUseCase(
-            harness=add_words_harness,
-            flow_repository=add_words_flow_repository,
-        )
-    )
-    app.bot_data["add_words_mark_image_review_started_use_case"] = (
-        MarkAddWordsImageReviewStartedUseCase(
-            harness=add_words_harness,
-            flow_repository=add_words_flow_repository,
-        )
-    )
-    app.bot_data["add_words_cancel_use_case"] = CancelAddWordsFlowUseCase(
-        add_words_flow_repository
-    )
-    app.bot_data["image_review_start_use_case"] = StartImageReviewUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_start_published_word_use_case"] = (
-        StartPublishedWordImageEditUseCase(
-            harness=image_review_harness,
-            repository=image_review_repository,
-            db_path=settings.content_db_path,
-        )
-    )
-    app.bot_data["image_review_get_active_use_case"] = GetActiveImageReviewUseCase(
-        image_review_repository
-    )
-    app.bot_data["image_review_cancel_use_case"] = CancelImageReviewFlowUseCase(
-        image_review_repository
-    )
-    app.bot_data["image_review_generate_use_case"] = GenerateImageReviewCandidatesUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_search_use_case"] = SearchImageReviewCandidatesUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_next_use_case"] = LoadNextImageReviewCandidatesUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_previous_use_case"] = LoadPreviousImageReviewCandidatesUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_select_use_case"] = SelectImageCandidateUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_skip_use_case"] = SkipImageReviewItemUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_publish_use_case"] = PublishImageReviewUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_update_prompt_use_case"] = UpdateImageReviewPromptUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_attach_uploaded_image_use_case"] = AttachUploadedImageUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_assets_dir"] = Path("assets")
-    app.bot_data["telegram_flow_message_repository"] = telegram_flow_message_repository
-    app.bot_data["telegram_user_login_repository"] = telegram_user_login_repository
-    app.bot_data["pending_telegram_notification_repository"] = pending_notification_repository
-    app.bot_data["content_pack_generate_images_use_case"] = GenerateContentPackImagesUseCase(
-        enricher=content_pack_image_enricher,
-        db_path=settings.content_db_path,
-    )
-    app.bot_data["word_import_preview_message_ids"] = {}
-    app.bot_data["list_editable_topics_use_case"] = ListEditableTopicsUseCase(
-        db_path=settings.content_db_path
-    )
-    app.bot_data["list_editable_words_use_case"] = ListEditableWordsUseCase(
-        db_path=settings.content_db_path
-    )
-    app.bot_data["update_editable_word_use_case"] = UpdateEditableWordUseCase(
-        db_path=settings.content_db_path
-    )
-    app.bot_data["homework_progress_use_case"] = HomeworkProgressUseCase(store=content_store)
-    app.bot_data["list_user_goals_use_case"] = ListUserGoalsUseCase(store=content_store)
-    app.bot_data["get_user_progress_summary_use_case"] = GetUserProgressSummaryUseCase(store=content_store)
-    app.bot_data["learner_assignment_launch_summary_use_case"] = GetLearnerAssignmentLaunchSummaryUseCase(
-        store=content_store
-    )
-    app.bot_data["start_assignment_round_use_case"] = StartAssignmentRoundUseCase(
-        store=content_store,
-        vocabulary_repository=SQLiteVocabularyRepository(content_store),
-        progress_repository=SQLiteUserProgressRepository(content_store),
-        session_repository=SQLiteSessionRepository(content_store),
-        question_factory=QuestionFactory(random.Random(42)),
-    )
-    app.bot_data["assign_goal_to_users_use_case"] = AssignGoalToUsersUseCase(store=content_store)
-    app.bot_data["goal_word_candidates_use_case"] = GetGoalWordCandidatesUseCase(store=content_store)
-    app.bot_data["admin_user_goals_use_case"] = GetAdminUserGoalsUseCase(store=content_store)
-    app.bot_data["admin_goal_detail_use_case"] = GetAdminGoalDetailUseCase(store=content_store)
-    app.bot_data["admin_users_progress_overview_use_case"] = GetAdminUsersProgressOverviewUseCase(
-        store=content_store
-    )
-    app.bot_data["recent_assignment_activity_by_user"] = {}
+    from englishbot.telegram.bootstrap import build_application as bootstrap_build_application
 
-    app.add_handler(TypeHandler(Update, raw_update_logger_handler), group=-1)
-    app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(CommandHandler("help", help_handler))
-    app.add_handler(CommandHandler("version", version_handler))
-    app.add_handler(CommandHandler("words", words_menu_handler))
-    app.add_handler(CommandHandler("assign", assign_menu_handler))
-    app.add_handler(CommandHandler("add_words", add_words_start_handler))
-    app.add_handler(CommandHandler("cancel", add_words_cancel_handler))
-    app.add_handler(CommandHandler("makeadmin", makeadmin_handler))
-    app.add_handler(CommandHandler("clearuser", clear_user_handler))
-    app.add_handler(ChatMemberHandler(chat_member_logger_handler, ChatMemberHandler.ANY_CHAT_MEMBER))
-    app.add_handler(CallbackQueryHandler(continue_session_handler, pattern=r"^session:continue$"))
-    app.add_handler(CallbackQueryHandler(restart_session_handler, pattern=r"^session:restart$"))
-    app.add_handler(CallbackQueryHandler(start_menu_callback_handler, pattern=r"^start:menu$"))
-    app.add_handler(CallbackQueryHandler(start_assignment_round_callback_handler, pattern=r"^start:launch:"))
-    app.add_handler(CallbackQueryHandler(start_assignment_unavailable_callback_handler, pattern=r"^start:disabled:"))
-    app.add_handler(CallbackQueryHandler(game_mode_placeholder_callback_handler, pattern=r"^start:game$"))
-    app.add_handler(CallbackQueryHandler(topic_selected_handler, pattern=r"^topic:"))
-    app.add_handler(CallbackQueryHandler(lesson_selected_handler, pattern=r"^lesson:"))
-    app.add_handler(CallbackQueryHandler(game_mode_placeholder_callback_handler, pattern=r"^gameentry:"))
-    app.add_handler(CallbackQueryHandler(game_mode_placeholder_callback_handler, pattern=r"^gamemode:"))
-    app.add_handler(CallbackQueryHandler(game_next_round_handler, pattern=r"^game:next_round$"))
-    app.add_handler(CallbackQueryHandler(game_repeat_handler, pattern=r"^game:repeat$"))
-    app.add_handler(CallbackQueryHandler(mode_selected_handler, pattern=r"^mode:"))
-    app.add_handler(CallbackQueryHandler(tts_current_handler, pattern=r"^tts:current$"))
-    app.add_handler(CallbackQueryHandler(tts_voice_menu_handler, pattern=r"^tts:voices$"))
-    app.add_handler(CallbackQueryHandler(tts_voice_select_handler, pattern=r"^tts:voice:(?:\d+|back)$"))
-    app.add_handler(CallbackQueryHandler(hard_skip_handler, pattern=r"^hard:skip:"))
-    app.add_handler(CallbackQueryHandler(medium_answer_callback_handler, pattern=r"^medium:"))
-    app.add_handler(CallbackQueryHandler(choice_answer_handler, pattern=r"^answer:"))
-    app.add_handler(CallbackQueryHandler(words_menu_callback_handler, pattern=r"^words:menu$"))
-    app.add_handler(CallbackQueryHandler(assign_menu_callback_handler, pattern=r"^assign:menu$"))
-    app.add_handler(CallbackQueryHandler(noop_callback_handler, pattern=r"^assign:noop$"))
-    app.add_handler(CallbackQueryHandler(notification_dismiss_callback_handler, pattern=rf"^{_NOTIFICATION_DISMISS_CALLBACK}$"))
-    app.add_handler(CallbackQueryHandler(words_goals_callback_handler, pattern=r"^assign:goals$"))
-    app.add_handler(CallbackQueryHandler(words_progress_callback_handler, pattern=r"^assign:progress$"))
-    app.add_handler(CallbackQueryHandler(goal_setup_disabled_callback_handler, pattern=r"^assign:goal_setup$"))
-    app.add_handler(CallbackQueryHandler(goal_setup_disabled_callback_handler, pattern=r"^assign:goal_target_menu$"))
-    app.add_handler(CallbackQueryHandler(goal_setup_disabled_callback_handler, pattern=r"^words:goal_period:"))
-    app.add_handler(CallbackQueryHandler(goal_type_callback_handler, pattern=r"^words:goal_type:"))
-    app.add_handler(CallbackQueryHandler(goal_setup_disabled_callback_handler, pattern=r"^words:goal_target:"))
-    app.add_handler(CallbackQueryHandler(goal_setup_disabled_callback_handler, pattern=r"^words:goal_source:"))
-    app.add_handler(CallbackQueryHandler(goal_reset_callback_handler, pattern=r"^words:goal_reset:"))
-    app.add_handler(CallbackQueryHandler(admin_assign_goal_start_handler, pattern=r"^assign:admin_assign_goal$"))
-    app.add_handler(CallbackQueryHandler(admin_goal_target_menu_callback_handler, pattern=r"^assign:admin_goal_target_menu$"))
-    app.add_handler(CallbackQueryHandler(admin_goal_source_menu_callback_handler, pattern=r"^assign:admin_goal_source_menu$"))
-    app.add_handler(CallbackQueryHandler(admin_goal_period_callback_handler, pattern=r"^words:admin_goal_period:"))
-    app.add_handler(CallbackQueryHandler(admin_goal_target_callback_handler, pattern=r"^words:admin_goal_target:"))
-    app.add_handler(CallbackQueryHandler(admin_goal_source_callback_handler, pattern=r"^words:admin_goal_source:"))
-    app.add_handler(CallbackQueryHandler(admin_goal_deadline_callback_handler, pattern=r"^words:admin_goal_deadline:"))
-    app.add_handler(
-        CallbackQueryHandler(admin_goal_manual_toggle_callback_handler, pattern=r"^words:admin_goal_manual:toggle:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(admin_goal_manual_toggle_callback_handler, pattern=r"^words:admin_goal_manual:page:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(admin_goal_manual_done_callback_handler, pattern=r"^words:admin_goal_manual:done$")
-    )
-    app.add_handler(
-        CallbackQueryHandler(admin_goal_recipients_callback_handler, pattern=r"^assign:admin_goal_recipients:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(admin_users_progress_callback_handler, pattern=r"^assign:users$")
-    )
-    app.add_handler(
-        CallbackQueryHandler(assign_user_detail_callback_handler, pattern=r"^assign:user:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(assign_goal_detail_callback_handler, pattern=r"^assign:goal:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(words_topics_callback_handler, pattern=r"^words:topics$")
-    )
-    app.add_handler(
-        CallbackQueryHandler(words_add_words_callback_handler, pattern=r"^words:add_words$")
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            words_edit_images_callback_handler,
-            pattern=r"^words:edit_images$",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(words_edit_words_callback_handler, pattern=r"^words:edit_words$")
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            words_edit_topic_callback_handler,
-            pattern=r"^words:edit_topic:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            words_edit_cancel_callback_handler,
-            pattern=r"^words:edit_item_cancel:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            words_edit_item_callback_handler,
-            pattern=r"^words:edit_item:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            add_words_approve_auto_images_handler,
-            pattern=r"^words:approve_auto_images:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            add_words_publish_without_images_handler,
-            pattern=r"^words:approve_draft:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            add_words_approve_draft_handler,
-            pattern=r"^words:start_image_review:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            add_words_regenerate_draft_handler,
-            pattern=r"^words:regenerate_draft:",
-        )
-    )
-    app.add_handler(CallbackQueryHandler(add_words_edit_text_handler, pattern=r"^words:edit_text:"))
-    app.add_handler(CallbackQueryHandler(add_words_show_json_handler, pattern=r"^words:show_json:"))
-    app.add_handler(
-        CallbackQueryHandler(
-            published_images_menu_handler,
-            pattern=r"^words:edit_images_menu:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            published_image_item_handler,
-            pattern=r"^words:edit_published_image:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(image_review_pick_handler, pattern=r"^words:image_pick:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            image_review_generate_handler,
-            pattern=r"^words:image_generate:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            image_review_search_handler,
-            pattern=r"^words:image_search:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            image_review_next_handler,
-            pattern=r"^words:image_next:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            image_review_previous_handler,
-            pattern=r"^words:image_previous:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(image_review_skip_handler, pattern=r"^words:image_skip:")
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            image_review_edit_prompt_handler,
-            pattern=r"^words:image_edit_prompt:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            image_review_edit_search_query_handler,
-            pattern=r"^words:image_edit_search_query:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            image_review_show_json_handler,
-            pattern=r"^words:image_show_json:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            image_review_attach_photo_handler,
-            pattern=r"^words:image_attach_photo:",
-        )
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            add_words_cancel_callback_handler,
-            pattern=r"^words:cancel:",
-        )
-    )
-    app.add_handler(
-        MessageHandler(filters.PHOTO, image_review_photo_handler),
-        group=0,
-    )
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, add_words_text_handler),
-        group=0,
-    )
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, goal_text_handler),
-        group=0,
-    )
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, text_answer_handler),
-        group=1,
-    )
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS,
-            group_text_observer_handler,
-        ),
-        group=2,
-    )
-    app.add_error_handler(error_handler)
-    app.post_init = _post_init
-    return app
+    return bootstrap_build_application(settings, config_service=config_service)
 
 
 def _service(context: ContextTypes.DEFAULT_TYPE) -> TrainingFacade:
-    return context.application.bot_data["training_service"]
+    return _required_bot_data(context, "training_service")
 
 
 def _content_store(context: ContextTypes.DEFAULT_TYPE) -> SQLiteContentStore:
-    return context.application.bot_data["content_store"]
+    return _required_bot_data(context, "content_store")
 
 
 def _active_training_session(context: ContextTypes.DEFAULT_TYPE, *, user_id: int):
-    store = context.application.bot_data.get("content_store")
+    store = _optional_bot_data(context, "content_store")
     if store is None or not hasattr(store, "get_active_session_by_user"):
         return None
     return store.get_active_session_by_user(user_id)
@@ -898,22 +504,52 @@ def _job_queue_or_none(application) -> object | None:
     return getattr(application, "job_queue", None)
 
 
+def build_item_audio_path(*, assets_dir: Path, topic_id: str, item_id: str, voice_name: str | None = None):
+    return _build_item_audio_path_impl(
+        assets_dir=assets_dir,
+        topic_id=topic_id,
+        item_id=item_id,
+        voice_name=voice_name,
+    )
+
+
+def build_item_audio_ref(*, assets_dir: Path, topic_id: str, item_id: str, voice_name: str | None = None):
+    return _build_item_audio_ref_impl(
+        assets_dir=assets_dir,
+        topic_id=topic_id,
+        item_id=item_id,
+        voice_name=voice_name,
+    )
+
+
+def resolve_existing_audio_path(audio_ref: str):
+    return _resolve_existing_audio_path_impl(audio_ref)
+
+
 def _settings_or_none(context: ContextTypes.DEFAULT_TYPE):
-    if context is None or getattr(context, "application", None) is None:
-        return None
-    return context.application.bot_data.get("settings")
+    return _optional_bot_data(context, "settings")
 
 
 def _tts_service_enabled(context: ContextTypes.DEFAULT_TYPE) -> bool:
     settings = _settings_or_none(context)
-    return bool(settings is not None and getattr(settings, "tts_service_enabled", False))
+    if settings is None:
+        return False
+    grouped = getattr(settings, "tts", None)
+    if grouped is not None and hasattr(grouped, "enabled"):
+        return bool(grouped.enabled)
+    return bool(getattr(settings, "tts_service_enabled", False))
 
 
 def _tts_primary_voice_name(context: ContextTypes.DEFAULT_TYPE) -> str | None:
     settings = _settings_or_none(context)
     if settings is None:
         return None
-    raw_voice_name = getattr(settings, "tts_voice_name", None)
+    grouped = getattr(settings, "tts", None)
+    raw_voice_name = (
+        getattr(grouped, "voice_name", None)
+        if grouped is not None
+        else getattr(settings, "tts_voice_name", None)
+    )
     if isinstance(raw_voice_name, str) and raw_voice_name.strip():
         return raw_voice_name.strip()
     return None
@@ -922,7 +558,12 @@ def _tts_primary_voice_name(context: ContextTypes.DEFAULT_TYPE) -> str | None:
 def _tts_voice_variants(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, ...]:
     primary_voice_name = _tts_primary_voice_name(context)
     settings = _settings_or_none(context)
-    raw_variants = getattr(settings, "tts_voice_variants", ()) if settings is not None else ()
+    grouped = getattr(settings, "tts", None) if settings is not None else None
+    raw_variants = (
+        getattr(grouped, "voice_variants", ())
+        if grouped is not None
+        else getattr(settings, "tts_voice_variants", ()) if settings is not None else ()
+    )
     if isinstance(raw_variants, str):
         raw_variants = (raw_variants,)
     ordered: list[str] = []
@@ -946,10 +587,10 @@ def _tts_voice_label(context: ContextTypes.DEFAULT_TYPE, *, user, voice_name: st
     return voice_name
 
 
-def _tts_client_or_none(context: ContextTypes.DEFAULT_TYPE) -> TtsServiceClient | None:
+def _tts_client_or_none(context: ContextTypes.DEFAULT_TYPE) -> object | None:
     if not _tts_service_enabled(context):
         return None
-    cached_client = context.application.bot_data.get("tts_service_client")
+    cached_client = _optional_bot_data(context, "tts_service_client")
     if cached_client is not None:
         return cached_client
     settings = _settings_or_none(context)
@@ -957,12 +598,22 @@ def _tts_client_or_none(context: ContextTypes.DEFAULT_TYPE) -> TtsServiceClient 
         return None
     from englishbot.tts_service import TtsServiceClient
 
-    client = TtsServiceClient(
-        base_url=getattr(settings, "tts_service_base_url"),
-        timeout_sec=getattr(settings, "tts_service_timeout_sec", 15),
+    grouped = getattr(settings, "tts", None)
+    base_url = (
+        getattr(grouped, "service_base_url", None)
+        if grouped is not None
+        else getattr(settings, "tts_service_base_url", None)
     )
-    context.application.bot_data["tts_service_client"] = client
-    return client
+    timeout_sec = (
+        getattr(grouped, "service_timeout_sec", 15)
+        if grouped is not None
+        else getattr(settings, "tts_service_timeout_sec", 15)
+    )
+    client = TtsServiceClient(
+        base_url=base_url,
+        timeout_sec=timeout_sec,
+    )
+    return _set_bot_data(context, "tts_service_client", client)
 
 
 def _extract_sent_voice_file_id(sent_message) -> str | None:
@@ -974,11 +625,11 @@ def _extract_sent_voice_file_id(sent_message) -> str | None:
 
 
 def _telegram_user_login_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserLoginRepository:
-    return context.application.bot_data["telegram_user_login_repository"]
+    return _required_bot_data(context, "telegram_user_login_repository")
 
 
 def _telegram_user_role_repository(context: ContextTypes.DEFAULT_TYPE) -> SQLiteTelegramUserRoleRepository:
-    return context.application.bot_data["telegram_user_role_repository"]
+    return _required_bot_data(context, "telegram_user_role_repository")
 
 
 def _telegram_ui_language_for_user_id(context: ContextTypes.DEFAULT_TYPE, *, user_id: int) -> str:
@@ -992,91 +643,69 @@ def _telegram_ui_language_for_user_id(context: ContextTypes.DEFAULT_TYPE, *, use
 
 
 def _reload_training_service(context: ContextTypes.DEFAULT_TYPE) -> None:
-    context.application.bot_data["training_service"] = build_training_service(
-        db_path=_content_store(context).db_path
+    _set_bot_data(
+        context,
+        "training_service",
+        build_training_service(db_path=_content_store(context).db_path),
     )
 
 
-def _lesson_import_pipeline(context: ContextTypes.DEFAULT_TYPE):
-    return context.application.bot_data["lesson_import_pipeline"]
-
-
 def _start_add_words_flow(context: ContextTypes.DEFAULT_TYPE) -> StartAddWordsFlowUseCase:
-    return context.application.bot_data["add_words_start_use_case"]
+    return _required_bot_data(context, "add_words_start_use_case")
 
 
 def _get_active_add_words_flow(context: ContextTypes.DEFAULT_TYPE) -> GetActiveAddWordsFlowUseCase:
-    return context.application.bot_data["add_words_get_active_use_case"]
+    return _required_bot_data(context, "add_words_get_active_use_case")
 
 
 def _apply_add_words_edit(context: ContextTypes.DEFAULT_TYPE) -> ApplyAddWordsEditUseCase:
-    return context.application.bot_data["add_words_apply_edit_use_case"]
+    return _required_bot_data(context, "add_words_apply_edit_use_case")
 
 
 def _regenerate_add_words_draft(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> RegenerateAddWordsDraftUseCase:
-    return context.application.bot_data["add_words_regenerate_use_case"]
+    return _required_bot_data(context, "add_words_regenerate_use_case")
 
 
 def _approve_add_words_draft(context: ContextTypes.DEFAULT_TYPE) -> ApproveAddWordsDraftUseCase:
-    return context.application.bot_data["add_words_approve_use_case"]
+    return _required_bot_data(context, "add_words_approve_use_case")
 
 
 def _save_approved_add_words_draft(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> SaveApprovedAddWordsDraftUseCase:
-    return context.application.bot_data["add_words_save_approved_draft_use_case"]
+    return _required_bot_data(context, "add_words_save_approved_draft_use_case")
 
 
 def _generate_add_words_image_prompts(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GenerateAddWordsImagePromptsUseCase:
-    return context.application.bot_data["add_words_generate_image_prompts_use_case"]
+    return _required_bot_data(context, "add_words_generate_image_prompts_use_case")
 
 
 def _mark_add_words_image_review_started(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> MarkAddWordsImageReviewStartedUseCase:
-    return context.application.bot_data["add_words_mark_image_review_started_use_case"]
+    return _required_bot_data(context, "add_words_mark_image_review_started_use_case")
 
 
 def _cancel_add_words_flow(context: ContextTypes.DEFAULT_TYPE) -> CancelAddWordsFlowUseCase:
-    return context.application.bot_data["add_words_cancel_use_case"]
+    return _required_bot_data(context, "add_words_cancel_use_case")
 
 
 def _start_image_review(context: ContextTypes.DEFAULT_TYPE) -> StartImageReviewUseCase:
-    return context.application.bot_data["image_review_start_use_case"]
+    return _required_bot_data(context, "image_review_start_use_case")
 
 
 def _homework_progress_use_case(context: ContextTypes.DEFAULT_TYPE) -> HomeworkProgressUseCase:
-    return context.application.bot_data["homework_progress_use_case"]
-
-
-def _user_goals_use_case(context: ContextTypes.DEFAULT_TYPE) -> ListUserGoalsUseCase:
-    return context.application.bot_data["list_user_goals_use_case"]
-
-
-def _user_progress_summary_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetUserProgressSummaryUseCase:
-    return context.application.bot_data["get_user_progress_summary_use_case"]
+    return _required_bot_data(context, "homework_progress_use_case")
 
 
 def _learner_assignment_launch_summary_use_case(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GetLearnerAssignmentLaunchSummaryUseCase:
-    return context.application.bot_data["learner_assignment_launch_summary_use_case"]
-
-
-def _goal_period_label(*, context: ContextTypes.DEFAULT_TYPE, user, value: str) -> str:
-    return ui_goal_period_label(tg=_tg, context=context, user=user, value=value)
-
-
-def _goal_type_label(*, context: ContextTypes.DEFAULT_TYPE, user, value: str) -> str:
-    return ui_goal_type_label(tg=_tg, context=context, user=user, value=value)
-
-
-def _goal_rule_text(*, context: ContextTypes.DEFAULT_TYPE, user, goal_type: GoalType) -> str:
-    return ui_goal_rule_text(tg=_tg, context=context, user=user, goal_type=goal_type)
+    return _required_bot_data(context, "learner_assignment_launch_summary_use_case")
 
 
 def _list_goal_history(
@@ -1085,7 +714,7 @@ def _list_goal_history(
     user_id: int,
     include_history: bool,
 ) -> list[GoalProgressView]:
-    use_case = context.application.bot_data.get("list_user_goals_use_case")
+    use_case = _optional_bot_data(context, "list_user_goals_use_case")
     if use_case is None:
         return []
     return list(use_case.execute(user_id=user_id, include_history=include_history))
@@ -1160,65 +789,24 @@ def _assignment_round_progress_view(
     goal_id: str | None = None,
     active_session=None,
 ) -> _AssignmentRoundProgressView | None:
-    if goal_id is not None and context.application.bot_data.get("content_store") is not None:
-        store = _content_store(context)
-        goals = store.list_user_goals(
-            user_id=user_id,
-            statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED),
-        )
-        goal = next(
-            (
-                item
-                for item in goals
-                if item.id == goal_id
-                and item.goal_period in _assignment_periods_for_kind(kind)
-                and item.goal_type in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}
-            ),
-            None,
-        )
-        if goal is None:
-            return None
-        rows = store.list_goal_word_details(goal_id=goal.id, user_id=user_id)
-        completed_word_count = sum(
-            1
-            for row in rows
-            if _assignment_word_progress_value(
-                store=store,
-                user_id=user_id,
-                goal=goal,
-                row=row,
-            ) >= 1.0
-        )
-        total_word_count = len(rows)
-        remaining_word_count = max(0, total_word_count - completed_word_count)
-        return _AssignmentRoundProgressView(
-            completed_word_count=completed_word_count,
-            total_word_count=total_word_count,
-            remaining_word_count=remaining_word_count,
-            variant_key=goal.id,
-        )
-    launch_summary_use_case = context.application.bot_data.get(
-        "learner_assignment_launch_summary_use_case"
-    )
-    if launch_summary_use_case is None:
-        return None
-    launch_views = launch_summary_use_case.execute(user_id=user_id)
-    launch_view = next((item for item in launch_views if item.kind is kind), None)
-    if launch_view is None:
-        return None
-    return _AssignmentRoundProgressView(
-        completed_word_count=launch_view.completed_word_count,
-        total_word_count=launch_view.total_word_count,
-        remaining_word_count=launch_view.remaining_word_count,
-        variant_key=launch_view.progress_variant_key,
+    from englishbot.telegram.assignment_progress import assignment_round_progress_view
+
+    return assignment_round_progress_view(
+        context=context,
+        user_id=user_id,
+        kind=kind,
+        goal_id=goal_id,
+        active_session=active_session,
     )
 
 
 def _assignment_progress_variant_index(*, variant_key: str, variant_count: int) -> int:
-    if variant_count <= 0:
-        return 0
-    digest = hashlib.sha256(variant_key.encode("utf-8")).digest()
-    return int.from_bytes(digest[:4], "big") % variant_count
+    from englishbot.telegram.assignment_progress import assignment_progress_variant_index
+
+    return assignment_progress_variant_index(
+        variant_key=variant_key,
+        variant_count=variant_count,
+    )
 
 
 def _render_assignment_progress_track(
@@ -1228,30 +816,14 @@ def _render_assignment_progress_track(
     variant_key: str,
     steps: int = 17,
 ) -> str:
-    if total <= 0:
-        return ""
-    bounded_completed = min(max(completed, 0), total)
-    if total == 1:
-        runner_index = 0 if bounded_completed < total else steps - 1
-    else:
-        runner_index = round((bounded_completed / total) * (steps - 1))
-    variants = (
-        ("🐣", "🟨", "⬜", "🏁"),
-        ("🚗", "🟩", "⬜", "🏁"),
-        ("🐛", "🍂", "🍃", "🌼"),
-        ("🐭", "▫️", "🧀", "🏠"),
+    from englishbot.telegram.assignment_progress import render_assignment_progress_track
+
+    return render_assignment_progress_track(
+        completed=completed,
+        total=total,
+        variant_key=variant_key,
+        steps=steps,
     )
-    runner, completed_cell, remaining_cell, finish = variants[
-        _assignment_progress_variant_index(
-            variant_key=variant_key,
-            variant_count=len(variants),
-        )
-    ]
-    cells = [remaining_cell] * steps
-    for index in range(runner_index):
-        cells[index] = completed_cell
-    cells[runner_index] = runner
-    return "".join(cells) + finish
 
 
 def _render_assignment_round_progress_text(
@@ -1261,30 +833,13 @@ def _render_assignment_round_progress_text(
     kind: AssignmentSessionKind,
     progress: _AssignmentRoundProgressView,
 ) -> str:
-    if progress.total_word_count <= 0:
-        return ""
-    return "\n".join(
-        [
-            _tg(
-                "assignment_round_progress_title",
-                context=context,
-                user=user,
-                label=_assignment_kind_label(kind, context=context, user=user),
-            ),
-            _render_assignment_progress_track(
-                completed=progress.completed_word_count,
-                total=progress.total_word_count,
-                variant_key=progress.variant_key,
-            ),
-            _tg(
-                "assignment_round_progress_status",
-                context=context,
-                user=user,
-                done=progress.completed_word_count,
-                total=progress.total_word_count,
-                left=progress.remaining_word_count,
-            ),
-        ]
+    from englishbot.telegram.assignment_progress import render_assignment_round_progress_text
+
+    return render_assignment_round_progress_text(
+        context=context,
+        user=user,
+        kind=kind,
+        progress=progress,
     )
 
 
@@ -1294,12 +849,19 @@ def _assignment_progress_flow_id(
     kind: AssignmentSessionKind,
     goal_id: str | None = None,
 ) -> str:
-    suffix = f":{goal_id}" if goal_id else ""
-    return f"assignment-progress:{user_id}:{kind.value}{suffix}"
+    from englishbot.telegram.assignment_progress import assignment_progress_flow_id
+
+    return assignment_progress_flow_id(
+        user_id=user_id,
+        kind=kind,
+        goal_id=goal_id,
+    )
 
 
 def _assignment_periods_for_kind(kind: AssignmentSessionKind) -> tuple[GoalPeriod, ...]:
-    return (GoalPeriod(kind.value),)
+    from englishbot.telegram.assignment_progress import assignment_periods_for_kind
+
+    return assignment_periods_for_kind(kind)
 
 
 def _build_assignment_progress_snapshot(
@@ -1310,62 +872,16 @@ def _build_assignment_progress_snapshot(
     user,
     goal_id: str | None = None,
     active_session=None,
-) -> AssignmentProgressSnapshot | None:
-    if context.application.bot_data.get("content_store") is None:
-        return None
-    store = _content_store(context)
-    goals = store.list_user_goals(
+):
+    from englishbot.telegram.assignment_progress import build_assignment_progress_snapshot
+
+    return build_assignment_progress_snapshot(
+        context=context,
         user_id=user_id,
-        statuses=((GoalStatus.ACTIVE, GoalStatus.COMPLETED) if goal_id is not None else (GoalStatus.ACTIVE,)),
-    )
-    progress_by_word: dict[str, AssignmentProgressSegment] = {}
-    relevant_periods = _assignment_periods_for_kind(kind)
-    for goal in goals:
-        if goal_id is not None and goal.id != goal_id:
-            continue
-        if goal.goal_period not in relevant_periods:
-            continue
-        if goal.goal_type not in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}:
-            continue
-        for row in store.list_goal_word_details(goal_id=goal.id, user_id=user_id):
-            word_id = str(row["word_id"])
-            label = str(row.get("english_word") or word_id)
-            progress_value = _assignment_word_progress_value(
-                store=store,
-                user_id=user_id,
-                goal=goal,
-                row=row,
-            )
-            existing = progress_by_word.get(word_id)
-            if existing is None or progress_value > existing.progress_value:
-                progress_by_word[word_id] = AssignmentProgressSegment(
-                    word_id=word_id,
-                    label=label,
-                    progress_value=progress_value,
-                    hard_clear=bool(row.get("hard_mastered")),
-                )
-    if not progress_by_word:
-        return None
-    segments = tuple(progress_by_word.values())
-    completed_word_count = sum(1 for item in segments if item.progress_value >= 1.0)
-    remaining_word_count = max(0, len(segments) - completed_word_count)
-    return AssignmentProgressSnapshot(
-        center_label=_tg("assignment_progress_center_label", context=context, user=user),
-        legend_labels=(
-            _tg("assignment_progress_legend_start", context=context, user=user),
-            _tg("assignment_progress_legend_warmup", context=context, user=user),
-            _tg("assignment_progress_legend_almost", context=context, user=user),
-            _tg("assignment_progress_legend_done", context=context, user=user),
-        ),
-        hard_legend_label=_tg("assignment_progress_legend_hard_note", context=context, user=user),
-        completed_word_count=completed_word_count,
-        total_word_count=len(segments),
-        remaining_word_count=remaining_word_count,
-        estimated_round_count=0,
-        segments=segments,
-        combo_charge_streak=max(0, min(4, int(getattr(active_session, "combo_correct_streak", 0) or 0))),
-        combo_hard_active=bool(getattr(active_session, "combo_hard_active", False)),
-        combo_target_word_id=_session_combo_target_word_id(active_session),
+        kind=kind,
+        user=user,
+        goal_id=goal_id,
+        active_session=active_session,
     )
 
 
@@ -1376,77 +892,44 @@ def _assignment_word_progress_value(
     goal,
     row: dict[str, object],
 ) -> float:
-    if goal.goal_type is GoalType.WORD_LEVEL_HOMEWORK:
-        required_level = int(goal.required_level or 2)
-        medium_success_count = int(row.get("medium_success_count") or 0)
-        if required_level <= 1 and bool(row.get("easy_mastered")):
-            return 1.0
-        if required_level <= 2 and bool(row.get("medium_mastered")):
-            return 1.0
-        if medium_success_count >= 1:
-            return 0.66
-        if bool(row.get("easy_mastered")):
-            return 0.33
-        return 0.0
+    from englishbot.telegram.assignment_progress import assignment_word_progress_value
 
-    word_stats = store.get_word_stats(user_id, str(row["word_id"]))
-    goal_created_at = getattr(goal, "created_at", None)
-    last_correct_at = getattr(word_stats, "last_correct_at", None) if word_stats is not None else None
-    if last_correct_at is not None and goal_created_at is not None and last_correct_at >= goal_created_at:
-        return 1.0
-    return 0.0
-
-
-def _assignment_progress_image_path(*, user_id: int, kind: AssignmentSessionKind) -> Path:
-    return (
-        Path(tempfile.gettempdir())
-        / "englishbot-assignment-progress"
-        / f"user-{user_id}-{kind.value}.png"
+    return assignment_word_progress_value(
+        store=store,
+        user_id=user_id,
+        goal=goal,
+        row=row,
     )
 
 
-def _session_combo_target_word_id(active_session) -> str | None:
-    if active_session is None or not bool(getattr(active_session, "combo_hard_active", False)):
-        return None
-    if not hasattr(active_session, "current_item_id"):
-        return None
-    try:
-        return active_session.current_item_id()
-    except ValueError:
-        return None
+def _assignment_progress_image_path(*, user_id: int, kind: AssignmentSessionKind) -> Path:
+    from englishbot.telegram.assignment_progress import assignment_progress_image_path
+
+    return assignment_progress_image_path(user_id=user_id, kind=kind)
 
 
 def _session_combo_target_word_id(active_session) -> str | None:
-    if active_session is None or not bool(getattr(active_session, "combo_hard_active", False)):
-        return None
-    if not hasattr(active_session, "current_item_id"):
-        return None
-    try:
-        return active_session.current_item_id()
-    except ValueError:
-        return None
+    from englishbot.telegram.assignment_progress import session_combo_target_word_id
+
+    return session_combo_target_word_id(active_session)
 
 
 def _assignment_progress_caption(
     *,
     context: ContextTypes.DEFAULT_TYPE,
-    snapshot: AssignmentProgressSnapshot,
+    snapshot,
     kind: AssignmentSessionKind,
     user,
     remaining_word_count: int,
 ) -> str:
-    return "\n".join(
-        [
-            f"<b>{html.escape(_assignment_kind_label(kind, context=context, user=user))}</b>",
-            _tg(
-                "assignment_round_progress_status",
-                context=context,
-                user=user,
-                done=snapshot.completed_word_count,
-                total=snapshot.total_word_count,
-                left=remaining_word_count,
-            ),
-        ]
+    from englishbot.telegram.assignment_progress import assignment_progress_caption
+
+    return assignment_progress_caption(
+        context=context,
+        snapshot=snapshot,
+        kind=kind,
+        user=user,
+        remaining_word_count=remaining_word_count,
     )
 
 
@@ -1474,116 +957,29 @@ async def _send_or_update_assignment_progress_message(
     kind: AssignmentSessionKind,
     active_session=None,
 ) -> None:
-    user_id = getattr(user, "id", None)
-    if not isinstance(user_id, int):
-        return
-    if not hasattr(message, "reply_photo"):
-        return
-    if active_session is None:
-        active_session = _service(context).get_active_session(user_id=user_id)
-    raw_active_session = _active_training_session(context, user_id=user_id)
-    _, goal_id = _assignment_kind_and_goal_id_from_source_tag(
-        getattr(active_session, "source_tag", None),
+    from englishbot.telegram.assignment_progress import (
+        send_or_update_assignment_progress_message,
     )
-    snapshot = _build_assignment_progress_snapshot(
-        context=context,
-        user_id=user_id,
-        kind=kind,
-        user=user,
-        goal_id=goal_id,
-        active_session=raw_active_session,
-    )
-    flow_id = _assignment_progress_flow_id(user_id=user_id, kind=kind, goal_id=goal_id)
-    if snapshot is None:
-        await _delete_tracked_flow_messages(
-            context,
-            flow_id=flow_id,
-            tag=_ASSIGNMENT_PROGRESS_TAG,
-        )
-        return
-    output_path = render_assignment_progress_image(
-        snapshot,
-        output_path=_assignment_progress_image_path(user_id=user_id, kind=kind),
-    )
-    remaining_word_count = snapshot.remaining_word_count
-    caption = _assignment_progress_caption(
-        context=context,
-        snapshot=snapshot,
-        kind=kind,
-        user=user,
-        remaining_word_count=remaining_word_count,
-    )
-    registry = _telegram_flow_messages(context)
-    tracked_messages = registry.list(flow_id=flow_id, tag=_ASSIGNMENT_PROGRESS_TAG) if registry is not None else []
-    tracked_message = tracked_messages[-1] if tracked_messages else None
-    stale_tracked_messages = tracked_messages[:-1] if len(tracked_messages) > 1 else []
-    bot = getattr(context, "bot", None)
-    fallback_chat_id = _message_chat_id(message)
-    if tracked_message is not None and bot is not None and hasattr(bot, "edit_message_media"):
-        try:
-            with output_path.open("rb") as photo_file:
-                await bot.edit_message_media(
-                    chat_id=tracked_message.chat_id,
-                    message_id=tracked_message.message_id,
-                    media=InputMediaPhoto(
-                        media=photo_file,
-                        caption=caption,
-                        parse_mode="HTML",
-                    ),
-                )
-            if stale_tracked_messages:
-                await _delete_tracked_messages(
-                    context,
-                    tracked_messages=stale_tracked_messages,
-                )
-            return
-        except BadRequest:
-            await _delete_tracked_flow_messages(
-                context,
-                flow_id=flow_id,
-                tag=_ASSIGNMENT_PROGRESS_TAG,
-            )
-    await _delete_tracked_flow_messages(
+
+    await send_or_update_assignment_progress_message(
         context,
-        flow_id=flow_id,
-        tag=_ASSIGNMENT_PROGRESS_TAG,
-    )
-    try:
-        with output_path.open("rb") as photo_file:
-            sent_message = await message.reply_photo(
-                photo=photo_file,
-                caption=caption,
-                parse_mode="HTML",
-            )
-    except BadRequest:
-        if bot is None or not isinstance(fallback_chat_id, int) or not hasattr(bot, "send_photo"):
-            return
-        with output_path.open("rb") as photo_file:
-            sent_message = await bot.send_photo(
-                chat_id=fallback_chat_id,
-                photo=photo_file,
-                caption=caption,
-                parse_mode="HTML",
-            )
-    _track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=_ASSIGNMENT_PROGRESS_TAG,
-        message=sent_message,
-        fallback_chat_id=fallback_chat_id,
+        message=message,
+        user=user,
+        kind=kind,
+        active_session=active_session,
     )
 
 
 def _start_assignment_round_use_case(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> StartAssignmentRoundUseCase:
-    return context.application.bot_data["start_assignment_round_use_case"]
+    return _required_bot_data(context, "start_assignment_round_use_case")
 
 
 def _start_assignment_round_use_case_or_none(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> StartAssignmentRoundUseCase | None:
-    return context.application.bot_data.get("start_assignment_round_use_case")
+    return _optional_bot_data(context, "start_assignment_round_use_case")
 
 
 def _execute_assignment_start_use_case(
@@ -1651,123 +1047,115 @@ def _start_training_session_with_ui_language(
 
 
 def _assign_goal_to_users_use_case(context: ContextTypes.DEFAULT_TYPE) -> AssignGoalToUsersUseCase:
-    return context.application.bot_data["assign_goal_to_users_use_case"]
-
-
-def _goal_word_candidates_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetGoalWordCandidatesUseCase:
-    return context.application.bot_data["goal_word_candidates_use_case"]
+    return _required_bot_data(context, "assign_goal_to_users_use_case")
 
 
 def _admin_users_progress_overview_use_case(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GetAdminUsersProgressOverviewUseCase:
-    return context.application.bot_data["admin_users_progress_overview_use_case"]
+    return _required_bot_data(context, "admin_users_progress_overview_use_case")
 
 
 def _admin_user_goals_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetAdminUserGoalsUseCase:
-    return context.application.bot_data["admin_user_goals_use_case"]
+    return _required_bot_data(context, "admin_user_goals_use_case")
 
 
 def _admin_goal_detail_use_case(context: ContextTypes.DEFAULT_TYPE) -> GetAdminGoalDetailUseCase:
-    return context.application.bot_data["admin_goal_detail_use_case"]
+    return _required_bot_data(context, "admin_goal_detail_use_case")
 
 
 def _start_published_word_image_review(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> StartPublishedWordImageEditUseCase:
-    return context.application.bot_data["image_review_start_published_word_use_case"]
+    return _required_bot_data(context, "image_review_start_published_word_use_case")
 
 
 def _get_active_image_review(context: ContextTypes.DEFAULT_TYPE) -> GetActiveImageReviewUseCase:
-    return context.application.bot_data["image_review_get_active_use_case"]
+    return _required_bot_data(context, "image_review_get_active_use_case")
 
 
 def _cancel_image_review(context: ContextTypes.DEFAULT_TYPE) -> CancelImageReviewFlowUseCase:
-    return context.application.bot_data["image_review_cancel_use_case"]
+    return _required_bot_data(context, "image_review_cancel_use_case")
 
 
 def _generate_image_review_candidates(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GenerateImageReviewCandidatesUseCase:
-    return context.application.bot_data["image_review_generate_use_case"]
+    return _required_bot_data(context, "image_review_generate_use_case")
 
 
 def _search_image_review_candidates(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> SearchImageReviewCandidatesUseCase:
-    return context.application.bot_data["image_review_search_use_case"]
+    return _required_bot_data(context, "image_review_search_use_case")
 
 
 def _load_next_image_review_candidates(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> LoadNextImageReviewCandidatesUseCase:
-    return context.application.bot_data["image_review_next_use_case"]
+    return _required_bot_data(context, "image_review_next_use_case")
 
 
 def _load_previous_image_review_candidates(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> LoadPreviousImageReviewCandidatesUseCase:
-    return context.application.bot_data["image_review_previous_use_case"]
+    return _required_bot_data(context, "image_review_previous_use_case")
 
 
 def _select_image_review_candidate(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> SelectImageCandidateUseCase:
-    return context.application.bot_data["image_review_select_use_case"]
+    return _required_bot_data(context, "image_review_select_use_case")
 
 
 def _skip_image_review_item(context: ContextTypes.DEFAULT_TYPE) -> SkipImageReviewItemUseCase:
-    return context.application.bot_data["image_review_skip_use_case"]
+    return _required_bot_data(context, "image_review_skip_use_case")
 
 
 def _publish_image_review(context: ContextTypes.DEFAULT_TYPE) -> PublishImageReviewUseCase:
-    return context.application.bot_data["image_review_publish_use_case"]
+    return _required_bot_data(context, "image_review_publish_use_case")
 
 
 def _update_image_review_prompt(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> UpdateImageReviewPromptUseCase:
-    return context.application.bot_data["image_review_update_prompt_use_case"]
+    return _required_bot_data(context, "image_review_update_prompt_use_case")
 
 
 def _attach_uploaded_image(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> AttachUploadedImageUseCase:
-    return context.application.bot_data["image_review_attach_uploaded_image_use_case"]
+    return _required_bot_data(context, "image_review_attach_uploaded_image_use_case")
 
 
 def _generate_content_pack_images(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> GenerateContentPackImagesUseCase:
-    return context.application.bot_data["content_pack_generate_images_use_case"]
+    return _required_bot_data(context, "content_pack_generate_images_use_case")
 
 
 def _list_editable_topics(context: ContextTypes.DEFAULT_TYPE) -> ListEditableTopicsUseCase:
-    return context.application.bot_data["list_editable_topics_use_case"]
+    return _required_bot_data(context, "list_editable_topics_use_case")
 
 
 def _list_editable_words(context: ContextTypes.DEFAULT_TYPE) -> ListEditableWordsUseCase:
-    return context.application.bot_data["list_editable_words_use_case"]
+    return _required_bot_data(context, "list_editable_words_use_case")
 
 
 def _update_editable_word(context: ContextTypes.DEFAULT_TYPE) -> UpdateEditableWordUseCase:
-    return context.application.bot_data["update_editable_word_use_case"]
+    return _required_bot_data(context, "update_editable_word_use_case")
 
 
 def _image_review_assets_dir(context: ContextTypes.DEFAULT_TYPE) -> Path:
-    return context.application.bot_data["image_review_assets_dir"]
+    return _required_bot_data(context, "image_review_assets_dir")
 
 
 def _telegram_flow_messages(context: ContextTypes.DEFAULT_TYPE):
-    application = getattr(context, "application", None)
-    bot_data = getattr(application, "bot_data", None)
-    if not isinstance(bot_data, dict):
-        return None
-    return bot_data.get("telegram_flow_message_repository")
+    return _optional_bot_data(context, "telegram_flow_message_repository")
 
 
 def _menu_access_policy(context: ContextTypes.DEFAULT_TYPE) -> TelegramMenuAccessPolicy:
-    configured_policy = context.application.bot_data.get("telegram_menu_access_policy")
+    configured_policy = _optional_bot_data(context, "telegram_menu_access_policy")
     if isinstance(configured_policy, TelegramMenuAccessPolicy):
         return configured_policy
     return TelegramMenuAccessPolicy.from_bot_data(context.application.bot_data)
@@ -1782,17 +1170,6 @@ def _has_menu_permission(
     return _menu_access_policy(context).has_permission(user_id, permission)
 
 
-def _is_editor(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    return any(
-        _has_menu_permission(context, user_id=user_id, permission=permission)
-        for permission in (
-            PERMISSION_WORDS_ADD,
-            PERMISSION_WORDS_EDIT,
-            PERMISSION_WORD_IMAGES_EDIT,
-        )
-    )
-
-
 def _is_admin(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     return "admin" in _menu_access_policy(context).roles_for_user(user_id)
 
@@ -1803,9 +1180,9 @@ def _visible_command_specs(
     user_id: int | None,
     only_chat_menu: bool = False,
 ) -> tuple[TelegramCommandSpec, ...]:
-    return _menu_access_policy(context).visible_commands(
-        user_id,
-        command_specs=DEFAULT_TELEGRAM_COMMAND_SPECS,
+    return menu_visible_command_specs(
+        context.application.bot_data,
+        user_id=user_id,
         only_chat_menu=only_chat_menu,
     )
 
@@ -1815,20 +1192,11 @@ def _visible_command_rows(
     *,
     user_id: int | None,
 ) -> list[list[str]]:
-    commands = {spec.command for spec in _visible_command_specs(context, user_id=user_id, only_chat_menu=True)}
-    rows = [
-        ["/start", "/help"],
-        ["/version", "/words"],
-    ]
-    if "assign" in commands:
-        rows.append(["/assign"])
-    if "add_words" in commands:
-        rows.append(["/add_words", "/cancel"])
-    return rows
+    return menu_visible_command_rows(context.application.bot_data, user_id=user_id)
 
 
 def _preview_message_ids(context: ContextTypes.DEFAULT_TYPE) -> dict[int, int]:
-    return context.application.bot_data["word_import_preview_message_ids"]
+    return _required_bot_data(context, "word_import_preview_message_ids")
 
 
 def _admin_web_app_url(
@@ -1839,7 +1207,7 @@ def _admin_web_app_url(
     user_id = getattr(user, "id", None)
     if user_id is None or not _is_admin(user_id, context):
         return None
-    configured_url = context.application.bot_data.get("web_app_base_url")
+    configured_url = _optional_bot_data(context, "web_app_base_url")
     if not isinstance(configured_url, str):
         return None
     normalized = configured_url.strip().rstrip("/")
@@ -1855,7 +1223,7 @@ def _assignment_guide_web_app_url(
     *,
     user,
 ) -> str | None:
-    configured_url = context.application.bot_data.get("web_app_base_url")
+    configured_url = _optional_bot_data(context, "web_app_base_url")
     if not isinstance(configured_url, str):
         return None
     normalized = configured_url.strip().rstrip("/")
@@ -1873,10 +1241,10 @@ class _EditorAICapabilities:
 
 
 def _smart_parsing_available(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    override = context.application.bot_data.get("smart_parsing_available")
+    override = _optional_bot_data(context, "smart_parsing_available")
     if isinstance(override, bool):
         return override
-    gateway = context.application.bot_data.get("smart_parsing_gateway")
+    gateway = _optional_bot_data(context, "smart_parsing_gateway")
     if gateway is None:
         return True
     try:
@@ -1887,10 +1255,10 @@ def _smart_parsing_available(context: ContextTypes.DEFAULT_TYPE) -> bool:
 
 
 def _local_image_generation_available(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    override = context.application.bot_data.get("local_image_generation_available")
+    override = _optional_bot_data(context, "local_image_generation_available")
     if isinstance(override, bool):
         return override
-    gateway = context.application.bot_data.get("image_generation_gateway")
+    gateway = _optional_bot_data(context, "image_generation_gateway")
     if gateway is None:
         return True
     try:
@@ -2044,10 +1412,6 @@ def _quick_actions_view(
     )
 
 
-def _chat_menu_flow_id(*, user_id: int) -> str:
-    return f"chat-menu:{user_id}"
-
-
 def _start_menu_view(
     *,
     context: ContextTypes.DEFAULT_TYPE,
@@ -2115,24 +1479,6 @@ def _mode_selection_view(
     return ui_mode_selection_view(
         text=text,
         reply_markup=_mode_keyboard(
-            topic_id,
-            lesson_id,
-            language=_telegram_ui_language(context, user),
-        ),
-    )
-
-
-def _game_mode_selection_view(
-    *,
-    text: str,
-    topic_id: str,
-    lesson_id: str | None,
-    context: ContextTypes.DEFAULT_TYPE,
-    user,
-) -> TelegramTextView:
-    return ui_mode_selection_view(
-        text=text,
-        reply_markup=_game_mode_keyboard(
             topic_id,
             lesson_id,
             language=_telegram_ui_language(context, user),
@@ -2212,50 +1558,19 @@ def _help_view(
     )
 
 
-def _remember_expected_user_input(
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    chat_id: int | None,
-    message_id: int | None,
-) -> None:
-    if chat_id is None or message_id is None:
-        return
-    context.user_data[_EXPECTED_USER_INPUT_STATE_KEY] = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-    }
-
-
-def _clear_expected_user_input(context: ContextTypes.DEFAULT_TYPE) -> None:
-    context.user_data.pop(_EXPECTED_USER_INPUT_STATE_KEY, None)
-
-
 async def _edit_expected_user_input_prompt(
     context: ContextTypes.DEFAULT_TYPE,
     *,
     text: str,
     reply_markup,
 ) -> bool:
-    stored = context.user_data.get(_EXPECTED_USER_INPUT_STATE_KEY)
-    if not isinstance(stored, dict):
-        return False
-    chat_id = stored.get("chat_id")
-    message_id = stored.get("message_id")
-    if not isinstance(chat_id, int) or not isinstance(message_id, int):
-        return False
-    try:
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=text,
-            reply_markup=reply_markup,
-        )
-    except BadRequest as error:
-        if "message is not modified" in str(error).lower():
-            return True
-        logger.debug("Failed to edit stored goal prompt message", exc_info=True)
-        return False
-    return True
+    from englishbot.telegram.interaction import edit_expected_user_input_prompt
+
+    return await edit_expected_user_input_prompt(
+        context,
+        text=text,
+        reply_markup=reply_markup,
+    )
 
 
 def _known_assignment_users(
@@ -2312,10 +1627,6 @@ def _known_assignment_users(
         reverse=True,
     )
     return users
-
-
-def _assignment_user_label(item: _AssignmentUserView) -> str:
-    return ui_assignment_user_label(item)
 
 
 def _render_assignment_user_detail_text(*, context: ContextTypes.DEFAULT_TYPE, user, item: _AssignmentUserView, goals) -> str:
@@ -2416,361 +1727,92 @@ def _is_group_chat(update: Update) -> bool:
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    if message is None:
-        return
-    user = update.effective_user
-    if user is not None:
-        _telegram_user_login_repository(context).record(
-            user_id=user.id,
-            username=getattr(user, "username", None),
-            first_name=getattr(user, "first_name", None),
-            last_name=getattr(user, "last_name", None),
-            language_code=getattr(user, "language_code", None),
-        )
-        logger.info("User %s opened /start", user.id)
-        active_session = _service(context).get_active_session(user_id=user.id)
-        if active_session is not None:
-            context.user_data["awaiting_text_answer"] = active_session.mode is TrainingMode.HARD
-            await send_telegram_view(
-                message,
-                build_active_session_exists_view(
-                    text=_tg(
-                        "active_session_exists",
-                        context=context,
-                        user=user,
-                        topic_id=_active_session_topic_label(
-                            context=context,
-                            user=user,
-                            topic_id=active_session.topic_id,
-                            source_tag=active_session.source_tag,
-                            lesson_id=active_session.lesson_id,
-                        ),
-                        lesson_id=_active_session_lesson_label(
-                            context=context,
-                            user=user,
-                            topic_id=active_session.topic_id,
-                            lesson_id=active_session.lesson_id,
-                            source_tag=active_session.source_tag,
-                        ),
-                        mode=active_session.mode.value,
-                        current_position=active_session.current_position,
-                        total_items=active_session.total_items,
-                    ),
-                    reply_markup=_active_session_keyboard(
-                        language=_telegram_ui_language(context, user),
-                    ),
-                ),
-            )
-            return
-    await send_telegram_view(
-        message,
-        _start_menu_view(context=context, user=user),
+    await telegram_start_handler(
+        update,
+        context,
+        send_view=send_telegram_view,
+        telegram_user_login_repository=_telegram_user_login_repository,
+        service=_service,
+        tg=_tg,
+        active_session_topic_label=_active_session_topic_label,
+        active_session_lesson_label=_active_session_lesson_label,
+        active_session_keyboard=_active_session_keyboard,
+        telegram_ui_language=_telegram_ui_language,
+        start_menu_view=_start_menu_view,
+        ensure_chat_menu_message=_ensure_chat_menu_message,
     )
-    if user is not None:
-        await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None:
-        return
-    visible_commands = _visible_command_specs(
+    await telegram_help_handler(
+        update,
         context,
-        user_id=(user.id if user is not None else None),
+        send_view=send_telegram_view,
+        visible_command_specs=_visible_command_specs,
+        help_command_text=_HELP_COMMAND_TEXT,
+        tg=_tg,
+        help_view=_help_view,
+        ensure_chat_menu_message=_ensure_chat_menu_message,
     )
-    commands = [
-        f"/{spec.command} - {_HELP_COMMAND_TEXT.get(spec.command, spec.description.lower())}"
-        for spec in visible_commands
-    ]
-    await send_telegram_view(
-        message,
-        _help_view(
-            text=_tg("help_title", context=context, user=user, commands="\n".join(commands)),
-            context=context,
-            user=user,
-        ),
-    )
-    if user is not None:
-        await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def version_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None:
-        return
-    version_info = _runtime_version_info(context)
-    lines = [
-        _tg("version_title", context=context, user=user),
-        _tg(
-            "version_line",
-            context=context,
-            user=user,
-            version=version_info.package_version,
-        ),
-    ]
-    if version_info.build_number:
-        lines.append(
-            _tg(
-                "build_line",
-                context=context,
-                user=user,
-                build_number=version_info.build_number,
-            )
-        )
-    if version_info.git_sha:
-        lines.append(
-            _tg(
-                "git_sha_line",
-                context=context,
-                user=user,
-                git_sha=version_info.git_sha,
-            )
-        )
-    if version_info.git_branch:
-        lines.append(
-            _tg(
-                "git_branch_line",
-                context=context,
-                user=user,
-                branch=version_info.git_branch,
-            )
-        )
-    await send_telegram_view(
-        message,
-        build_status_view(text="\n".join(lines)),
+    await telegram_version_handler(
+        update,
+        context,
+        send_view=send_telegram_view,
+        runtime_version_info=_runtime_version_info,
+        tg=_tg,
     )
 
 
 async def makeadmin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or user is None:
-        return
-
-    _telegram_user_login_repository(context).record(
-        user_id=user.id,
-        username=getattr(user, "username", None),
-        first_name=getattr(user, "first_name", None),
-        last_name=getattr(user, "last_name", None),
-        language_code=getattr(user, "language_code", None),
+    from englishbot.telegram.admin_utils import (
+        makeadmin_handler as telegram_makeadmin_handler,
     )
 
-    if not context.args:
-        await send_telegram_view(
-            message,
-            build_status_view(
-                text="Usage: /makeadmin <telegram_id> [bootstrap_secret]"
-            ),
-        )
-        return
-
-    try:
-        target_user_id = int(context.args[0])
-    except ValueError:
-        await send_telegram_view(
-            message,
-            build_status_view(text="The target telegram_id must be an integer."),
-        )
-        return
-
-    provided_secret = context.args[1] if len(context.args) > 1 else ""
-    role_repository = _telegram_user_role_repository(context)
-    admin_ids = role_repository.list_memberships().get("admin", frozenset())
-    requester_is_admin = user.id in admin_ids
-    bootstrap_secret = str(
-        context.application.bot_data.get("admin_bootstrap_secret", "")
-    ).strip()
-    secret_is_valid = bool(
-        bootstrap_secret and provided_secret and hmac.compare_digest(provided_secret, bootstrap_secret)
-    )
-
-    if not requester_is_admin and not secret_is_valid:
-        await send_telegram_view(
-            message,
-            build_status_view(
-                text=(
-                    "Access denied. Current admins can use /makeadmin directly. "
-                    "Otherwise provide a valid bootstrap secret."
-                )
-            ),
-        )
-        return
-
-    try:
-        role_repository.grant(user_id=target_user_id, role="admin")
-    except Exception:  # noqa: BLE001
-        logger.exception(
-            "Failed to grant admin role via /makeadmin target_user_id=%s requester_user_id=%s",
-            target_user_id,
-            user.id,
-        )
-        await send_telegram_view(
-            message,
-            build_status_view(text="Failed to grant the admin role."),
-        )
-        return
-
-    updated_admin_ids = role_repository.list_memberships().get("admin", frozenset())
-    if target_user_id not in updated_admin_ids:
-        await send_telegram_view(
-            message,
-            build_status_view(text="Failed to grant the admin role."),
-        )
-        return
-
-    await send_telegram_view(
-        message,
-        build_status_view(
-            text=f"Admin role granted to Telegram user {target_user_id}."
-        ),
-    )
+    await telegram_makeadmin_handler(update, context)
 
 
 async def clear_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or user is None:
-        return
-
-    if len(context.args) != 2:
-        await send_telegram_view(
-            message,
-            build_status_view(text="Usage: /clearuser <telegram_id> <bootstrap_secret>"),
-        )
-        return
-
-    try:
-        target_user_id = int(context.args[0])
-    except ValueError:
-        await send_telegram_view(
-            message,
-            build_status_view(text="The target telegram_id must be an integer."),
-        )
-        return
-
-    provided_secret = str(context.args[1]).strip()
-    bootstrap_secret = str(
-        context.application.bot_data.get("admin_bootstrap_secret", "")
-    ).strip()
-    requester_is_admin = _is_admin(user.id, context)
-    secret_is_valid = bool(
-        bootstrap_secret and provided_secret and hmac.compare_digest(provided_secret, bootstrap_secret)
+    from englishbot.telegram.admin_utils import (
+        clear_user_handler as telegram_clear_user_handler,
     )
-    if not requester_is_admin and not secret_is_valid:
-        await send_telegram_view(
-            message,
-            build_status_view(
-                text=(
-                    "Access denied. Current admins can use /clearuser directly. "
-                    "Otherwise provide a valid bootstrap secret."
-                )
-            ),
-        )
-        return
 
-    try:
-        _service(context).discard_active_session(user_id=target_user_id)
-        cleared = _content_store(context).clear_user_learning_data(user_id=target_user_id)
-    except Exception:  # noqa: BLE001
-        logger.exception(
-            "Failed to clear learning data target_user_id=%s requester_user_id=%s",
-            target_user_id,
-            user.id,
-        )
-        await send_telegram_view(
-            message,
-            build_status_view(text="Failed to clear the user's learning data."),
-        )
-        return
-
-    recent_activity = context.application.bot_data.get("recent_assignment_activity_by_user")
-    if isinstance(recent_activity, dict):
-        recent_activity.pop(target_user_id, None)
-    preview_ids = context.application.bot_data.get("word_import_preview_message_ids")
-    if isinstance(preview_ids, dict):
-        preview_ids.pop(target_user_id, None)
-    cancel_add_words = context.application.bot_data.get("add_words_cancel_use_case")
-    execute_cancel = getattr(cancel_add_words, "execute", None)
-    if callable(execute_cancel):
-        try:
-            execute_cancel(user_id=target_user_id)
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to discard add-words flow target_user_id=%s", target_user_id)
-
-    await send_telegram_view(
-        message,
-        build_status_view(
-            text=(
-                f"Learning data cleared for Telegram user {target_user_id}. "
-                f"Goals: {cleared['goals']}, sessions: {cleared['sessions']}, "
-                f"stats: {cleared['word_stats']}."
-            )
-        ),
-    )
+    await telegram_clear_user_handler(update, context)
 
 
 async def assign_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or user is None:
-        return
-    _telegram_user_login_repository(context).record(
-        user_id=user.id,
-        username=getattr(user, "username", None),
-        first_name=getattr(user, "first_name", None),
-        last_name=getattr(user, "last_name", None),
-        language_code=getattr(user, "language_code", None),
+    await telegram_assign_menu_handler(
+        update,
+        context,
+        send_view=send_telegram_view,
+        telegram_user_login_repository=_telegram_user_login_repository,
+        tg=_tg,
+        assign_menu_view=_assign_menu_view,
+        ensure_chat_menu_message=_ensure_chat_menu_message,
     )
-    await send_telegram_view(
-        message,
-        _assign_menu_view(
-            text=_tg("assign_menu_prompt", context=context, user=user),
-            context=context,
-            user=user,
-        ),
-    )
-    await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def words_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None:
-        return
-    await send_telegram_view(
-        message,
-        _words_menu_view(
-            text=_tg("words_menu_prompt", context=context, user=user),
-            context=context,
-            user=user,
-        ),
+    await telegram_words_menu_handler(
+        update,
+        context,
+        send_view=send_telegram_view,
+        tg=_tg,
+        words_menu_view=_words_menu_view,
+        ensure_chat_menu_message=_ensure_chat_menu_message,
     )
-    if user is not None:
-        await _ensure_chat_menu_message(context, message=message, user=user)
 
 
 async def assign_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    try:
-        await edit_telegram_text_view(
-            query,
-            _assign_menu_view(
-                text=_tg("assign_menu_title", context=context, user=update.effective_user),
-                context=context,
-                user=update.effective_user,
-            ),
-        )
-    except BadRequest as error:
-        if "message is not modified" in str(error).lower():
-            logger.debug("Assign menu message unchanged")
-            return
-        raise
+    await telegram_assign_menu_callback_handler(
+        update,
+        context,
+        edit_text_view=edit_telegram_text_view,
+        tg=_tg,
+        assign_menu_view=_assign_menu_view,
+    )
 
 
 async def noop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:  # noqa: ARG001
@@ -2781,32 +1823,21 @@ async def noop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def notification_dismiss_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    await _delete_message_if_possible(context, message=query.message)
+    from englishbot.telegram.notifications import (
+        notification_dismiss_callback_handler as telegram_notification_dismiss_callback_handler,
+    )
+
+    await telegram_notification_dismiss_callback_handler(update, context)
 
 
 async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    try:
-        await edit_telegram_text_view(
-            query,
-            _words_menu_view(
-                text=_tg("words_menu_title", context=context, user=update.effective_user),
-                context=context,
-                user=update.effective_user,
-            ),
-        )
-    except BadRequest as error:
-        if "message is not modified" in str(error).lower():
-            logger.debug("Words menu message unchanged")
-            return
-        raise
+    await telegram_words_menu_callback_handler(
+        update,
+        context,
+        edit_text_view=edit_telegram_text_view,
+        tg=_tg,
+        words_menu_view=_words_menu_view,
+    )
 
 
 def _goal_setup_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
@@ -2819,10 +1850,6 @@ def _goal_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> In
 
 def _goal_source_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
     return ui_goal_source_keyboard(tg=_tg, language=language)
-
-
-def _goal_custom_target_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
-    return ui_goal_custom_target_keyboard(tg=_tg, language=language)
 
 
 def _goal_list_keyboard(*, goals, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
@@ -2915,20 +1942,6 @@ def _assignment_kind_and_goal_id_from_source_tag(
     return kind, goal_id
 
 
-def _start_assignment_button_label(
-    kind: AssignmentSessionKind,
-    *,
-    available: bool,
-    language: str,
-) -> str:
-    return ui_start_assignment_button_label(
-        kind,
-        tg=_tg,
-        available=available,
-        language=language,
-    )
-
-
 def _active_session_topic_label(
     *,
     context: ContextTypes.DEFAULT_TYPE,
@@ -2978,176 +1991,103 @@ def _raw_training_session_by_id(
 ):
     if not isinstance(session_id, str):
         return None
-    store = context.application.bot_data.get("content_store")
+    store = _optional_bot_data(context, "content_store")
     if store is None or not hasattr(store, "get_session_by_id"):
         return None
     return store.get_session_by_id(session_id)
 
 
 async def words_goals_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
-    homework_goals = [item for item in summary.active_goals if item.goal.goal_period is GoalPeriod.HOMEWORK]
-    filtered_summary = LearnerProgressSummary(
-        correct_answers=summary.correct_answers,
-        incorrect_answers=summary.incorrect_answers,
-        game_streak_days=summary.game_streak_days,
-        weekly_points=summary.weekly_points,
-        active_goals=homework_goals,
+    from englishbot.telegram.homework_admin import (
+        words_goals_callback_handler as homework_words_goals_callback_handler,
     )
-    try:
-        await query.edit_message_text(
-            _render_progress_text(context=context, user=user),
-            reply_markup=_goal_list_keyboard(goals=filtered_summary.active_goals, language=_telegram_ui_language(context, user)),
-        )
-    except BadRequest as error:
-        if "Message is not modified" not in str(error):
-            raise
+
+    await homework_words_goals_callback_handler(update, context)
 
 
 async def words_progress_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await words_goals_callback_handler(update, context)
+    from englishbot.telegram.homework_admin import (
+        words_progress_callback_handler as homework_words_progress_callback_handler,
+    )
+
+    await homework_words_progress_callback_handler(update, context)
 
 
 def _clear_self_goal_setup_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    context.user_data.pop("goal_period", None)
-    context.user_data.pop("goal_type", None)
-    context.user_data.pop("goal_target_count", None)
-    if context.user_data.get("words_flow_mode") == _GOAL_AWAITING_TARGET_TEXT:
-        context.user_data.pop("words_flow_mode", None)
+    from englishbot.telegram.interaction import clear_self_goal_target_interaction
+
+    clear_self_goal_target_interaction(context)
 
 
 async def goal_setup_disabled_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _clear_self_goal_setup_state(context)
-    await query.edit_message_text(
-        _tg("self_goal_setup_disabled", context=context, user=user),
-        reply_markup=_assign_menu_view(
-            text=_tg("assign_menu_title", context=context, user=user),
-            context=context,
-            user=user,
-        ).reply_markup,
+    from englishbot.telegram.homework_admin import (
+        goal_setup_disabled_callback_handler as homework_goal_setup_disabled_callback_handler,
     )
+
+    await homework_goal_setup_disabled_callback_handler(update, context)
 
 
 async def goal_type_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    return
+    from englishbot.telegram.homework_admin import (
+        goal_type_callback_handler as homework_goal_type_callback_handler,
+    )
+
+    await homework_goal_type_callback_handler(update, context)
 
 
 async def goal_reset_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    goal_id = query.data.split(":")[-1]
-    reset = _homework_progress_use_case(context).reset_goal(user_id=user.id, goal_id=goal_id)
-    await query.edit_message_text(_tg("goal_reset_done" if reset else "goal_reset_not_found", context=context, user=user))
+    from englishbot.telegram.homework_admin import (
+        goal_reset_callback_handler as homework_goal_reset_callback_handler,
+    )
+
+    await homework_goal_reset_callback_handler(update, context)
 
 
 async def admin_assign_goal_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    if not _is_admin(user.id, context):
-        await query.edit_message_text(_tg("admin_only", context=context, user=user))
-        return
-    for key in (
-        "admin_goal_period",
-        "admin_goal_type",
-        "admin_goal_target_count",
-        "admin_goal_source",
-        "admin_goal_deadline_date",
-        "admin_goal_manual_word_ids",
-        "admin_goal_recipient_user_ids",
-        "admin_goal_recipients_page",
-    ):
-        context.user_data.pop(key, None)
-    context.user_data["admin_goal_recipient_user_ids"] = set()
-    await query.edit_message_text(
-        _tg("assign_setup_intro", context=context, user=user),
-        reply_markup=_admin_goal_period_keyboard(language=_telegram_ui_language(context, user)),
+    from englishbot.telegram.homework_admin import (
+        admin_assign_goal_start_handler as homework_admin_assign_goal_start_handler,
     )
+
+    await homework_admin_assign_goal_start_handler(update, context)
 
 
 async def admin_goal_period_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    raw_period = GoalPeriod.HOMEWORK.value
-    context.user_data["admin_goal_period"] = raw_period
-    context.user_data["admin_goal_type"] = GoalType.WORD_LEVEL_HOMEWORK.value
-    await query.edit_message_text(
-        _tg("goal_source_prompt", context=context, user=user),
-        reply_markup=_admin_goal_source_keyboard(language=_telegram_ui_language(context, user)),
+    from englishbot.telegram.homework_admin import (
+        admin_goal_period_callback_handler as homework_admin_goal_period_callback_handler,
     )
+
+    await homework_admin_goal_period_callback_handler(update, context)
 
 
 async def admin_goal_target_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    await query.edit_message_text(
-        _tg("goal_target_prompt", context=context, user=user),
-        reply_markup=_admin_goal_target_keyboard(language=_telegram_ui_language(context, user)),
+    from englishbot.telegram.homework_admin import (
+        admin_goal_target_menu_callback_handler as homework_admin_goal_target_menu_callback_handler,
     )
+
+    await homework_admin_goal_target_menu_callback_handler(update, context)
 
 
 async def admin_goal_target_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    target = query.data.split(":")[-1]
-    if target == "custom":
-        context.user_data["words_flow_mode"] = _ADMIN_GOAL_AWAITING_TARGET_TEXT
-        _remember_expected_user_input(
-            context,
-            chat_id=getattr(getattr(query, "message", None), "chat_id", None),
-            message_id=getattr(getattr(query, "message", None), "message_id", None),
-        )
-        await query.edit_message_text(
-            _tg("goal_target_custom_prompt", context=context, user=user),
-            reply_markup=_admin_goal_custom_target_keyboard(language=_telegram_ui_language(context, user)),
-        )
-        return
-    context.user_data["admin_goal_target_count"] = int(target)
-    await query.edit_message_text(
-        _tg("goal_source_prompt", context=context, user=user),
-        reply_markup=_admin_goal_source_keyboard(language=_telegram_ui_language(context, user)),
+    from englishbot.telegram.homework_admin import (
+        admin_goal_target_callback_handler as homework_admin_goal_target_callback_handler,
     )
+
+    await homework_admin_goal_target_callback_handler(update, context)
 
 
 async def admin_goal_source_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    await query.edit_message_text(
-        _tg("goal_source_prompt", context=context, user=user),
-        reply_markup=_admin_goal_source_keyboard(language=_telegram_ui_language(context, user)),
+    from englishbot.telegram.homework_admin import (
+        admin_goal_source_menu_callback_handler as homework_admin_goal_source_menu_callback_handler,
     )
+
+    await homework_admin_goal_source_menu_callback_handler(update, context)
 
 
 def _admin_goal_manual_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user, page: int) -> InlineKeyboardMarkup:
+    from englishbot.telegram.interaction import get_admin_goal_creation_state
+
     items = _content_store(context).list_all_vocabulary()
-    selected = set(context.user_data.get("admin_goal_manual_word_ids", set()))
+    selected = set(get_admin_goal_creation_state(context).manual_word_ids)
     keyboard, normalized_page = ui_admin_goal_manual_keyboard(
         tg=_tg,
         items=items,
@@ -3155,7 +2095,7 @@ def _admin_goal_manual_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user, pag
         page=page,
         language=_telegram_ui_language(context, user),
     )
-    context.user_data["admin_goal_manual_page"] = normalized_page
+    _set_user_data(context, "admin_goal_manual_page", normalized_page)
     return keyboard
 
 
@@ -3165,12 +2105,14 @@ def _admin_goal_recipients_keyboard(
     user,
     page: int,
 ) -> InlineKeyboardMarkup:
+    from englishbot.telegram.interaction import get_admin_goal_creation_state
+
     items = _known_assignment_users(
         context,
         viewer_user_id=user.id,
         viewer_username=getattr(user, "username", None),
     )
-    selected = set(context.user_data.get("admin_goal_recipient_user_ids", set()))
+    selected = set(get_admin_goal_creation_state(context).recipient_user_ids)
     keyboard, normalized_page = ui_admin_goal_recipients_keyboard(
         tg=_tg,
         items=items,
@@ -3178,7 +2120,7 @@ def _admin_goal_recipients_keyboard(
         page=page,
         language=_telegram_ui_language(context, user),
     )
-    context.user_data["admin_goal_recipients_page"] = normalized_page
+    _set_user_data(context, "admin_goal_recipients_page", normalized_page)
     return keyboard
 
 
@@ -3212,181 +2154,62 @@ def _assignment_goal_detail_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user
     )
 
 
-def _page_range_label(*, page: int, page_size: int, total: int, language: str) -> str:
-    return ui_page_range_label(
-        tg=_tg,
-        page=page,
-        page_size=page_size,
-        total=total,
-        language=language,
-    )
-
-
 async def admin_goal_source_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    if query.data.startswith("words:admin_goal_source:topic:"):
-        context.user_data["admin_goal_source"] = f"topic:{query.data.split(':', 4)[-1]}"
-        await query.edit_message_text(
-            _tg("assign_select_users_prompt", context=context, user=user),
-            reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=0),
-        )
-        return
-    source = query.data.split(":")[-1]
-    context.user_data["admin_goal_source"] = source
-    if source == GoalWordSource.TOPIC.value:
-        topics = _service(context).list_topics()
-        keyboard = ui_goal_source_topic_keyboard(
-            tg=_tg,
-            topics=topics,
-            language=_telegram_ui_language(context, user),
-        )
-        await query.edit_message_text(_tg("goal_source_topic_prompt", context=context, user=user), reply_markup=keyboard)
-        return
-    if source == GoalWordSource.MANUAL.value:
-        context.user_data["admin_goal_manual_word_ids"] = set()
-        await query.edit_message_text(_tg("goal_source_manual_prompt", context=context, user=user), reply_markup=_admin_goal_manual_keyboard(context=context, user=user, page=0))
-        return
-    await query.edit_message_text(
-        _tg("assign_select_users_prompt", context=context, user=user),
-        reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=0),
+    from englishbot.telegram.homework_admin import (
+        admin_goal_source_callback_handler as homework_admin_goal_source_callback_handler,
     )
+
+    await homework_admin_goal_source_callback_handler(update, context)
 
 
 async def admin_goal_manual_toggle_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    if query.data.startswith("words:admin_goal_manual:page:"):
-        page = int(query.data.split(":")[-1])
-    else:
-        word_id = query.data.split(":", 4)[-1]
-        selected = set(context.user_data.get("admin_goal_manual_word_ids", set()))
-        if word_id in selected:
-            selected.remove(word_id)
-        else:
-            selected.add(word_id)
-        context.user_data["admin_goal_manual_word_ids"] = selected
-        page = int(context.user_data.get("admin_goal_manual_page", 0))
-    await query.edit_message_text(_tg("goal_source_manual_prompt", context=context, user=user), reply_markup=_admin_goal_manual_keyboard(context=context, user=user, page=page))
+    from englishbot.telegram.homework_admin import (
+        admin_goal_manual_toggle_callback_handler as homework_admin_goal_manual_toggle_callback_handler,
+    )
+
+    await homework_admin_goal_manual_toggle_callback_handler(update, context)
 
 
 async def admin_goal_manual_done_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    if not context.user_data.get("admin_goal_manual_word_ids"):
-        await query.edit_message_text(_tg("goal_manual_empty", context=context, user=user))
-        return
-    await query.edit_message_text(
-        _tg("assign_select_users_prompt", context=context, user=user),
-        reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=0),
+    from englishbot.telegram.homework_admin import (
+        admin_goal_manual_done_callback_handler as homework_admin_goal_manual_done_callback_handler,
     )
+
+    await homework_admin_goal_manual_done_callback_handler(update, context)
 
 
 async def admin_goal_recipients_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    if query.data.startswith("assign:admin_goal_recipients:page:"):
-        if context.user_data.get("words_flow_mode") == _ADMIN_GOAL_AWAITING_DEADLINE_TEXT:
-            context.user_data.pop("words_flow_mode", None)
-            _clear_expected_user_input(context)
-        page = int(query.data.split(":")[-1])
-    elif query.data == "assign:admin_goal_recipients:done":
-        if not context.user_data.get("admin_goal_recipient_user_ids"):
-            await query.edit_message_text(_tg("assign_select_users_empty", context=context, user=user))
-            return
-        context.user_data.pop("admin_goal_deadline_date", None)
-        context.user_data["words_flow_mode"] = _ADMIN_GOAL_AWAITING_DEADLINE_TEXT
-        _remember_expected_user_input(
-            context,
-            chat_id=getattr(getattr(query, "message", None), "chat_id", None),
-            message_id=getattr(getattr(query, "message", None), "message_id", None),
-        )
-        await query.edit_message_text(
-            _tg("admin_goal_deadline_prompt", context=context, user=user),
-            reply_markup=_admin_goal_deadline_keyboard(language=_telegram_ui_language(context, user)),
-        )
-        return
-    else:
-        target_user_id = int(query.data.split(":")[-1])
-        selected = set(context.user_data.get("admin_goal_recipient_user_ids", set()))
-        if target_user_id in selected:
-            selected.remove(target_user_id)
-        else:
-            selected.add(target_user_id)
-        context.user_data["admin_goal_recipient_user_ids"] = selected
-        page = int(context.user_data.get("admin_goal_recipients_page", 0))
-    await query.edit_message_text(
-        _tg("assign_select_users_prompt", context=context, user=user),
-        reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=page),
+    from englishbot.telegram.homework_admin import (
+        admin_goal_recipients_callback_handler as homework_admin_goal_recipients_callback_handler,
     )
+
+    await homework_admin_goal_recipients_callback_handler(update, context)
 
 
 async def admin_goal_deadline_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    option = query.data.split(":")[-1]
-    if option == "custom":
-        context.user_data["words_flow_mode"] = _ADMIN_GOAL_AWAITING_DEADLINE_TEXT
-        _remember_expected_user_input(
-            context,
-            chat_id=getattr(getattr(query, "message", None), "chat_id", None),
-            message_id=getattr(getattr(query, "message", None), "message_id", None),
-        )
-        await query.edit_message_text(
-            _tg("admin_goal_deadline_custom_prompt", context=context, user=user),
-            reply_markup=_admin_goal_deadline_keyboard(language=_telegram_ui_language(context, user)),
-        )
-        return
-    if option == "none":
-        context.user_data["admin_goal_deadline_date"] = None
-    elif option == "today":
-        context.user_data["admin_goal_deadline_date"] = datetime.now(UTC).date().isoformat()
-    elif option == "tomorrow":
-        context.user_data["admin_goal_deadline_date"] = (
-            datetime.now(UTC).date() + timedelta(days=1)
-        ).isoformat()
-    elif option == "week_end":
-        today = datetime.now(UTC).date()
-        days_until_sunday = 6 - today.weekday()
-        context.user_data["admin_goal_deadline_date"] = (
-            today + timedelta(days=max(days_until_sunday, 0))
-        ).isoformat()
-    else:
-        days = int(option.removesuffix("d"))
-        context.user_data["admin_goal_deadline_date"] = (
-            datetime.now(UTC).date() + timedelta(days=days)
-        ).isoformat()
-    await _finish_admin_goal_creation(query_or_message=query, context=context, user=user)
+    from englishbot.telegram.homework_admin import (
+        admin_goal_deadline_callback_handler as homework_admin_goal_deadline_callback_handler,
+    )
+
+    await homework_admin_goal_deadline_callback_handler(update, context)
 
 
 def _create_admin_goals_from_context(*, context: ContextTypes.DEFAULT_TYPE) -> list:
-    source_raw = str(context.user_data.get("admin_goal_source", GoalWordSource.RECENT.value))
+    from englishbot.telegram.interaction import get_admin_goal_creation_state
+
+    state = get_admin_goal_creation_state(context)
+    source_raw = str(state.source or GoalWordSource.RECENT.value)
     topic_id = source_raw.split(":", 1)[1] if source_raw.startswith("topic:") else None
     source = GoalWordSource.TOPIC if topic_id else GoalWordSource(source_raw)
     return _assign_goal_to_users_use_case(context).execute(
-        user_ids=list(context.user_data.get("admin_goal_recipient_user_ids", [])),
-        goal_period=GoalPeriod(str(context.user_data.get("admin_goal_period", GoalPeriod.HOMEWORK.value))),
-        goal_type=GoalType(str(context.user_data.get("admin_goal_type", GoalType.WORD_LEVEL_HOMEWORK.value))),
+        user_ids=list(state.recipient_user_ids),
+        goal_period=GoalPeriod(str(state.goal_period or GoalPeriod.HOMEWORK.value)),
+        goal_type=GoalType(str(state.goal_type or GoalType.WORD_LEVEL_HOMEWORK.value)),
         target_count=None,
         source=source,
         topic_id=topic_id,
-        manual_word_ids=list(context.user_data.get("admin_goal_manual_word_ids", [])),
-        deadline_date=context.user_data.get("admin_goal_deadline_date"),
+        manual_word_ids=list(state.manual_word_ids),
+        deadline_date=state.deadline_date,
     )
 
 
@@ -3396,6 +2219,8 @@ async def _create_admin_goal_from_context(*, query, context: ContextTypes.DEFAUL
 
 
 async def _finish_admin_goal_creation(*, query_or_message, context: ContextTypes.DEFAULT_TYPE, user) -> None:
+    from englishbot.telegram.interaction import clear_admin_goal_creation_state
+
     created = _create_admin_goals_from_context(context=context)
     _schedule_assignment_assigned_notifications(context, goals=created)
     for recipient_user_id in {int(goal.user_id) for goal in created}:
@@ -3421,2146 +2246,479 @@ async def _finish_admin_goal_creation(*, query_or_message, context: ContextTypes
                 target=assigned_word_count,
             )
         )
-    for key in (
-        "admin_goal_period",
-        "admin_goal_type",
-        "admin_goal_target_count",
-        "admin_goal_source",
-        "admin_goal_deadline_date",
-        "admin_goal_manual_word_ids",
-        "admin_goal_recipient_user_ids",
-        "admin_goal_recipients_page",
-        "words_flow_mode",
-    ):
-        context.user_data.pop(key, None)
-    _clear_expected_user_input(context)
+    clear_admin_goal_creation_state(context, clear_prompt=True)
 
 
 async def admin_users_progress_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    users = _known_assignment_users(
-        context,
-        viewer_user_id=user.id,
-        viewer_username=getattr(user, "username", None),
+    from englishbot.telegram.homework_admin import (
+        admin_users_progress_callback_handler as homework_admin_users_progress_callback_handler,
     )
-    if not users:
-        await query.edit_message_text(_tg("assign_users_empty", context=context, user=user))
-        return
-    lines = [_tg("assign_users_title", context=context, user=user)]
-    for item in users:
-        lines.append(
-            _tg(
-                "assign_users_line",
-                context=context,
-                user=user,
-                user_id=item.user_id,
-                username=(f"@{item.username}" if item.username else "-"),
-                roles=(", ".join(role for role in item.roles if role != "user") or "user"),
-                active=item.active_goals_count,
-                completed=item.completed_goals_count,
-                percent=item.aggregate_percent,
-                last_activity=(item.last_activity_at.date().isoformat() if item.last_activity_at else "-"),
-            )
-        )
-    await query.edit_message_text(
-        "\n".join(lines),
-        reply_markup=_assignment_users_keyboard(context=context, user=user, users=users),
-    )
+
+    await homework_admin_users_progress_callback_handler(update, context)
 
 
 async def assign_user_detail_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    target_user_id = int(query.data.split(":")[-1])
-    users = _known_assignment_users(
-        context,
-        viewer_user_id=user.id,
-        viewer_username=getattr(user, "username", None),
+    from englishbot.telegram.homework_admin import (
+        assign_user_detail_callback_handler as homework_assign_user_detail_callback_handler,
     )
-    target = next((item for item in users if item.user_id == target_user_id), None)
-    if target is None:
-        await query.edit_message_text(_tg("assign_users_empty", context=context, user=user))
-        return
-    goals = _admin_user_goals_use_case(context).execute(user_id=target_user_id, include_history=True)
-    await query.edit_message_text(
-        _render_assignment_user_detail_text(context=context, user=user, item=target, goals=goals),
-        reply_markup=_assignment_user_goals_keyboard(
-            context=context,
-            user_id=target_user_id,
-            goals=goals,
-            user=user,
-        ),
-    )
+
+    await homework_assign_user_detail_callback_handler(update, context)
 
 
 async def assign_goal_detail_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    _, _, user_id_raw, goal_id = query.data.split(":", 3)
-    target_user_id = int(user_id_raw)
-    detail = _admin_goal_detail_use_case(context).execute(user_id=target_user_id, goal_id=goal_id)
-    if detail is None:
-        await query.edit_message_text(_tg("assign_goal_detail_missing", context=context, user=user))
-        return
-    await query.edit_message_text(
-        _render_assignment_goal_detail_text(context=context, user=user, detail=detail),
-        reply_markup=_assignment_goal_detail_keyboard(context=context, user_id=target_user_id, user=user),
+    from englishbot.telegram.homework_admin import (
+        assign_goal_detail_callback_handler as homework_assign_goal_detail_callback_handler,
     )
+
+    await homework_assign_goal_detail_callback_handler(update, context)
 
 
 async def words_topics_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    topics = _service(context).list_topics()
-    topic_view = _topic_selection_view(
-        text="Choose a topic to start training.",
-        topics=topics,
-        context=context,
-        user=update.effective_user,
+    await telegram_words_topics_callback_handler(
+        update,
+        context,
+        service=_service,
+        topic_selection_view=_topic_selection_view,
+        edit_text_view=edit_telegram_text_view,
     )
-    await edit_telegram_text_view(query, topic_view)
 
 
 async def words_add_words_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    if not _has_menu_permission(context, user_id=user.id, permission=PERMISSION_WORDS_ADD):
-        await query.edit_message_text(_tg("only_editors_add_words", context=context, user=user))
-        return
-    context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
-    await query.edit_message_text(
-        _tg("send_raw_lesson_text", context=context, user=user)
+    from englishbot.telegram.editor_add_words import (
+        words_add_words_callback_handler as editor_words_add_words_callback_handler,
     )
+
+    await editor_words_add_words_callback_handler(update, context)
 
 
 async def words_edit_words_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    if not _has_menu_permission(context, user_id=user.id, permission=PERMISSION_WORDS_EDIT):
-        await query.edit_message_text(_tg("only_editors_edit_words", context=context, user=user))
-        return
-    topics = _list_editable_topics(context).execute()
-    topics_view = _editable_topics_view(
-        text=_tg("choose_topic_edit_words", context=context, user=user),
-        topics=topics,
-        context=context,
-        user=update.effective_user,
+    from englishbot.telegram.editor_add_words import (
+        words_edit_words_callback_handler as editor_words_edit_words_callback_handler,
     )
-    await query.edit_message_text(topics_view.text, reply_markup=topics_view.reply_markup)
+
+    await editor_words_edit_words_callback_handler(update, context)
 
 
 async def words_edit_images_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    if not _has_menu_permission(
-        context,
-        user_id=user.id,
-        permission=PERMISSION_WORD_IMAGES_EDIT,
-    ):
-        await query.edit_message_text(_tg("only_editors_edit_images", context=context, user=user))
-        return
-    topics = _list_editable_topics(context).execute()
-    topics_view = _editable_topics_view(
-        text=_tg("choose_topic_edit_images", context=context, user=user),
-        topics=topics,
-        context=context,
-        user=update.effective_user,
-        for_images=True,
+    from englishbot.telegram.editor_add_words import (
+        words_edit_images_callback_handler as editor_words_edit_images_callback_handler,
     )
-    await query.edit_message_text(topics_view.text, reply_markup=topics_view.reply_markup)
+
+    await editor_words_edit_images_callback_handler(update, context)
 
 
 async def words_edit_topic_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    _, _, topic_id = query.data.split(":")
-    words = _list_editable_words(context).execute(topic_id=topic_id)
-    words_view = _editable_words_view(
-        text=_tg("choose_word_to_edit", context=context, user=update.effective_user),
-        topic_id=topic_id,
-        words=words,
-        context=context,
-        user=update.effective_user,
+    from englishbot.telegram.editor_add_words import (
+        words_edit_topic_callback_handler as editor_words_edit_topic_callback_handler,
     )
-    await query.edit_message_text(words_view.text, reply_markup=words_view.reply_markup)
+
+    await editor_words_edit_topic_callback_handler(update, context)
 
 
 async def words_edit_item_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, topic_id, item_index = query.data.split(":")
-    words = _list_editable_words(context).execute(topic_id=topic_id)
-    try:
-        selected_word = words[int(item_index)]
-    except (ValueError, IndexError):
-        await query.edit_message_text(
-            _tg("selected_word_unavailable", context=context, user=user)
-        )
-        return
-    registry = _telegram_flow_messages(context)
-    flow_id = _published_word_edit_flow_id(user_id=user.id)
-    if registry is not None:
-        await _delete_tracked_messages(
-            context,
-            tracked_messages=registry.list(flow_id=flow_id, tag=_PUBLISHED_WORD_EDIT_TAG),
-        )
-    context.user_data["words_flow_mode"] = _PUBLISHED_WORD_AWAITING_EDIT_TEXT
-    context.user_data["published_edit_topic_id"] = topic_id
-    context.user_data["published_edit_item_id"] = selected_word.id
-    _track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=_PUBLISHED_WORD_EDIT_TAG,
-        message=query.message,
+    from englishbot.telegram.editor_add_words import (
+        words_edit_item_callback_handler as editor_words_edit_item_callback_handler,
     )
-    instruction_view, current_value_view = build_published_word_edit_prompt_view(
-        instruction_text=_tg("send_updated_word_format", context=context, user=user),
-        current_value_text=_tg(
-            "current_value",
-            context=context,
-            user=user,
-            value=f"{selected_word.english_word}: {selected_word.translation}",
-        ),
-        instruction_markup=_published_word_edit_keyboard(
-            topic_id=topic_id,
-            language=_telegram_ui_language(context, update.effective_user),
-        ),
-        current_value_markup=ForceReply(selective=True),
-    )
-    await query.edit_message_text(
-        instruction_view.text,
-        reply_markup=instruction_view.reply_markup,
-    )
-    _remember_expected_user_input(
-        context,
-        chat_id=_message_chat_id(query.message),
-        message_id=getattr(query.message, "message_id", None),
-    )
-    helper_message = await send_telegram_view(query.message, current_value_view)
-    _track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=_PUBLISHED_WORD_EDIT_TAG,
-        message=helper_message,
-        fallback_chat_id=_message_chat_id(query.message),
-    )
+
+    await editor_words_edit_item_callback_handler(update, context)
 
 
 async def words_edit_cancel_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, topic_id = query.data.split(":")
-    registry = _telegram_flow_messages(context)
-    flow_id = _published_word_edit_flow_id(user_id=user.id)
-    if registry is not None:
-        await _delete_tracked_messages(
-            context,
-            tracked_messages=_tracked_messages_except_source_message(
-                tracked_messages=registry.list(
-                    flow_id=flow_id,
-                    tag=_PUBLISHED_WORD_EDIT_TAG,
-                ),
-                message=query.message,
-            ),
-        )
-    context.user_data.pop("words_flow_mode", None)
-    context.user_data.pop("published_edit_topic_id", None)
-    context.user_data.pop("published_edit_item_id", None)
-    _clear_expected_user_input(context)
-    words = _list_editable_words(context).execute(topic_id=topic_id)
-    await query.edit_message_text(
-        "Edit cancelled. Choose a word to edit.",
-        reply_markup=_editable_words_keyboard(topic_id=topic_id, words=words),
+    from englishbot.telegram.editor_add_words import (
+        words_edit_cancel_callback_handler as editor_words_edit_cancel_callback_handler,
     )
-    if registry is not None:
-        registry.clear(flow_id=flow_id, tag=_PUBLISHED_WORD_EDIT_TAG)
+
+    await editor_words_edit_cancel_callback_handler(update, context)
 
 
 async def add_words_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or user is None:
-        return
-    if not _has_menu_permission(context, user_id=user.id, permission=PERMISSION_WORDS_ADD):
-        await message.reply_text(_tg("no_permission_add_words", context=context, user=user))
-        return
-    existing_flow = _active_word_flow_for_user(user.id, context)
-    if existing_flow is not None:
-        await message.reply_text(
-            _tg("active_add_words_flow_exists", context=context, user=user)
-        )
-        context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
-        return
-    context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_TEXT
-    await message.reply_text(
-        _tg("send_raw_lesson_text_with_menu", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(
-            command_rows=_visible_command_rows(context, user_id=user.id)
-        ),
+    from englishbot.telegram.editor_add_words import (
+        add_words_start_handler as editor_add_words_start_handler,
     )
+
+    await editor_add_words_start_handler(update, context)
 
 
 async def add_words_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or user is None:
-        return
-    _clear_active_word_flow(user.id, context)
-    context.user_data.pop("words_flow_mode", None)
-    await message.reply_text(
-        _tg("add_words_flow_cancelled", context=context, user=user),
-        reply_markup=_chat_menu_keyboard(
-            command_rows=_visible_command_rows(context, user_id=user.id)
-        ),
+    from englishbot.telegram.editor_add_words import (
+        add_words_cancel_handler as editor_add_words_cancel_handler,
     )
+
+    await editor_add_words_cancel_handler(update, context)
 
 
 async def add_words_cancel_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _active_word_flow_for_user(user.id, context)
-    if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
-        return
-    _clear_active_word_flow(user.id, context)
-    context.user_data.pop("words_flow_mode", None)
-    await query.edit_message_text(_tg("add_words_flow_cancelled", context=context, user=user))
-    await _ensure_chat_menu_message(context, message=query.message, user=user)
+    from englishbot.telegram.editor_add_words import (
+        add_words_cancel_callback_handler as editor_add_words_cancel_callback_handler,
+    )
+
+    await editor_add_words_cancel_callback_handler(update, context)
 
 
 async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    words_flow_mode = context.user_data.get("words_flow_mode")
-    if words_flow_mode not in {
-        _ADD_WORDS_AWAITING_TEXT,
-        _ADD_WORDS_AWAITING_EDIT_TEXT,
-        _IMAGE_REVIEW_AWAITING_PROMPT_TEXT,
-        _IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT,
-        _IMAGE_REVIEW_AWAITING_PHOTO,
-        _PUBLISHED_WORD_AWAITING_EDIT_TEXT,
-    }:
-        return
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or message.text is None or user is None:
-        return
-    if not _has_menu_permission(context, user_id=user.id, permission=PERMISSION_WORDS_ADD):
-        context.user_data.pop("words_flow_mode", None)
-        _clear_expected_user_input(context)
-        return
-    if words_flow_mode == _PUBLISHED_WORD_AWAITING_EDIT_TEXT:
-        topic_id = context.user_data.get("published_edit_topic_id")
-        item_id = context.user_data.get("published_edit_item_id")
-        if not isinstance(topic_id, str) or not isinstance(item_id, str):
-            context.user_data.pop("words_flow_mode", None)
-            context.user_data.pop("published_edit_topic_id", None)
-            context.user_data.pop("published_edit_item_id", None)
-            _clear_expected_user_input(context)
-            await message.reply_text(_tg("word_edit_task_inactive", context=context, user=user))
-            return
-        parsed_pair = parse_edited_vocabulary_line(message.text)
-        if parsed_pair is None:
-            await message.reply_text(
-                _tg("send_one_line_word_format", context=context, user=user)
-            )
-            return
-        english_word, translation = parsed_pair
-        try:
-            updated_word = await asyncio.to_thread(
-                _update_editable_word(context).execute,
-                topic_id=topic_id,
-                item_id=item_id,
-                english_word=english_word,
-                translation=translation,
-            )
-        except ValueError as error:
-            await message.reply_text(str(error))
-            return
-        _reload_training_service(context)
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("published_edit_topic_id", None)
-        context.user_data.pop("published_edit_item_id", None)
-        registry = _telegram_flow_messages(context)
-        flow_id = _published_word_edit_flow_id(user_id=user.id)
-        if registry is not None:
-            await _delete_tracked_messages(
-                context,
-                tracked_messages=registry.list(
-                    flow_id=flow_id,
-                    tag=_PUBLISHED_WORD_EDIT_TAG,
-                ),
-            )
-        await _delete_message_if_possible(context, message=message)
-        words = _list_editable_words(context).execute(topic_id=topic_id)
-        await message.reply_text(
-            _tg(
-                "word_updated",
-                context=context,
-                user=user,
-                word=updated_word.english_word,
-                translation=updated_word.translation,
-            )
-        )
-        await message.reply_text(
-            _tg("choose_another_word_to_edit", context=context, user=user),
-            reply_markup=_editable_words_keyboard(
-                topic_id=topic_id,
-                words=words,
-                context=context,
-                user_id=int(user.id),
-                language=_telegram_ui_language(context, user),
-            ),
-        )
-        if registry is not None:
-            registry.clear(flow_id=flow_id, tag=_PUBLISHED_WORD_EDIT_TAG)
-        return
-    if words_flow_mode == _IMAGE_REVIEW_AWAITING_PROMPT_TEXT:
-        review_flow_id = context.user_data.get("image_review_flow_id")
-        review_item_id = context.user_data.get("image_review_item_id")
-        review_flow = _get_active_image_review(context).execute(user_id=user.id)
-        if (
-            review_flow is None
-            or review_flow.flow_id != review_flow_id
-            or review_flow.current_item is None
-            or review_flow.current_item.item_id != review_item_id
-        ):
-            context.user_data.pop("words_flow_mode", None)
-            context.user_data.pop("image_review_flow_id", None)
-            context.user_data.pop("image_review_item_id", None)
-            _clear_expected_user_input(context)
-            await message.reply_text(_tg("image_review_task_inactive", context=context, user=user))
-            return
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("image_review_flow_id", None)
-        context.user_data.pop("image_review_item_id", None)
-        _clear_expected_user_input(context)
-        status_message = await message.reply_text(_tg("updating_image_prompt", context=context, user=user))
-        stop_event = asyncio.Event()
-        heartbeat_task = asyncio.create_task(
-            _run_status_heartbeat(
-                status_message,
-                stage="Updating image prompt",
-                stop_event=stop_event,
-            )
-        )
-        try:
-            updated_flow = await asyncio.to_thread(
-                _update_image_review_prompt(context).execute,
-                user_id=user.id,
-                flow_id=review_flow.flow_id,
-                item_id=review_item_id,
-                prompt=message.text,
-            )
-        except Exception:  # noqa: BLE001
-            stop_event.set()
-            await heartbeat_task
-            logger.exception("Image review prompt update failed for user=%s", user.id)
-            await status_message.edit_text(
-                _status_view(
-                    text=_tg("updating_image_prompt_failed", context=context, user=user)
-                ).text
-            )
-            return
-        stop_event.set()
-        await heartbeat_task
-        await _delete_message_if_possible(context, message=message)
-        await status_message.edit_text(
-            _status_view(text=_tg("prompt_updated", context=context, user=user)).text
-        )
-        await _send_image_review_step(message, context, updated_flow)
-        return
-    if words_flow_mode == _IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT:
-        review_flow_id = context.user_data.get("image_review_flow_id")
-        review_item_id = context.user_data.get("image_review_item_id")
-        review_flow = _get_active_image_review(context).execute(user_id=user.id)
-        if (
-            review_flow is None
-            or review_flow.flow_id != review_flow_id
-            or review_flow.current_item is None
-            or review_flow.current_item.item_id != review_item_id
-        ):
-            context.user_data.pop("words_flow_mode", None)
-            context.user_data.pop("image_review_flow_id", None)
-            context.user_data.pop("image_review_item_id", None)
-            _clear_expected_user_input(context)
-            await message.reply_text(_tg("image_review_task_inactive", context=context, user=user))
-            return
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("image_review_flow_id", None)
-        context.user_data.pop("image_review_item_id", None)
-        _clear_expected_user_input(context)
-        status_message = await message.reply_text(_tg("searching_pixabay", context=context, user=user))
-        stop_event = asyncio.Event()
-        heartbeat_task = asyncio.create_task(
-            _run_status_heartbeat(
-                status_message,
-                stage="Searching Pixabay",
-                stop_event=stop_event,
-            )
-        )
-        try:
-            updated_flow = await asyncio.to_thread(
-                _search_image_review_candidates(context).execute,
-                user_id=user.id,
-                flow_id=review_flow.flow_id,
-                query=message.text,
-            )
-        except Exception:  # noqa: BLE001
-            stop_event.set()
-            await heartbeat_task
-            logger.exception("Image review Pixabay search update failed for user=%s", user.id)
-            await status_message.edit_text(
-                _status_view(
-                    text=_tg("searching_pixabay_failed", context=context, user=user)
-                ).text
-            )
-            return
-        stop_event.set()
-        await heartbeat_task
-        await _delete_message_if_possible(context, message=message)
-        await status_message.edit_text(
-            _status_view(text=_tg("pixabay_candidates_updated", context=context, user=user)).text
-        )
-        await _send_image_review_step(message, context, updated_flow)
-        return
-    if words_flow_mode == _IMAGE_REVIEW_AWAITING_PHOTO:
-        await message.reply_text(_tg("send_photo_not_text", context=context, user=user))
-        return
-    if words_flow_mode == _ADD_WORDS_AWAITING_EDIT_TEXT:
-        active_flow_id = context.user_data.get("edit_flow_id")
-        flow = _active_word_flow_for_user(user.id, context)
-        if flow is None or flow.flow_id != active_flow_id:
-            context.user_data.pop("words_flow_mode", None)
-            context.user_data.pop("edit_flow_id", None)
-            await message.reply_text(_tg("add_words_flow_inactive", context=context, user=user))
-            return
-        flow = _apply_add_words_edit(context).execute(
-            user_id=user.id,
-            flow_id=flow.flow_id,
-            edited_text=message.text,
-        )
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("edit_flow_id", None)
-        preview_view = _draft_review_view(
-            flow_id=flow.flow_id,
-            result=flow.draft_result,
-            is_valid=flow.draft_result.validation.is_valid,
-            context=context,
-            user=user,
-        )
-        preview_message_id = _get_preview_message_id(user.id, context)
-        await message.reply_text(
-            f"{_tg('draft_updated_from_text', context=context, user=user)}\n\n{preview_view.text}",
-            reply_markup=preview_view.reply_markup,
-        )
-        if preview_message_id is not None:
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=message.chat_id,
-                    message_id=preview_message_id,
-                    text=preview_view.text,
-                    reply_markup=preview_view.reply_markup,
-                )
-            except BadRequest as error:
-                if "message is not modified" in str(error).lower():
-                    logger.debug(
-                        "Preview message unchanged after edit flow_id=%s message_id=%s",
-                        flow.flow_id,
-                        preview_message_id,
-                    )
-                else:
-                    logger.debug("Failed to update preview message after edit", exc_info=True)
-            except Exception:  # noqa: BLE001
-                logger.debug("Failed to update preview message after edit", exc_info=True)
-        return
-    logger.info("User %s submitted raw text for add-words flow", user.id)
-    status_message = await message.reply_text(_tg("parsing_draft", context=context, user=user))
-    stop_event = asyncio.Event()
-    heartbeat_task = asyncio.create_task(
-        _run_status_heartbeat(
-            status_message,
-            stage="Parsing draft",
-            stop_event=stop_event,
-        )
+    from englishbot.telegram.editor_add_words import (
+        add_words_text_handler as editor_add_words_text_handler,
     )
-    try:
-        flow = await asyncio.to_thread(
-            _start_add_words_flow(context).execute,
-            user_id=user.id,
-            raw_text=message.text,
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("Add-words draft extraction failed for user=%s", user.id)
-        await status_message.edit_text(
-            _status_view(text=_tg("parsing_draft_failed_generic", context=context, user=user)).text
-        )
-        context.user_data.pop("words_flow_mode", None)
-        return
-    finally:
-        stop_event.set()
-        await heartbeat_task
-    context.user_data.pop("words_flow_mode", None)
-    failure_message = _draft_failure_message(flow.draft_result)
-    if failure_message is not None:
-        await status_message.edit_text(_status_view(text=failure_message).text)
-        return
-    await status_message.edit_text(
-        _status_view(text=_draft_status_text(flow.draft_result)).text
-    )
-    preview_view = _draft_review_view(
-        flow_id=flow.flow_id,
-        result=flow.draft_result,
-        is_valid=flow.draft_result.validation.is_valid,
-        context=context,
-        user=user,
-    )
-    preview_message = await send_telegram_view(message, preview_view)
-    _set_preview_message_id(user.id, preview_message.message_id, context)
+
+    await editor_add_words_text_handler(update, context)
 
 
 async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or message.text is None or user is None:
-        return
-    flow_mode = context.user_data.get("words_flow_mode")
-    if flow_mode == _GOAL_AWAITING_TARGET_TEXT:
-        _clear_self_goal_setup_state(context)
-        await send_telegram_view(
-            message,
-            build_status_view(
-                text=_tg("self_goal_setup_disabled", context=context, user=user),
-                reply_markup=_assign_menu_view(
-                    text=_tg("assign_menu_title", context=context, user=user),
-                    context=context,
-                    user=user,
-                ).reply_markup,
-            ),
-        )
-        return
-    if flow_mode not in {
-        _ADMIN_GOAL_AWAITING_TARGET_TEXT,
-        _ADMIN_GOAL_AWAITING_DEADLINE_TEXT,
-    }:
-        return
-    if flow_mode == _ADMIN_GOAL_AWAITING_TARGET_TEXT:
-        prompt_reply_markup = (
-            _admin_goal_custom_target_keyboard(language=_telegram_ui_language(context, user))
-        )
-        try:
-            target_count = int(message.text.strip())
-        except ValueError:
-            edited = await _edit_expected_user_input_prompt(
-                context,
-                text=_tg("goal_target_custom_prompt", context=context, user=user),
-                reply_markup=prompt_reply_markup,
-            )
-            if not edited:
-                await message.reply_text(
-                    _tg("goal_target_custom_prompt", context=context, user=user),
-                    reply_markup=prompt_reply_markup,
-                )
-            return
-        if target_count <= 0:
-            edited = await _edit_expected_user_input_prompt(
-                context,
-                text=_tg("goal_target_custom_prompt", context=context, user=user),
-                reply_markup=prompt_reply_markup,
-            )
-            if not edited:
-                await message.reply_text(
-                    _tg("goal_target_custom_prompt", context=context, user=user),
-                    reply_markup=prompt_reply_markup,
-                )
-            return
-        context.user_data["admin_goal_target_count"] = target_count
-        context.user_data.pop("words_flow_mode", None)
-        next_reply_markup = _admin_goal_source_keyboard(language=_telegram_ui_language(context, user))
-        edited = await _edit_expected_user_input_prompt(
-            context,
-            text=_tg("goal_source_prompt", context=context, user=user),
-            reply_markup=next_reply_markup,
-        )
-        if not edited:
-            await message.reply_text(
-                _tg("goal_source_prompt", context=context, user=user),
-                reply_markup=next_reply_markup,
-            )
-        await _delete_message_if_possible(context, message=message)
-        _clear_expected_user_input(context)
-        return
+    from englishbot.telegram.homework_admin import (
+        goal_text_handler as homework_goal_text_handler,
+    )
 
-    deadline_text = message.text.strip()
-    try:
-        parsed_deadline = datetime.strptime(deadline_text, "%Y-%m-%d").date().isoformat()
-    except ValueError:
-        prompt_reply_markup = _admin_goal_deadline_keyboard(language=_telegram_ui_language(context, user))
-        edited = await _edit_expected_user_input_prompt(
-            context,
-            text=_tg("admin_goal_deadline_custom_prompt", context=context, user=user),
-            reply_markup=prompt_reply_markup,
-        )
-        if not edited:
-            await message.reply_text(
-                _tg("admin_goal_deadline_custom_prompt", context=context, user=user),
-                reply_markup=prompt_reply_markup,
-            )
-        return
-    context.user_data["admin_goal_deadline_date"] = parsed_deadline
-    context.user_data.pop("words_flow_mode", None)
-    await _delete_message_if_possible(context, message=message)
-    await _finish_admin_goal_creation(query_or_message=message, context=context, user=user)
+    await homework_goal_text_handler(update, context)
 
 
 async def add_words_edit_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _active_word_flow_for_user(user.id, context)
-    if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
-        return
-    context.user_data["words_flow_mode"] = _ADD_WORDS_AWAITING_EDIT_TEXT
-    context.user_data["edit_flow_id"] = flow.flow_id
-    await query.message.reply_text(
-        _tg("edit_word_list_instruction", context=context, user=user),
-        reply_markup=ForceReply(selective=True),
+    from englishbot.telegram.editor_add_words import (
+        add_words_edit_text_handler as editor_add_words_edit_text_handler,
     )
-    await query.message.reply_text(format_draft_edit_text(flow.draft_result.draft))
+
+    await editor_add_words_edit_text_handler(update, context)
 
 
 async def add_words_show_json_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _active_word_flow_for_user(user.id, context)
-    if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
-        return
-    payload = json.dumps(
-        draft_to_data(flow.draft_result.draft),
-        ensure_ascii=False,
-        indent=2,
+    from englishbot.telegram.editor_add_words import (
+        add_words_show_json_handler as editor_add_words_show_json_handler,
     )
-    if len(payload) > 3500:
-        payload = payload[:3400].rstrip() + "\n..."
-    await query.message.reply_text(f"```json\n{payload}\n```", parse_mode="Markdown")
+
+    await editor_add_words_show_json_handler(update, context)
 
 
 async def add_words_regenerate_draft_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _active_word_flow_for_user(user.id, context)
-    if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
-        return
-    if not _smart_parsing_available(context):
-        await edit_telegram_text_view(
-            query,
-            _status_view(text=_tg("smart_parsing_unavailable", context=context, user=user)),
-        )
-        return
-    await edit_telegram_text_view(
-        query,
-        _status_view(text=_tg("re_recognizing_draft", context=context, user=user)),
+    from englishbot.telegram.editor_add_words import (
+        add_words_regenerate_draft_handler as editor_add_words_regenerate_draft_handler,
     )
-    stop_event = asyncio.Event()
-    heartbeat_task = asyncio.create_task(
-        _run_status_heartbeat(
-            query,
-            stage="Re-recognizing draft",
-            stop_event=stop_event,
-        )
-    )
-    try:
-        flow = await asyncio.to_thread(
-            _regenerate_add_words_draft(context).execute,
-            user_id=user.id,
-            flow_id=flow.flow_id,
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("Add-words draft regeneration failed for user=%s", user.id)
-        await edit_telegram_text_view(
-            query,
-            _status_view(text=_tg("parsing_draft_failed_generic", context=context, user=user)),
-        )
-        return
-    finally:
-        stop_event.set()
-        await heartbeat_task
-    await query.edit_message_text(
-        _draft_review_view(
-            flow_id=flow.flow_id,
-            result=flow.draft_result,
-            is_valid=flow.draft_result.validation.is_valid,
-            context=context,
-            user=user,
-        ).text,
-        reply_markup=_draft_review_view(
-            flow_id=flow.flow_id,
-            result=flow.draft_result,
-            is_valid=flow.draft_result.validation.is_valid,
-            context=context,
-            user=user,
-        ).reply_markup,
-    )
+
+    await editor_add_words_regenerate_draft_handler(update, context)
 
 
 async def add_words_publish_without_images_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _active_word_flow_for_user(user.id, context)
-    if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
-        return
-    result = flow.draft_result
-    if not result.validation.is_valid:
-        await query.edit_message_text(
-            _draft_review_view(
-                flow_id=flow.flow_id,
-                result=result,
-                is_valid=False,
-                context=context,
-                user=user,
-            ).text,
-            reply_markup=_draft_review_view(
-                flow_id=flow.flow_id,
-                result=result,
-                is_valid=False,
-                context=context,
-                user=user,
-            ).reply_markup,
-        )
-        return
-    await query.edit_message_text(
-        "Publishing content pack...\n"
-        "Validated items: "
-        f"{len(result.draft.vocabulary_items)}/{len(result.draft.vocabulary_items)}"
+    from englishbot.telegram.editor_add_words import (
+        add_words_publish_without_images_handler as editor_add_words_publish_without_images_handler,
     )
-    approved = _approve_add_words_draft(context).execute(
-        user_id=user.id,
-        flow_id=flow.flow_id,
-    )
-    finalized = approved.import_result
-    if not finalized.validation.is_valid or finalized.canonicalization is None:
-        await query.edit_message_text(_tg("draft_finalization_failed", context=context, user=user))
-        return
-    topic_id = approved.published_topic_id
-    _reload_training_service(context)
-    _preview_message_ids(context).pop(user.id, None)
-    await query.edit_message_text(
-        _tg(
-            "draft_approved_published",
-            context=context,
-            user=user,
-            destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=topic_id),
-            item_count=len(finalized.draft.vocabulary_items),
-        )
-    )
-    await _ensure_chat_menu_message(context, message=query.message, user=user)
+
+    await editor_add_words_publish_without_images_handler(update, context)
 
 
 async def add_words_approve_draft_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _active_word_flow_for_user(user.id, context)
-    if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
-        return
-    result = flow.draft_result
-    if not result.validation.is_valid:
-        await query.edit_message_text(
-            _draft_review_view(
-                flow_id=flow.flow_id,
-                result=result,
-                is_valid=False,
-                context=context,
-                user=user,
-            ).text,
-            reply_markup=_draft_review_view(
-                flow_id=flow.flow_id,
-                result=result,
-                is_valid=False,
-                context=context,
-                user=user,
-            ).reply_markup,
-        )
-        return
-    await edit_telegram_text_view(
-        query,
-        _status_view(text=_tg("saving_approved_draft", context=context, user=user)),
+    from englishbot.telegram.editor_add_words import (
+        add_words_approve_draft_handler as editor_add_words_approve_draft_handler,
     )
-    saved_flow = await asyncio.to_thread(
-        _save_approved_add_words_draft(context).execute,
-        user_id=user.id,
-        flow_id=flow.flow_id,
-    )
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "approved_draft_saved_generating_prompts",
-                context=context,
-                user=user,
-                checkpoint=_draft_checkpoint_text(saved_flow),
-            )
-        ),
-    )
-    prompt_flow = await asyncio.to_thread(
-        _generate_add_words_image_prompts(context).execute,
-        user_id=user.id,
-        flow_id=flow.flow_id,
-    )
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "image_prompts_generated_starting_review",
-                context=context,
-                user=user,
-                checkpoint=_draft_checkpoint_text(prompt_flow),
-                prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
-            )
-        ),
-    )
-    image_review_flow = await asyncio.to_thread(
-        _start_image_review(context).execute,
-        user_id=user.id,
-        draft=prompt_flow.draft_result.draft,
-    )
-    await asyncio.to_thread(
-        _mark_add_words_image_review_started(context).execute,
-        user_id=user.id,
-        flow_id=flow.flow_id,
-        image_review_flow_id=image_review_flow.flow_id,
-    )
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "image_prompts_generated_saved_continue_review",
-                context=context,
-                user=user,
-                checkpoint=_draft_checkpoint_text(prompt_flow),
-                prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
-            )
-        ),
-    )
-    await _send_image_review_step(query.message, context, image_review_flow, user=user)
+
+    await editor_add_words_approve_draft_handler(update, context)
 
 
 async def add_words_approve_auto_images_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _active_word_flow_for_user(user.id, context)
-    if flow is None or flow.flow_id != flow_id:
-        await query.edit_message_text(_tg("add_words_flow_inactive", context=context, user=user))
-        return
-    if not _local_image_generation_available(context):
-        await query.edit_message_text(_tg("auto_images_unavailable", context=context, user=user))
-        return
-    result = flow.draft_result
-    if not result.validation.is_valid:
-        await query.edit_message_text(
-            _draft_review_view(
-                flow_id=flow.flow_id,
-                result=result,
-                is_valid=False,
-                context=context,
-                user=user,
-            ).text,
-            reply_markup=_draft_review_view(
-                flow_id=flow.flow_id,
-                result=result,
-                is_valid=False,
-                context=context,
-                user=user,
-            ).reply_markup,
-        )
-        return
+    from englishbot.telegram.editor_add_words import (
+        add_words_approve_auto_images_handler as editor_add_words_approve_auto_images_handler,
+    )
 
-    await edit_telegram_text_view(
-        query,
-        _status_view(text=_tg("saving_approved_draft", context=context, user=user)),
-    )
-    saved_flow = await asyncio.to_thread(
-        _save_approved_add_words_draft(context).execute,
-        user_id=user.id,
-        flow_id=flow.flow_id,
-    )
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "approved_draft_saved_generating_prompts",
-                context=context,
-                user=user,
-                checkpoint=_draft_checkpoint_text(saved_flow),
-            )
-        ),
-    )
-    prompt_flow = await asyncio.to_thread(
-        _generate_add_words_image_prompts(context).execute,
-        user_id=user.id,
-        flow_id=flow.flow_id,
-    )
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "image_prompts_generated_publishing",
-                context=context,
-                user=user,
-                checkpoint=_draft_checkpoint_text(prompt_flow),
-                prompt_count=_draft_prompt_count(prompt_flow.draft_result) or 0,
-            )
-        ),
-    )
-    approved = await asyncio.to_thread(
-        _approve_add_words_draft(context).execute,
-        user_id=user.id,
-        flow_id=flow.flow_id,
-    )
-    total_items = len(approved.import_result.draft.vocabulary_items)
-    rendered_total_items = total_items if total_items > 0 else 1
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "content_pack_published_generating_images",
-                context=context,
-                user=user,
-                destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id),
-                item_count=len(approved.import_result.draft.vocabulary_items),
-                processed=0,
-                total=rendered_total_items,
-            )
-        ),
-    )
-    progress_queue: asyncio.Queue[tuple[int, int] | None] = asyncio.Queue()
-    loop = asyncio.get_running_loop()
-
-    async def _report_generation_progress() -> None:
-        last_progress: tuple[int, int] | None = None
-        while True:
-            progress = await progress_queue.get()
-            if progress is None:
-                return
-            if progress == last_progress:
-                continue
-            last_progress = progress
-            processed_count, total_count = progress
-            await edit_telegram_text_view(
-                query,
-                _status_view(
-                    text=_tg(
-                        "content_pack_published_generating_images",
-                        context=context,
-                        user=user,
-                        destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=approved.published_topic_id),
-                        item_count=len(approved.import_result.draft.vocabulary_items),
-                        processed=processed_count,
-                        total=total_count,
-                    )
-                ),
-            )
-
-    progress_task = asyncio.create_task(_report_generation_progress())
-    try:
-        topic_id = approved.published_topic_id
-        enrichment_result = await asyncio.to_thread(
-            _generate_content_pack_images(context).execute,
-            topic_id=topic_id,
-            assets_dir=Path("assets"),
-            progress_callback=lambda processed_count, total_count: loop.call_soon_threadsafe(
-                progress_queue.put_nowait,
-                (processed_count, total_count),
-            ),
-        )
-    finally:
-        await progress_queue.put(None)
-        await progress_task
-    _reload_training_service(context)
-    _preview_message_ids(context).pop(user.id, None)
-    enriched_pack = enrichment_result.content_pack
-    topic = enriched_pack.get("topic", {})
-    topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else topic_id
-    generated_image_count = sum(
-        1 for item in enriched_pack.get("vocabulary_items", []) if item.get("image_ref")
-    )
-    generation_notice = ""
-    generation_metadata = getattr(enrichment_result, "generation_metadata", None)
-    if generation_metadata is not None and generation_metadata.status_messages:
-        generation_notice = "\n" + "\n".join(generation_metadata.status_messages)
-    await query.edit_message_text(
-        _tg(
-            "draft_approved_images_generated",
-            context=context,
-            user=user,
-            destination=_publish_destination_text(context, output_path=approved.output_path, topic_id=topic_id),
-            generated_count=generated_image_count,
-        )
-        + generation_notice,
-        reply_markup=(
-            _published_images_menu_keyboard(
-                topic_id=topic_id,
-                language=_telegram_ui_language(context, user),
-            )
-            if topic_id
-            else None
-        ),
-    )
+    await editor_add_words_approve_auto_images_handler(update, context)
 
 
 async def published_images_menu_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, topic_id = query.data.split(":")
-    try:
-        content_pack = _content_store(context).get_content_pack(topic_id)
-    except ValueError:
-        await query.edit_message_text(_tg("published_content_not_found", context=context, user=user))
-        return
-    raw_items = content_pack.get("vocabulary_items", [])
-    if not isinstance(raw_items, list) or not raw_items:
-        await query.edit_message_text(_tg("no_vocabulary_items_found", context=context, user=user))
-        return
-    await query.edit_message_text(
-        _tg("choose_word_edit_image", context=context, user=user),
-        reply_markup=_published_image_items_keyboard(
-            topic_id=topic_id,
-            raw_items=raw_items,
-            context=context,
-            user_id=int(user.id),
-            language=_telegram_ui_language(context, user),
-        ),
+    from englishbot.telegram.editor_images import (
+        published_images_menu_handler as editor_published_images_menu_handler,
     )
+
+    await editor_published_images_menu_handler(update, context)
 
 
 async def published_image_item_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    token = query.data.removeprefix("words:edit_published_image:")
-    payload = _consume_callback_token(
-        context=context,
-        user_id=int(user.id),
-        action=_PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
-        token=token,
-        fallback_key="selection",
-        allow_colon_fallback=True,
+    from englishbot.telegram.editor_images import (
+        published_image_item_handler as editor_published_image_item_handler,
     )
-    if payload is None:
-        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-        return
-    topic_id = payload.get("topic_id")
-    item_index = payload.get("item_index")
-    if isinstance(topic_id, str) and isinstance(item_index, int):
-        resolved_topic_id = topic_id
-        resolved_item_index = item_index
-    else:
-        selection = payload.get("selection")
-        if not isinstance(selection, str) or ":" not in selection:
-            await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-            return
-        resolved_topic_id, raw_item_index = selection.rsplit(":", 1)
-        try:
-            resolved_item_index = int(raw_item_index)
-        except ValueError:
-            await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-            return
-    try:
-        content_pack = _content_store(context).get_content_pack(resolved_topic_id)
-    except ValueError:
-        await query.edit_message_text(_tg("published_content_not_found", context=context, user=user))
-        return
-    raw_items = content_pack.get("vocabulary_items", [])
-    if not isinstance(raw_items, list):
-        await query.edit_message_text(_tg("no_vocabulary_items_found", context=context, user=user))
-        return
-    try:
-        selected_item = raw_items[resolved_item_index]
-    except (ValueError, IndexError):
-        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-        return
-    if not isinstance(selected_item, dict):
-        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-        return
-    item_id = str(selected_item.get("id", "")).strip()
-    if not item_id:
-        await query.edit_message_text(_tg("selected_word_unavailable", context=context, user=user))
-        return
-    review_flow = await asyncio.to_thread(
-        _start_published_word_image_review(context).execute,
-        user_id=user.id,
-        topic_id=resolved_topic_id,
-        item_id=item_id,
-    )
-    await _send_current_published_image_preview(query.message, context, review_flow, user=user)
-    await _send_image_review_step(query.message, context, review_flow, user=user)
-    await _delete_message_if_possible(context, message=query.message)
+
+    await editor_published_image_item_handler(update, context)
 
 
 async def image_review_generate_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    if not _local_image_generation_available(context):
-        await query.edit_message_text(
-            _tg("image_generation_unavailable", context=context, user=user)
-        )
-        return
-    await edit_telegram_text_view(
-        query,
-        _status_view(text=_tg("start_image_generation", context=context, user=user)),
+    from englishbot.telegram.editor_images import (
+        image_review_generate_handler as editor_image_review_generate_handler,
     )
-    await _prepare_and_send_image_review_step(query.message, context, user.id, flow, user=user)
+
+    await editor_image_review_generate_handler(update, context)
 
 
 async def image_review_search_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    current_position = flow.current_index + 1
-    total_items = len(flow.items)
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "pixabay_search_progress",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
+    from englishbot.telegram.editor_images import (
+        image_review_search_handler as editor_image_review_search_handler,
     )
-    try:
-        updated_flow = await asyncio.to_thread(
-            _search_image_review_candidates(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-            query=flow.current_item.search_query,
-        )
-    except ValueError as error:
-        await query.edit_message_text(str(error))
-        return
-    except Exception:  # noqa: BLE001
-        logger.exception("Image review Pixabay search callback failed for user=%s", user.id)
-        await edit_telegram_text_view(
-            query,
-            _status_view(text=_tg("searching_pixabay_failed", context=context, user=user)),
-        )
-        return
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "pixabay_candidates_ready",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
-    )
-    await _send_image_review_step(query.message, context, updated_flow, user=user)
+
+    await editor_image_review_search_handler(update, context)
 
 
 async def image_review_next_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    current_position = flow.current_index + 1
-    total_items = len(flow.items)
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "loading_next_pixabay",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
+    from englishbot.telegram.editor_images import (
+        image_review_next_handler as editor_image_review_next_handler,
     )
-    try:
-        updated_flow = await asyncio.to_thread(
-            _load_next_image_review_candidates(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-        )
-    except ValueError as error:
-        await query.edit_message_text(str(error))
-        return
-    except Exception:  # noqa: BLE001
-        logger.exception("Image review next Pixabay page failed for user=%s", user.id)
-        await edit_telegram_text_view(
-            query,
-            _status_view(text=_tg("searching_pixabay_failed", context=context, user=user)),
-        )
-        return
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "pixabay_candidates_ready",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
-    )
-    await _send_image_review_step(query.message, context, updated_flow, user=user)
+
+    await editor_image_review_next_handler(update, context)
 
 
 async def image_review_previous_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    current_position = flow.current_index + 1
-    total_items = len(flow.items)
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "loading_previous_pixabay",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
+    from englishbot.telegram.editor_images import (
+        image_review_previous_handler as editor_image_review_previous_handler,
     )
-    try:
-        updated_flow = await asyncio.to_thread(
-            _load_previous_image_review_candidates(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-        )
-    except ValueError as error:
-        await query.edit_message_text(str(error))
-        return
-    except Exception:  # noqa: BLE001
-        logger.exception("Image review previous Pixabay page failed for user=%s", user.id)
-        await edit_telegram_text_view(
-            query,
-            _status_view(text=_tg("searching_pixabay_failed", context=context, user=user)),
-        )
-        return
-    await edit_telegram_text_view(
-        query,
-        _status_view(
-            text=_tg(
-                "pixabay_candidates_ready",
-                context=context,
-                user=user,
-                current=current_position,
-                total=total_items,
-            )
-        ),
-    )
-    await _send_image_review_step(query.message, context, updated_flow, user=user)
+
+    await editor_image_review_previous_handler(update, context)
 
 
 async def image_review_pick_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id, candidate_index = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    updated_flow = await asyncio.to_thread(
-        _select_image_review_candidate(context).execute,
-        user_id=user.id,
-        flow_id=flow_id,
-        item_id=flow.current_item.item_id,
-        candidate_index=int(candidate_index),
+    from englishbot.telegram.editor_images import (
+        image_review_pick_handler as editor_image_review_pick_handler,
     )
-    if updated_flow.completed:
-        if _image_review_origin(updated_flow) == "published_word_edit":
-            registry = _telegram_flow_messages(context)
-            tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-            await _delete_tracked_messages(
-                context,
-                tracked_messages=_tracked_messages_except_source_message(
-                    tracked_messages=tracked_messages,
-                    message=query.message,
-                ),
-            )
-            await asyncio.to_thread(
-                _publish_image_review(context).execute,
-                user_id=user.id,
-                flow_id=flow_id,
-                output_path=None,
-            )
-            _reload_training_service(context)
-            topic = updated_flow.content_pack.get("topic", {})
-            topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-            raw_items = updated_flow.content_pack.get("vocabulary_items", [])
-            await query.edit_message_text(
-                "\n".join(
-                    (
-                        _tg("image_selected", context=context, user=user),
-                        _tg("choose_another_word_to_edit", context=context, user=user),
-                    )
-                ),
-                reply_markup=_published_image_items_keyboard(
-                    topic_id=topic_id,
-                    raw_items=raw_items if isinstance(raw_items, list) else [],
-                    language=_telegram_ui_language(context, user),
-                ),
-            )
-            if registry is not None:
-                registry.clear(flow_id=flow_id)
-            return
-        output_path = _resolve_image_review_publish_output_path(updated_flow)
-        topic = updated_flow.content_pack.get("topic", {})
-        topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-        registry = _telegram_flow_messages(context)
-        tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-        await _delete_tracked_messages(
-            context,
-            tracked_messages=_tracked_messages_except_source_message(
-                tracked_messages=tracked_messages,
-                message=query.message,
-            ),
-        )
-        await asyncio.to_thread(
-            _publish_image_review(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-            output_path=output_path,
-        )
-        _reload_training_service(context)
-        _clear_active_word_flow(user.id, context)
-        await query.edit_message_text(
-            _tg(
-                "image_review_completed_published",
-                context=context,
-                user=user,
-                destination=_publish_destination_text(context, output_path=output_path, topic_id=topic_id),
-            )
-        )
-        if registry is not None:
-            registry.clear(flow_id=flow_id)
-        return
-    await query.edit_message_text(_tg("image_selected", context=context, user=user))
-    await _send_image_review_step(query.message, context, updated_flow, user=user)
+
+    await editor_image_review_pick_handler(update, context)
 
 
 async def image_review_skip_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    updated_flow = await asyncio.to_thread(
-        _skip_image_review_item(context).execute,
-        user_id=user.id,
-        flow_id=flow_id,
-        item_id=flow.current_item.item_id,
+    from englishbot.telegram.editor_images import (
+        image_review_skip_handler as editor_image_review_skip_handler,
     )
-    if updated_flow.completed:
-        if _image_review_origin(updated_flow) == "published_word_edit":
-            registry = _telegram_flow_messages(context)
-            tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-            await _delete_tracked_messages(
-                context,
-                tracked_messages=_tracked_messages_except_source_message(
-                    tracked_messages=tracked_messages,
-                    message=query.message,
-                ),
-            )
-            _cancel_image_review(context).execute(user_id=user.id)
-            topic = updated_flow.content_pack.get("topic", {})
-            topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-            raw_items = updated_flow.content_pack.get("vocabulary_items", [])
-            await query.edit_message_text(
-                _tg("no_changes_choose_another_word", context=context, user=user),
-                reply_markup=_published_image_items_keyboard(
-                    topic_id=topic_id,
-                    raw_items=raw_items if isinstance(raw_items, list) else [],
-                    language=_telegram_ui_language(context, user),
-                ),
-            )
-            if registry is not None:
-                registry.clear(flow_id=flow_id)
-            return
-        output_path = _resolve_image_review_publish_output_path(updated_flow)
-        topic = updated_flow.content_pack.get("topic", {})
-        topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-        registry = _telegram_flow_messages(context)
-        tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-        await _delete_tracked_messages(
-            context,
-            tracked_messages=_tracked_messages_except_source_message(
-                tracked_messages=tracked_messages,
-                message=query.message,
-            ),
-        )
-        await asyncio.to_thread(
-            _publish_image_review(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-            output_path=output_path,
-        )
-        _reload_training_service(context)
-        _clear_active_word_flow(user.id, context)
-        await query.edit_message_text(
-            _tg(
-                "image_review_completed_published",
-                context=context,
-                user=user,
-                destination=_publish_destination_text(context, output_path=output_path, topic_id=topic_id),
-            )
-        )
-        if registry is not None:
-            registry.clear(flow_id=flow_id)
-        return
-    await query.edit_message_text(_tg("image_skipped", context=context, user=user))
-    await _send_image_review_step(query.message, context, updated_flow, user=user)
+
+    await editor_image_review_skip_handler(update, context)
 
 
 async def image_review_edit_prompt_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if (
-        flow is None
-        or flow.flow_id != flow_id
-        or flow.current_item is None
-    ):
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_PROMPT_TEXT
-    context.user_data["image_review_flow_id"] = flow_id
-    context.user_data["image_review_item_id"] = flow.current_item.item_id
-    instruction_view, current_prompt_view = build_image_review_prompt_edit_view(
-        instruction_text=_tg("send_new_full_prompt", context=context, user=user),
-        current_prompt_text=_tg(
-            "current_prompt",
-            context=context,
-            user=user,
-            prompt=flow.current_item.prompt,
-        ),
-        instruction_markup=ForceReply(selective=True),
+    from englishbot.telegram.editor_images import (
+        image_review_edit_prompt_handler as editor_image_review_edit_prompt_handler,
     )
-    prompt_message = await send_telegram_view(query.message, instruction_view)
-    _remember_expected_user_input(
-        context,
-        chat_id=_message_chat_id(prompt_message),
-        message_id=getattr(prompt_message, "message_id", None),
-    )
-    await send_telegram_view(query.message, current_prompt_view)
+
+    await editor_image_review_edit_prompt_handler(update, context)
 
 
 async def image_review_edit_search_query_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT
-    context.user_data["image_review_flow_id"] = flow_id
-    context.user_data["image_review_item_id"] = flow.current_item.item_id
-    current_query = flow.current_item.search_query or flow.current_item.english_word
-    instruction_view, current_query_view = build_image_review_search_query_edit_view(
-        instruction_text=_tg("send_new_search_query", context=context, user=user),
-        current_query_text=_tg(
-            "current_query",
-            context=context,
-            user=user,
-            query=current_query,
-        ),
-        instruction_markup=ForceReply(selective=True),
+    from englishbot.telegram.editor_images import (
+        image_review_edit_search_query_handler as editor_image_review_edit_search_query_handler,
     )
-    prompt_message = await send_telegram_view(query.message, instruction_view)
-    _remember_expected_user_input(
-        context,
-        chat_id=_message_chat_id(prompt_message),
-        message_id=getattr(prompt_message, "message_id", None),
-    )
-    await send_telegram_view(query.message, current_query_view)
+
+    await editor_image_review_edit_search_query_handler(update, context)
 
 
 async def image_review_show_json_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if flow is None or flow.flow_id != flow_id or flow.current_item is None:
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    current_item_id = flow.current_item.item_id
-    raw_items = flow.content_pack.get("vocabulary_items", [])
-    item_payload: dict[str, object] | None = None
-    if isinstance(raw_items, list):
-        for raw_item in raw_items:
-            if not isinstance(raw_item, dict):
-                continue
-            if str(raw_item.get("id", "")).strip() != current_item_id:
-                continue
-            item_payload = raw_item
-            break
-    if item_payload is None:
-        item_payload = {
-            "id": flow.current_item.item_id,
-            "english_word": flow.current_item.english_word,
-            "translation": flow.current_item.translation,
-            "image_prompt": flow.current_item.prompt,
-            "pixabay_search_query": flow.current_item.search_query,
-        }
-    payload = json.dumps(item_payload, ensure_ascii=False, indent=2)
-    if len(payload) > 3500:
-        payload = payload[:3400].rstrip() + "\n..."
-    await query.message.reply_text(f"```json\n{payload}\n```", parse_mode="Markdown")
+    from englishbot.telegram.editor_images import (
+        image_review_show_json_handler as editor_image_review_show_json_handler,
+    )
+
+    await editor_image_review_show_json_handler(update, context)
 
 
 async def image_review_attach_photo_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    _, _, flow_id = query.data.split(":")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if (
-        flow is None
-        or flow.flow_id != flow_id
-        or flow.current_item is None
-    ):
-        await query.edit_message_text(_tg("image_review_flow_inactive", context=context, user=user))
-        return
-    context.user_data["words_flow_mode"] = _IMAGE_REVIEW_AWAITING_PHOTO
-    context.user_data["image_review_flow_id"] = flow_id
-    context.user_data["image_review_item_id"] = flow.current_item.item_id
-    await send_telegram_view(
-        query.message,
-        build_image_review_attach_photo_view(
-            instruction_text=_tg("attach_one_photo", context=context, user=user),
-            instruction_markup=ForceReply(selective=True),
-        ),
+    from englishbot.telegram.editor_images import (
+        image_review_attach_photo_handler as editor_image_review_attach_photo_handler,
     )
+
+    await editor_image_review_attach_photo_handler(update, context)
 
 
 async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if context.user_data.get("words_flow_mode") != _IMAGE_REVIEW_AWAITING_PHOTO:
-        return
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or user is None or not getattr(message, "photo", None):
-        return
-    flow_id = context.user_data.get("image_review_flow_id")
-    item_id = context.user_data.get("image_review_item_id")
-    flow = _get_active_image_review(context).execute(user_id=user.id)
-    if (
-        flow is None
-        or flow.flow_id != flow_id
-        or flow.current_item is None
-        or flow.current_item.item_id != item_id
-    ):
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("image_review_flow_id", None)
-        context.user_data.pop("image_review_item_id", None)
-        await message.reply_text(_tg("image_review_task_inactive", context=context, user=user))
-        return
-    context.user_data.pop("words_flow_mode", None)
-    context.user_data.pop("image_review_flow_id", None)
-    context.user_data.pop("image_review_item_id", None)
-    status_message = await message.reply_text(_tg("saving_uploaded_photo", context=context, user=user))
-    photo = message.photo[-1]
-    telegram_file = await photo.get_file()
-    topic = flow.content_pack.get("topic", {})
-    topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-    output_path = (
-        _image_review_assets_dir(context)
-        / topic_id
-        / "review"
-        / f"{item_id}--user-upload.jpg"
+    from englishbot.telegram.editor_images import (
+        image_review_photo_handler as editor_image_review_photo_handler,
     )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    await telegram_file.download_to_drive(custom_path=str(output_path))
-    image_ref = output_path.as_posix()
-    updated_flow = await asyncio.to_thread(
-        _attach_uploaded_image(context).execute,
-        user_id=user.id,
-        flow_id=flow_id,
-        item_id=item_id,
-        image_ref=image_ref,
-        output_path=output_path,
-    )
-    await status_message.edit_text(
-        _status_view(text=_tg("uploaded_photo_attached", context=context, user=user)).text
-    )
-    if updated_flow.completed:
-        output_path = _resolve_image_review_publish_output_path(updated_flow)
-        topic = updated_flow.content_pack.get("topic", {})
-        topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-        registry = _telegram_flow_messages(context)
-        tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-        await _delete_tracked_messages(context, tracked_messages=tracked_messages)
-        await asyncio.to_thread(
-            _publish_image_review(context).execute,
-            user_id=user.id,
-            flow_id=flow_id,
-            output_path=output_path,
-        )
-        _reload_training_service(context)
-        _clear_active_word_flow(user.id, context)
-        await message.reply_text(
-            _tg(
-                "image_review_completed_published",
-                context=context,
-                user=user,
-                destination=_publish_destination_text(context, output_path=output_path, topic_id=topic_id),
-            )
-        )
-        return
-    await _send_image_review_step(message, context, updated_flow)
+
+    await editor_image_review_photo_handler(update, context)
 
 
 async def continue_session_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    logger.info("User %s chose to continue the active session", user.id)
-    try:
-        question = _service(context).get_current_question(user_id=user.id)
-    except InvalidSessionStateError:
-        context.user_data["awaiting_text_answer"] = False
-        _clear_medium_task_state(context)
-        await query.edit_message_text(_tg("no_active_session_send_start", context=context, user=user))
-        return
-    _record_assignment_activity(context, user_id=user.id)
-    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
-    await query.edit_message_text(_tg("continue_current_session", context=context, user=user))
-    active_session = _service(context).get_active_session(user_id=user.id)
-    assignment_kind = _assignment_kind_from_session(active_session)
-    callback_message = getattr(query, "message", None)
-    if assignment_kind is not None and callback_message is not None:
-        await _send_or_update_assignment_progress_message(
-            context,
-            message=callback_message,
-            user=user,
-            kind=assignment_kind,
-            active_session=active_session,
-        )
-    await _send_question(update, context, question)
+    await telegram_continue_session_handler(
+        update,
+        context,
+        service=_service,
+        clear_medium_task_state=_clear_medium_task_state,
+        tg=_tg,
+        expects_text_answer_for_question=_expects_text_answer_for_question,
+        record_assignment_activity=_record_assignment_activity,
+        assignment_kind_from_session=_assignment_kind_from_session,
+        send_or_update_assignment_progress_message=_send_or_update_assignment_progress_message,
+        send_question=_send_question,
+    )
 
 
 async def restart_session_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    logger.info("User %s chose to discard the active session", user.id)
-    _service(context).discard_active_session(user_id=user.id)
-    context.user_data["awaiting_text_answer"] = False
-    _clear_medium_task_state(context)
-    await query.edit_message_text(_tg("previous_session_discarded", context=context, user=user))
-    await send_telegram_view(
-        query.message,
-        _start_menu_view(context=context, user=user),
+    await telegram_restart_session_handler(
+        update,
+        context,
+        service=_service,
+        clear_medium_task_state=_clear_medium_task_state,
+        tg=_tg,
+        send_view=send_telegram_view,
+        start_menu_view=_start_menu_view,
     )
 
 
 async def start_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    await edit_telegram_text_view(query, _start_menu_view(context=context, user=user))
+    await telegram_start_menu_callback_handler(
+        update,
+        context,
+        edit_text_view=edit_telegram_text_view,
+        start_menu_view=_start_menu_view,
+    )
 
 
 async def start_assignment_round_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    kind = AssignmentSessionKind.HOMEWORK
-    try:
-        use_case = _start_assignment_round_use_case(context)
-        question = _execute_assignment_start_use_case(
-            use_case,
-            user_id=user.id,
-            kind=kind,
-            ui_language=_telegram_ui_language(context, user),
-        )
-    except ValueError:
-        await query.edit_message_text(
-            _tg("start_assignment_empty", context=context, user=user),
-            reply_markup=_start_submenu_keyboard(language=_telegram_ui_language(context, user)),
-        )
-        return
-    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
-    callback_message = getattr(query, "message", None)
-    if callback_message is not None:
-        await _send_or_update_assignment_progress_message(
-            context,
-            message=callback_message,
-            user=user,
-            kind=kind,
-        )
-    await _send_question(update, context, question)
+    await telegram_start_assignment_round_callback_handler(
+        update,
+        context,
+        start_assignment_round_use_case=_start_assignment_round_use_case,
+        execute_assignment_start_use_case=_execute_assignment_start_use_case,
+        telegram_ui_language=_telegram_ui_language,
+        tg=_tg,
+        start_submenu_keyboard=_start_submenu_keyboard,
+        expects_text_answer_for_question=_expects_text_answer_for_question,
+        send_or_update_assignment_progress_message=_send_or_update_assignment_progress_message,
+        send_question=_send_question,
+    )
 
 
 async def start_assignment_unavailable_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    await query.edit_message_text(
-        _tg("start_assignment_empty", context=context, user=user),
-        reply_markup=_start_submenu_keyboard(language=_telegram_ui_language(context, user)),
+    await telegram_start_assignment_unavailable_callback_handler(
+        update,
+        context,
+        tg=_tg,
+        telegram_ui_language=_telegram_ui_language,
+        start_submenu_keyboard=_start_submenu_keyboard,
     )
 
 
 async def topic_selected_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    topic_id = query.data.removeprefix("topic:")
-    lesson_selection = _service(context).list_lessons_by_topic(topic_id=topic_id)
-    if lesson_selection.has_lessons:
-        lesson_view = _lesson_selection_view(
-            text=_tg("choose_lesson", context=context, user=update.effective_user),
-            topic_id=topic_id,
-            lessons=lesson_selection.lessons,
-            context=context,
-            user=update.effective_user,
-        )
-        await query.edit_message_text(
-            lesson_view.text,
-            reply_markup=lesson_view.reply_markup,
-        )
-        return
-    mode_view = _mode_selection_view(
-        text=_tg("choose_mode", context=context, user=update.effective_user),
-        topic_id=topic_id,
-        lesson_id=None,
-        context=context,
-        user=update.effective_user,
-    )
-    await query.edit_message_text(
-        mode_view.text,
-        reply_markup=mode_view.reply_markup,
+    await telegram_topic_selected_handler(
+        update,
+        context,
+        service=_service,
+        lesson_selection_view=_lesson_selection_view,
+        mode_selection_view=_mode_selection_view,
+        tg=_tg,
     )
 
 
 async def lesson_selected_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    _, topic_id, lesson_id = query.data.split(":")
-    selected_lesson_id = None if lesson_id == "all" else lesson_id
-    mode_view = _mode_selection_view(
-        text=_tg("choose_mode", context=context, user=update.effective_user),
-        topic_id=topic_id,
-        lesson_id=selected_lesson_id,
-        context=context,
-        user=update.effective_user,
-    )
-    await query.edit_message_text(
-        mode_view.text,
-        reply_markup=mode_view.reply_markup,
+    await telegram_lesson_selected_handler(
+        update,
+        context,
+        mode_selection_view=_mode_selection_view,
+        tg=_tg,
     )
 
 
 async def mode_selected_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    _, topic_id, lesson_id, mode_value = query.data.split(":")
-    service = _service(context)
-    user = update.effective_user
-    if user is None:
-        return
-    selected_lesson_id = None if lesson_id == "all" else lesson_id
-    try:
-        question = _start_training_session_with_ui_language(
-            service,
-            user_id=user.id,
-            topic_id=topic_id,
-            lesson_id=selected_lesson_id,
-            mode=TrainingMode(mode_value),
-            ui_language=_telegram_ui_language(context, user),
-        )
-    except ApplicationError as error:
-        await query.edit_message_text(str(error))
-        return
-    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
-    await query.edit_message_text(_tg("session_started", context=context, user=user))
-    await _send_question(update, context, question)
+    await telegram_mode_selected_handler(
+        update,
+        context,
+        service=_service,
+        start_training_session_with_ui_language=_start_training_session_with_ui_language,
+        telegram_ui_language=_telegram_ui_language,
+        tg=_tg,
+        expects_text_answer_for_question=_expects_text_answer_for_question,
+        send_question=_send_question,
+    )
 
 
 async def game_mode_placeholder_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    await query.edit_message_text(
-        _tg("game_mode_coming_soon", context=context, user=user),
-        reply_markup=_start_submenu_keyboard(language=_telegram_ui_language(context, user)),
+    await telegram_game_mode_placeholder_callback_handler(
+        update,
+        context,
+        tg=_tg,
+        start_submenu_keyboard=_start_submenu_keyboard,
+        telegram_ui_language=_telegram_ui_language,
     )
 
 
 async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    game_state = context.user_data.get(_GAME_STATE_KEY, {})
-    user = update.effective_user
-    if user is None:
-        return
-    topic_id = game_state.get("topic_id")
-    lesson_id = game_state.get("lesson_id")
-    mode_value = game_state.get("mode_value")
-    if not topic_id or not mode_value:
-        await query.edit_message_text(_tg("no_active_session_send_start", context=context, user=user))
-        return
-    try:
-        question = _start_training_session_with_ui_language(
-            _service(context),
-            user_id=user.id,
-            topic_id=topic_id,
-            lesson_id=lesson_id,
-            mode=TrainingMode(str(mode_value)),
-            adaptive_per_word=True,
-            ui_language=_telegram_ui_language(context, user),
-        )
-    except (ApplicationError, ValueError) as error:
-        await query.edit_message_text(str(error))
-        return
-    streak_days = _content_store(context).update_game_streak(user_id=user.id, played_at=datetime.now(UTC))
-    context.user_data[_GAME_STATE_KEY] = {
-        "active": True,
-        "topic_id": topic_id,
-        "lesson_id": lesson_id,
-        "mode_value": mode_value,
-        "session_stars": 0,
-        "correct_answers": 0,
-        "streak_days": streak_days,
-    }
-    context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(question)
-    await query.edit_message_text(
-        _tg("game_round_started", context=context, user=user, streak_days=streak_days)
+    from englishbot.telegram.game_mode import (
+        game_next_round_handler as telegram_game_next_round_handler,
     )
-    await _send_question(update, context, question)
+
+    await telegram_game_next_round_handler(update, context)
 
 
 async def game_repeat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    await query.answer()
-    context.user_data.pop(_GAME_STATE_KEY, None)
-    _clear_medium_task_state(context)
-    await query.edit_message_text(_tg("start_menu_title", context=context, user=user))
-    await send_telegram_view(
-        query.message,
-        _start_menu_view(context=context, user=user),
+    from englishbot.telegram.game_mode import (
+        game_repeat_handler as telegram_game_repeat_handler,
     )
+
+    await telegram_game_repeat_handler(update, context)
 
 
 def _create_callback_token(
@@ -5571,16 +2729,14 @@ def _create_callback_token(
     payload: dict[str, object],
     fallback_value: str,
 ) -> str:
-    creator = getattr(_content_store(context), "create_telegram_callback_token", None)
-    if creator is None:
-        return fallback_value
-    return str(
-        creator(
-            user_id=user_id,
-            action=action,
-            payload=payload,
-            ttl_seconds=_CALLBACK_TOKEN_TTL_SECONDS,
-        )
+    from englishbot.telegram.callback_tokens import create_callback_token
+
+    return create_callback_token(
+        store=_content_store(context),
+        user_id=user_id,
+        action=action,
+        payload=payload,
+        fallback_value=fallback_value,
     )
 
 
@@ -5593,15 +2749,16 @@ def _consume_callback_token(
     fallback_key: str,
     allow_colon_fallback: bool = False,
 ) -> dict[str, object] | None:
-    consumer = getattr(_content_store(context), "consume_telegram_callback_token", None)
-    if consumer is None:
-        return {fallback_key: token}
-    resolved = consumer(user_id=user_id, action=action, token=token)
-    if resolved is None:
-        if ":" in token and not allow_colon_fallback:
-            return None
-        return {fallback_key: token}
-    return resolved
+    from englishbot.telegram.callback_tokens import consume_callback_token
+
+    return consume_callback_token(
+        store=_content_store(context),
+        user_id=user_id,
+        action=action,
+        token=token,
+        fallback_key=fallback_key,
+        allow_colon_fallback=allow_colon_fallback,
+    )
 
 
 def _hard_skip_callback_data(
@@ -5610,14 +2767,13 @@ def _hard_skip_callback_data(
     user_id: int,
     session_id: str,
 ) -> str:
-    token = _create_callback_token(
-        context=context,
+    from englishbot.telegram.callback_tokens import hard_skip_callback_data
+
+    return hard_skip_callback_data(
+        store=_content_store(context),
         user_id=user_id,
-        action=_HARD_SKIP_CALLBACK_ACTION,
-        payload={"session_id": session_id},
-        fallback_value=session_id,
+        session_id=session_id,
     )
-    return f"hard:skip:{token}"
 
 
 def _editable_word_callback_data(
@@ -5627,14 +2783,14 @@ def _editable_word_callback_data(
     topic_id: str,
     item_index: int,
 ) -> str:
-    token = _create_callback_token(
-        context=context,
+    from englishbot.telegram.callback_tokens import editable_word_callback_data
+
+    return editable_word_callback_data(
+        store=_content_store(context),
         user_id=user_id,
-        action=_EDITABLE_WORD_CALLBACK_ACTION,
-        payload={"topic_id": topic_id, "item_index": item_index},
-        fallback_value=f"{topic_id}:{item_index}",
+        topic_id=topic_id,
+        item_index=item_index,
     )
-    return f"words:edit_item:{token}"
 
 
 def _published_image_item_callback_data(
@@ -5644,14 +2800,14 @@ def _published_image_item_callback_data(
     topic_id: str,
     item_index: int,
 ) -> str:
-    token = _create_callback_token(
-        context=context,
+    from englishbot.telegram.callback_tokens import published_image_item_callback_data
+
+    return published_image_item_callback_data(
+        store=_content_store(context),
         user_id=user_id,
-        action=_PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
-        payload={"topic_id": topic_id, "item_index": item_index},
-        fallback_value=f"{topic_id}:{item_index}",
+        topic_id=topic_id,
+        item_index=item_index,
     )
-    return f"words:edit_published_image:{token}"
 
 
 def _hard_skip_keyboard(
@@ -5660,34 +2816,17 @@ def _hard_skip_keyboard(
     user,
     session_id: str,
 ) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = [
-        [
-            InlineKeyboardButton(
-                _tg("hard_skip_button", context=context, user=user),
-                callback_data=_hard_skip_callback_data(
-                    context=context,
-                    user_id=int(user.id),
-                    session_id=session_id,
-                ),
-            )
-        ]
-    ]
-    if _tts_service_enabled(context):
-        tts_row = [
-            InlineKeyboardButton(
-                _tg("tts_play_button", context=context, user=user),
-                callback_data="tts:current",
-            )
-        ]
-        if _tts_has_multiple_voices(context):
-            tts_row.append(
-                InlineKeyboardButton(
-                    _tg("tts_voice_menu_button", context=context, user=user),
-                    callback_data="tts:voices",
-                )
-            )
-        rows.append(tts_row)
-    return InlineKeyboardMarkup(rows)
+    from englishbot.telegram.training_markup import hard_skip_keyboard
+
+    return hard_skip_keyboard(
+        context=context,
+        user=user,
+        session_id=session_id,
+        tg=_tg,
+        hard_skip_callback_data=_hard_skip_callback_data,
+        tts_service_enabled=_tts_service_enabled,
+        tts_has_multiple_voices=_tts_has_multiple_voices,
+    )
 
 
 def _tts_buttons(
@@ -5695,20 +2834,14 @@ def _tts_buttons(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> list[InlineKeyboardButton]:
-    row = [
-        InlineKeyboardButton(
-            _tg("tts_play_button", context=context, user=user),
-            callback_data="tts:current",
-        )
-    ]
-    if _tts_has_multiple_voices(context):
-        row.append(
-            InlineKeyboardButton(
-                _tg("tts_voice_menu_button", context=context, user=user),
-                callback_data="tts:voices",
-            )
-        )
-    return row
+    from englishbot.telegram.training_markup import tts_buttons
+
+    return tts_buttons(
+        context=context,
+        user=user,
+        tg=_tg,
+        tts_has_multiple_voices=_tts_has_multiple_voices,
+    )
 
 
 def _question_reply_markup(
@@ -5718,24 +2851,20 @@ def _question_reply_markup(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> InlineKeyboardMarkup | None:
-    if question.mode is TrainingMode.MEDIUM:
-        state = _get_medium_task_state(context)
-        if state is None or state.session_id != question.session_id or state.item_id != question.item_id:
-            state = _build_medium_task_state(question)
-        return _medium_task_keyboard(state, context=context, user=user)
-    if question.options:
-        rows = [[InlineKeyboardButton(option, callback_data=f"answer:{option}")] for option in question.options]
-        if _tts_service_enabled(context):
-            rows.append(_tts_buttons(context=context, user=user))
-        return InlineKeyboardMarkup(rows)
-    if (
-        user is not None
-        and active_session is not None
-        and active_session.id == question.session_id
-        and question.mode is TrainingMode.HARD
-    ):
-        return _hard_skip_keyboard(context=context, user=user, session_id=question.session_id)
-    return None
+    from englishbot.telegram.training_markup import question_reply_markup
+
+    return question_reply_markup(
+        question,
+        active_session=active_session,
+        context=context,
+        user=user,
+        get_medium_task_state=_get_medium_task_state,
+        build_medium_task_state=_build_medium_task_state,
+        medium_task_keyboard=_medium_task_keyboard,
+        tts_service_enabled=_tts_service_enabled,
+        tts_buttons_builder=_tts_buttons,
+        hard_skip_keyboard_builder=_hard_skip_keyboard,
+    )
 
 
 def _tts_voice_menu_markup(
@@ -5744,526 +2873,117 @@ def _tts_voice_menu_markup(
     user,
     item_id: str,
 ) -> InlineKeyboardMarkup:
-    variants = _tts_voice_variants(context)
-    selected_voice_name = _tts_selected_voice_name(context, item_id=item_id)
-    rows: list[list[InlineKeyboardButton]] = []
-    for index, voice_name in enumerate(variants):
-        prefix = "✓ " if voice_name == selected_voice_name else ""
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"{prefix}{_tts_voice_label(context, user=user, voice_name=voice_name)}",
-                    callback_data=f"tts:voice:{index}",
-                )
-            ]
-        )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _tg("tts_voice_menu_back_button", context=context, user=user),
-                callback_data="tts:voice:back",
-            )
-        ]
+    from englishbot.telegram.training_markup import tts_voice_menu_markup
+
+    return tts_voice_menu_markup(
+        context=context,
+        user=user,
+        item_id=item_id,
+        tg=_tg,
+        tts_voice_variants=_tts_voice_variants,
+        tts_selected_voice_name=_tts_selected_voice_name,
+        tts_voice_label=_tts_voice_label,
     )
-    return InlineKeyboardMarkup(rows)
 
 
 async def tts_voice_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    if not _tts_has_multiple_voices(context):
-        await query.answer()
-        return
-    try:
-        active_session = _service(context).get_active_session(user_id=user.id)
-        current_question = _service(context).get_current_question(user_id=user.id)
-    except InvalidSessionStateError:
-        await query.answer(_tg("no_active_session_begin", context=context, user=user))
-        return
-    except Exception:
-        await query.answer(_tg("no_active_session_begin", context=context, user=user))
-        return
-    await query.answer()
-    await query.edit_message_reply_markup(
-        reply_markup=_tts_voice_menu_markup(
-            context=context,
-            user=user,
-            item_id=current_question.item_id,
-        )
+    from englishbot.telegram.tts import (
+        tts_voice_menu_handler as telegram_tts_voice_menu_handler,
     )
+
+    await telegram_tts_voice_menu_handler(update, context)
 
 
 async def tts_voice_select_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    try:
-        active_session = _service(context).get_active_session(user_id=user.id)
-        current_question = _service(context).get_current_question(user_id=user.id)
-    except InvalidSessionStateError:
-        await query.answer(_tg("no_active_session_begin", context=context, user=user))
-        return
-    except Exception:
-        await query.answer(_tg("no_active_session_begin", context=context, user=user))
-        return
-    suffix = query.data.removeprefix("tts:voice:")
-    if suffix != "back":
-        variants = _tts_voice_variants(context)
-        if not suffix.isdigit():
-            await query.answer()
-            return
-        index = int(suffix)
-        if index < 0 or index >= len(variants):
-            await query.answer()
-            return
-        _tts_selected_voice_store(context)[current_question.item_id] = variants[index]
-        await query.answer(_tts_voice_label(context, user=user, voice_name=variants[index]))
-    else:
-        await query.answer()
-    await query.edit_message_reply_markup(
-        reply_markup=_question_reply_markup(
-            current_question,
-            active_session=active_session,
-            context=context,
-            user=user,
-        )
+    from englishbot.telegram.tts import (
+        tts_voice_select_handler as telegram_tts_voice_select_handler,
     )
 
-
-async def _send_tts_for_current_question(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    advance_voice: bool,
-) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None:
-        return
-    client = _tts_client_or_none(context)
-    if client is None:
-        await query.answer(_tg("tts_unavailable", context=context, user=user))
-        return
-    try:
-        active_session = _service(context).get_active_session(user_id=user.id)
-    except Exception:
-        active_session = None
-    if active_session is None:
-        await query.answer(_tg("no_active_session_begin", context=context, user=user))
-        return
-    try:
-        current_question = _service(context).get_current_question(user_id=user.id)
-    except InvalidSessionStateError:
-        await query.answer(_tg("no_active_session_begin", context=context, user=user))
-        return
-    if advance_voice:
-        selected_voice_name = _advance_tts_selected_voice_name(context, item_id=current_question.item_id)
-    else:
-        selected_voice_name = _tts_selected_voice_name(context, item_id=current_question.item_id)
-    if selected_voice_name is None:
-        await query.answer(_tg("tts_unavailable", context=context, user=user))
-        return
-    lock = _tts_task_lock(context)
-    if lock.locked():
-        await query.answer(_tg("tts_already_sending", context=context, user=user))
-        return
-    recent_request = _tts_recent_request(context)
-    loop = asyncio.get_running_loop()
-    now = loop.time()
-    if recent_request is not None:
-        recent_item_id, recent_voice_name, recent_sent_at = recent_request
-        if (
-            recent_item_id == current_question.item_id
-            and recent_voice_name == selected_voice_name
-            and now - recent_sent_at < _TTS_REPEAT_COOLDOWN_SEC
-        ):
-            await query.answer(_tg("tts_recently_sent", context=context, user=user))
-            return
-    async with lock:
-        recent_request = _tts_recent_request(context)
-        now = loop.time()
-        if recent_request is not None:
-            recent_item_id, recent_voice_name, recent_sent_at = recent_request
-            if (
-                recent_item_id == current_question.item_id
-                and recent_voice_name == selected_voice_name
-                and now - recent_sent_at < _TTS_REPEAT_COOLDOWN_SEC
-            ):
-                await query.answer(_tg("tts_recently_sent", context=context, user=user))
-                return
-        item = None
-        try:
-            item = _content_store(context).get_vocabulary_item(current_question.item_id)
-        except Exception:
-            item = None
-        primary_voice_name = _tts_primary_voice_name(context)
-        variant = None
-        if item is not None:
-            try:
-                variant = _content_store(context).get_word_audio_variant(
-                    item_id=item.id,
-                    voice_name=selected_voice_name,
-                )
-            except Exception:
-                variant = None
-        cached_voice_file_id = None
-        cached_audio_ref = None
-        if variant is not None:
-            cached_voice_file_id = variant.telegram_voice_file_id
-            cached_audio_ref = variant.audio_ref
-        elif item is not None and selected_voice_name == primary_voice_name:
-            cached_voice_file_id = item.telegram_voice_file_id
-            cached_audio_ref = item.audio_ref
-        if item is not None and cached_voice_file_id:
-            try:
-                await query.answer()
-                await _reply_voice_replacing_previous_tts(
-                    context=context,
-                    user_id=int(user.id),
-                    message=query.message,
-                    voice=cached_voice_file_id,
-                )
-                _content_store(context).update_word_audio_variant(
-                    item_id=item.id,
-                    voice_name=selected_voice_name,
-                    audio_ref=cached_audio_ref,
-                    telegram_voice_file_id=cached_voice_file_id,
-                )
-                _set_tts_recent_request(
-                    context,
-                    item_id=current_question.item_id,
-                    voice_name=selected_voice_name,
-                    sent_at=loop.time(),
-                )
-                return
-            except Exception as error:
-                logger.warning(
-                    "Cached Telegram voice_id failed user_id=%s item_id=%s voice_name=%s error=%s",
-                    user.id,
-                    current_question.item_id,
-                    selected_voice_name,
-                    error,
-                )
-        if item is not None and cached_audio_ref:
-            audio_path = resolve_existing_audio_path(cached_audio_ref)
-            if audio_path is not None:
-                try:
-                    await query.answer()
-                    with audio_path.open("rb") as audio_file:
-                        sent_message = await _reply_voice_replacing_previous_tts(
-                            context=context,
-                            user_id=int(user.id),
-                            message=query.message,
-                            voice=InputFile(audio_file, filename=audio_path.name),
-                        )
-                    voice_file_id = _extract_sent_voice_file_id(sent_message)
-                    if voice_file_id is not None:
-                        _content_store(context).update_word_audio_variant(
-                            item_id=item.id,
-                            voice_name=selected_voice_name,
-                            audio_ref=cached_audio_ref,
-                            telegram_voice_file_id=voice_file_id,
-                        )
-                    if voice_file_id is not None and selected_voice_name == primary_voice_name:
-                        _content_store(context).update_word_audio(
-                            item_id=item.id,
-                            telegram_voice_file_id=voice_file_id,
-                        )
-                    _set_tts_recent_request(
-                        context,
-                        item_id=current_question.item_id,
-                        voice_name=selected_voice_name,
-                        sent_at=loop.time(),
-                    )
-                    return
-                except Exception as error:
-                    logger.warning(
-                        "Cached local TTS audio failed user_id=%s item_id=%s voice_name=%s error=%s",
-                        user.id,
-                        current_question.item_id,
-                        selected_voice_name,
-                        error,
-                    )
-        try:
-            audio_bytes = client.synthesize(
-                text=current_question.correct_answer,
-                voice_name=selected_voice_name,
-            )
-        except Exception as error:
-            logger.warning(
-                "TTS unavailable for user_id=%s item_id=%s voice_name=%s error=%s",
-                user.id,
-                current_question.item_id,
-                selected_voice_name,
-                error,
-            )
-            await query.answer(_tg("tts_unavailable", context=context, user=user))
-            return
-        audio_ref: str | None = None
-        if item is not None and item.topic_id:
-            is_primary_voice = selected_voice_name == primary_voice_name
-            audio_path = build_item_audio_path(
-                assets_dir=Path("assets"),
-                topic_id=item.topic_id,
-                item_id=item.id,
-                voice_name=None if is_primary_voice else selected_voice_name,
-            )
-            audio_path.parent.mkdir(parents=True, exist_ok=True)
-            audio_path.write_bytes(audio_bytes)
-            audio_ref = build_item_audio_ref(
-                assets_dir=Path("assets"),
-                topic_id=item.topic_id,
-                item_id=item.id,
-                voice_name=None if is_primary_voice else selected_voice_name,
-            )
-        await query.answer()
-        voice_file = InputFile(BytesIO(audio_bytes), filename="pronunciation.ogg")
-        sent_message = await _reply_voice_replacing_previous_tts(
-            context=context,
-            user_id=int(user.id),
-            message=query.message,
-            voice=voice_file,
-        )
-        voice_file_id = _extract_sent_voice_file_id(sent_message)
-        if item is not None and (audio_ref is not None or voice_file_id is not None):
-            _content_store(context).update_word_audio_variant(
-                item_id=item.id,
-                voice_name=selected_voice_name,
-                audio_ref=audio_ref,
-                telegram_voice_file_id=voice_file_id,
-            )
-            if selected_voice_name == primary_voice_name:
-                _content_store(context).update_word_audio(
-                    item_id=item.id,
-                    audio_ref=audio_ref,
-                    telegram_voice_file_id=voice_file_id,
-                )
-        _set_tts_recent_request(
-            context,
-            item_id=current_question.item_id,
-            voice_name=selected_voice_name,
-            sent_at=loop.time(),
-        )
+    await telegram_tts_voice_select_handler(update, context)
 
 
 async def tts_current_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _send_tts_for_current_question(update, context, advance_voice=False)
+    from englishbot.telegram.tts import (
+        tts_current_handler as telegram_tts_current_handler,
+    )
+
+    await telegram_tts_current_handler(update, context)
 
 
 async def tts_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _send_tts_for_current_question(update, context, advance_voice=True)
+    from englishbot.telegram.tts import (
+        tts_next_handler as telegram_tts_next_handler,
+    )
+
+    await telegram_tts_next_handler(update, context)
 
 
 async def hard_skip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    parts = query.data.split(":", 2)
-    if len(parts) != 3:
-        return
-    _, _, token = parts
-    payload = _consume_callback_token(
-        context=context,
-        user_id=int(user.id),
-        action=_HARD_SKIP_CALLBACK_ACTION,
-        token=token,
-        fallback_key="session_id",
+    await telegram_hard_skip_handler(
+        update,
+        context,
+        tg=_tg,
+        consume_callback_token=lambda **kwargs: _consume_callback_token(
+            **kwargs,
+            action=_HARD_SKIP_CALLBACK_ACTION,
+        ),
+        active_training_session=_active_training_session,
+        service=_service,
+        assignment_kind_from_session=_assignment_kind_from_session,
+        process_answer=_process_answer,
+        content_store=_content_store,
+        send_question=_send_question,
     )
-    if payload is None:
-        return
-    session_id = str(payload.get("session_id") or "").strip()
-    if not session_id:
-        return
-    active_session = _active_training_session(context, user_id=user.id)
-    if active_session is None or active_session.id != session_id:
-        return
-    try:
-        current_question = _service(context).get_current_question(user_id=user.id)
-    except InvalidSessionStateError:
-        return
-    if (
-        current_question.session_id != session_id
-        or current_question.mode is not TrainingMode.HARD
-    ):
-        return
-    assignment_kind = _assignment_kind_from_session(active_session)
-    if assignment_kind is not AssignmentSessionKind.HOMEWORK:
-        await _process_answer(update, context, "__skip_hard__")
-        return
-    if active_session.current_index >= len(active_session.items):
-        return
-    current_item = active_session.items[active_session.current_index]
-    active_session.items[active_session.current_index] = SessionItem(
-        order=current_item.order,
-        vocabulary_item_id=current_item.vocabulary_item_id,
-        mode=TrainingMode.MEDIUM,
-    )
-    active_session.combo_correct_streak = 0
-    active_session.combo_hard_active = False
-    active_session.bonus_item_id = None
-    active_session.bonus_mode = None
-    _content_store(context).save_session(active_session)
-    context.user_data["awaiting_text_answer"] = False
-    next_question = _service(context).get_current_question(user_id=user.id)
-    await _send_question(update, context, next_question)
 
 
 async def medium_answer_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user = update.effective_user
-    if query is None or user is None or query.data is None:
-        return
-    await query.answer()
-    async with _medium_task_lock(context):
-        state = _get_medium_task_state(context)
-        message = getattr(query, "message", None)
-        message_id = getattr(message, "message_id", None)
-        if state is None:
-            logger.debug("Medium callback ignored: no medium state user_id=%s data=%s", user.id, query.data)
-            return
-        if state.message_id is None:
-            logger.debug("Medium callback ignored: state has no message_id user_id=%s data=%s", user.id, query.data)
-            return
-        if message_id != state.message_id:
-            logger.debug(
-                "Medium callback ignored: stale message user_id=%s data=%s callback_message_id=%s state_message_id=%s",
-                user.id,
-                query.data,
-                message_id,
-                state.message_id,
-            )
-            return
-        active_session = _service(context).get_active_session(user_id=user.id)
-        if active_session is None:
-            logger.debug("Medium callback ignored: no active session user_id=%s data=%s", user.id, query.data)
-            return
-        current_question = _service(context).get_current_question(user_id=user.id)
-        if (
-            current_question.mode is not TrainingMode.MEDIUM
-            or current_question.session_id != state.session_id
-            or current_question.item_id != state.item_id
-        ):
-            logger.debug(
-                "Medium callback ignored: question mismatch user_id=%s data=%s current_mode=%s current_session_id=%s state_session_id=%s current_item_id=%s state_item_id=%s",
-                user.id,
-                query.data,
-                current_question.mode.value,
-                current_question.session_id,
-                state.session_id,
-                current_question.item_id,
-                state.item_id,
-            )
-            _clear_medium_task_state(context)
-            return
-        if query.data == "medium:backspace":
-            if not state.selected_letter_indexes:
-                logger.debug("Medium callback ignored: backspace on empty answer user_id=%s", user.id)
-                return
-            state = _MediumTaskState(
-                session_id=state.session_id,
-                item_id=state.item_id,
-                target_word=state.target_word,
-                shuffled_letters=state.shuffled_letters,
-                selected_letter_indexes=state.selected_letter_indexes[:-1],
-                message_id=state.message_id,
-            )
-        elif query.data.startswith("medium:noop:"):
-            logger.debug("Medium callback ignored: noop button user_id=%s data=%s", user.id, query.data)
-            return
-        elif query.data.startswith("medium:pick:"):
-            if _medium_task_is_complete(state):
-                logger.debug("Medium callback ignored: answer already complete user_id=%s data=%s", user.id, query.data)
-                return
-            try:
-                picked_index = int(query.data.rsplit(":", 1)[-1])
-            except ValueError:
-                logger.debug("Medium callback ignored: invalid pick payload user_id=%s data=%s", user.id, query.data)
-                return
-            if picked_index < 0 or picked_index >= len(state.shuffled_letters):
-                logger.debug(
-                    "Medium callback ignored: pick index out of range user_id=%s data=%s index=%s letter_count=%s",
-                    user.id,
-                    query.data,
-                    picked_index,
-                    len(state.shuffled_letters),
-                )
-                return
-            if picked_index in state.selected_letter_indexes:
-                logger.debug(
-                    "Medium callback ignored: letter already used user_id=%s data=%s index=%s",
-                    user.id,
-                    query.data,
-                    picked_index,
-                )
-                return
-            state = _MediumTaskState(
-                session_id=state.session_id,
-                item_id=state.item_id,
-                target_word=state.target_word,
-                shuffled_letters=state.shuffled_letters,
-                selected_letter_indexes=(*state.selected_letter_indexes, picked_index),
-                message_id=state.message_id,
-            )
-        elif query.data == "medium:check":
-            if not _medium_task_is_complete(state):
-                logger.debug("Medium callback ignored: check before complete user_id=%s", user.id)
-                return
-        else:
-            logger.debug("Medium callback ignored: unsupported payload user_id=%s data=%s", user.id, query.data)
-            return
-        _set_medium_task_state(context, state)
-        if query.data == "medium:check":
-            await _edit_training_question_view(
-                query,
-                view=_build_medium_question_view(current_question, state=state, context=context, user=user),
-            )
-            _clear_medium_task_state(context)
-            await _process_answer(update, context, _medium_task_answer_text(state))
-            return
-        await _edit_training_question_view(
-            query,
-            view=_build_medium_question_view(current_question, state=state, context=context, user=user),
-        )
+    await telegram_medium_answer_callback_handler(
+        update,
+        context,
+        service=_service,
+        medium_task_lock=_medium_task_lock,
+        get_medium_task_state=_get_medium_task_state,
+        set_medium_task_state=_set_medium_task_state,
+        clear_medium_task_state=_clear_medium_task_state,
+        medium_task_is_complete=_medium_task_is_complete,
+        build_medium_question_view=_build_medium_question_view,
+        edit_training_question_view=_edit_training_question_view,
+        medium_task_answer_text=_medium_task_answer_text,
+        process_answer=_process_answer,
+        medium_task_state_type=_MediumTaskState,
+    )
 
 
 async def choice_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    await query.answer()
-    answer = query.data.removeprefix("answer:")
-    await _process_answer(update, context, answer)
+    await telegram_choice_answer_handler(
+        update,
+        context,
+        process_answer=_process_answer,
+    )
 
 
 async def text_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not context.user_data.get("awaiting_text_answer"):
-        return
-    message = update.effective_message
-    user = update.effective_user
-    if message is None or message.text is None or user is None:
-        return
-    if _service(context).get_active_session(user_id=user.id) is None:
-        context.user_data["awaiting_text_answer"] = False
-        _clear_medium_task_state(context)
-        await message.reply_text(_tg("no_active_session_begin", context=context, user=user))
-        return
-    await _process_answer(update, context, message.text)
+    await telegram_text_answer_handler(
+        update,
+        context,
+        service=_service,
+        clear_medium_task_state=_clear_medium_task_state,
+        tg=_tg,
+        process_answer=_process_answer,
+    )
 
 
 async def group_text_observer_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import has_active_interaction_mode
+
     if not _is_group_chat(update):
         return
-    if context.user_data.get("awaiting_text_answer"):
+    if _optional_user_data(context, "awaiting_text_answer"):
         return
-    if context.user_data.get("words_flow_mode") is not None:
+    if has_active_interaction_mode(context):
         return
     message = update.effective_message
     user = update.effective_user
@@ -6338,138 +3058,36 @@ async def _process_answer(
     context: ContextTypes.DEFAULT_TYPE,
     answer: str,
 ) -> None:
-    service = _service(context)
-    user = update.effective_user
-    message = update.effective_message
-    if user is None or message is None:
-        return
-    _clear_medium_task_state(context)
-    active_session_before_submit = service.get_active_session(user_id=user.id)
-    feedback_update: _GoalFeedbackUpdate | None = None
-    if context.application.bot_data.get("homework_progress_use_case") is not None:
-        before_summary = _homework_progress_use_case(context).get_summary(user_id=user.id)
-    else:
-        before_summary = None
-    try:
-        outcome = service.submit_answer(user_id=user.id, answer=answer)
-    except InvalidSessionStateError:
-        context.user_data["awaiting_text_answer"] = False
-        _clear_medium_task_state(context)
-        await message.reply_text(_tg("no_active_session_begin", context=context, user=user))
-        return
-    except ApplicationError as error:
-        await message.reply_text(str(error))
-        return
-    if _assignment_kind_from_session(active_session_before_submit) is not None:
-        _record_assignment_activity(context, user_id=user.id)
-    active_session_id = getattr(active_session_before_submit, "session_id", None)
-    if isinstance(active_session_id, str):
-        await _delete_tracked_flow_messages(
-            context,
-            flow_id=active_session_id,
-            tag=_TRAINING_QUESTION_TAG,
-        )
-    game_state = context.user_data.get(_GAME_STATE_KEY)
-    if isinstance(game_state, dict) and game_state.get("active"):
-        await _send_game_feedback(message, outcome, context)
-        if outcome.next_question is not None:
-            context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(
-                outcome.next_question
-            )
-            await _send_question(update, context, outcome.next_question)
-        else:
-            context.user_data["awaiting_text_answer"] = False
-            _clear_medium_task_state(context)
-            await _finish_game_session(message, outcome, context)
-        return
-    context.user_data["awaiting_text_answer"] = bool(
-        outcome.next_question is not None
-        and _expects_text_answer_for_question(outcome.next_question)
-    )
-    raw_completed_assignment_session = _raw_training_session_by_id(
+    await delivery_process_answer(
+        update,
         context,
-        session_id=active_session_id,
+        answer,
+        service=_service,
+        clear_medium_task_state=_clear_medium_task_state,
+        tg=_tg,
+        assignment_kind_from_session=_assignment_kind_from_session,
+        record_assignment_activity=_record_assignment_activity,
+        delete_tracked_flow_messages=_delete_tracked_flow_messages,
+        training_question_tag=_TRAINING_QUESTION_TAG,
+        send_game_feedback=_send_game_feedback,
+        expects_text_answer_for_question=_expects_text_answer_for_question,
+        send_question=_send_question,
+        finish_game_session=_finish_game_session,
+        raw_training_session_by_id=_raw_training_session_by_id,
+        assignment_kind_and_goal_id_from_source_tag=_assignment_kind_and_goal_id_from_source_tag,
+        start_assignment_round_use_case_or_none=_start_assignment_round_use_case_or_none,
+        execute_assignment_start_use_case=_execute_assignment_start_use_case,
+        telegram_ui_language=_telegram_ui_language,
+        collect_goal_feedback_update=_collect_goal_feedback_update,
+        send_feedback=_send_feedback,
+        send_or_update_assignment_progress_message=_send_or_update_assignment_progress_message,
+        schedule_goal_completed_notifications=_schedule_goal_completed_notifications,
+        flush_pending_notifications_for_user=_flush_pending_notifications_for_user,
+        homework_progress_use_case=_homework_progress_use_case,
+        answer_outcome_type=AnswerOutcome,
+        invalid_session_state_error_type=InvalidSessionStateError,
+        application_error_type=ApplicationError,
     )
-    continuation_question = None
-    assignment_kind = _assignment_kind_from_session(active_session_before_submit)
-    _, assignment_goal_id = _assignment_kind_and_goal_id_from_source_tag(
-        getattr(active_session_before_submit, "source_tag", None),
-    )
-    start_assignment_use_case = _start_assignment_round_use_case_or_none(context)
-    if (
-        outcome.next_question is None
-        and outcome.summary is not None
-        and assignment_kind is not None
-        and start_assignment_use_case is not None
-        ):
-            raw_goal_id = None
-            if raw_completed_assignment_session is not None:
-                _, raw_goal_id = _assignment_kind_and_goal_id_from_source_tag(
-                    getattr(raw_completed_assignment_session, "source_tag", None),
-                )
-            try:
-                continuation_question = _execute_assignment_start_use_case(
-                    start_assignment_use_case,
-                    user_id=user.id,
-                    kind=assignment_kind,
-                    goal_id=raw_goal_id or assignment_goal_id,
-                    combo_correct_streak=int(
-                        getattr(raw_completed_assignment_session, "combo_correct_streak", 0) or 0
-                    ),
-                    combo_hard_active=bool(
-                        getattr(raw_completed_assignment_session, "combo_hard_active", False)
-                    ),
-                    ui_language=_telegram_ui_language(context, user),
-                )
-            except ValueError:
-                continuation_question = None
-    if continuation_question is not None:
-        context.user_data["awaiting_text_answer"] = _expects_text_answer_for_question(continuation_question)
-    active_session_for_feedback = _service(context).get_active_session(user_id=user.id)
-    if before_summary is not None:
-        feedback_update = _collect_goal_feedback_update(
-            context=context,
-            user=user,
-            before_summary=before_summary,
-        )
-    feedback_outcome = outcome
-    if continuation_question is not None and outcome.summary is not None:
-        # The underlying training session is complete, but homework continues in a
-        # freshly started session. Keep the feedback short instead of showing a
-        # misleading "Session complete" state.
-        feedback_outcome = AnswerOutcome(
-            result=outcome.result,
-            summary=None,
-            next_question=None,
-        )
-    await _send_feedback(
-        message,
-        feedback_outcome,
-        context=context,
-        active_session=active_session_for_feedback or active_session_before_submit,
-        user=user,
-        feedback_update=feedback_update,
-    )
-    if assignment_kind is not None:
-        await _send_or_update_assignment_progress_message(
-            context,
-            message=message,
-            user=user,
-            kind=assignment_kind,
-            active_session=active_session_for_feedback or active_session_before_submit,
-        )
-    if feedback_update is not None and feedback_update.completed_goals:
-        _schedule_goal_completed_notifications(
-            context,
-            learner=user,
-            completed_goals=feedback_update.completed_goals,
-        )
-    if continuation_question is not None:
-        await _send_question(update, context, continuation_question)
-    elif outcome.next_question is not None:
-        await _send_question(update, context, outcome.next_question)
-    else:
-        await _flush_pending_notifications_for_user(context, user_id=user.id)
 
 
 async def _send_feedback(
@@ -6481,80 +3099,33 @@ async def _send_feedback(
     user=None,
     feedback_update: _GoalFeedbackUpdate | None = None,
 ) -> None:
-    feedback_user = user if user is not None else getattr(message, "from_user", None)
-    feedback_user_id = getattr(feedback_user, "id", None)
-    view = build_answer_feedback_view(
-        outcome,
-        translate=_tg,
-        user=feedback_user,
+    from englishbot.telegram.assignment_progress import (
+        assignment_round_progress_view,
+        render_assignment_round_progress_text,
     )
-    reply_markup = None
-    assignment_progress_text = ""
-    assignment_kind = _assignment_kind_from_session(active_session) if active_session is not None else None
-    assignment_goal_id = None
-    if active_session is not None:
-        _, assignment_goal_id = _assignment_kind_and_goal_id_from_source_tag(
-            getattr(active_session, "source_tag", None),
-        )
-    compact_assignment_feedback = assignment_kind is not None and hasattr(message, "reply_photo")
-    round_progress = None
-    if assignment_kind is not None and feedback_user_id is not None:
-        round_progress = _assignment_round_progress_view(
-            context=context,
-            user_id=feedback_user_id,
-            kind=assignment_kind,
-            goal_id=assignment_goal_id,
-            active_session=active_session,
-        )
-        if round_progress is not None:
-            assignment_progress_text = _render_assignment_round_progress_text(
-                context=context,
-                user=feedback_user,
-                kind=assignment_kind,
-                progress=round_progress,
-            )
-    if outcome.summary is not None and assignment_kind is not None and feedback_user_id is not None:
-        reply_markup = _assignment_round_complete_keyboard(
-            assignment_kind,
-            has_more=False,
-            remaining_word_count=None,
-            round_batch_size=None,
-            language=_telegram_ui_language(context, feedback_user),
-        )
-    text = view.text
-    if compact_assignment_feedback:
-        text = _compact_assignment_feedback_text(
-            base_text=view.text,
-            context=context,
-            user=feedback_user,
-            feedback_update=feedback_update,
-        )
-    elif feedback_update is not None:
-        update_text = _render_feedback_update_text(
-            context=context,
-            user=feedback_user,
-            update=feedback_update,
-        )
-        if update_text:
-            text = f"{text}\n\n{update_text}"
-    if assignment_progress_text and not compact_assignment_feedback:
-        text = f"{text}\n\n{assignment_progress_text}"
-    flow_id = getattr(active_session, "session_id", None)
-    if isinstance(flow_id, str):
-        await _delete_tracked_flow_messages(
-            context,
-            flow_id=flow_id,
-            tag=_TRAINING_FEEDBACK_TAG,
-        )
-    sent_message = await message.reply_text(text, reply_markup=reply_markup, parse_mode=view.parse_mode)
-    if isinstance(flow_id, str):
-        _track_flow_message(
-            context,
-            flow_id=flow_id,
-            tag=_TRAINING_FEEDBACK_TAG,
-            message=sent_message,
-            fallback_chat_id=_message_chat_id(message),
-        )
+
+    await delivery_send_feedback(
+        message,
+        outcome,
+        context=context,
+        active_session=active_session,
+        user=user,
+        feedback_update=feedback_update,
+        build_answer_feedback_view=build_answer_feedback_view,
+        assignment_kind_from_session=_assignment_kind_from_session,
+        assignment_kind_and_goal_id_from_source_tag=_assignment_kind_and_goal_id_from_source_tag,
+        assignment_round_progress_view=assignment_round_progress_view,
+        render_assignment_round_progress_text=render_assignment_round_progress_text,
+        assignment_round_complete_keyboard=_assignment_round_complete_keyboard,
+        telegram_ui_language=_telegram_ui_language,
+        compact_assignment_feedback_text=_compact_assignment_feedback_text,
+        render_feedback_update_text=_render_feedback_update_text,
+        delete_tracked_flow_messages=_delete_tracked_flow_messages,
+        track_flow_message=_track_flow_message,
+        training_feedback_tag=_TRAINING_FEEDBACK_TAG,
+        message_chat_id=_message_chat_id,
+        tg=_tg,
+    )
 
 
 async def _send_game_feedback(
@@ -6562,34 +3133,11 @@ async def _send_game_feedback(
     outcome: AnswerOutcome,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    game_state = context.user_data.get(_GAME_STATE_KEY, {})
-    if not isinstance(game_state, dict):
-        return
-    session_stars = int(game_state.get("session_stars", 0))
-    correct_answers = int(game_state.get("correct_answers", 0))
-    if outcome.result.is_correct:
-        session_stars += _GAME_STAR_REWARD_CORRECT
-        correct_answers += 1
-        feedback = _tg("game_correct", context=context, user=getattr(message, "from_user", None))
-    else:
-        feedback = _tg("game_almost", context=context, user=getattr(message, "from_user", None))
-    game_state["session_stars"] = session_stars
-    game_state["correct_answers"] = correct_answers
-    if outcome.summary is not None:
-        progress = outcome.summary.total_questions
-    else:
-        active_session = _service(context).get_active_session(user_id=message.from_user.id)
-        progress = 1 if active_session is None else max(1, active_session.current_position - 1)
-    text = _tg(
-        "game_feedback",
-        context=context,
-        user=getattr(message, "from_user", None),
-        feedback=feedback,
-        progress=progress,
-        total=5,
-        stars=session_stars,
+    from englishbot.telegram.game_mode import (
+        send_game_feedback as telegram_send_game_feedback,
     )
-    await message.reply_text(text)
+
+    await telegram_send_game_feedback(message, outcome, context)
 
 
 async def _finish_game_session(
@@ -6597,37 +3145,11 @@ async def _finish_game_session(
     outcome: AnswerOutcome,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    user = getattr(message, "from_user", None)
-    if user is None:
-        return
-    game_state = context.user_data.get(_GAME_STATE_KEY, {})
-    if not isinstance(game_state, dict):
-        return
-    session_stars = int(game_state.get("session_stars", 0))
-    chest_stars = random.choice(_GAME_CHEST_REWARDS)
-    total_earned = session_stars + chest_stars
-    total_stars = _content_store(context).add_game_stars(user_id=user.id, stars=total_earned)
-    streak_days = _content_store(context).update_game_streak(user_id=user.id, played_at=datetime.now(UTC))
-    await message.reply_text(
-        _tg(
-            "game_session_complete",
-            context=context,
-            user=user,
-            session_stars=session_stars,
-            chest_stars=chest_stars,
-            total_earned=total_earned,
-            total_stars=total_stars,
-            streak_days=streak_days,
-        ),
-        reply_markup=_game_result_keyboard(language=_telegram_ui_language(context, user)),
+    from englishbot.telegram.game_mode import (
+        finish_game_session as telegram_finish_game_session,
     )
-    context.user_data[_GAME_STATE_KEY] = {
-        "active": False,
-        "topic_id": game_state.get("topic_id"),
-        "lesson_id": game_state.get("lesson_id"),
-        "mode_value": game_state.get("mode_value"),
-    }
-    await _flush_pending_notifications_for_user(context, user_id=user.id)
+
+    await telegram_finish_game_session(message, outcome, context)
 
 
 def _expects_text_answer_for_question(question: TrainingQuestion) -> bool:
@@ -6635,9 +3157,9 @@ def _expects_text_answer_for_question(question: TrainingQuestion) -> bool:
 
 
 def _clear_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_data = getattr(context, "user_data", None)
-    if isinstance(user_data, dict):
-        user_data.pop(_MEDIUM_TASK_STATE_KEY, None)
+    from englishbot.telegram.medium_task_ui import clear_medium_task_state
+
+    clear_medium_task_state(context)
 
 
 def _build_medium_task_state(
@@ -6645,116 +3167,57 @@ def _build_medium_task_state(
     *,
     message_id: int | None = None,
 ) -> _MediumTaskState:
-    letter_source = question.letter_hint or question.correct_answer
-    shuffled_letters = tuple(character for character in letter_source if not character.isspace())
-    return _MediumTaskState(
-        session_id=question.session_id,
-        item_id=question.item_id,
-        target_word=question.correct_answer,
-        shuffled_letters=shuffled_letters,
-        selected_letter_indexes=(),
-        message_id=message_id,
-    )
+    from englishbot.telegram.medium_task_ui import build_medium_task_state
+
+    return build_medium_task_state(question, message_id=message_id)
 
 
 def _get_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> _MediumTaskState | None:
-    user_data = getattr(context, "user_data", None)
-    if not isinstance(user_data, dict):
-        return None
-    state = user_data.get(_MEDIUM_TASK_STATE_KEY)
-    if isinstance(state, _MediumTaskState):
-        return state
-    return None
+    from englishbot.telegram.medium_task_ui import get_medium_task_state
+
+    return get_medium_task_state(context)
 
 
 def _set_medium_task_state(context: ContextTypes.DEFAULT_TYPE, state: _MediumTaskState) -> None:
-    user_data = getattr(context, "user_data", None)
-    if isinstance(user_data, dict):
-        user_data[_MEDIUM_TASK_STATE_KEY] = state
+    from englishbot.telegram.medium_task_ui import set_medium_task_state
+
+    set_medium_task_state(context, state)
 
 
 def _medium_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
-    user_data = getattr(context, "user_data", None)
-    if not isinstance(user_data, dict):
-        return asyncio.Lock()
-    lock = user_data.get(_MEDIUM_TASK_LOCK_KEY)
-    if isinstance(lock, asyncio.Lock):
-        return lock
-    created_lock = asyncio.Lock()
-    user_data[_MEDIUM_TASK_LOCK_KEY] = created_lock
-    return created_lock
+    from englishbot.telegram.medium_task_ui import medium_task_lock
+
+    return medium_task_lock(context)
 
 
 def _tts_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
-    user_data = getattr(context, "user_data", None)
-    if not isinstance(user_data, dict):
-        return asyncio.Lock()
-    lock = user_data.get(_TTS_TASK_LOCK_KEY)
-    if isinstance(lock, asyncio.Lock):
-        return lock
-    created_lock = asyncio.Lock()
-    user_data[_TTS_TASK_LOCK_KEY] = created_lock
-    return created_lock
+    from englishbot.telegram.tts_state import tts_task_lock
+
+    return tts_task_lock(context)
 
 
 def _tts_selected_voice_store(context: ContextTypes.DEFAULT_TYPE) -> dict[str, str]:
-    user_data = getattr(context, "user_data", None)
-    if not isinstance(user_data, dict):
-        return {}
-    current = user_data.get(_TTS_SELECTED_VOICE_KEY)
-    if isinstance(current, dict):
-        return current
-    created: dict[str, str] = {}
-    user_data[_TTS_SELECTED_VOICE_KEY] = created
-    return created
+    from englishbot.telegram.tts_state import tts_selected_voice_store
+
+    return tts_selected_voice_store(context)
 
 
 def _tts_selected_voice_name(context: ContextTypes.DEFAULT_TYPE, *, item_id: str) -> str | None:
-    variants = _tts_voice_variants(context)
-    if not variants:
-        return None
-    selected = _tts_selected_voice_store(context).get(item_id)
-    if selected in variants:
-        return selected
-    selected = variants[0]
-    _tts_selected_voice_store(context)[item_id] = selected
-    return selected
+    from englishbot.telegram.tts_state import tts_selected_voice_name
+
+    return tts_selected_voice_name(context, item_id=item_id)
 
 
 def _advance_tts_selected_voice_name(context: ContextTypes.DEFAULT_TYPE, *, item_id: str) -> str | None:
-    variants = _tts_voice_variants(context)
-    if not variants:
-        return None
-    current = _tts_selected_voice_name(context, item_id=item_id)
-    if current not in variants:
-        next_voice_name = variants[0]
-    else:
-        next_voice_name = variants[(variants.index(current) + 1) % len(variants)]
-    _tts_selected_voice_store(context)[item_id] = next_voice_name
-    return next_voice_name
+    from englishbot.telegram.tts_state import advance_tts_selected_voice_name
+
+    return advance_tts_selected_voice_name(context, item_id=item_id)
 
 
 def _tts_recent_request(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, str, float] | None:
-    user_data = getattr(context, "user_data", None)
-    if not isinstance(user_data, dict):
-        return None
-    value = user_data.get(_TTS_TASK_RECENT_KEY)
-    if (
-        isinstance(value, tuple)
-        and len(value) == 3
-        and isinstance(value[0], str)
-        and isinstance(value[1], str)
-        and isinstance(value[2], (int, float))
-    ):
-        return value[0], value[1], float(value[2])
-    if (
-        isinstance(value, tuple)
-        and len(value) == 2
-        and isinstance(value[0], str)
-        and isinstance(value[1], (int, float))
-    ):
-        return value[0], "", float(value[1])
-    return None
+    from englishbot.telegram.tts_state import tts_recent_request
+
+    return tts_recent_request(context)
 
 
 def _set_tts_recent_request(
@@ -6764,53 +3227,26 @@ def _set_tts_recent_request(
     voice_name: str,
     sent_at: float,
 ) -> None:
-    user_data = getattr(context, "user_data", None)
-    if isinstance(user_data, dict):
-        user_data[_TTS_TASK_RECENT_KEY] = (item_id, voice_name, sent_at)
+    from englishbot.telegram.tts_state import set_tts_recent_request
 
-
-def _medium_task_slot_count(state: _MediumTaskState) -> int:
-    return sum(1 for character in state.target_word if not character.isspace())
+    set_tts_recent_request(
+        context,
+        item_id=item_id,
+        voice_name=voice_name,
+        sent_at=sent_at,
+    )
 
 
 def _medium_task_is_complete(state: _MediumTaskState) -> bool:
-    return len(state.selected_letter_indexes) >= _medium_task_slot_count(state)
+    from englishbot.telegram.medium_task_ui import medium_task_is_complete
 
-
-def _medium_task_selected_letters(state: _MediumTaskState) -> list[str]:
-    return [state.shuffled_letters[index] for index in state.selected_letter_indexes]
-
-
-def _medium_task_slots_text(state: _MediumTaskState) -> str:
-    selected_letters = _medium_task_selected_letters(state)
-    selected_index = 0
-    current_word_slots: list[str] = []
-    rendered_words: list[str] = []
-    for character in state.target_word:
-        if character.isspace():
-            if current_word_slots:
-                rendered_words.append(" ".join(current_word_slots))
-                current_word_slots = []
-            continue
-        slot_value = "_"
-        if selected_index < len(selected_letters):
-            slot_value = selected_letters[selected_index]
-        current_word_slots.append(slot_value)
-        selected_index += 1
-    if current_word_slots:
-        rendered_words.append(" ".join(current_word_slots))
-    return "   ".join(rendered_words) or "_"
+    return medium_task_is_complete(state)
 
 
 def _medium_task_answer_text(state: _MediumTaskState) -> str:
-    selected_letters = iter(_medium_task_selected_letters(state))
-    assembled: list[str] = []
-    for character in state.target_word:
-        if character.isspace():
-            assembled.append(character)
-            continue
-        assembled.append(next(selected_letters, ""))
-    return "".join(assembled)
+    from englishbot.telegram.medium_task_ui import medium_task_answer_text
+
+    return medium_task_answer_text(state)
 
 
 def _medium_task_keyboard(
@@ -6819,57 +3255,9 @@ def _medium_task_keyboard(
     context: ContextTypes.DEFAULT_TYPE | None = None,
     user=None,
 ) -> InlineKeyboardMarkup:
-    selected_indexes = set(state.selected_letter_indexes)
-    buttons = [
-        InlineKeyboardButton(
-            "·" if index in selected_indexes else letter,
-            callback_data=(
-                f"medium:noop:{index}"
-                if index in selected_indexes
-                else f"medium:pick:{index}"
-            ),
-        )
-        for index, letter in enumerate(state.shuffled_letters)
-    ]
-    rows: list[list[InlineKeyboardButton]] = []
-    row_width = 4
-    for start in range(0, len(buttons), row_width):
-        rows.append(buttons[start : start + row_width])
-    check_callback = "medium:check" if _medium_task_is_complete(state) else "medium:noop:check"
-    rows.append(
-        [
-            InlineKeyboardButton("⌫", callback_data="medium:backspace"),
-        ]
-    )
-    if context is not None and _tts_service_enabled(context):
-        rows[-1].extend(_tts_buttons(context=context, user=user))
-    rows.append(
-        [
-            InlineKeyboardButton(
-                (
-                    _tg("medium_check_button", context=context, user=user)
-                    if context is not None
-                    else telegram_ui_text("medium_check_button")
-                ),
-                callback_data=check_callback,
-            )
-        ]
-    )
-    return InlineKeyboardMarkup(rows)
+    from englishbot.telegram.medium_task_ui import medium_task_keyboard
 
-
-def _extract_training_translation(prompt: str) -> str:
-    for line in prompt.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("Translation:"):
-            return stripped.removeprefix("Translation:").strip()
-    return prompt.strip()
-
-
-def _build_medium_question_text(question: TrainingQuestion, state: _MediumTaskState) -> str:
-    translation = html.escape(_extract_training_translation(question.prompt))
-    slots = html.escape(_medium_task_slots_text(state))
-    return f"🧩 <b>{translation}</b>\n\n<b>{slots}</b>"
+    return medium_task_keyboard(state, context=context, user=user)
 
 
 def _build_medium_question_view(
@@ -6879,12 +3267,13 @@ def _build_medium_question_view(
     context: ContextTypes.DEFAULT_TYPE | None = None,
     user=None,
 ) -> TelegramTextView | TelegramPhotoView:
-    image_path = resolve_existing_image_path(question.image_ref)
-    return build_training_question_view(
+    from englishbot.telegram.medium_task_ui import build_medium_question_view
+
+    return build_medium_question_view(
         question,
-        image_path=image_path,
-        reply_markup=_medium_task_keyboard(state, context=context, user=user),
-        body_text_override=_build_medium_question_text(question, state),
+        state=state,
+        context=context,
+        user=user,
     )
 
 
@@ -6893,24 +3282,7 @@ async def _edit_training_question_view(
     *,
     view: TelegramTextView | TelegramPhotoView,
 ) -> None:
-    try:
-        if isinstance(view, TelegramPhotoView):
-            kwargs = {
-                "caption": view.caption,
-                "reply_markup": view.reply_markup,
-            }
-            if view.parse_mode is not None:
-                kwargs["parse_mode"] = view.parse_mode
-            await query.message.edit_caption(**kwargs)
-            return
-        await query.edit_message_text(
-            view.text,
-            reply_markup=view.reply_markup,
-            parse_mode=view.parse_mode,
-        )
-    except BadRequest as error:
-        if "Message is not modified" not in str(error):
-            raise
+    await delivery_edit_training_question_view(query, view=view)
 
 
 async def _send_question(
@@ -6918,74 +3290,24 @@ async def _send_question(
     context: ContextTypes.DEFAULT_TYPE,
     question: TrainingQuestion,
 ) -> None:
-    message = update.effective_message
-    user = getattr(update, "effective_user", None)
-    if message is None:
-        return
-    await _delete_tracked_flow_messages(
+    await delivery_send_question(
+        update,
         context,
-        flow_id=question.session_id,
-        tag=_TRAINING_QUESTION_TAG,
-    )
-    _clear_medium_task_state(context)
-    view: TelegramTextView | TelegramPhotoView
-    reply_markup = None
-    active_session = (
-        _active_training_session(context, user_id=user.id)
-        if user is not None
-        else None
-    )
-    if question.mode is TrainingMode.MEDIUM:
-        view = _build_medium_question_view(
-            question,
-            state=_build_medium_task_state(question),
-            context=context,
-            user=user,
-        )
-    elif question.options:
-        rows = [
-            [InlineKeyboardButton(option, callback_data=f"answer:{option}")]
-            for option in question.options
-        ]
-        if _tts_service_enabled(context):
-            rows.append(_tts_buttons(context=context, user=user))
-        reply_markup = InlineKeyboardMarkup(rows)
-        image_path = resolve_existing_image_path(question.image_ref)
-        view = build_training_question_view(
-            question,
-            image_path=image_path,
-            reply_markup=reply_markup,
-        )
-    else:
-        if (
-            user is not None
-            and active_session is not None
-            and active_session.id == question.session_id
-            and question.mode is TrainingMode.HARD
-        ):
-            reply_markup = _hard_skip_keyboard(
-                context=context,
-                user=user,
-                session_id=question.session_id,
-            )
-        image_path = resolve_existing_image_path(question.image_ref)
-        view = build_training_question_view(
-            question,
-            image_path=image_path,
-            reply_markup=reply_markup,
-        )
-    sent_message = await send_telegram_view(message, view)
-    if question.mode is TrainingMode.MEDIUM:
-        _set_medium_task_state(
-            context,
-            _build_medium_task_state(question, message_id=getattr(sent_message, "message_id", None)),
-        )
-    _track_flow_message(
-        context,
-        flow_id=question.session_id,
-        tag=_TRAINING_QUESTION_TAG,
-        message=sent_message,
-        fallback_chat_id=_message_chat_id(message),
+        question,
+        delete_tracked_flow_messages=_delete_tracked_flow_messages,
+        training_question_tag=_TRAINING_QUESTION_TAG,
+        clear_medium_task_state=_clear_medium_task_state,
+        active_training_session=_active_training_session,
+        build_medium_task_state=_build_medium_task_state,
+        build_medium_question_view=_build_medium_question_view,
+        tts_service_enabled=_tts_service_enabled,
+        tts_buttons=_tts_buttons,
+        resolve_existing_image_path=resolve_existing_image_path,
+        hard_skip_keyboard=_hard_skip_keyboard,
+        set_medium_task_state=_set_medium_task_state,
+        track_flow_message=_track_flow_message,
+        message_chat_id=_message_chat_id,
+        inline_keyboard_button_type=InlineKeyboardButton,
     )
 
 
@@ -7005,43 +3327,13 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def _post_init(app: Application) -> None:
-    policy = TelegramMenuAccessPolicy.from_bot_data(app.bot_data)
-    public_commands = [
-        BotCommand(spec.command, spec.description)
-        for spec in policy.visible_commands(user_id=None)
-    ]
-    await app.bot.set_my_commands(public_commands)
-
-    elevated_user_ids: set[int] = set()
-    for role_name, user_ids in policy.role_memberships.items():
-        if role_name == "user":
-            continue
-        role_permissions = policy.role_permissions.get(role_name, frozenset())
-        if "*" in role_permissions or PERMISSION_WORDS_ADD in role_permissions:
-            elevated_user_ids.update(user_ids)
-    for user_id in sorted(elevated_user_ids):
-        scoped_commands = [
-            BotCommand(spec.command, spec.description)
-            for spec in policy.visible_commands(user_id=user_id)
-        ]
-        await app.bot.set_my_commands(scoped_commands, scope=BotCommandScopeChat(chat_id=user_id))
-    notification_repository = app.bot_data.get("pending_telegram_notification_repository")
-    job_queue = _job_queue_or_none(app)
-    if notification_repository is not None and job_queue is not None:
-        now = datetime.now(UTC)
-        for notification in notification_repository.list():
-            delay_seconds = max(0.0, (notification.not_before_at - now).total_seconds())
-            job_queue.run_once(
-                _deliver_pending_notification_job,
-                when=delay_seconds,
-                data={"notification_key": notification.key},
-                name=notification.key,
-            )
-        job_queue.run_daily(
-            _homework_assignment_reminder_job,
-            time=_DAILY_ASSIGNMENT_REMINDER_TIME,
-            name="homework-assignment-reminder",
-        )
+    await post_init_command_setup(
+        app,
+        deliver_pending_notification_job=_deliver_pending_notification_job,
+        homework_assignment_reminder_job=_homework_assignment_reminder_job,
+        daily_assignment_reminder_time=_DAILY_ASSIGNMENT_REMINDER_TIME,
+        job_queue_or_none=_job_queue_or_none,
+    )
 
 
 async def _run_status_heartbeat(
@@ -7084,42 +3376,21 @@ def _assignment_assigned_notification_emoji(*, goal_id: str) -> str:
 
 
 def _pending_notifications(context: ContextTypes.DEFAULT_TYPE) -> dict[str, _PendingNotification]:
-    stored = context.application.bot_data.setdefault("pending_notifications", {})
-    if isinstance(stored, dict):
-        return stored
-    replacement: dict[str, _PendingNotification] = {}
-    context.application.bot_data["pending_notifications"] = replacement
-    return replacement
+    from englishbot.telegram.notifications import pending_notifications
+
+    return pending_notifications(context)
 
 
 def _pending_notification_repository(context: ContextTypes.DEFAULT_TYPE):
-    application = getattr(context, "application", None)
-    bot_data = getattr(application, "bot_data", None)
-    if not isinstance(bot_data, dict):
-        return None
-    return bot_data.get("pending_telegram_notification_repository")
+    from englishbot.telegram.notifications import pending_notification_repository
+
+    return pending_notification_repository(context)
 
 
 def _recent_assignment_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> dict[int, datetime]:
-    stored = context.application.bot_data.get("recent_assignment_activity_by_user")
-    if stored is None:
-        stored = context.application.bot_data.get("recent_quiz_activity_by_user")
-    if stored is None:
-        stored = context.application.bot_data.setdefault("recent_assignment_activity_by_user", {})
-    if isinstance(stored, dict):
-        context.application.bot_data["recent_assignment_activity_by_user"] = stored
-        return stored
-    replacement: dict[int, datetime] = {}
-    context.application.bot_data["recent_assignment_activity_by_user"] = replacement
-    return replacement
+    from englishbot.telegram.notifications import recent_assignment_activity_by_user
 
-
-def _notification_action_button(notification_key: str) -> InlineKeyboardButton:
-    if notification_key.startswith("assignment-completed:"):
-        return InlineKeyboardButton("Open users progress", callback_data="assign:users")
-    if notification_key.startswith("assignment-assigned:homework:"):
-        return InlineKeyboardButton("Start homework", callback_data="start:launch:homework")
-    return InlineKeyboardButton("Open assignments", callback_data="assign:menu")
+    return recent_assignment_activity_by_user(context)
 
 
 def _notification_action_button_for_user(
@@ -7128,20 +3399,12 @@ def _notification_action_button_for_user(
     notification_key: str,
     user_id: int,
 ) -> InlineKeyboardButton:
-    language = _telegram_ui_language_for_user_id(context, user_id=user_id)
-    if notification_key.startswith("assignment-completed:"):
-        return InlineKeyboardButton(
-            _tg("notification_open_users_progress", language=language),
-            callback_data="assign:users",
-        )
-    if notification_key.startswith("assignment-assigned:homework:"):
-        return InlineKeyboardButton(
-            _tg("notification_start_homework", language=language),
-            callback_data="start:launch:homework",
-        )
-    return InlineKeyboardButton(
-        _tg("notification_open_assignments", language=language),
-        callback_data="assign:menu",
+    from englishbot.telegram.notifications import notification_action_button_for_user
+
+    return notification_action_button_for_user(
+        context,
+        notification_key=notification_key,
+        user_id=user_id,
     )
 
 
@@ -7151,19 +3414,12 @@ def _dismiss_notification_keyboard(
     notification_key: str,
     user_id: int,
 ) -> InlineKeyboardMarkup:
-    language = _telegram_ui_language_for_user_id(context, user_id=user_id)
-    return InlineKeyboardMarkup(
-        [[
-            _notification_action_button_for_user(
-                context,
-                notification_key=notification_key,
-                user_id=user_id,
-            ),
-            InlineKeyboardButton(
-                _tg("notification_dismiss", language=language),
-                callback_data=_NOTIFICATION_DISMISS_CALLBACK,
-            ),
-        ]]
+    from englishbot.telegram.notifications import dismiss_notification_keyboard
+
+    return dismiss_notification_keyboard(
+        context,
+        notification_key=notification_key,
+        user_id=user_id,
     )
 
 
@@ -7172,19 +3428,9 @@ def _notification_wait_seconds(
     *,
     user_id: int,
 ) -> float:
-    recent_activity_at = _recent_assignment_activity_by_user(context).get(user_id)
-    if recent_activity_at is None:
-        return 0.0
-    now = datetime.now(UTC)
-    elapsed = now - recent_activity_at
-    active_session = _service(context).get_active_session(user_id=user_id)
-    if active_session is not None and elapsed < _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW:
-        remaining = _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW - elapsed
-        return max(0.0, remaining.total_seconds())
-    if elapsed < _NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD:
-        remaining = _NOTIFICATION_DELAY_AFTER_RECENT_ANSWER - elapsed
-        return max(0.0, remaining.total_seconds())
-    return 0.0
+    from englishbot.telegram.notifications import notification_wait_seconds
+
+    return notification_wait_seconds(context, user_id=user_id)
 
 
 def _notification_should_wait(
@@ -7192,11 +3438,15 @@ def _notification_should_wait(
     *,
     user_id: int,
 ) -> bool:
-    return _notification_wait_seconds(context, user_id=user_id) > 0.0
+    from englishbot.telegram.notifications import notification_should_wait
+
+    return notification_should_wait(context, user_id=user_id)
 
 
 def _record_assignment_activity(context: ContextTypes.DEFAULT_TYPE, *, user_id: int) -> None:
-    _recent_assignment_activity_by_user(context)[user_id] = datetime.now(UTC)
+    from englishbot.telegram.notifications import record_assignment_activity
+
+    record_assignment_activity(context, user_id=user_id)
 
 
 def _schedule_notification(
@@ -7204,33 +3454,11 @@ def _schedule_notification(
     *,
     notification: _PendingNotification,
 ) -> None:
-    delay_seconds = _notification_wait_seconds(context, user_id=notification.recipient_user_id)
-    not_before_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
-    repository = _pending_notification_repository(context)
-    if repository is not None:
-        repository.save(
-            notification_key=notification.key,
-            recipient_user_id=notification.recipient_user_id,
-            text=notification.text,
-            not_before_at=not_before_at,
-        )
-    else:
-        pending = _pending_notifications(context)
-        pending[notification.key] = _PendingNotification(
-            key=notification.key,
-            recipient_user_id=notification.recipient_user_id,
-            text=notification.text,
-            not_before_at=not_before_at,
-            created_at=datetime.now(UTC),
-        )
-    job_queue = _job_queue_or_none(context.application)
-    if job_queue is None:
-        return
-    job_queue.run_once(
-        _deliver_pending_notification_job,
-        when=delay_seconds,
-        data={"notification_key": notification.key},
-        name=notification.key,
+    from englishbot.telegram.notifications import schedule_notification
+
+    schedule_notification(
+        context,
+        notification=notification,
     )
 
 
@@ -7240,91 +3468,25 @@ async def _deliver_notification_now(
     notification_key: str,
     force: bool = False,
 ) -> bool:
-    repository = _pending_notification_repository(context)
-    notification = (
-        repository.get(notification_key=notification_key)
-        if repository is not None
-        else _pending_notifications(context).get(notification_key)
+    from englishbot.telegram.notifications import deliver_notification_now
+
+    return await deliver_notification_now(
+        context,
+        notification_key=notification_key,
+        force=force,
     )
-    if notification is None:
-        return False
-    if not force and _notification_should_wait(context, user_id=notification.recipient_user_id):
-        return False
-    try:
-        await context.bot.send_message(
-            chat_id=notification.recipient_user_id,
-            text=notification.text,
-            reply_markup=_dismiss_notification_keyboard(
-                context,
-                notification_key=notification.key,
-                user_id=notification.recipient_user_id,
-            ),
-        )
-    except BadRequest:
-        logger.debug("Failed to deliver notification key=%s", notification.key, exc_info=True)
-    finally:
-        if repository is not None:
-            repository.remove(notification_key=notification_key)
-        else:
-            _pending_notifications(context).pop(notification_key, None)
-    return True
 
 
 async def _deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    job = getattr(context, "job", None)
-    data = getattr(job, "data", None)
-    notification_key = data.get("notification_key") if isinstance(data, dict) else None
-    if not isinstance(notification_key, str):
-        return
-    delivered = await _deliver_notification_now(context, notification_key=notification_key)
-    if delivered:
-        return
-    repository = _pending_notification_repository(context)
-    if repository is not None:
-        if repository.get(notification_key=notification_key) is None:
-            return
-    elif notification_key not in _pending_notifications(context):
-        return
-    job_queue = _job_queue_or_none(context.application)
-    if job_queue is None:
-        return
-    job_queue.run_once(
-        _deliver_pending_notification_job,
-        when=_notification_wait_seconds(
-            context,
-            user_id=(
-                repository.get(notification_key=notification_key).recipient_user_id
-                if repository is not None
-                else _pending_notifications(context)[notification_key].recipient_user_id
-            ),
-        ),
-        data={"notification_key": notification_key},
-        name=notification_key,
-    )
+    from englishbot.telegram.notifications import deliver_pending_notification_job
+
+    await deliver_pending_notification_job(context)
 
 
 async def _homework_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    rows = _content_store(context).list_users_goal_overview()
-    today = datetime.now(UTC).date().isoformat()
-    for row in rows:
-        user_id = int(row["user_id"])
-        active_goals_count = int(row["active_goals_count"])
-        if active_goals_count <= 0:
-            continue
-        _schedule_notification(
-            context,
-            notification=_PendingNotification(
-                key=f"assignment-reminder:{today}:{user_id}",
-                recipient_user_id=user_id,
-                text=_tg(
-                    "homework_assignment_reminder"
-                    if active_goals_count != 1
-                    else "homework_assignment_reminder_one",
-                    language=_telegram_ui_language_for_user_id(context, user_id=user_id),
-                    goal_count=active_goals_count,
-                ),
-            ),
-        )
+    from englishbot.telegram.notifications import homework_assignment_reminder_job
+
+    await homework_assignment_reminder_job(context)
 
 
 async def _flush_pending_notifications_for_user(
@@ -7332,18 +3494,9 @@ async def _flush_pending_notifications_for_user(
     *,
     user_id: int,
 ) -> None:
-    repository = _pending_notification_repository(context)
-    pending_keys = (
-        [item.key for item in repository.list(recipient_user_id=user_id)]
-        if repository is not None
-        else [
-            key
-            for key, notification in _pending_notifications(context).items()
-            if notification.recipient_user_id == user_id
-        ]
-    )
-    for notification_key in pending_keys:
-        await _deliver_notification_now(context, notification_key=notification_key, force=True)
+    from englishbot.telegram.notifications import flush_pending_notifications_for_user
+
+    await flush_pending_notifications_for_user(context, user_id=user_id)
 
 
 def _schedule_assignment_assigned_notifications(
@@ -7351,37 +3504,12 @@ def _schedule_assignment_assigned_notifications(
     *,
     goals: list,
 ) -> None:
-    for goal in goals:
-        language = _telegram_ui_language_for_user_id(context, user_id=int(goal.user_id))
-        goal_type_key = {
-            GoalType.NEW_WORDS.value: "goal_type_new_words",
-            GoalType.WORD_LEVEL_HOMEWORK.value: "goal_type_word_level_homework",
-        }.get(goal.goal_type.value)
-        period_label = _tg("goal_period_homework", language=language)
-        goal_type_label = _tg(goal_type_key, language=language) if goal_type_key is not None else goal.goal_type.value
-        emoji = _assignment_assigned_notification_emoji(goal_id=str(goal.id))
-        text = "\n".join(
-            [
-                _tg("assignment_assigned_title", language=language, emoji=emoji),
-                _tg(
-                    (
-                        "assignment_assigned_word_level_homework"
-                        if goal.goal_type.value == GoalType.WORD_LEVEL_HOMEWORK.value
-                        else "assignment_assigned_new_words"
-                    ),
-                    language=language,
-                    period=period_label,
-                    goal_type=goal_type_label,
-                    target=int(goal.target_count),
-                ),
-            ]
-        )
-        notification = _PendingNotification(
-            key=f"assignment-assigned:{goal.goal_period.value}:{goal.id}:{goal.user_id}",
-            recipient_user_id=goal.user_id,
-            text=text,
-        )
-        _schedule_notification(context, notification=notification)
+    from englishbot.telegram.notifications import schedule_assignment_assigned_notifications
+
+    schedule_assignment_assigned_notifications(
+        context,
+        goals=goals,
+    )
 
 
 def _schedule_goal_completed_notifications(
@@ -7390,25 +3518,13 @@ def _schedule_goal_completed_notifications(
     learner,
     completed_goals: tuple[GoalProgressView, ...],
 ) -> None:
-    role_repository = context.application.bot_data.get("telegram_user_role_repository")
-    if role_repository is None:
-        return
-    memberships = role_repository.list_memberships()
-    admin_ids = memberships.get("admin", frozenset())
-    learner_name = getattr(learner, "username", None) or getattr(learner, "first_name", None) or str(learner.id)
-    for admin_user_id in admin_ids:
-        for goal in completed_goals:
-            notification = _PendingNotification(
-                key=f"assignment-completed:{goal.goal.id}:{admin_user_id}",
-                recipient_user_id=admin_user_id,
-                text=(
-                    "Assignment completed: "
-                    f"{learner_name} finished "
-                    f"{goal.goal.goal_period.value}/{goal.goal.goal_type.value} "
-                    f"{goal.goal.progress_count}/{goal.goal.target_count}."
-                ),
-            )
-            _schedule_notification(context, notification=notification)
+    from englishbot.telegram.notifications import schedule_goal_completed_notifications
+
+    schedule_goal_completed_notifications(
+        context,
+        learner=learner,
+        completed_goals=completed_goals,
+    )
 
 
 async def _delete_tracked_messages(
@@ -7416,26 +3532,12 @@ async def _delete_tracked_messages(
     *,
     tracked_messages,
 ) -> None:
-    registry = _telegram_flow_messages(context)
-    bot = getattr(context, "bot", None)
-    if registry is None:
-        return
-    for tracked in tracked_messages:
-        if bot is not None:
-            try:
-                await bot.delete_message(chat_id=tracked.chat_id, message_id=tracked.message_id)
-            except BadRequest:
-                logger.debug(
-                    "Tracked Telegram message already missing flow_id=%s chat_id=%s message_id=%s",
-                    tracked.flow_id,
-                    tracked.chat_id,
-                    tracked.message_id,
-                )
-        registry.remove(
-            flow_id=tracked.flow_id,
-            chat_id=tracked.chat_id,
-            message_id=tracked.message_id,
-        )
+    from englishbot.telegram.flow_tracking import delete_tracked_messages
+
+    await delete_tracked_messages(
+        context,
+        tracked_messages=tracked_messages,
+    )
 
 
 async def _delete_tracked_flow_messages(
@@ -7444,12 +3546,12 @@ async def _delete_tracked_flow_messages(
     flow_id: str,
     tag: str,
 ) -> None:
-    registry = _telegram_flow_messages(context)
-    if registry is None:
-        return
-    await _delete_tracked_messages(
+    from englishbot.telegram.flow_tracking import delete_tracked_flow_messages
+
+    await delete_tracked_flow_messages(
         context,
-        tracked_messages=registry.list(flow_id=flow_id, tag=tag),
+        flow_id=flow_id,
+        tag=tag,
     )
 
 
@@ -7459,27 +3561,12 @@ async def _ensure_chat_menu_message(
     message,
     user,
 ) -> None:
-    user_id = getattr(user, "id", None)
-    if not isinstance(user_id, int):
-        return
-    flow_id = _chat_menu_flow_id(user_id=user_id)
-    await _delete_tracked_flow_messages(
+    from englishbot.telegram.flow_tracking import ensure_chat_menu_message
+
+    await ensure_chat_menu_message(
         context,
-        flow_id=flow_id,
-        tag=_CHAT_MENU_TAG,
-    )
-    sent_message = await send_telegram_view(
-        message,
-        _quick_actions_view(context=context, user=user),
-    )
-    if sent_message is None:
-        return
-    _track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=_CHAT_MENU_TAG,
-        message=sent_message,
-        fallback_chat_id=_message_chat_id(message),
+        message=message,
+        user=user,
     )
 
 
@@ -7488,34 +3575,21 @@ async def _delete_message_if_possible(
     *,
     message,
 ) -> None:
-    bot = getattr(context, "bot", None)
-    chat_id = _message_chat_id(message)
-    message_id = getattr(message, "message_id", None)
-    if bot is None or not isinstance(chat_id, int) or not isinstance(message_id, int):
-        return
-    try:
-        await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except BadRequest:
-        logger.debug(
-            "Telegram message already missing chat_id=%s message_id=%s",
-            chat_id,
-            message_id,
-        )
+    from englishbot.telegram.flow_tracking import delete_message_if_possible
+
+    await delete_message_if_possible(
+        context,
+        message=message,
+    )
 
 
 def _tracked_messages_except_source_message(*, tracked_messages, message) -> list:
-    source_chat_id = _message_chat_id(message)
-    source_message_id = getattr(message, "message_id", None)
-    if not isinstance(source_chat_id, int) or not isinstance(source_message_id, int):
-        return list(tracked_messages)
-    return [
-        tracked
-        for tracked in tracked_messages
-        if not (
-            tracked.chat_id == source_chat_id
-            and tracked.message_id == source_message_id
-        )
-    ]
+    from englishbot.telegram.flow_tracking import tracked_messages_except_source_message
+
+    return tracked_messages_except_source_message(
+        tracked_messages=tracked_messages,
+        message=message,
+    )
 
 
 def _track_flow_message(
@@ -7526,26 +3600,15 @@ def _track_flow_message(
     message,
     fallback_chat_id: int | None = None,
 ) -> None:
-    registry = _telegram_flow_messages(context)
-    if registry is None:
-        return
-    message_id = getattr(message, "message_id", None)
-    if not isinstance(message_id, int):
-        return
-    chat_id = _message_chat_id(message)
-    if chat_id is None:
-        chat_id = fallback_chat_id
-    if not isinstance(chat_id, int):
-        return
-    registry.track(flow_id=flow_id, chat_id=chat_id, message_id=message_id, tag=tag)
+    from englishbot.telegram.flow_tracking import track_flow_message
 
-
-def _published_word_edit_flow_id(*, user_id: int) -> str:
-    return f"published-word-edit:{user_id}"
-
-
-def _tts_voice_flow_id(*, user_id: int) -> str:
-    return f"tts-voice:{user_id}"
+    track_flow_message(
+        context,
+        flow_id=flow_id,
+        tag=tag,
+        message=message,
+        fallback_chat_id=fallback_chat_id,
+    )
 
 
 async def _reply_voice_replacing_previous_tts(
@@ -7555,21 +3618,14 @@ async def _reply_voice_replacing_previous_tts(
     message,
     voice,
 ):
-    flow_id = _tts_voice_flow_id(user_id=user_id)
-    await _delete_tracked_flow_messages(
-        context,
-        flow_id=flow_id,
-        tag=_TTS_VOICE_TAG,
+    from englishbot.telegram.flow_tracking import reply_voice_replacing_previous_tts
+
+    return await reply_voice_replacing_previous_tts(
+        context=context,
+        user_id=user_id,
+        message=message,
+        voice=voice,
     )
-    sent_message = await message.reply_voice(voice=voice)
-    _track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=_TTS_VOICE_TAG,
-        message=sent_message,
-        fallback_chat_id=_message_chat_id(message),
-    )
-    return sent_message
 
 
 async def _prepare_and_send_image_review_step(
@@ -7580,61 +3636,16 @@ async def _prepare_and_send_image_review_step(
     *,
     user=None,
 ) -> None:
-    resolved_user = user or getattr(message, "from_user", None)
-    current_item = flow.current_item
-    if current_item is None:
-        await message.reply_text(
-            _tg(
-                "image_review_completed",
-                context=context,
-                user=resolved_user,
-            )
-        )
-        return
-    total_items = len(flow.items)
-    current_position = flow.current_index + 1
-    status_message = await message.reply_text(
-        _tg(
-            "local_candidates_generating",
-            context=context,
-            user=resolved_user,
-            current=current_position,
-            total=total_items,
-        )
+    from englishbot.telegram.image_review_support import (
+        prepare_and_send_image_review_step,
     )
-    stop_event = asyncio.Event()
-    heartbeat_task = asyncio.create_task(
-            _run_status_heartbeat(
-                status_message,
-                stage=f"Generating local image candidates {current_position}/{total_items}",
-                stop_event=stop_event,
-            )
-        )
-    try:
-        prepared_flow = await asyncio.to_thread(
-            _generate_image_review_candidates(context).execute,
-            user_id=user_id,
-            flow_id=flow.flow_id,
-        )
-    finally:
-        stop_event.set()
-        await heartbeat_task
-    await status_message.edit_text(
-        _status_view(
-            text=_tg(
-                "local_candidates_ready",
-                context=context,
-                user=resolved_user,
-                current=current_position,
-                total=total_items,
-            )
-        ).text
-    )
-    await _send_image_review_step(
+
+    await prepare_and_send_image_review_step(
         message,
         context,
-        prepared_flow,
-        user=resolved_user,
+        user_id,
+        flow,
+        user=user,
     )
 
 
@@ -7645,54 +3656,15 @@ async def _send_current_published_image_preview(
     *,
     user=None,
 ) -> None:
-    current_item = flow.current_item
-    if current_item is None:
-        return
-    registry = _telegram_flow_messages(context)
-    if registry is not None:
-        await _delete_tracked_messages(
-            context,
-            tracked_messages=registry.list(
-                flow_id=flow.flow_id,
-                tag=_IMAGE_REVIEW_CONTEXT_TAG,
-            ),
-        )
-    fallback_chat_id = _message_chat_id(message)
-    raw_items = flow.content_pack.get("vocabulary_items", [])
-    if not isinstance(raw_items, list):
-        return
-    image_ref: str | None = None
-    for raw_item in raw_items:
-        if not isinstance(raw_item, dict):
-            continue
-        if str(raw_item.get("id", "")).strip() != current_item.item_id:
-            continue
-        raw_image_ref = raw_item.get("image_ref")
-        if isinstance(raw_image_ref, str) and raw_image_ref.strip():
-            image_ref = raw_image_ref
-        break
-    resolved_user = user or getattr(message, "from_user", None)
-    image_path = resolve_existing_image_path(image_ref)
-    preview_view = build_current_image_preview_view(
-        image_path=image_path,
-        current_image_intro=_tg(
-            "current_image_intro",
-            context=context,
-            user=resolved_user,
-        ),
-        no_current_image_intro=_tg(
-            "no_current_image_intro",
-            context=context,
-            user=resolved_user,
-        ),
+    from englishbot.telegram.image_review_support import (
+        send_current_published_image_preview,
     )
-    preview_message = await send_telegram_view(message, preview_view)
-    _track_flow_message(
+
+    await send_current_published_image_preview(
+        message,
         context,
-        flow_id=flow.flow_id,
-        tag=_IMAGE_REVIEW_CONTEXT_TAG,
-        message=preview_message,
-        fallback_chat_id=fallback_chat_id,
+        flow,
+        user=user,
     )
 
 
@@ -7703,106 +3675,25 @@ async def _send_image_review_step(
     *,
     user=None,
 ) -> None:
-    resolved_user = user or getattr(message, "from_user", None)
-    current_item = flow.current_item
-    if current_item is None:
-        await message.reply_text(
-            _tg(
-                "image_review_completed",
-                context=context,
-                user=resolved_user,
-            )
-        )
-        return
-    registry = _telegram_flow_messages(context)
-    tracked_before = (
-        registry.list(flow_id=flow.flow_id, tag=_IMAGE_REVIEW_STEP_TAG)
-        if registry is not None
-        else []
-    )
-    fallback_chat_id = _message_chat_id(message)
-    total_items = len(flow.items)
-    current_position = flow.current_index + 1
-    generation_lines: list[str] = []
-    generation_metadata = getattr(current_item, "candidate_generation_metadata", None)
-    if generation_metadata is not None and generation_metadata.status_messages:
-        generation_lines.extend(generation_metadata.status_messages)
-    summary_view = build_image_review_step_view(
-        current_position=current_position,
-        total_items=total_items,
-        english_word=current_item.english_word,
-        translation=current_item.translation,
-        prompt=current_item.prompt,
-        candidate_source_type=current_item.candidate_source_type,
-        search_query=current_item.search_query,
-        search_page=current_item.search_page,
-        generation_status_messages=generation_lines,
-        reply_markup=_image_review_markup(
-            flow_id=flow.flow_id,
-            current_item=current_item,
-            context=context,
-            user=resolved_user,
-        ),
-        translate=_tg,
-        user=resolved_user,
-    )
-    summary_message = await send_telegram_view(message, summary_view)
-    _track_flow_message(
+    from englishbot.telegram.image_review_support import send_image_review_step
+
+    await send_image_review_step(
+        message,
         context,
-        flow_id=flow.flow_id,
-        tag=_IMAGE_REVIEW_STEP_TAG,
-        message=summary_message,
-        fallback_chat_id=fallback_chat_id,
+        flow,
+        user=user,
     )
-    if current_item.candidates:
-        strip_path = _build_image_review_candidate_strip(
-            flow=flow,
-            item_id=current_item.item_id,
-            candidate_paths=[candidate.output_path for candidate in current_item.candidates],
-        )
-        with strip_path.open("rb") as photo_file:
-            sent_photo = await message.reply_photo(photo=photo_file)
-        _track_flow_message(
-            context,
-            flow_id=flow.flow_id,
-            tag=_IMAGE_REVIEW_STEP_TAG,
-            message=sent_photo,
-            fallback_chat_id=fallback_chat_id,
-        )
-    await _delete_tracked_messages(context, tracked_messages=tracked_before)
-
-
-def _candidate_label(index: int) -> str:
-    return chr(ord("A") + index)
-
-
-def _model_label(model_name: str) -> str:
-    if model_name == "sd15":
-        return "SD 1.5"
-    if model_name == "pixabay":
-        return "Pixabay"
-    return model_name.replace("-", " ").title()
-
-
-def _candidate_caption(index: int, candidate) -> str:
-    parts = [f"{_candidate_label(index)}. {_model_label(candidate.model_name)}"]
-    source_id = getattr(candidate, "source_id", None)
-    if source_id:
-        parts.append(f"ID {source_id}")
-    width = getattr(candidate, "width", None)
-    height = getattr(candidate, "height", None)
-    if width and height:
-        parts.append(f"{width}x{height}")
-    return " | ".join(parts)
 
 
 def _build_image_review_candidate_strip(*, flow, item_id: str, candidate_paths: list[Path]) -> Path:
-    review_dir = candidate_paths[0].parent
-    output_path = review_dir / f"{flow.flow_id}-{item_id}--review-strip-256.jpg"
-    return ensure_numbered_candidate_strip(
-        source_paths=candidate_paths,
-        output_path=output_path,
-        tile_size=256,
+    from englishbot.telegram.image_review_support import (
+        build_image_review_candidate_strip,
+    )
+
+    return build_image_review_candidate_strip(
+        flow=flow,
+        item_id=item_id,
+        candidate_paths=candidate_paths,
     )
 
 
@@ -7946,41 +3837,22 @@ def _published_image_items_keyboard(
     user_id: int | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    if context is not None and user_id is not None:
-        rows: list[list[InlineKeyboardButton]] = []
-        for index, raw_item in enumerate(raw_items):
-            if not isinstance(raw_item, dict):
-                continue
-            english_word = str(raw_item.get("english_word", "")).strip() or str(
-                raw_item.get("id", "")
-            ).strip()
-            translation = str(raw_item.get("translation", "")).strip()
-            has_image = bool(str(raw_item.get("image_ref", "")).strip())
-            label = _editable_word_button_label(
-                english_word=english_word,
-                translation=translation,
-                has_image=has_image,
-            )
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        label[:64],
-                        callback_data=_published_image_item_callback_data(
-                            context=context,
-                            user_id=user_id,
-                            topic_id=topic_id,
-                            item_index=index,
-                        ),
-                    )
-                ]
-            )
-        if not rows:
-            rows = [[InlineKeyboardButton(_tg("no_items", language=language), callback_data="words:menu")]]
-        return InlineKeyboardMarkup(rows)
     return ui_published_image_items_keyboard(
         tg=_tg,
         topic_id=topic_id,
         raw_items=raw_items,
+        callback_data_for_item=(
+            (
+                lambda index: _published_image_item_callback_data(
+                    context=context,
+                    user_id=user_id,
+                    topic_id=topic_id,
+                    item_index=index,
+                )
+            )
+            if context is not None and user_id is not None
+            else None
+        ),
         language=language,
     )
 
@@ -8007,32 +3879,22 @@ def _editable_words_keyboard(
     user_id: int | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    if context is not None and user_id is not None:
-        rows = [
-            [
-                InlineKeyboardButton(
-                    _editable_word_button_label(
-                        english_word=word.english_word,
-                        translation=word.translation,
-                        has_image=getattr(word, "has_image", False),
-                    )[:64],
-                    callback_data=_editable_word_callback_data(
-                        context=context,
-                        user_id=user_id,
-                        topic_id=topic_id,
-                        item_index=index,
-                    ),
-                )
-            ]
-            for index, word in enumerate(words)
-        ]
-        if not rows:
-            rows = [[InlineKeyboardButton(_tg("no_words", language=language), callback_data="words:menu")]]
-        return InlineKeyboardMarkup(rows)
     return ui_editable_words_keyboard(
         tg=_tg,
         topic_id=topic_id,
         words=words,
+        callback_data_for_item=(
+            (
+                lambda index: _editable_word_callback_data(
+                    context=context,
+                    user_id=user_id,
+                    topic_id=topic_id,
+                    item_index=index,
+                )
+            )
+            if context is not None and user_id is not None
+            else None
+        ),
         language=language,
     )
 
@@ -8063,7 +3925,7 @@ def _editable_word_button_label(
 
 
 def _chat_menu_keyboard(*, command_rows: list[list[str]]) -> ReplyKeyboardMarkup:
-    return ui_chat_menu_keyboard(command_rows=command_rows)
+    return menu_chat_menu_keyboard(command_rows=command_rows)
 
 
 def _topic_keyboard(
@@ -8083,7 +3945,7 @@ def _topic_item_counts(
     context: ContextTypes.DEFAULT_TYPE,
     topic_ids: list[str],
 ) -> dict[str, int]:
-    store = context.application.bot_data.get("content_store")
+    store = _optional_bot_data(context, "content_store")
     if store is None:
         return {}
     counts: dict[str, int] = {}
@@ -8093,10 +3955,6 @@ def _topic_item_counts(
         except Exception:  # noqa: BLE001
             logger.debug("Failed to count topic items for topic_id=%s", topic_id, exc_info=True)
     return counts
-
-
-def _topic_button_label(*, title: str, item_count: int | None) -> str:
-    return ui_topic_button_label(title=title, item_count=item_count)
 
 
 def _active_session_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:

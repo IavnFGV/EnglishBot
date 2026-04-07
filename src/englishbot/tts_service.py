@@ -301,14 +301,31 @@ class TtsServiceClient:
 
 
 def build_tts_service(settings: Settings) -> TtsHttpService:
+    tts = settings.tts
     return TtsHttpService(
-        default_voice_name=settings.tts_voice_name,
-        voice_variants=settings.tts_voice_variants,
-        cache_dir=settings.tts_cache_dir,
-        voice_dir=settings.tts_voice_dir,
-        model_path=settings.tts_voice_model_path,
-        config_path=settings.tts_voice_config_path,
+        default_voice_name=tts.voice_name,
+        voice_variants=tts.voice_variants,
+        cache_dir=tts.cache_dir,
+        voice_dir=tts.voice_dir,
+        model_path=tts.voice_model_path,
+        config_path=tts.voice_config_path,
         python_executable=sys.executable,
+    )
+
+
+def log_tts_service_settings(settings: Settings) -> None:
+    tts = settings.tts
+    logger.info(
+        "TTS service settings host=%s port=%s voice_name=%s voice_variants=%s "
+        "cache_dir=%s voice_dir=%s voice_model_path=%s voice_config_path=%s",
+        tts.host,
+        tts.port,
+        tts.voice_name,
+        tts.voice_variants,
+        tts.cache_dir,
+        tts.voice_dir,
+        tts.voice_model_path,
+        tts.voice_config_path,
     )
 
 
@@ -323,16 +340,18 @@ def main() -> None:
         log_max_bytes=settings.log_max_bytes,
         log_backup_count=settings.log_backup_count,
     )
+    log_tts_service_settings(settings)
     service = build_tts_service(settings)
     handler = create_tts_http_handler(service)
-    server = ThreadingHTTPServer((settings.tts_host, settings.tts_port), handler)
+    tts = settings.tts
+    server = ThreadingHTTPServer((tts.host, tts.port), handler)
     logger.info(
         "Starting TTS service host=%s port=%s voice_name=%s cache_dir=%s voice_dir=%s",
-        settings.tts_host,
-        settings.tts_port,
-        settings.tts_voice_name,
-        settings.tts_cache_dir,
-        settings.tts_voice_dir,
+        tts.host,
+        tts.port,
+        tts.voice_name,
+        tts.cache_dir,
+        tts.voice_dir,
     )
     with server:
         server.serve_forever()

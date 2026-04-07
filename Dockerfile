@@ -18,7 +18,6 @@ from pathlib import Path
 
 data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 requirements = list(data["project"].get("dependencies", []))
-requirements.extend(data["project"].get("optional-dependencies", {}).get("llm", []))
 print("\n".join(requirements))
 PY
 

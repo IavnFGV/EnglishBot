@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Annotated
 
 import typer
-from dotenv import load_dotenv
 
-from englishbot.__main__ import configure_logging
+from englishbot.cli import (
+    configure_cli_logging,
+    create_cli_runtime_config_service,
+    create_content_store,
+)
 from englishbot.application.image_rerank_manifest_use_cases import (
     ExportImageRerankManifestUseCase,
     write_image_rerank_manifest,
 )
-from englishbot.config import create_runtime_config_service
-from englishbot.infrastructure.sqlite_store import SQLiteContentStore
+from englishbot.image_tooling import run_export_image_rerank_manifest
 
 app = typer.Typer(
     add_completion=False,
@@ -22,7 +23,6 @@ app = typer.Typer(
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-
 
 @app.command()
 def main(
@@ -47,31 +47,18 @@ def main(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    env_file_path = _REPO_ROOT / ".env"
-    load_dotenv(env_file_path, override=True)
-    config_service = create_runtime_config_service(env_file_path=env_file_path)
-    configure_logging(
-        log_level.upper() or config_service.get_str("log_level"),
-        log_file_path=config_service.get_path("log_file_path"),
-        log_max_bytes=config_service.get_int("log_max_bytes"),
-        log_backup_count=config_service.get_int("log_backup_count"),
-    )
-    store = SQLiteContentStore(
-        db_path=config_service.get_path("content_db_path") or Path("data/englishbot.db")
-    )
-    store.initialize()
-    manifest = ExportImageRerankManifestUseCase(store=store).execute(
+    run_export_image_rerank_manifest(
+        output=output,
         topic_id=topic_id,
         limit=limit,
         only_missing_images=only_missing_images,
-    )
-    write_image_rerank_manifest(manifest=manifest, output_path=output)
-    logging.getLogger(__name__).info(
-        "Image rerank manifest exported output=%s item_count=%s topic_id=%s only_missing_images=%s",
-        output,
-        manifest.item_count,
-        topic_id,
-        only_missing_images,
+        log_level=log_level,
+        repo_root=_REPO_ROOT,
+        create_runtime_config_service_fn=create_cli_runtime_config_service,
+        configure_cli_logging_fn=configure_cli_logging,
+        create_content_store_fn=create_content_store,
+        export_image_rerank_manifest_use_case_cls=ExportImageRerankManifestUseCase,
+        write_image_rerank_manifest_fn=write_image_rerank_manifest,
     )
 
 

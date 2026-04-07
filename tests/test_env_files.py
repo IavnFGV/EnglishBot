@@ -39,4 +39,4 @@ def test_main_loads_dotenv_from_repo_root() -> None:
     assert "create_runtime_config_service(env_file_path=env_file_path)" in main_module
     assert "log_max_bytes=settings.log_max_bytes" in main_module
     assert "log_backup_count=settings.log_backup_count" in main_module
-    assert "settings.ollama_extraction_mode" in main_module
+    assert "log_core_runtime_settings(settings)" in main_module

@@ -10,6 +10,7 @@ from englishbot.config import Settings, create_runtime_config_service
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+logger = logging.getLogger(__name__)
 
 
 def configure_logging(
@@ -43,6 +44,23 @@ def configure_logging(
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
+def log_core_runtime_settings(settings: Settings) -> None:
+    logger.info(
+        "Core runtime settings log_level=%s log_file_path=%s log_max_bytes=%s "
+        "log_backup_count=%s content_db_path=%s telegram_ui_language=%s "
+        "admin_user_count=%s editor_user_count=%s web_app_enabled=%s",
+        settings.log_level,
+        settings.log_file_path,
+        settings.log_max_bytes,
+        settings.log_backup_count,
+        settings.content_db_path,
+        settings.telegram_ui_language,
+        len(settings.admin_user_ids),
+        len(settings.editor_user_ids),
+        bool(settings.web_app_base_url),
+    )
+
+
 def main() -> None:
     env_file_path = _REPO_ROOT / ".env"
     load_dotenv(env_file_path, override=True)
@@ -54,27 +72,7 @@ def main() -> None:
         log_max_bytes=settings.log_max_bytes,
         log_backup_count=settings.log_backup_count,
     )
-    logger = logging.getLogger(__name__)
-    logger.info(
-        "Runtime settings log_level=%s log_file_path=%s log_max_bytes=%s log_backup_count=%s ollama_model=%s ollama_model_file=%s ollama_trace_file=%s ollama_base_url=%s "
-        "timeout=%s extraction_mode=%s temperature=%s top_p=%s num_predict=%s extract_line_prompt=%s extract_text_prompt=%s image_prompt=%s",
-        settings.log_level,
-        settings.log_file_path,
-        settings.log_max_bytes,
-        settings.log_backup_count,
-        settings.ollama_model,
-        settings.ollama_model_file_path,
-        settings.ollama_trace_file_path,
-        settings.ollama_base_url,
-        settings.ollama_timeout_sec,
-        settings.ollama_extraction_mode,
-        settings.ollama_temperature,
-        settings.ollama_top_p,
-        settings.ollama_num_predict,
-        settings.ollama_extract_line_prompt_path,
-        settings.ollama_extract_text_prompt_path,
-        settings.ollama_image_prompt_path,
-    )
+    log_core_runtime_settings(settings)
     app = build_application(settings, config_service=config_service)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
