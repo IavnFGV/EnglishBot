@@ -31,6 +31,10 @@ from englishbot.presentation.telegram_views import (
     edit_telegram_text_view,
     send_telegram_view,
 )
+from englishbot.telegram.flow_tracking import (
+    delete_message_if_possible,
+    ensure_chat_menu_message,
+)
 
 
 def _draft_review_view(*, flow_id: str, result, is_valid: bool, context: ContextTypes.DEFAULT_TYPE, user):
@@ -356,7 +360,7 @@ async def add_words_cancel_callback_handler(
     await query.edit_message_text(
         bot_module._tg("add_words_flow_cancelled", context=context, user=user)
     )
-    await bot_module._ensure_chat_menu_message(context, message=query.message, user=user)
+    await ensure_chat_menu_message(context, message=query.message, user=user)
 
 
 async def add_words_text_handler(
@@ -431,7 +435,7 @@ async def add_words_text_handler(
             context,
             user_id=user.id,
         )
-        await bot_module._delete_message_if_possible(context, message=message)
+        await delete_message_if_possible(context, message=message)
         words = bot_module._list_editable_words(context).execute(topic_id=topic_id)
         await message.reply_text(
             bot_module._tg(
@@ -515,7 +519,7 @@ async def add_words_text_handler(
             return
         stop_event.set()
         await heartbeat_task
-        await bot_module._delete_message_if_possible(context, message=message)
+        await delete_message_if_possible(context, message=message)
         await status_message.edit_text(
             build_status_view(
                 text=bot_module._tg("prompt_updated", context=context, user=user)
@@ -579,7 +583,7 @@ async def add_words_text_handler(
             return
         stop_event.set()
         await heartbeat_task
-        await bot_module._delete_message_if_possible(context, message=message)
+        await delete_message_if_possible(context, message=message)
         await status_message.edit_text(
             build_status_view(
                 text=bot_module._tg(
@@ -904,7 +908,7 @@ async def add_words_publish_without_images_handler(
             item_count=len(finalized.draft.vocabulary_items),
         )
     )
-    await bot_module._ensure_chat_menu_message(context, message=query.message, user=user)
+    await ensure_chat_menu_message(context, message=query.message, user=user)
 
 
 async def add_words_approve_draft_handler(

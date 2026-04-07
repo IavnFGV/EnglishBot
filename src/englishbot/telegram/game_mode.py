@@ -10,6 +10,7 @@ from englishbot import bot as bot_module
 from englishbot.presentation.telegram_assignments_ui import start_menu_keyboard
 from englishbot.presentation.telegram_game_ui import game_result_keyboard
 from englishbot.presentation.telegram_views import build_start_menu_view
+from englishbot.telegram.notifications import flush_pending_notifications_for_user
 
 
 async def game_next_round_handler(
@@ -181,4 +182,4 @@ async def finish_game_session(
             "mode_value": game_state.get("mode_value"),
         },
     )
-    await bot_module._flush_pending_notifications_for_user(context, user_id=user.id)
+    await flush_pending_notifications_for_user(context, user_id=user.id)

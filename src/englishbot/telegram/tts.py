@@ -7,6 +7,7 @@ from telegram import InputFile, Update
 from telegram.ext import ContextTypes
 
 from englishbot import bot as bot_module
+from englishbot.telegram.flow_tracking import reply_voice_replacing_previous_tts
 from englishbot.telegram.training_markup import (
     question_reply_markup as training_question_reply_markup,
     tts_voice_menu_markup as training_tts_voice_menu_markup,
@@ -191,7 +192,7 @@ async def send_tts_for_current_question(
         if item is not None and cached_voice_file_id:
             try:
                 await query.answer()
-                await bot_module._reply_voice_replacing_previous_tts(
+                await reply_voice_replacing_previous_tts(
                     context=context,
                     user_id=int(user.id),
                     message=query.message,
@@ -224,7 +225,7 @@ async def send_tts_for_current_question(
                 try:
                     await query.answer()
                     with audio_path.open("rb") as audio_file:
-                        sent_message = await bot_module._reply_voice_replacing_previous_tts(
+                        sent_message = await reply_voice_replacing_previous_tts(
                             context=context,
                             user_id=int(user.id),
                             message=query.message,
@@ -292,7 +293,7 @@ async def send_tts_for_current_question(
             )
         await query.answer()
         voice_file = InputFile(BytesIO(audio_bytes), filename="pronunciation.ogg")
-        sent_message = await bot_module._reply_voice_replacing_previous_tts(
+        sent_message = await reply_voice_replacing_previous_tts(
             context=context,
             user_id=int(user.id),
             message=query.message,

@@ -19,6 +19,7 @@ from englishbot.presentation.telegram_views import (
     send_telegram_view,
 )
 from englishbot.telegram.callback_tokens import PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION
+from englishbot.telegram.flow_tracking import delete_message_if_possible
 from englishbot.telegram.interaction import (
     clear_image_review_photo_attach_interaction,
     finish_image_review_interaction,
@@ -154,7 +155,7 @@ async def published_image_item_handler(
         user=user,
     )
     await bot_module._send_image_review_step(query.message, context, review_flow, user=user)
-    await bot_module._delete_message_if_possible(context, message=query.message)
+    await delete_message_if_possible(context, message=query.message)
 
 
 async def image_review_generate_handler(

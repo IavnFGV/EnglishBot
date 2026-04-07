@@ -140,7 +140,7 @@ async def test_finish_game_session_uses_presentation_game_result_keyboard(monkey
         flushed.append(user_id)
 
     monkeypatch.setattr(
-        "englishbot.telegram.game_mode.bot_module._flush_pending_notifications_for_user",
+        "englishbot.telegram.game_mode.flush_pending_notifications_for_user",
         _fake_flush_pending_notifications_for_user,
     )
 

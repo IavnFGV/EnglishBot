@@ -13,6 +13,11 @@ from englishbot.presentation.assignment_progress_image import (
     AssignmentProgressSnapshot,
     render_assignment_progress_image,
 )
+from englishbot.telegram.flow_tracking import (
+    delete_tracked_flow_messages,
+    delete_tracked_messages,
+    track_flow_message,
+)
 
 
 def assignment_round_progress_view(
@@ -353,7 +358,7 @@ async def send_or_update_assignment_progress_message(
     )
     flow_id = assignment_progress_flow_id(user_id=user_id, kind=kind, goal_id=goal_id)
     if snapshot is None:
-        await bot_module._delete_tracked_flow_messages(
+        await delete_tracked_flow_messages(
             context,
             flow_id=flow_id,
             tag=bot_module._ASSIGNMENT_PROGRESS_TAG,
@@ -381,7 +386,7 @@ async def send_or_update_assignment_progress_message(
     older_tracked = tracked_messages[:-1] if tracked_messages else []
     fallback_chat_id = bot_module._message_chat_id(message)
     if older_tracked:
-        await bot_module._delete_tracked_messages(context, tracked_messages=older_tracked)
+        await delete_tracked_messages(context, tracked_messages=older_tracked)
     sent_message = None
     if latest_tracked is not None and getattr(context, "bot", None) is not None:
         try:
@@ -397,7 +402,7 @@ async def send_or_update_assignment_progress_message(
                 )
             sent_message = latest_tracked
         except BadRequest:
-            await bot_module._delete_tracked_messages(context, tracked_messages=[latest_tracked])
+            await delete_tracked_messages(context, tracked_messages=[latest_tracked])
             latest_tracked = None
     if sent_message is None:
         try:
@@ -418,7 +423,7 @@ async def send_or_update_assignment_progress_message(
                     caption=caption,
                     parse_mode="HTML",
                 )
-    bot_module._track_flow_message(
+    track_flow_message(
         context,
         flow_id=flow_id,
         tag=bot_module._ASSIGNMENT_PROGRESS_TAG,
