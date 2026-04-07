@@ -8,7 +8,7 @@ from telegram import InputMediaPhoto
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
-from englishbot.assignment_progress_image import (
+from englishbot.presentation.assignment_progress_image import (
     AssignmentProgressSegment,
     AssignmentProgressSnapshot,
     render_assignment_progress_image,

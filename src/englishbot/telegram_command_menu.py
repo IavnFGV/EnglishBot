@@ -5,7 +5,7 @@ from datetime import UTC, datetime, time
 
 from telegram import BotCommand, BotCommandScopeChat, ReplyKeyboardMarkup
 
-from englishbot.bot_editor_ui import chat_menu_keyboard as ui_chat_menu_keyboard
+from englishbot.presentation.telegram_editor_ui import chat_menu_keyboard as ui_chat_menu_keyboard
 from englishbot.presentation.telegram_menu_access import (
     DEFAULT_TELEGRAM_COMMAND_SPECS,
     PERMISSION_WORDS_ADD,
