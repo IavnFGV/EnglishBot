@@ -131,6 +131,35 @@ def test_settings_from_config_service_reads_tts_settings(tmp_path: Path) -> None
     assert settings.tts_voice_config_path == Path("data/tts-voices/custom.onnx.json")
 
 
+def test_settings_exposes_grouped_capability_views(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "TELEGRAM_BOT_TOKEN=test-token\n"
+        "PIXABAY_API_KEY=pixabay-key\n"
+        "PIXABAY_BASE_URL=https://pixabay.local/api/\n"
+        "OLLAMA_ENABLED=true\n"
+        "OLLAMA_BASE_URL=http://ollama.local:11434\n"
+        "OLLAMA_MODEL=llama3.2:3b\n"
+        "TTS_SERVICE_ENABLED=true\n"
+        "TTS_SERVICE_BASE_URL=http://tts.local:8090\n"
+        "TTS_VOICE_NAME=en_GB-alan-medium\n",
+        encoding="utf-8",
+    )
+    service = create_runtime_config_service(env_file_path=env_file, environ={})
+
+    settings = Settings.from_config_service(service)
+
+    assert settings.ai_text.enabled is True
+    assert settings.ai_text.base_url == "http://ollama.local:11434"
+    assert settings.ai_text.model == "llama3.2:3b"
+    assert settings.ai_images.enabled is True
+    assert settings.ai_images.pixabay_api_key == "pixabay-key"
+    assert settings.ai_images.pixabay_base_url == "https://pixabay.local/api/"
+    assert settings.tts.enabled is True
+    assert settings.tts.service_base_url == "http://tts.local:8090"
+    assert settings.tts.voice_name == "en_GB-alan-medium"
+
+
 def test_settings_from_config_service_reads_admin_bootstrap_secret(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(

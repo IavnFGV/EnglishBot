@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-from pathlib import Path
 
 from telegram import Update
 from telegram.ext import (
@@ -26,7 +25,6 @@ from englishbot.application.add_words_use_cases import (
     SaveApprovedAddWordsDraftUseCase,
     StartAddWordsFlowUseCase,
 )
-from englishbot.application.content_pack_image_use_cases import GenerateContentPackImagesUseCase
 from englishbot.application.homework_progress_use_cases import (
     AssignGoalToUsersUseCase,
     GetAdminGoalDetailUseCase,
@@ -39,53 +37,22 @@ from englishbot.application.homework_progress_use_cases import (
     ListUserGoalsUseCase,
     StartAssignmentRoundUseCase,
 )
-from englishbot.application.image_review_flow import ImageReviewFlowHarness
-from englishbot.application.image_review_use_cases import (
-    AttachUploadedImageUseCase,
-    CancelImageReviewFlowUseCase,
-    GenerateImageReviewCandidatesUseCase,
-    GetActiveImageReviewUseCase,
-    LoadNextImageReviewCandidatesUseCase,
-    LoadPreviousImageReviewCandidatesUseCase,
-    PublishImageReviewUseCase,
-    SearchImageReviewCandidatesUseCase,
-    SelectImageCandidateUseCase,
-    SkipImageReviewItemUseCase,
-    StartImageReviewUseCase,
-    StartPublishedWordImageEditUseCase,
-    UpdateImageReviewPromptUseCase,
-)
 from englishbot.application.published_content_use_cases import (
     ListEditableTopicsUseCase,
     ListEditableWordsUseCase,
     UpdateEditableWordUseCase,
 )
 from englishbot.application.services import QuestionFactory
-from englishbot.bootstrap import build_lesson_import_pipeline, build_training_service
+from englishbot.bootstrap import build_training_service
+from englishbot.capabilities import (
+    register_ai_image_capability,
+    register_ai_text_capability,
+    register_tts_capability,
+)
 from englishbot.config import RuntimeConfigService, Settings
-from englishbot.image_generation.clients import (
-    ComfyUIImageGenerationClient,
-    LocalPlaceholderImageGenerationClient,
-)
-from englishbot.image_generation.pipeline import ContentPackImageEnricher
-from englishbot.image_generation.pixabay import PixabayImageSearchClient, RemoteImageDownloader
-from englishbot.image_generation.resilient import ResilientImageGenerator
-from englishbot.image_generation.review import ComfyUIImageCandidateGenerator
-from englishbot.image_generation.smart_generation import (
-    ComfyUIImageGenerationGateway,
-    DisabledImageGenerationGateway,
-)
-from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
-from englishbot.importing.clients import OllamaLessonExtractionClient
-from englishbot.importing.smart_parsing import (
-    DisabledSmartLessonParsingGateway,
-    OllamaSmartLessonParsingGateway,
-)
-from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.sqlite_store import (
     SQLiteAddWordsFlowRepository,
     SQLiteContentStore,
-    SQLiteImageReviewFlowRepository,
     SQLitePendingTelegramNotificationRepository,
     SQLiteSessionRepository,
     SQLiteTelegramFlowMessageRepository,
@@ -111,90 +78,21 @@ def build_application(
     app.bot_data["config_service"] = config_service
     app.bot_data["settings"] = settings
     app.bot_data["runtime_version_info"] = get_runtime_version_info()
-    app.bot_data["smart_parsing_gateway"] = (
-        DisabledSmartLessonParsingGateway()
-        if not settings.ollama_enabled
-        else OllamaSmartLessonParsingGateway(
-            OllamaLessonExtractionClient(
-                config_service=config_service,
-                model=settings.ollama_model,
-                model_file_path=settings.ollama_model_file_path,
-                base_url=settings.ollama_base_url,
-                timeout=settings.ollama_timeout_sec,
-                trace_file_path=settings.ollama_trace_file_path,
-                extraction_mode=settings.ollama_extraction_mode,
-                temperature=settings.ollama_temperature,
-                top_p=settings.ollama_top_p,
-                num_predict=settings.ollama_num_predict,
-                extract_line_prompt_path=settings.ollama_extract_line_prompt_path,
-                extract_text_prompt_path=settings.ollama_extract_text_prompt_path,
-            )
-        )
-    )
-    app.bot_data["image_generation_gateway"] = (
-        DisabledImageGenerationGateway()
-        if not settings.comfyui_enabled
-        else ComfyUIImageGenerationGateway(
-            ComfyUIImageGenerationClient(config_service=config_service)
-        )
-    )
     app.bot_data["training_service"] = build_training_service(db_path=settings.content_db_path)
-    lesson_import_pipeline = build_lesson_import_pipeline(
+    lesson_import_pipeline = register_ai_text_capability(
+        app=app,
+        settings=settings,
         config_service=config_service,
-        ollama_enabled=settings.ollama_enabled,
-        ollama_model=settings.ollama_model,
-        ollama_model_file_path=settings.ollama_model_file_path,
-        ollama_base_url=settings.ollama_base_url,
-        ollama_timeout_sec=settings.ollama_timeout_sec,
-        ollama_trace_file_path=settings.ollama_trace_file_path,
-        ollama_extraction_mode=settings.ollama_extraction_mode,
-        ollama_temperature=settings.ollama_temperature,
-        ollama_top_p=settings.ollama_top_p,
-        ollama_num_predict=settings.ollama_num_predict,
-        ollama_extract_line_prompt_path=settings.ollama_extract_line_prompt_path,
-        ollama_extract_text_prompt_path=settings.ollama_extract_text_prompt_path,
-        ollama_image_prompt_path=settings.ollama_image_prompt_path,
     )
     add_words_flow_repository = SQLiteAddWordsFlowRepository(content_store)
     add_words_harness = AddWordsFlowHarness(
         pipeline=lesson_import_pipeline,
         content_store=content_store,
     )
-    image_review_repository = SQLiteImageReviewFlowRepository(content_store)
     telegram_flow_message_repository = SQLiteTelegramFlowMessageRepository(content_store)
     telegram_user_login_repository = SQLiteTelegramUserLoginRepository(content_store)
     pending_notification_repository = SQLitePendingTelegramNotificationRepository(content_store)
     telegram_user_role_repository = SQLiteTelegramUserRoleRepository(content_store)
-    image_review_harness = ImageReviewFlowHarness(
-        canonicalizer=DraftToContentPackCanonicalizer(),
-        writer=JsonContentPackWriter(),
-        candidate_generator=ComfyUIImageCandidateGenerator(),
-        image_search_client=(
-            PixabayImageSearchClient(
-                config_service=config_service,
-                api_key=settings.pixabay_api_key,
-                base_url=settings.pixabay_base_url,
-            )
-            if settings.pixabay_api_key
-            else None
-        ),
-        remote_image_downloader=RemoteImageDownloader(),
-        assets_dir=Path("assets"),
-        content_store=content_store,
-    )
-    content_pack_image_enricher = ContentPackImageEnricher(
-        ResilientImageGenerator(
-            external_gateway=(
-                DisabledImageGenerationGateway()
-                if not settings.comfyui_enabled
-                else ComfyUIImageGenerationGateway(
-                    ComfyUIImageGenerationClient(config_service=config_service)
-                )
-            ),
-            fallback_client=LocalPlaceholderImageGenerationClient(),
-        )
-    )
-    app.bot_data["lesson_import_pipeline"] = lesson_import_pipeline
     app.bot_data["admin_user_ids"] = set(settings.admin_user_ids)
     app.bot_data["editor_user_ids"] = set(settings.editor_user_ids)
     app.bot_data["telegram_user_role_repository"] = telegram_user_role_repository
@@ -245,67 +143,9 @@ def build_application(
     app.bot_data["add_words_cancel_use_case"] = CancelAddWordsFlowUseCase(
         add_words_flow_repository
     )
-    app.bot_data["image_review_start_use_case"] = StartImageReviewUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_start_published_word_use_case"] = (
-        StartPublishedWordImageEditUseCase(
-            harness=image_review_harness,
-            repository=image_review_repository,
-            db_path=settings.content_db_path,
-        )
-    )
-    app.bot_data["image_review_get_active_use_case"] = GetActiveImageReviewUseCase(
-        image_review_repository
-    )
-    app.bot_data["image_review_cancel_use_case"] = CancelImageReviewFlowUseCase(
-        image_review_repository
-    )
-    app.bot_data["image_review_generate_use_case"] = GenerateImageReviewCandidatesUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_search_use_case"] = SearchImageReviewCandidatesUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_next_use_case"] = LoadNextImageReviewCandidatesUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_previous_use_case"] = LoadPreviousImageReviewCandidatesUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_select_use_case"] = SelectImageCandidateUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_skip_use_case"] = SkipImageReviewItemUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_publish_use_case"] = PublishImageReviewUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_update_prompt_use_case"] = UpdateImageReviewPromptUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_attach_uploaded_image_use_case"] = AttachUploadedImageUseCase(
-        harness=image_review_harness,
-        repository=image_review_repository,
-    )
-    app.bot_data["image_review_assets_dir"] = Path("assets")
     app.bot_data["telegram_flow_message_repository"] = telegram_flow_message_repository
     app.bot_data["telegram_user_login_repository"] = telegram_user_login_repository
     app.bot_data["pending_telegram_notification_repository"] = pending_notification_repository
-    app.bot_data["content_pack_generate_images_use_case"] = GenerateContentPackImagesUseCase(
-        enricher=content_pack_image_enricher,
-        db_path=settings.content_db_path,
-    )
     app.bot_data["word_import_preview_message_ids"] = {}
     app.bot_data["list_editable_topics_use_case"] = ListEditableTopicsUseCase(
         db_path=settings.content_db_path
@@ -339,6 +179,16 @@ def build_application(
         store=content_store
     )
     app.bot_data["recent_assignment_activity_by_user"] = {}
+    register_ai_image_capability(
+        app=app,
+        settings=settings,
+        config_service=config_service,
+        content_store=content_store,
+    )
+    register_tts_capability(
+        app=app,
+        settings=settings,
+    )
 
     app.add_handler(TypeHandler(Update, bot_module.raw_update_logger_handler), group=-1)
     app.add_handler(CommandHandler("start", bot_module.start_handler))

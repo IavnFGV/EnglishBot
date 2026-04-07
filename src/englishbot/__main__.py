@@ -55,25 +55,41 @@ def main() -> None:
         log_backup_count=settings.log_backup_count,
     )
     logger = logging.getLogger(__name__)
+    ai_text = settings.ai_text
+    ai_images = settings.ai_images
+    tts = settings.tts
     logger.info(
-        "Runtime settings log_level=%s log_file_path=%s log_max_bytes=%s log_backup_count=%s ollama_model=%s ollama_model_file=%s ollama_trace_file=%s ollama_base_url=%s "
-        "timeout=%s extraction_mode=%s temperature=%s top_p=%s num_predict=%s extract_line_prompt=%s extract_text_prompt=%s image_prompt=%s",
+        "Runtime settings log_level=%s log_file_path=%s log_max_bytes=%s log_backup_count=%s "
+        "ai_text.enabled=%s ai_text.model=%s ai_text.model_file=%s ai_text.trace_file=%s ai_text.base_url=%s "
+        "ai_text.timeout=%s ai_text.extraction_mode=%s ai_text.temperature=%s ai_text.top_p=%s ai_text.num_predict=%s "
+        "ai_text.extract_line_prompt=%s ai_text.extract_text_prompt=%s ai_text.image_prompt=%s "
+        "ai_images.enabled=%s ai_images.pixabay_base_url=%s ai_images.pixabay_configured=%s "
+        "tts.enabled=%s tts.base_url=%s tts.timeout=%s tts.voice_name=%s tts.voice_variants=%s",
         settings.log_level,
         settings.log_file_path,
         settings.log_max_bytes,
         settings.log_backup_count,
-        settings.ollama_model,
-        settings.ollama_model_file_path,
-        settings.ollama_trace_file_path,
-        settings.ollama_base_url,
-        settings.ollama_timeout_sec,
-        settings.ollama_extraction_mode,
-        settings.ollama_temperature,
-        settings.ollama_top_p,
-        settings.ollama_num_predict,
-        settings.ollama_extract_line_prompt_path,
-        settings.ollama_extract_text_prompt_path,
-        settings.ollama_image_prompt_path,
+        ai_text.enabled,
+        ai_text.model,
+        ai_text.model_file_path,
+        ai_text.trace_file_path,
+        ai_text.base_url,
+        ai_text.timeout_sec,
+        ai_text.extraction_mode,
+        ai_text.temperature,
+        ai_text.top_p,
+        ai_text.num_predict,
+        ai_text.extract_line_prompt_path,
+        ai_text.extract_text_prompt_path,
+        ai_text.image_prompt_path,
+        ai_images.enabled,
+        ai_images.pixabay_base_url,
+        bool(ai_images.pixabay_api_key),
+        tts.enabled,
+        tts.service_base_url,
+        tts.service_timeout_sec,
+        tts.voice_name,
+        tts.voice_variants,
     )
     app = build_application(settings, config_service=config_service)
     loop = asyncio.new_event_loop()

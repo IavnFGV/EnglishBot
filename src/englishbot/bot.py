@@ -537,14 +537,24 @@ def _settings_or_none(context: ContextTypes.DEFAULT_TYPE):
 
 def _tts_service_enabled(context: ContextTypes.DEFAULT_TYPE) -> bool:
     settings = _settings_or_none(context)
-    return bool(settings is not None and getattr(settings, "tts_service_enabled", False))
+    if settings is None:
+        return False
+    grouped = getattr(settings, "tts", None)
+    if grouped is not None and hasattr(grouped, "enabled"):
+        return bool(grouped.enabled)
+    return bool(getattr(settings, "tts_service_enabled", False))
 
 
 def _tts_primary_voice_name(context: ContextTypes.DEFAULT_TYPE) -> str | None:
     settings = _settings_or_none(context)
     if settings is None:
         return None
-    raw_voice_name = getattr(settings, "tts_voice_name", None)
+    grouped = getattr(settings, "tts", None)
+    raw_voice_name = (
+        getattr(grouped, "voice_name", None)
+        if grouped is not None
+        else getattr(settings, "tts_voice_name", None)
+    )
     if isinstance(raw_voice_name, str) and raw_voice_name.strip():
         return raw_voice_name.strip()
     return None
@@ -553,7 +563,12 @@ def _tts_primary_voice_name(context: ContextTypes.DEFAULT_TYPE) -> str | None:
 def _tts_voice_variants(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, ...]:
     primary_voice_name = _tts_primary_voice_name(context)
     settings = _settings_or_none(context)
-    raw_variants = getattr(settings, "tts_voice_variants", ()) if settings is not None else ()
+    grouped = getattr(settings, "tts", None) if settings is not None else None
+    raw_variants = (
+        getattr(grouped, "voice_variants", ())
+        if grouped is not None
+        else getattr(settings, "tts_voice_variants", ()) if settings is not None else ()
+    )
     if isinstance(raw_variants, str):
         raw_variants = (raw_variants,)
     ordered: list[str] = []
@@ -588,9 +603,20 @@ def _tts_client_or_none(context: ContextTypes.DEFAULT_TYPE) -> object | None:
         return None
     from englishbot.tts_service import TtsServiceClient
 
+    grouped = getattr(settings, "tts", None)
+    base_url = (
+        getattr(grouped, "service_base_url", None)
+        if grouped is not None
+        else getattr(settings, "tts_service_base_url", None)
+    )
+    timeout_sec = (
+        getattr(grouped, "service_timeout_sec", 15)
+        if grouped is not None
+        else getattr(settings, "tts_service_timeout_sec", 15)
+    )
     client = TtsServiceClient(
-        base_url=getattr(settings, "tts_service_base_url"),
-        timeout_sec=getattr(settings, "tts_service_timeout_sec", 15),
+        base_url=base_url,
+        timeout_sec=timeout_sec,
     )
     return _set_bot_data(context, "tts_service_client", client)
 

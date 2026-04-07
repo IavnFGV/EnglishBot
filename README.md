@@ -46,7 +46,11 @@ First extraction steps already in place:
 - [src/englishbot/telegram_image_review_support.py](/workspaces/EnglishBot/src/englishbot/telegram_image_review_support.py) owns image-review preview sending, local-candidate generation step handling, and review-step rendering helpers, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_game_mode.py](/workspaces/EnglishBot/src/englishbot/telegram_game_mode.py) owns game-mode round restart, repeat flow, per-answer game feedback, and game completion summary, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/telegram_medium_task_ui.py](/workspaces/EnglishBot/src/englishbot/telegram_medium_task_ui.py) owns medium-mode state helpers, keyboard rendering, and medium question-view building, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/capabilities/ai_text.py](/workspaces/EnglishBot/src/englishbot/capabilities/ai_text.py) owns optional Ollama-backed smart parsing and lesson-import pipeline wiring, while Telegram bootstrap only registers the capability
+- [src/englishbot/capabilities/ai_images.py](/workspaces/EnglishBot/src/englishbot/capabilities/ai_images.py) owns optional image-generation and image-review wiring, while Telegram bootstrap only registers the capability
+- [src/englishbot/capabilities/tts.py](/workspaces/EnglishBot/src/englishbot/capabilities/tts.py) owns optional TTS capability registration, while Telegram runtime reads TTS through a grouped settings view
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers; dead compatibility leftovers are removed incrementally once they have no in-repo callers
+- [src/englishbot/config.py](/workspaces/EnglishBot/src/englishbot/config.py) now exposes grouped capability views such as `settings.ai_text`, `settings.ai_images`, and `settings.tts` on top of the existing flat env-backed settings, so optional runtime modules can be wired without reintroducing one giant settings blob
 - repeated `context.application.bot_data[...]` access in `bot.py` is being centralized gradually through shared helper accessors so the remaining facade stays easier to teach and scan
 - repeated `context.user_data[...]` access in `bot.py` is also being centralized gradually so per-user Telegram state reads like one concept instead of many tiny ad hoc patterns
 - mutable runtime stores inside `bot.py` such as pending notifications or recent activity maps are also being normalized through shared helper accessors so domain code is easier to distinguish from storage plumbing
@@ -70,6 +74,12 @@ Best candidates for the next wave:
 
 - no new large, high-confidence split is currently required
   - reason: the remaining code in `src/englishbot/bot.py` is now closer to shared learner/runtime glue than to a clearly separate subsystem
+
+Current optional capability rule:
+
+- the core Telegram bot should only register optional capabilities such as TTS, AI text parsing, and AI image tooling
+- capability-specific client construction and disabled/fallback wiring should live in `src/englishbot/capabilities/...`
+- grouped settings views should be preferred when capability code needs runtime config, even while legacy flat `Settings(...)` fields remain for compatibility
 
 What should not be split just for appearance:
 
