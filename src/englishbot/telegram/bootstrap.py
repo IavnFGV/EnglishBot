@@ -43,7 +43,7 @@ from englishbot.application.published_content_use_cases import (
     UpdateEditableWordUseCase,
 )
 from englishbot.application.services import QuestionFactory
-from englishbot.bootstrap import build_training_service
+from englishbot.application.training_runtime import build_training_service
 from englishbot.capabilities import (
     register_ai_image_capability,
     register_ai_text_capability,

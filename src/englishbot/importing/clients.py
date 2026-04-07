@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from time import perf_counter
@@ -21,7 +20,7 @@ from englishbot.importing.models import ExtractedVocabularyItemDraft, LessonExtr
 from englishbot.importing.prompt_loader import load_prompt_text
 from englishbot.importing.trace import append_jsonl_trace
 from englishbot.logging_utils import logged_service_call
-from englishbot.ollama_runtime import resolve_runtime_ollama_model
+from englishbot.importing.ollama_runtime import resolve_runtime_ollama_model
 
 logger = logging.getLogger(__name__)
 

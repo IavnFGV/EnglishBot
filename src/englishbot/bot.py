@@ -69,7 +69,7 @@ from englishbot.application.services import (
     InvalidSessionStateError,
     TrainingFacade,
 )
-from englishbot.bootstrap import build_training_service
+from englishbot.application.training_runtime import build_training_service
 from englishbot.presentation.telegram_assignments_admin_ui import admin_goal_manual_keyboard as ui_admin_goal_manual_keyboard
 from englishbot.presentation.telegram_assignments_admin_ui import admin_goal_recipients_keyboard as ui_admin_goal_recipients_keyboard
 from englishbot.presentation.telegram_assignments_admin_ui import assignment_goal_detail_keyboard as ui_assignment_goal_detail_keyboard

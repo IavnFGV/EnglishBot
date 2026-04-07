@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from englishbot.bootstrap import build_lesson_import_pipeline
+from englishbot.importing.runtime import build_lesson_import_pipeline
 from englishbot.importing.clients import OllamaLessonExtractionClient
 from englishbot.importing.smart_parsing import (
     DisabledSmartLessonParsingGateway,
