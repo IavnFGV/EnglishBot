@@ -14,6 +14,7 @@ from englishbot.presentation.telegram_views import (
     edit_telegram_text_view,
     send_telegram_view,
 )
+from englishbot.telegram.callback_tokens import PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION
 from englishbot.telegram.interaction import (
     clear_image_review_photo_attach_interaction,
     finish_image_review_interaction,
@@ -70,7 +71,7 @@ async def published_image_item_handler(
     payload = bot_module._consume_callback_token(
         context=context,
         user_id=int(user.id),
-        action=bot_module._PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
+        action=PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
         token=token,
         fallback_key="selection",
         allow_colon_fallback=True,

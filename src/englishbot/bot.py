@@ -14,6 +14,9 @@ from telegram.ext import (
     Application,
     ContextTypes,
 )
+from englishbot.telegram.callback_tokens import (
+    HARD_SKIP_CALLBACK_ACTION as _HARD_SKIP_CALLBACK_ACTION,
+)
 
 from englishbot.application.add_words_use_cases import (
     ApplyAddWordsEditUseCase,
@@ -251,10 +254,6 @@ _NOTIFICATION_ACTIVE_SESSION_ACTIVITY_WINDOW = timedelta(minutes=5)
 _NOTIFICATION_RECENT_ANSWER_GRACE_PERIOD = timedelta(minutes=1)
 _NOTIFICATION_DELAY_AFTER_RECENT_ANSWER = timedelta(minutes=2)
 _DAILY_ASSIGNMENT_REMINDER_TIME = time(hour=13, minute=0, tzinfo=UTC)
-_CALLBACK_TOKEN_TTL_SECONDS = 48 * 60 * 60
-_HARD_SKIP_CALLBACK_ACTION = "hard_skip"
-_EDITABLE_WORD_CALLBACK_ACTION = "editable_word"
-_PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION = "published_image_item"
 _HELP_COMMAND_TEXT: dict[str, str] = {
     "start": "open your personal start menu",
     "help": "show commands",
@@ -2741,16 +2740,14 @@ def _create_callback_token(
     payload: dict[str, object],
     fallback_value: str,
 ) -> str:
-    creator = getattr(_content_store(context), "create_telegram_callback_token", None)
-    if creator is None:
-        return fallback_value
-    return str(
-        creator(
-            user_id=user_id,
-            action=action,
-            payload=payload,
-            ttl_seconds=_CALLBACK_TOKEN_TTL_SECONDS,
-        )
+    from englishbot.telegram.callback_tokens import create_callback_token
+
+    return create_callback_token(
+        store=_content_store(context),
+        user_id=user_id,
+        action=action,
+        payload=payload,
+        fallback_value=fallback_value,
     )
 
 
@@ -2763,15 +2760,16 @@ def _consume_callback_token(
     fallback_key: str,
     allow_colon_fallback: bool = False,
 ) -> dict[str, object] | None:
-    consumer = getattr(_content_store(context), "consume_telegram_callback_token", None)
-    if consumer is None:
-        return {fallback_key: token}
-    resolved = consumer(user_id=user_id, action=action, token=token)
-    if resolved is None:
-        if ":" in token and not allow_colon_fallback:
-            return None
-        return {fallback_key: token}
-    return resolved
+    from englishbot.telegram.callback_tokens import consume_callback_token
+
+    return consume_callback_token(
+        store=_content_store(context),
+        user_id=user_id,
+        action=action,
+        token=token,
+        fallback_key=fallback_key,
+        allow_colon_fallback=allow_colon_fallback,
+    )
 
 
 def _hard_skip_callback_data(
@@ -2780,14 +2778,13 @@ def _hard_skip_callback_data(
     user_id: int,
     session_id: str,
 ) -> str:
-    token = _create_callback_token(
-        context=context,
+    from englishbot.telegram.callback_tokens import hard_skip_callback_data
+
+    return hard_skip_callback_data(
+        store=_content_store(context),
         user_id=user_id,
-        action=_HARD_SKIP_CALLBACK_ACTION,
-        payload={"session_id": session_id},
-        fallback_value=session_id,
+        session_id=session_id,
     )
-    return f"hard:skip:{token}"
 
 
 def _editable_word_callback_data(
@@ -2797,14 +2794,14 @@ def _editable_word_callback_data(
     topic_id: str,
     item_index: int,
 ) -> str:
-    token = _create_callback_token(
-        context=context,
+    from englishbot.telegram.callback_tokens import editable_word_callback_data
+
+    return editable_word_callback_data(
+        store=_content_store(context),
         user_id=user_id,
-        action=_EDITABLE_WORD_CALLBACK_ACTION,
-        payload={"topic_id": topic_id, "item_index": item_index},
-        fallback_value=f"{topic_id}:{item_index}",
+        topic_id=topic_id,
+        item_index=item_index,
     )
-    return f"words:edit_item:{token}"
 
 
 def _published_image_item_callback_data(
@@ -2814,14 +2811,14 @@ def _published_image_item_callback_data(
     topic_id: str,
     item_index: int,
 ) -> str:
-    token = _create_callback_token(
-        context=context,
+    from englishbot.telegram.callback_tokens import published_image_item_callback_data
+
+    return published_image_item_callback_data(
+        store=_content_store(context),
         user_id=user_id,
-        action=_PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
-        payload={"topic_id": topic_id, "item_index": item_index},
-        fallback_value=f"{topic_id}:{item_index}",
+        topic_id=topic_id,
+        item_index=item_index,
     )
-    return f"words:edit_published_image:{token}"
 
 
 def _hard_skip_keyboard(

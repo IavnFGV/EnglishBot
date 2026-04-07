@@ -76,7 +76,7 @@ Examples:
 
 The file still owns some cross-cutting Telegram glue:
 
-- callback token creation and consumption
+- callback token wrappers that delegate into [src/englishbot/telegram/callback_tokens.py](/workspaces/EnglishBot/src/englishbot/telegram/callback_tokens.py)
 - message cleanup helpers
 - tracked flow wrappers
 - assignment notification scheduling
@@ -108,5 +108,4 @@ If the file is reduced further after `1.0.0`, the best targets are:
 
 - shared Telegram interaction state
 - residual keyboard-builder blocks
-- remaining callback-token helper logic
 - remaining notification or tracked-message plumbing that can live in focused Telegram modules
