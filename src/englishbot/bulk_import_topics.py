@@ -6,8 +6,7 @@ from typing import Annotated
 
 import typer
 
-from englishbot.__main__ import configure_logging
-from englishbot.config import create_runtime_config_service
+from englishbot.cli import configure_cli_logging, create_cli_runtime_config_service
 from englishbot.importing.bulk_topics import parse_bulk_topic_text, write_bulk_topic_content_packs
 
 app = typer.Typer(
@@ -15,6 +14,8 @@ app = typer.Typer(
     no_args_is_help=True,
     help="Bulk-import multiple topic word lists from one text file.",
 )
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @app.command()
@@ -52,8 +53,8 @@ def run(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    configure_logging(log_level.upper())
-    config_service = create_runtime_config_service()
+    config_service = create_cli_runtime_config_service(repo_root=_REPO_ROOT)
+    configure_cli_logging(log_level=log_level, config_service=config_service)
     resolved_db_path = None if no_db_import else (db_path or config_service.get_path("content_db_path"))
     if no_db_import and output_dir is None:
         raise typer.BadParameter(

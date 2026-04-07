@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from dotenv import load_dotenv
 
-from englishbot.__main__ import configure_logging
+from englishbot.cli import (
+    configure_cli_logging,
+    create_cli_runtime_config_service,
+    create_content_store,
+)
 from englishbot.application.fill_word_audio_use_cases import FillWordAudioUseCase
-from englishbot.config import create_runtime_config_service
-from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.tts_service import TtsServiceClient
 
 app = typer.Typer(
@@ -20,7 +21,6 @@ app = typer.Typer(
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-
 
 @app.command()
 def main(
@@ -53,19 +53,9 @@ def main(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    env_file_path = _REPO_ROOT / ".env"
-    load_dotenv(env_file_path, override=True)
-    config_service = create_runtime_config_service(env_file_path=env_file_path)
-    configure_logging(
-        log_level.upper() or config_service.get_str("log_level"),
-        log_file_path=config_service.get_path("log_file_path"),
-        log_max_bytes=config_service.get_int("log_max_bytes"),
-        log_backup_count=config_service.get_int("log_backup_count"),
-    )
-    store = SQLiteContentStore(
-        db_path=config_service.get_path("content_db_path") or Path("data/englishbot.db")
-    )
-    store.initialize()
+    config_service = create_cli_runtime_config_service(repo_root=_REPO_ROOT)
+    configure_cli_logging(log_level=log_level, config_service=config_service)
+    store = create_content_store(config_service=config_service)
     use_case = FillWordAudioUseCase(
         store=store,
         tts_client=TtsServiceClient(

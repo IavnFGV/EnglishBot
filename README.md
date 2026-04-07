@@ -49,6 +49,7 @@ First extraction steps already in place:
 - [src/englishbot/capabilities/ai_text.py](/workspaces/EnglishBot/src/englishbot/capabilities/ai_text.py) owns optional Ollama-backed smart parsing and lesson-import pipeline wiring, while Telegram bootstrap only registers the capability
 - [src/englishbot/capabilities/ai_images.py](/workspaces/EnglishBot/src/englishbot/capabilities/ai_images.py) owns optional image-generation and image-review wiring, while Telegram bootstrap only registers the capability
 - [src/englishbot/capabilities/tts.py](/workspaces/EnglishBot/src/englishbot/capabilities/tts.py) owns optional TTS capability registration, while Telegram runtime reads TTS through a grouped settings view
+- [src/englishbot/cli/runtime.py](/workspaces/EnglishBot/src/englishbot/cli/runtime.py) owns shared CLI runtime bootstrapping such as `.env` loading, centralized config creation, logging setup, and SQLite store opening for batch tools
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers; dead compatibility leftovers are removed incrementally once they have no in-repo callers
 - [src/englishbot/config.py](/workspaces/EnglishBot/src/englishbot/config.py) now exposes grouped capability views such as `settings.ai_text`, `settings.ai_images`, and `settings.tts` on top of the existing flat env-backed settings, so optional runtime modules can be wired without reintroducing one giant settings blob
 - repeated `context.application.bot_data[...]` access in `bot.py` is being centralized gradually through shared helper accessors so the remaining facade stays easier to teach and scan
@@ -80,6 +81,7 @@ Current optional capability rule:
 - the core Telegram bot should only register optional capabilities such as TTS, AI text parsing, and AI image tooling
 - capability-specific client construction and disabled/fallback wiring should live in `src/englishbot/capabilities/...`
 - grouped settings views should be preferred when capability code needs runtime config, even while legacy flat `Settings(...)` fields remain for compatibility
+- batch CLI entrypoints should prefer the shared helper in `src/englishbot/cli/runtime.py` instead of each script reimplementing its own `.env` loading and logging/bootstrap boilerplate
 
 What should not be split just for appearance:
 

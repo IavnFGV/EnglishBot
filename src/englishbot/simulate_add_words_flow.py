@@ -7,6 +7,7 @@ from typing import Annotated
 import typer
 
 from englishbot.__main__ import configure_logging
+from englishbot.cli import create_cli_runtime_config_service
 from englishbot.application.add_words_flow import AddWordsFlowHarness
 from englishbot.application.add_words_use_cases import (
     ApplyAddWordsEditUseCase,
@@ -14,7 +15,7 @@ from englishbot.application.add_words_use_cases import (
     StartAddWordsFlowUseCase,
 )
 from englishbot.bootstrap import build_lesson_import_pipeline
-from englishbot.config import RuntimeConfigService, create_runtime_config_service
+from englishbot.config import RuntimeConfigService
 from englishbot.importing.validator import LessonExtractionValidator
 from englishbot.importing.writer import JsonContentPackWriter
 from englishbot.infrastructure.sqlite_store import SQLiteAddWordsFlowRepository, SQLiteContentStore
@@ -29,8 +30,11 @@ app = typer.Typer(
     help="Run add-words scenarios locally without Telegram.",
 )
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
 def _runtime_config_service() -> RuntimeConfigService:
-    return create_runtime_config_service()
+    return create_cli_runtime_config_service(repo_root=_REPO_ROOT)
 
 
 @app.command("run")

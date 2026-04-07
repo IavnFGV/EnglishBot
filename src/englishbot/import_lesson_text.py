@@ -9,7 +9,8 @@ from typing import Annotated
 import typer
 
 from englishbot.__main__ import configure_logging
-from englishbot.config import RuntimeConfigService, create_runtime_config_service
+from englishbot.cli import create_cli_runtime_config_service
+from englishbot.config import RuntimeConfigService
 from englishbot.importing.canonicalizer import DraftToContentPackCanonicalizer
 from englishbot.importing.clients import OllamaLessonExtractionClient, StubLessonExtractionClient
 from englishbot.importing.draft_io import JsonDraftReader, JsonDraftWriter
@@ -28,8 +29,11 @@ app = typer.Typer(
     help="Extract editable lesson drafts from text and finalize reviewed drafts.",
 )
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
 def _runtime_config_service() -> RuntimeConfigService:
-    return create_runtime_config_service()
+    return create_cli_runtime_config_service(repo_root=_REPO_ROOT)
 
 
 def _build_pipeline(
