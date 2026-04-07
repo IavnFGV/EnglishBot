@@ -85,6 +85,7 @@ The file still owns some cross-cutting Telegram glue:
 - some keyboard composition that is still reused across flows
 
 New editor Telegram flows should prefer calling presentation-layer keyboard builders directly and use `bot.py` only when a compatibility wrapper is still needed.
+The same applies to simple status/progress views such as `build_status_view(...)`: feature modules should import them from presentation directly instead of routing them through `bot.py`.
 
 ## Why It Still Feels Big
 

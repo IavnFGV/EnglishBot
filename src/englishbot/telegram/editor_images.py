@@ -14,6 +14,7 @@ from englishbot.presentation.telegram_views import (
     build_image_review_attach_photo_view,
     build_image_review_prompt_edit_view,
     build_image_review_search_query_edit_view,
+    build_status_view,
     edit_telegram_text_view,
     send_telegram_view,
 )
@@ -179,7 +180,7 @@ async def image_review_generate_handler(
         return
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg("start_image_generation", context=context, user=user)
         ),
     )
@@ -212,7 +213,7 @@ async def image_review_search_handler(
     total_items = len(flow.items)
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "pixabay_search_progress",
                 context=context,
@@ -239,14 +240,14 @@ async def image_review_search_handler(
         )
         await edit_telegram_text_view(
             query,
-            bot_module._status_view(
+            build_status_view(
                 text=bot_module._tg("searching_pixabay_failed", context=context, user=user)
             ),
         )
         return
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "pixabay_candidates_ready",
                 context=context,
@@ -279,7 +280,7 @@ async def image_review_next_handler(
     total_items = len(flow.items)
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "loading_next_pixabay",
                 context=context,
@@ -305,14 +306,14 @@ async def image_review_next_handler(
         )
         await edit_telegram_text_view(
             query,
-            bot_module._status_view(
+            build_status_view(
                 text=bot_module._tg("searching_pixabay_failed", context=context, user=user)
             ),
         )
         return
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "pixabay_candidates_ready",
                 context=context,
@@ -345,7 +346,7 @@ async def image_review_previous_handler(
     total_items = len(flow.items)
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "loading_previous_pixabay",
                 context=context,
@@ -371,14 +372,14 @@ async def image_review_previous_handler(
         )
         await edit_telegram_text_view(
             query,
-            bot_module._status_view(
+            build_status_view(
                 text=bot_module._tg("searching_pixabay_failed", context=context, user=user)
             ),
         )
         return
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "pixabay_candidates_ready",
                 context=context,
@@ -766,7 +767,7 @@ async def image_review_photo_handler(
         output_path=output_path,
     )
     await status_message.edit_text(
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg("uploaded_photo_attached", context=context, user=user)
         ).text
     )

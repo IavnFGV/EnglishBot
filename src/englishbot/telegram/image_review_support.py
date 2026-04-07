@@ -10,6 +10,7 @@ from englishbot.image_generation.previews import ensure_numbered_candidate_strip
 from englishbot.presentation.telegram_views import (
     build_current_image_preview_view,
     build_image_review_step_view,
+    build_status_view,
     send_telegram_view,
 )
 from englishbot.telegram.interaction import (
@@ -68,7 +69,7 @@ async def prepare_and_send_image_review_step(
         stop_event.set()
         await heartbeat_task
     await status_message.edit_text(
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "local_candidates_ready",
                 context=context,

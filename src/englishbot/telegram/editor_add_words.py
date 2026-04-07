@@ -18,6 +18,7 @@ from englishbot.presentation.telegram_editor_ui import (
 )
 from englishbot.presentation.telegram_views import (
     build_published_word_edit_prompt_view,
+    build_status_view,
     edit_telegram_text_view,
     send_telegram_view,
 )
@@ -456,7 +457,7 @@ async def add_words_text_handler(
                 user.id,
             )
             await status_message.edit_text(
-                bot_module._status_view(
+                build_status_view(
                     text=bot_module._tg(
                         "updating_image_prompt_failed",
                         context=context,
@@ -469,7 +470,7 @@ async def add_words_text_handler(
         await heartbeat_task
         await bot_module._delete_message_if_possible(context, message=message)
         await status_message.edit_text(
-            bot_module._status_view(
+            build_status_view(
                 text=bot_module._tg("prompt_updated", context=context, user=user)
             ).text
         )
@@ -520,7 +521,7 @@ async def add_words_text_handler(
                 user.id,
             )
             await status_message.edit_text(
-                bot_module._status_view(
+                build_status_view(
                     text=bot_module._tg(
                         "searching_pixabay_failed",
                         context=context,
@@ -533,7 +534,7 @@ async def add_words_text_handler(
         await heartbeat_task
         await bot_module._delete_message_if_possible(context, message=message)
         await status_message.edit_text(
-            bot_module._status_view(
+            build_status_view(
                 text=bot_module._tg(
                     "pixabay_candidates_updated",
                     context=context,
@@ -629,7 +630,7 @@ async def add_words_text_handler(
             user.id,
         )
         await status_message.edit_text(
-            bot_module._status_view(
+            build_status_view(
                 text=bot_module._tg(
                     "parsing_draft_failed_generic",
                     context=context,
@@ -645,10 +646,10 @@ async def add_words_text_handler(
     clear_add_words_text_interaction(context)
     failure_message = bot_module._draft_failure_message(flow.draft_result)
     if failure_message is not None:
-        await status_message.edit_text(bot_module._status_view(text=failure_message).text)
+        await status_message.edit_text(build_status_view(text=failure_message).text)
         return
     await status_message.edit_text(
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._draft_status_text(flow.draft_result)
         ).text
     )
@@ -734,7 +735,7 @@ async def add_words_regenerate_draft_handler(
     if not bot_module._smart_parsing_available(context):
         await edit_telegram_text_view(
             query,
-            bot_module._status_view(
+            build_status_view(
                 text=bot_module._tg(
                     "smart_parsing_unavailable",
                     context=context,
@@ -745,7 +746,7 @@ async def add_words_regenerate_draft_handler(
         return
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg("re_recognizing_draft", context=context, user=user)
         ),
     )
@@ -770,7 +771,7 @@ async def add_words_regenerate_draft_handler(
         )
         await edit_telegram_text_view(
             query,
-            bot_module._status_view(
+            build_status_view(
                 text=bot_module._tg(
                     "parsing_draft_failed_generic",
                     context=context,
@@ -891,7 +892,7 @@ async def add_words_approve_draft_handler(
         return
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg("saving_approved_draft", context=context, user=user)
         ),
     )
@@ -902,7 +903,7 @@ async def add_words_approve_draft_handler(
     )
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "approved_draft_saved_generating_prompts",
                 context=context,
@@ -918,7 +919,7 @@ async def add_words_approve_draft_handler(
     )
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "image_prompts_generated_starting_review",
                 context=context,
@@ -941,7 +942,7 @@ async def add_words_approve_draft_handler(
     )
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "image_prompts_generated_saved_continue_review",
                 context=context,
@@ -992,7 +993,7 @@ async def add_words_approve_auto_images_handler(
 
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg("saving_approved_draft", context=context, user=user)
         ),
     )
@@ -1003,7 +1004,7 @@ async def add_words_approve_auto_images_handler(
     )
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "approved_draft_saved_generating_prompts",
                 context=context,
@@ -1019,7 +1020,7 @@ async def add_words_approve_auto_images_handler(
     )
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "image_prompts_generated_publishing",
                 context=context,
@@ -1038,7 +1039,7 @@ async def add_words_approve_auto_images_handler(
     rendered_total_items = total_items if total_items > 0 else 1
     await edit_telegram_text_view(
         query,
-        bot_module._status_view(
+        build_status_view(
             text=bot_module._tg(
                 "content_pack_published_generating_images",
                 context=context,
@@ -1069,7 +1070,7 @@ async def add_words_approve_auto_images_handler(
             processed_count, total_count = progress
             await edit_telegram_text_view(
                 query,
-                bot_module._status_view(
+                build_status_view(
                     text=bot_module._tg(
                         "content_pack_published_generating_images",
                         context=context,
