@@ -34,6 +34,8 @@ async def process_answer(
     invalid_session_state_error_type,
     application_error_type,
 ) -> None:
+    from englishbot.telegram.interaction import finish_lesson_interaction
+
     resolved_service = service(context)
     user = update.effective_user
     message = update.effective_message
@@ -60,12 +62,9 @@ async def process_answer(
         record_assignment_activity(context, user_id=user.id)
     active_session_id = getattr(active_session_before_submit, "session_id", None)
     if isinstance(active_session_id, str):
-        from englishbot.telegram.interaction import finish_interaction
-
-        await finish_interaction(
+        await finish_lesson_interaction(
             context,
-            flow_id=active_session_id,
-            tags=(training_question_tag,),
+            session_id=active_session_id,
         )
     game_state = context.user_data.get("game_mode_state")
     if isinstance(game_state, dict) and game_state.get("active"):
@@ -192,6 +191,8 @@ async def send_feedback(
     message_chat_id: Callable,
     tg: Callable,
 ) -> None:
+    from englishbot.telegram.interaction import replace_lesson_feedback_message
+
     feedback_user = user if user is not None else getattr(message, "from_user", None)
     feedback_user_id = getattr(feedback_user, "id", None)
     view = build_answer_feedback_view(
@@ -252,17 +253,14 @@ async def send_feedback(
         text = f"{text}\n\n{assignment_progress_text}"
     flow_id = getattr(active_session, "session_id", None)
     if isinstance(flow_id, str):
-        from englishbot.telegram.interaction import replace_flow_message
-
         sent_message = await message.reply_text(
             text,
             reply_markup=reply_markup,
             parse_mode=view.parse_mode,
         )
-        await replace_flow_message(
+        await replace_lesson_feedback_message(
             context,
-            flow_id=flow_id,
-            tag=training_feedback_tag,
+            session_id=flow_id,
             message=sent_message,
             fallback_chat_id=message_chat_id(message),
         )

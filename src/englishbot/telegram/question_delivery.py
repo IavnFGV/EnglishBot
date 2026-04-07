@@ -182,6 +182,8 @@ async def send_question(
     message_chat_id: Callable,
     inline_keyboard_button_type,
 ) -> None:
+    from englishbot.telegram.interaction import replace_lesson_question_message
+
     message = update.effective_message
     user = getattr(update, "effective_user", None)
     if message is None:
@@ -235,12 +237,9 @@ async def send_question(
             context,
             build_medium_task_state(question, message_id=getattr(sent_message, "message_id", None)),
         )
-    from englishbot.telegram.interaction import replace_flow_message
-
-    await replace_flow_message(
+    await replace_lesson_question_message(
         context,
-        flow_id=question.session_id,
-        tag=training_question_tag,
+        session_id=question.session_id,
         message=sent_message,
         fallback_chat_id=message_chat_id(message),
     )

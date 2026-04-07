@@ -42,6 +42,52 @@ def tts_voice_interaction_id(*, user_id: int) -> str:
     return f"tts-voice:{user_id}"
 
 
+async def replace_lesson_question_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    session_id: str,
+    message,
+    fallback_chat_id: int | None = None,
+) -> None:
+    await replace_flow_message(
+        context,
+        flow_id=lesson_interaction_id(session_id=session_id),
+        tag=TRAINING_QUESTION_TAG,
+        message=message,
+        fallback_chat_id=fallback_chat_id,
+    )
+
+
+async def replace_lesson_feedback_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    session_id: str,
+    message,
+    fallback_chat_id: int | None = None,
+) -> None:
+    await replace_flow_message(
+        context,
+        flow_id=lesson_interaction_id(session_id=session_id),
+        tag=TRAINING_FEEDBACK_TAG,
+        message=message,
+        fallback_chat_id=fallback_chat_id,
+    )
+
+
+async def finish_lesson_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    session_id: str,
+    clear_expected_input_prompt: bool = False,
+) -> None:
+    await finish_interaction(
+        context,
+        flow_id=lesson_interaction_id(session_id=session_id),
+        tags=(TRAINING_QUESTION_TAG, TRAINING_FEEDBACK_TAG),
+        clear_expected_input_prompt=clear_expected_input_prompt,
+    )
+
+
 def remember_expected_user_input(
     context: ContextTypes.DEFAULT_TYPE,
     *,

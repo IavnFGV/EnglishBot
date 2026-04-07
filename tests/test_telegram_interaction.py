@@ -20,9 +20,12 @@ from englishbot.telegram.interaction import (
     clear_expected_user_input,
     edit_expected_user_input_prompt,
     finish_interaction,
+    finish_lesson_interaction,
     get_expected_user_input_prompt,
     lesson_interaction_id,
     published_word_edit_interaction_id,
+    replace_lesson_feedback_message,
+    replace_lesson_question_message,
     remember_expected_user_input,
     replace_flow_message,
     tts_voice_interaction_id,
@@ -219,4 +222,47 @@ async def test_finish_interaction_clears_tags_and_prompt_state() -> None:
     assert deleted == [(10, 20), (10, 21)]
     assert registry.list(flow_id="lesson-1", tag="question") == []
     assert registry.list(flow_id="lesson-1", tag="feedback") == []
+    assert get_expected_user_input_prompt(context) is None
+
+
+@pytest.mark.anyio
+async def test_lesson_interaction_helpers_use_named_lesson_tags() -> None:
+    registry = _FakeRegistry()
+    deleted: list[tuple[int, int]] = []
+
+    async def fake_delete_message(*, chat_id: int, message_id: int) -> None:
+        deleted.append((chat_id, message_id))
+
+    context = SimpleNamespace(
+        user_data={"expected_user_input_state": {"chat_id": 10, "message_id": 99}},
+        application=SimpleNamespace(bot_data={"telegram_flow_message_repository": registry}),
+        bot=SimpleNamespace(delete_message=fake_delete_message),
+    )
+
+    await replace_lesson_question_message(
+        context,
+        session_id="lesson-1",
+        message=SimpleNamespace(chat_id=10, message_id=20),
+        fallback_chat_id=10,
+    )
+    await replace_lesson_feedback_message(
+        context,
+        session_id="lesson-1",
+        message=SimpleNamespace(chat_id=10, message_id=21),
+        fallback_chat_id=10,
+    )
+
+    assert [(item.tag, item.message_id) for item in registry.items] == [
+        ("training_question", 20),
+        ("training_feedback", 21),
+    ]
+
+    await finish_lesson_interaction(
+        context,
+        session_id="lesson-1",
+        clear_expected_input_prompt=True,
+    )
+
+    assert deleted == [(10, 20), (10, 21)]
+    assert registry.items == []
     assert get_expected_user_input_prompt(context) is None
