@@ -163,7 +163,7 @@ from englishbot.telegram_question_delivery import (
     edit_training_question_view as delivery_edit_training_question_view,
     send_question as delivery_send_question,
 )
-from englishbot.telegram_command_menu import (
+from englishbot.telegram.command_menu import (
     chat_menu_keyboard as menu_chat_menu_keyboard,
     post_init_command_setup,
     visible_command_rows as menu_visible_command_rows,
@@ -794,7 +794,7 @@ def _assignment_round_progress_view(
     goal_id: str | None = None,
     active_session=None,
 ) -> _AssignmentRoundProgressView | None:
-    from englishbot.telegram_assignment_progress import assignment_round_progress_view
+    from englishbot.telegram.assignment_progress import assignment_round_progress_view
 
     return assignment_round_progress_view(
         context=context,
@@ -806,7 +806,7 @@ def _assignment_round_progress_view(
 
 
 def _assignment_progress_variant_index(*, variant_key: str, variant_count: int) -> int:
-    from englishbot.telegram_assignment_progress import assignment_progress_variant_index
+    from englishbot.telegram.assignment_progress import assignment_progress_variant_index
 
     return assignment_progress_variant_index(
         variant_key=variant_key,
@@ -821,7 +821,7 @@ def _render_assignment_progress_track(
     variant_key: str,
     steps: int = 17,
 ) -> str:
-    from englishbot.telegram_assignment_progress import render_assignment_progress_track
+    from englishbot.telegram.assignment_progress import render_assignment_progress_track
 
     return render_assignment_progress_track(
         completed=completed,
@@ -838,7 +838,7 @@ def _render_assignment_round_progress_text(
     kind: AssignmentSessionKind,
     progress: _AssignmentRoundProgressView,
 ) -> str:
-    from englishbot.telegram_assignment_progress import render_assignment_round_progress_text
+    from englishbot.telegram.assignment_progress import render_assignment_round_progress_text
 
     return render_assignment_round_progress_text(
         context=context,
@@ -854,7 +854,7 @@ def _assignment_progress_flow_id(
     kind: AssignmentSessionKind,
     goal_id: str | None = None,
 ) -> str:
-    from englishbot.telegram_assignment_progress import assignment_progress_flow_id
+    from englishbot.telegram.assignment_progress import assignment_progress_flow_id
 
     return assignment_progress_flow_id(
         user_id=user_id,
@@ -864,7 +864,7 @@ def _assignment_progress_flow_id(
 
 
 def _assignment_periods_for_kind(kind: AssignmentSessionKind) -> tuple[GoalPeriod, ...]:
-    from englishbot.telegram_assignment_progress import assignment_periods_for_kind
+    from englishbot.telegram.assignment_progress import assignment_periods_for_kind
 
     return assignment_periods_for_kind(kind)
 
@@ -878,7 +878,7 @@ def _build_assignment_progress_snapshot(
     goal_id: str | None = None,
     active_session=None,
 ):
-    from englishbot.telegram_assignment_progress import build_assignment_progress_snapshot
+    from englishbot.telegram.assignment_progress import build_assignment_progress_snapshot
 
     return build_assignment_progress_snapshot(
         context=context,
@@ -897,7 +897,7 @@ def _assignment_word_progress_value(
     goal,
     row: dict[str, object],
 ) -> float:
-    from englishbot.telegram_assignment_progress import assignment_word_progress_value
+    from englishbot.telegram.assignment_progress import assignment_word_progress_value
 
     return assignment_word_progress_value(
         store=store,
@@ -908,13 +908,13 @@ def _assignment_word_progress_value(
 
 
 def _assignment_progress_image_path(*, user_id: int, kind: AssignmentSessionKind) -> Path:
-    from englishbot.telegram_assignment_progress import assignment_progress_image_path
+    from englishbot.telegram.assignment_progress import assignment_progress_image_path
 
     return assignment_progress_image_path(user_id=user_id, kind=kind)
 
 
 def _session_combo_target_word_id(active_session) -> str | None:
-    from englishbot.telegram_assignment_progress import session_combo_target_word_id
+    from englishbot.telegram.assignment_progress import session_combo_target_word_id
 
     return session_combo_target_word_id(active_session)
 
@@ -927,7 +927,7 @@ def _assignment_progress_caption(
     user,
     remaining_word_count: int,
 ) -> str:
-    from englishbot.telegram_assignment_progress import assignment_progress_caption
+    from englishbot.telegram.assignment_progress import assignment_progress_caption
 
     return assignment_progress_caption(
         context=context,
@@ -962,7 +962,7 @@ async def _send_or_update_assignment_progress_message(
     kind: AssignmentSessionKind,
     active_session=None,
 ) -> None:
-    from englishbot.telegram_assignment_progress import (
+    from englishbot.telegram.assignment_progress import (
         send_or_update_assignment_progress_message,
     )
 
@@ -1807,7 +1807,7 @@ async def version_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def makeadmin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_admin_utils import (
+    from englishbot.telegram.admin_utils import (
         makeadmin_handler as telegram_makeadmin_handler,
     )
 
@@ -1815,7 +1815,7 @@ async def makeadmin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def clear_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_admin_utils import (
+    from englishbot.telegram.admin_utils import (
         clear_user_handler as telegram_clear_user_handler,
     )
 
@@ -1863,7 +1863,7 @@ async def noop_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def notification_dismiss_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_notifications import (
+    from englishbot.telegram.notifications import (
         notification_dismiss_callback_handler as telegram_notification_dismiss_callback_handler,
     )
 
@@ -3486,19 +3486,19 @@ def _assignment_assigned_notification_emoji(*, goal_id: str) -> str:
 
 
 def _pending_notifications(context: ContextTypes.DEFAULT_TYPE) -> dict[str, _PendingNotification]:
-    from englishbot.telegram_notifications import pending_notifications
+    from englishbot.telegram.notifications import pending_notifications
 
     return pending_notifications(context)
 
 
 def _pending_notification_repository(context: ContextTypes.DEFAULT_TYPE):
-    from englishbot.telegram_notifications import pending_notification_repository
+    from englishbot.telegram.notifications import pending_notification_repository
 
     return pending_notification_repository(context)
 
 
 def _recent_assignment_activity_by_user(context: ContextTypes.DEFAULT_TYPE) -> dict[int, datetime]:
-    from englishbot.telegram_notifications import recent_assignment_activity_by_user
+    from englishbot.telegram.notifications import recent_assignment_activity_by_user
 
     return recent_assignment_activity_by_user(context)
 
@@ -3509,7 +3509,7 @@ def _notification_action_button_for_user(
     notification_key: str,
     user_id: int,
 ) -> InlineKeyboardButton:
-    from englishbot.telegram_notifications import notification_action_button_for_user
+    from englishbot.telegram.notifications import notification_action_button_for_user
 
     return notification_action_button_for_user(
         context,
@@ -3524,7 +3524,7 @@ def _dismiss_notification_keyboard(
     notification_key: str,
     user_id: int,
 ) -> InlineKeyboardMarkup:
-    from englishbot.telegram_notifications import dismiss_notification_keyboard
+    from englishbot.telegram.notifications import dismiss_notification_keyboard
 
     return dismiss_notification_keyboard(
         context,
@@ -3538,7 +3538,7 @@ def _notification_wait_seconds(
     *,
     user_id: int,
 ) -> float:
-    from englishbot.telegram_notifications import notification_wait_seconds
+    from englishbot.telegram.notifications import notification_wait_seconds
 
     return notification_wait_seconds(context, user_id=user_id)
 
@@ -3548,13 +3548,13 @@ def _notification_should_wait(
     *,
     user_id: int,
 ) -> bool:
-    from englishbot.telegram_notifications import notification_should_wait
+    from englishbot.telegram.notifications import notification_should_wait
 
     return notification_should_wait(context, user_id=user_id)
 
 
 def _record_assignment_activity(context: ContextTypes.DEFAULT_TYPE, *, user_id: int) -> None:
-    from englishbot.telegram_notifications import record_assignment_activity
+    from englishbot.telegram.notifications import record_assignment_activity
 
     record_assignment_activity(context, user_id=user_id)
 
@@ -3564,7 +3564,7 @@ def _schedule_notification(
     *,
     notification: _PendingNotification,
 ) -> None:
-    from englishbot.telegram_notifications import schedule_notification
+    from englishbot.telegram.notifications import schedule_notification
 
     schedule_notification(
         context,
@@ -3578,7 +3578,7 @@ async def _deliver_notification_now(
     notification_key: str,
     force: bool = False,
 ) -> bool:
-    from englishbot.telegram_notifications import deliver_notification_now
+    from englishbot.telegram.notifications import deliver_notification_now
 
     return await deliver_notification_now(
         context,
@@ -3588,13 +3588,13 @@ async def _deliver_notification_now(
 
 
 async def _deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_notifications import deliver_pending_notification_job
+    from englishbot.telegram.notifications import deliver_pending_notification_job
 
     await deliver_pending_notification_job(context)
 
 
 async def _homework_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_notifications import homework_assignment_reminder_job
+    from englishbot.telegram.notifications import homework_assignment_reminder_job
 
     await homework_assignment_reminder_job(context)
 
@@ -3604,7 +3604,7 @@ async def _flush_pending_notifications_for_user(
     *,
     user_id: int,
 ) -> None:
-    from englishbot.telegram_notifications import flush_pending_notifications_for_user
+    from englishbot.telegram.notifications import flush_pending_notifications_for_user
 
     await flush_pending_notifications_for_user(context, user_id=user_id)
 
@@ -3614,7 +3614,7 @@ def _schedule_assignment_assigned_notifications(
     *,
     goals: list,
 ) -> None:
-    from englishbot.telegram_notifications import schedule_assignment_assigned_notifications
+    from englishbot.telegram.notifications import schedule_assignment_assigned_notifications
 
     schedule_assignment_assigned_notifications(
         context,
@@ -3628,7 +3628,7 @@ def _schedule_goal_completed_notifications(
     learner,
     completed_goals: tuple[GoalProgressView, ...],
 ) -> None:
-    from englishbot.telegram_notifications import schedule_goal_completed_notifications
+    from englishbot.telegram.notifications import schedule_goal_completed_notifications
 
     schedule_goal_completed_notifications(
         context,
@@ -3642,7 +3642,7 @@ async def _delete_tracked_messages(
     *,
     tracked_messages,
 ) -> None:
-    from englishbot.telegram_flow_tracking import delete_tracked_messages
+    from englishbot.telegram.flow_tracking import delete_tracked_messages
 
     await delete_tracked_messages(
         context,
@@ -3656,7 +3656,7 @@ async def _delete_tracked_flow_messages(
     flow_id: str,
     tag: str,
 ) -> None:
-    from englishbot.telegram_flow_tracking import delete_tracked_flow_messages
+    from englishbot.telegram.flow_tracking import delete_tracked_flow_messages
 
     await delete_tracked_flow_messages(
         context,
@@ -3671,7 +3671,7 @@ async def _ensure_chat_menu_message(
     message,
     user,
 ) -> None:
-    from englishbot.telegram_flow_tracking import ensure_chat_menu_message
+    from englishbot.telegram.flow_tracking import ensure_chat_menu_message
 
     await ensure_chat_menu_message(
         context,
@@ -3685,7 +3685,7 @@ async def _delete_message_if_possible(
     *,
     message,
 ) -> None:
-    from englishbot.telegram_flow_tracking import delete_message_if_possible
+    from englishbot.telegram.flow_tracking import delete_message_if_possible
 
     await delete_message_if_possible(
         context,
@@ -3694,7 +3694,7 @@ async def _delete_message_if_possible(
 
 
 def _tracked_messages_except_source_message(*, tracked_messages, message) -> list:
-    from englishbot.telegram_flow_tracking import tracked_messages_except_source_message
+    from englishbot.telegram.flow_tracking import tracked_messages_except_source_message
 
     return tracked_messages_except_source_message(
         tracked_messages=tracked_messages,
@@ -3710,7 +3710,7 @@ def _track_flow_message(
     message,
     fallback_chat_id: int | None = None,
 ) -> None:
-    from englishbot.telegram_flow_tracking import track_flow_message
+    from englishbot.telegram.flow_tracking import track_flow_message
 
     track_flow_message(
         context,
@@ -3722,13 +3722,13 @@ def _track_flow_message(
 
 
 def _published_word_edit_flow_id(*, user_id: int) -> str:
-    from englishbot.telegram_flow_tracking import published_word_edit_flow_id
+    from englishbot.telegram.flow_tracking import published_word_edit_flow_id
 
     return published_word_edit_flow_id(user_id=user_id)
 
 
 def _tts_voice_flow_id(*, user_id: int) -> str:
-    from englishbot.telegram_flow_tracking import tts_voice_flow_id
+    from englishbot.telegram.flow_tracking import tts_voice_flow_id
 
     return tts_voice_flow_id(user_id=user_id)
 
@@ -3740,7 +3740,7 @@ async def _reply_voice_replacing_previous_tts(
     message,
     voice,
 ):
-    from englishbot.telegram_flow_tracking import reply_voice_replacing_previous_tts
+    from englishbot.telegram.flow_tracking import reply_voice_replacing_previous_tts
 
     return await reply_voice_replacing_previous_tts(
         context=context,
