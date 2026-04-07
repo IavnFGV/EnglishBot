@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+
+from telegram.error import BadRequest
+from telegram.ext import ContextTypes
+
+
+logger = logging.getLogger(__name__)
+
+EXPECTED_USER_INPUT_STATE_KEY = "expected_user_input_state"
+
+
+@dataclass(frozen=True, slots=True)
+class TelegramExpectedInputPrompt:
+    chat_id: int
+    message_id: int
+
+
+def remember_expected_user_input(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int | None,
+    message_id: int | None,
+) -> None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return
+    if chat_id is None or message_id is None:
+        return
+    user_data[EXPECTED_USER_INPUT_STATE_KEY] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+    }
+
+
+def clear_expected_user_input(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return
+    user_data.pop(EXPECTED_USER_INPUT_STATE_KEY, None)
+
+
+def get_expected_user_input_prompt(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> TelegramExpectedInputPrompt | None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return None
+    stored = user_data.get(EXPECTED_USER_INPUT_STATE_KEY)
+    if not isinstance(stored, dict):
+        return None
+    chat_id = stored.get("chat_id")
+    message_id = stored.get("message_id")
+    if not isinstance(chat_id, int) or not isinstance(message_id, int):
+        return None
+    return TelegramExpectedInputPrompt(chat_id=chat_id, message_id=message_id)
+
+
+async def edit_expected_user_input_prompt(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    text: str,
+    reply_markup,
+) -> bool:
+    prompt = get_expected_user_input_prompt(context)
+    if prompt is None:
+        return False
+    bot = getattr(context, "bot", None)
+    if bot is None:
+        return False
+    try:
+        await bot.edit_message_text(
+            chat_id=prompt.chat_id,
+            message_id=prompt.message_id,
+            text=text,
+            reply_markup=reply_markup,
+        )
+    except BadRequest as error:
+        if "message is not modified" in str(error).lower():
+            return True
+        logger.debug(
+            "Failed to edit expected-input prompt chat_id=%s message_id=%s",
+            prompt.chat_id,
+            prompt.message_id,
+            exc_info=True,
+        )
+        return False
+    return True

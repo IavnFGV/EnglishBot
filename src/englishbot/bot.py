@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
-from telegram.error import BadRequest, NetworkError, RetryAfter
+from telegram.error import NetworkError, RetryAfter
 from telegram.ext import (
     Application,
     ContextTypes,
@@ -212,7 +212,6 @@ _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
 _GOAL_AWAITING_TARGET_TEXT = "awaiting_goal_target_text"
 _ADMIN_GOAL_AWAITING_TARGET_TEXT = "awaiting_admin_goal_target_text"
 _ADMIN_GOAL_AWAITING_DEADLINE_TEXT = "awaiting_admin_goal_deadline_text"
-_EXPECTED_USER_INPUT_STATE_KEY = "expected_user_input_state"
 _IMAGE_REVIEW_STEP_TAG = "image_review_step"
 _IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
 _PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
@@ -1573,16 +1572,19 @@ def _remember_expected_user_input(
     chat_id: int | None,
     message_id: int | None,
 ) -> None:
-    if chat_id is None or message_id is None:
-        return
-    _set_user_data(context, _EXPECTED_USER_INPUT_STATE_KEY, {
-        "chat_id": chat_id,
-        "message_id": message_id,
-    })
+    from englishbot.telegram.interaction import remember_expected_user_input
+
+    remember_expected_user_input(
+        context,
+        chat_id=chat_id,
+        message_id=message_id,
+    )
 
 
 def _clear_expected_user_input(context: ContextTypes.DEFAULT_TYPE) -> None:
-    _pop_user_data(context, _EXPECTED_USER_INPUT_STATE_KEY, default=None)
+    from englishbot.telegram.interaction import clear_expected_user_input
+
+    clear_expected_user_input(context)
 
 
 async def _edit_expected_user_input_prompt(
@@ -1591,26 +1593,13 @@ async def _edit_expected_user_input_prompt(
     text: str,
     reply_markup,
 ) -> bool:
-    stored = _optional_user_data(context, _EXPECTED_USER_INPUT_STATE_KEY)
-    if not isinstance(stored, dict):
-        return False
-    chat_id = stored.get("chat_id")
-    message_id = stored.get("message_id")
-    if not isinstance(chat_id, int) or not isinstance(message_id, int):
-        return False
-    try:
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=text,
-            reply_markup=reply_markup,
-        )
-    except BadRequest as error:
-        if "message is not modified" in str(error).lower():
-            return True
-        logger.debug("Failed to edit stored goal prompt message", exc_info=True)
-        return False
-    return True
+    from englishbot.telegram.interaction import edit_expected_user_input_prompt
+
+    return await edit_expected_user_input_prompt(
+        context,
+        text=text,
+        reply_markup=reply_markup,
+    )
 
 
 def _known_assignment_users(

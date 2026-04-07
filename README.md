@@ -213,6 +213,7 @@ The application layer is split into clear responsibilities:
 More details are in `ARCHITECTURE.md` and `docs/homework-progress.md`.
 The admin Telegram Web App MVP is documented in `docs/telegram-webapp-admin.md`.
 The `1.0.0` scope and release-surface policy are documented in `docs/1.0.0-plan.md`.
+Project-reading shortcuts live in `docs/repo-map.md`, `docs/telegram-runtime-map.md`, and `docs/bot-py-map.md`.
 
 ## Optional TTS Service
 
