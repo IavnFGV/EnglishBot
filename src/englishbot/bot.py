@@ -149,6 +149,14 @@ from englishbot.presentation.telegram_ui_text import (
     telegram_ui_text,
 )
 from englishbot.telegram.buttons import InlineKeyboardButton
+from englishbot.telegram.interaction import ASSIGNMENT_PROGRESS_TAG as _INTERACTION_ASSIGNMENT_PROGRESS_TAG
+from englishbot.telegram.interaction import CHAT_MENU_TAG as _INTERACTION_CHAT_MENU_TAG
+from englishbot.telegram.interaction import IMAGE_REVIEW_CONTEXT_TAG as _INTERACTION_IMAGE_REVIEW_CONTEXT_TAG
+from englishbot.telegram.interaction import IMAGE_REVIEW_STEP_TAG as _INTERACTION_IMAGE_REVIEW_STEP_TAG
+from englishbot.telegram.interaction import PUBLISHED_WORD_EDIT_TAG as _INTERACTION_PUBLISHED_WORD_EDIT_TAG
+from englishbot.telegram.interaction import TRAINING_FEEDBACK_TAG as _INTERACTION_TRAINING_FEEDBACK_TAG
+from englishbot.telegram.interaction import TRAINING_QUESTION_TAG as _INTERACTION_TRAINING_QUESTION_TAG
+from englishbot.telegram.interaction import TTS_VOICE_TAG as _INTERACTION_TTS_VOICE_TAG
 from englishbot.telegram.answer_handlers import (
     choice_answer_handler as telegram_choice_answer_handler,
     hard_skip_handler as telegram_hard_skip_handler,
@@ -212,14 +220,14 @@ _PUBLISHED_WORD_AWAITING_EDIT_TEXT = "awaiting_published_word_edit_text"
 _GOAL_AWAITING_TARGET_TEXT = "awaiting_goal_target_text"
 _ADMIN_GOAL_AWAITING_TARGET_TEXT = "awaiting_admin_goal_target_text"
 _ADMIN_GOAL_AWAITING_DEADLINE_TEXT = "awaiting_admin_goal_deadline_text"
-_IMAGE_REVIEW_STEP_TAG = "image_review_step"
-_IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
-_PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
-_TRAINING_QUESTION_TAG = "training_question"
-_TRAINING_FEEDBACK_TAG = "training_feedback"
-_TTS_VOICE_TAG = "tts_voice"
-_ASSIGNMENT_PROGRESS_TAG = "assignment_progress"
-_CHAT_MENU_TAG = "chat_menu"
+_IMAGE_REVIEW_STEP_TAG = _INTERACTION_IMAGE_REVIEW_STEP_TAG
+_IMAGE_REVIEW_CONTEXT_TAG = _INTERACTION_IMAGE_REVIEW_CONTEXT_TAG
+_PUBLISHED_WORD_EDIT_TAG = _INTERACTION_PUBLISHED_WORD_EDIT_TAG
+_TRAINING_QUESTION_TAG = _INTERACTION_TRAINING_QUESTION_TAG
+_TRAINING_FEEDBACK_TAG = _INTERACTION_TRAINING_FEEDBACK_TAG
+_TTS_VOICE_TAG = _INTERACTION_TTS_VOICE_TAG
+_ASSIGNMENT_PROGRESS_TAG = _INTERACTION_ASSIGNMENT_PROGRESS_TAG
+_CHAT_MENU_TAG = _INTERACTION_CHAT_MENU_TAG
 _NOTIFICATION_DISMISS_CALLBACK = "notification:dismiss"
 _TELEGRAM_UI_LANGUAGE_KEY = "telegram_ui_language"
 _GAME_STATE_KEY = "game_mode_state"

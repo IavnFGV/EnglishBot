@@ -7,7 +7,15 @@ import pytest
 from telegram.error import BadRequest
 
 from englishbot.telegram.interaction import (
+    ASSIGNMENT_PROGRESS_TAG,
+    CHAT_MENU_TAG,
+    IMAGE_REVIEW_CONTEXT_TAG,
+    IMAGE_REVIEW_STEP_TAG,
+    PUBLISHED_WORD_EDIT_TAG,
+    TRAINING_FEEDBACK_TAG,
+    TRAINING_QUESTION_TAG,
     TelegramExpectedInputPrompt,
+    TTS_VOICE_TAG,
     chat_menu_interaction_id,
     clear_expected_user_input,
     edit_expected_user_input_prompt,
@@ -37,6 +45,17 @@ def test_named_interaction_ids_are_stable() -> None:
     assert chat_menu_interaction_id(user_id=7) == "chat-menu:7"
     assert published_word_edit_interaction_id(user_id=7) == "published-word-edit:7"
     assert tts_voice_interaction_id(user_id=7) == "tts-voice:7"
+
+
+def test_named_interaction_tags_are_stable() -> None:
+    assert IMAGE_REVIEW_STEP_TAG == "image_review_step"
+    assert IMAGE_REVIEW_CONTEXT_TAG == "image_review_context"
+    assert PUBLISHED_WORD_EDIT_TAG == "published_word_edit"
+    assert TRAINING_QUESTION_TAG == "training_question"
+    assert TRAINING_FEEDBACK_TAG == "training_feedback"
+    assert TTS_VOICE_TAG == "tts_voice"
+    assert ASSIGNMENT_PROGRESS_TAG == "assignment_progress"
+    assert CHAT_MENU_TAG == "chat_menu"
 
 
 def test_clear_expected_user_input_prompt() -> None:

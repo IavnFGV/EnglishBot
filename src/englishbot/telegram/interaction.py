@@ -10,6 +10,14 @@ from telegram.ext import ContextTypes
 logger = logging.getLogger(__name__)
 
 EXPECTED_USER_INPUT_STATE_KEY = "expected_user_input_state"
+IMAGE_REVIEW_STEP_TAG = "image_review_step"
+IMAGE_REVIEW_CONTEXT_TAG = "image_review_context"
+PUBLISHED_WORD_EDIT_TAG = "published_word_edit"
+TRAINING_QUESTION_TAG = "training_question"
+TRAINING_FEEDBACK_TAG = "training_feedback"
+TTS_VOICE_TAG = "tts_voice"
+ASSIGNMENT_PROGRESS_TAG = "assignment_progress"
+CHAT_MENU_TAG = "chat_menu"
 
 
 @dataclass(frozen=True, slots=True)
