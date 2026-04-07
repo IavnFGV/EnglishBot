@@ -7,6 +7,8 @@ ENV_FILE="${ENV_FILE:-${SHARED_DIR}/.env}"
 ACME_DIR="${ACME_DIR:-${SHARED_DIR}/nginx/acme}"
 CERT_LINK_DIR="${CERT_LINK_DIR:-${SHARED_DIR}/nginx/certs}"
 NGINX_SERVICE_NAME="${NGINX_SERVICE_NAME:-englishbot-nginx}"
+CORE_COMPOSE_FILE="${CORE_COMPOSE_FILE:-docker-compose.yml}"
+OPTIONAL_COMPOSE_FILE="${OPTIONAL_COMPOSE_FILE:-docker-compose.optional.yml}"
 WEB_APP_BASE_URL="${WEB_APP_BASE_URL:-}"
 DOMAIN="${1:-}"
 EMAIL="${CERTBOT_EMAIL:-}"
@@ -50,7 +52,7 @@ mkdir -p "${CERT_LINK_DIR}"
 cd "${APP_DIR}"
 
 echo "==> Starting or refreshing runtime containers"
-docker compose up -d --build --force-recreate
+docker compose -f "${CORE_COMPOSE_FILE}" -f "${OPTIONAL_COMPOSE_FILE}" up -d --build --force-recreate englishbot-webapp englishbot-nginx
 
 echo "==> Requesting Let's Encrypt certificate for ${DOMAIN}"
 sudo certbot certonly \
@@ -74,6 +76,6 @@ ln -sfn "${FULLCHAIN_SOURCE}" "${CERT_LINK_DIR}/fullchain.pem"
 ln -sfn "${PRIVKEY_SOURCE}" "${CERT_LINK_DIR}/privkey.pem"
 
 echo "==> Restarting ${NGINX_SERVICE_NAME}"
-docker compose restart "${NGINX_SERVICE_NAME}"
+docker compose -f "${CORE_COMPOSE_FILE}" -f "${OPTIONAL_COMPOSE_FILE}" restart "${NGINX_SERVICE_NAME}"
 
 echo "==> Certificate is active for https://${DOMAIN}"

@@ -801,10 +801,10 @@ default path is intentionally lightweight.
 
 What it does:
 
-- supports three devcontainer profiles: `cpu`, `gpu`, and `noai`
+- supports one default devcontainer plus optional `cpu` and `gpu` AI profiles
 - installs Ollama only when profile build arg `OLLAMA_INSTALL=1`
 - installs ComfyUI only when profile build arg `COMFYUI_INSTALL=1`
-- installs Python extras per profile through `PYTHON_EXTRAS` (`dev,llm` for `cpu/gpu`, `dev` for `noai`)
+- installs Python extras per profile through `PYTHON_EXTRAS` (`dev,llm` for `cpu/gpu`, `dev` for the default no-AI profile)
 - reuses pip cache through a named Docker volume mounted to `/home/vscode/.cache/pip`
 
 Simplified rule for `1.0.0` work:
@@ -814,9 +814,9 @@ Simplified rule for `1.0.0` work:
 
 Configuration files:
 
+- `.devcontainer/devcontainer.json`
 - `.devcontainer/devcontainer.cpu.json`
 - `.devcontainer/devcontainer.gpu.json`
-- `.devcontainer/devcontainer.noai.json`
 - `.devcontainer/local-ai.on.env`
 - `.devcontainer/ollama.env`
 - `.devcontainer/comfyui.env`
@@ -833,16 +833,34 @@ Switch profiles:
 ```bash
 bash scripts/switch-devcontainer-profile.sh cpu
 bash scripts/switch-devcontainer-profile.sh gpu
-bash scripts/switch-devcontainer-profile.sh noai
+bash scripts/switch-devcontainer-profile.sh default
 ```
 
 Switch local AI services:
 
 ```bash
-The default active profile in `.devcontainer/devcontainer.json` is the `noai`
-profile for lightweight WSL and non-GPU setups.
+The default active profile in `.devcontainer/devcontainer.json` is the lightweight
+no-AI profile for WSL and non-GPU setups.
 The `cpu` and `gpu` profiles explicitly opt into local AI startup through
 `.devcontainer/local-ai.on.env`.
+
+## Docker Runtime Surface
+
+The Docker runtime is now split into:
+
+- `docker-compose.yml`
+  core bot runtime only
+- `docker-compose.optional.yml`
+  optional `webapp`, `tts`, and `nginx` services
+
+That means:
+
+- `docker compose up -d --build` starts only the Telegram bot
+- optional HTTP services start explicitly with:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.optional.yml up -d --build
+```
 
 For local image reranking, the devcontainer Ollama presets default to the vision model `qwen2.5vl:7b`. This is intended for batch-style tasks such as choosing the best Pixabay candidate from a small set of previews, not for heavy multimodal chat workloads.
 

@@ -53,6 +53,7 @@ def test_production_dockerfile_installs_bot_runtime_and_demo_content() -> None:
     assert "python -m pip install -r /tmp/requirements.txt" in dockerfile
     assert "python -m pip install --no-deps ." in dockerfile
     assert "COPY content/demo ./content/demo" in dockerfile
+    assert 'optional-dependencies", {}).get("llm"' not in dockerfile
     assert 'CMD ["python", "-m", "englishbot"]' in dockerfile
 
 
@@ -85,11 +86,22 @@ def test_docker_compose_mounts_persistent_runtime_directories() -> None:
     assert "/srv/englishbot/shared/backups/db-versioned:/app/backups/db-versioned" in compose
     assert "/srv/englishbot/shared/logs:/app/logs" in compose
     assert "/srv/englishbot/shared/content/custom:/app/content/custom" in compose
+    assert "englishbot-webapp:" not in compose
+    assert "englishbot-nginx:" not in compose
+    assert "englishbot-tts:" not in compose
+
+
+def test_optional_docker_compose_contains_webapp_tts_and_nginx_services() -> None:
+    compose = Path("docker-compose.optional.yml").read_text(encoding="utf-8")
+
+    assert "englishbot-webapp:" in compose
     assert "englishbot-webapp:" in compose
     assert 'command: ["python", "-m", "englishbot.webapp"]' in compose
     assert "WEB_APP_HOST: 0.0.0.0" in compose
     assert "WEB_APP_PORT: 8080" in compose
     assert 'expose:' in compose
+    assert "englishbot-tts:" in compose
+    assert "dockerfile: Dockerfile.tts" in compose
     assert 'englishbot-nginx:' in compose
     assert 'image: nginx:1.27-alpine' in compose
     assert './deploy/nginx/englishbot-webapp.conf.template:/etc/nginx/templates/englishbot-webapp.conf.template:ro' in compose
@@ -189,10 +201,12 @@ def test_issue_webapp_cert_script_requests_certificate_and_restarts_nginx() -> N
     assert "grep '^WEB_APP_BASE_URL='" in script
     assert 'certbot certonly \\' in script
     assert '--webroot \\' in script
-    assert 'docker compose up -d --build --force-recreate' in script
+    assert 'CORE_COMPOSE_FILE="${CORE_COMPOSE_FILE:-docker-compose.yml}"' in script
+    assert 'OPTIONAL_COMPOSE_FILE="${OPTIONAL_COMPOSE_FILE:-docker-compose.optional.yml}"' in script
+    assert 'docker compose -f "${CORE_COMPOSE_FILE}" -f "${OPTIONAL_COMPOSE_FILE}" up -d --build --force-recreate englishbot-webapp englishbot-nginx' in script
     assert 'ln -sfn "${FULLCHAIN_SOURCE}" "${CERT_LINK_DIR}/fullchain.pem"' in script
     assert 'ln -sfn "${PRIVKEY_SOURCE}" "${CERT_LINK_DIR}/privkey.pem"' in script
-    assert 'docker compose restart "${NGINX_SERVICE_NAME}"' in script
+    assert 'docker compose -f "${CORE_COMPOSE_FILE}" -f "${OPTIONAL_COMPOSE_FILE}" restart "${NGINX_SERVICE_NAME}"' in script
 
 
 def test_server_rollback_script_supports_previous_or_explicit_deploy_tag() -> None:

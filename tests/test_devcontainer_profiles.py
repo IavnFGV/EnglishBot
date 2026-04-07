@@ -1,16 +1,16 @@
 from pathlib import Path
 
 
-def test_switch_devcontainer_profile_supports_noai() -> None:
+def test_switch_devcontainer_profile_supports_default_profile() -> None:
     script = Path("scripts/switch-devcontainer-profile.sh").read_text(encoding="utf-8")
 
-    assert 'noai)' in script
-    assert 'devcontainer.noai.json' in script
-    assert 'Usage: $0 [cpu|gpu|noai]' in script
+    assert 'default)' in script
+    assert 'devcontainer.default.json' in script
+    assert 'Usage: $0 [default|cpu|gpu]' in script
 
 
-def test_noai_devcontainer_disables_local_ai_build_and_startup() -> None:
-    config = Path(".devcontainer/devcontainer.noai.json").read_text(encoding="utf-8")
+def test_default_devcontainer_disables_local_ai_build_and_startup() -> None:
+    config = Path(".devcontainer/devcontainer.default.json").read_text(encoding="utf-8")
 
     assert '"OLLAMA_INSTALL": "0"' in config
     assert '"COMFYUI_INSTALL": "0"' in config
@@ -36,7 +36,7 @@ def test_all_devcontainer_profiles_mount_host_ssh_directory_read_only() -> None:
         ".devcontainer/devcontainer.json",
         ".devcontainer/devcontainer.cpu.json",
         ".devcontainer/devcontainer.gpu.json",
-        ".devcontainer/devcontainer.noai.json",
+        ".devcontainer/devcontainer.default.json",
     ):
         config = Path(path).read_text(encoding="utf-8")
         assert expected_mount in config

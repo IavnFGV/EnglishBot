@@ -5,7 +5,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 devcontainer_dir="$repo_root/.devcontainer"
 
-profile="${1:-cpu}"
+profile="${1:-default}"
 
 case "$profile" in
   cpu)
@@ -14,11 +14,11 @@ case "$profile" in
   gpu)
     cp "$devcontainer_dir/devcontainer.gpu.json" "$devcontainer_dir/devcontainer.json"
     ;;
-  noai)
-    cp "$devcontainer_dir/devcontainer.noai.json" "$devcontainer_dir/devcontainer.json"
+  default)
+    cp "$devcontainer_dir/devcontainer.default.json" "$devcontainer_dir/devcontainer.json"
     ;;
   *)
-    echo "Usage: $0 [cpu|gpu|noai]" >&2
+    echo "Usage: $0 [default|cpu|gpu]" >&2
     exit 1
     ;;
 esac
