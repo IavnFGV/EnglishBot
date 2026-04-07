@@ -35,6 +35,7 @@ from englishbot.telegram.flow_tracking import (
     delete_message_if_possible,
     ensure_chat_menu_message,
 )
+from englishbot.telegram import editor_runtime as editor_rt
 from englishbot.telegram import runtime as tg_runtime
 
 
@@ -302,7 +303,7 @@ async def add_words_start_handler(
             tg_runtime.tg("no_permission_add_words", context=context, user=user)
         )
         return
-    existing_flow = tg_runtime.active_word_flow_for_user(user.id, context)
+    existing_flow = editor_rt.active_word_flow_for_user(user.id, context)
     if existing_flow is not None:
         await message.reply_text(
             tg_runtime.tg("active_add_words_flow_exists", context=context, user=user)
@@ -328,7 +329,7 @@ async def add_words_cancel_handler(
     user = update.effective_user
     if message is None or user is None:
         return
-    tg_runtime.clear_active_word_flow(user.id, context)
+    editor_rt.clear_active_word_flow(user.id, context)
     clear_add_words_text_interaction(context)
     await message.reply_text(
         tg_runtime.tg("add_words_flow_cancelled", context=context, user=user),
@@ -350,13 +351,13 @@ async def add_words_cancel_callback_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = tg_runtime.active_word_flow_for_user(user.id, context)
+    flow = editor_rt.active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(
             tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
         )
         return
-    tg_runtime.clear_active_word_flow(user.id, context)
+    editor_rt.clear_active_word_flow(user.id, context)
     clear_add_words_text_interaction(context)
     await query.edit_message_text(
         tg_runtime.tg("add_words_flow_cancelled", context=context, user=user)
@@ -469,7 +470,7 @@ async def add_words_text_handler(
         review_interaction = get_image_review_text_edit_interaction(context)
         review_flow_id = review_interaction.flow_id if review_interaction is not None else None
         review_item_id = review_interaction.item_id if review_interaction is not None else None
-        review_flow = tg_runtime.get_active_image_review(context).execute(user_id=user.id)
+        review_flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
         if (
             review_flow is None
             or review_flow.flow_id != review_flow_id
@@ -495,7 +496,7 @@ async def add_words_text_handler(
         )
         try:
             updated_flow = await asyncio.to_thread(
-                bot_module._update_image_review_prompt(context).execute,
+                editor_rt.update_image_review_prompt(context).execute,
                 user_id=user.id,
                 flow_id=review_flow.flow_id,
                 item_id=review_item_id,
@@ -534,7 +535,7 @@ async def add_words_text_handler(
         review_interaction = get_image_review_text_edit_interaction(context)
         review_flow_id = review_interaction.flow_id if review_interaction is not None else None
         review_item_id = review_interaction.item_id if review_interaction is not None else None
-        review_flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
+        review_flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
         if (
             review_flow is None
             or review_flow.flow_id != review_flow_id
@@ -560,7 +561,7 @@ async def add_words_text_handler(
         )
         try:
             updated_flow = await asyncio.to_thread(
-                bot_module._search_image_review_candidates(context).execute,
+                editor_rt.search_image_review_candidates(context).execute,
                 user_id=user.id,
                 flow_id=review_flow.flow_id,
                 query=message.text,
@@ -594,7 +595,7 @@ async def add_words_text_handler(
                 )
             ).text
         )
-        await bot_module._send_image_review_step(message, context, updated_flow)
+        await tg_runtime.send_image_review_step(message, context, updated_flow)
         return
     if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_PHOTO:
         await message.reply_text(
@@ -604,14 +605,14 @@ async def add_words_text_handler(
     if words_flow_mode == bot_module._ADD_WORDS_AWAITING_EDIT_TEXT:
         draft_edit_interaction = get_add_words_draft_edit_interaction(context)
         active_flow_id = draft_edit_interaction.flow_id if draft_edit_interaction is not None else None
-        flow = bot_module._active_word_flow_for_user(user.id, context)
+        flow = editor_rt.active_word_flow_for_user(user.id, context)
         if flow is None or flow.flow_id != active_flow_id:
             clear_add_words_draft_edit_interaction(context)
             await message.reply_text(
                 bot_module._tg("add_words_flow_inactive", context=context, user=user)
             )
             return
-        flow = bot_module._apply_add_words_edit(context).execute(
+        flow = editor_rt.apply_add_words_edit(context).execute(
             user_id=user.id,
             flow_id=flow.flow_id,
             edited_text=message.text,
@@ -624,7 +625,7 @@ async def add_words_text_handler(
             context=context,
             user=user,
         )
-        preview_message_id = bot_module._get_preview_message_id(user.id, context)
+        preview_message_id = editor_rt.get_preview_message_id(user.id, context)
         await message.reply_text(
             f"{bot_module._tg('draft_updated_from_text', context=context, user=user)}\n\n{preview_view.text}",
             reply_markup=preview_view.reply_markup,
@@ -672,7 +673,7 @@ async def add_words_text_handler(
     )
     try:
         flow = await asyncio.to_thread(
-            bot_module._start_add_words_flow(context).execute,
+            editor_rt.start_add_words_flow(context).execute,
             user_id=user.id,
             raw_text=message.text,
         )
@@ -696,13 +697,13 @@ async def add_words_text_handler(
         stop_event.set()
         await heartbeat_task
     clear_add_words_text_interaction(context)
-    failure_message = bot_module._draft_failure_message(flow.draft_result)
+    failure_message = editor_rt.draft_failure_message(flow.draft_result)
     if failure_message is not None:
         await status_message.edit_text(build_status_view(text=failure_message).text)
         return
     await status_message.edit_text(
         build_status_view(
-            text=bot_module._draft_status_text(flow.draft_result)
+            text=editor_rt.draft_status_text(flow.draft_result)
         ).text
     )
     preview_view = _draft_review_view(
@@ -713,7 +714,7 @@ async def add_words_text_handler(
         user=user,
     )
     preview_message = await send_telegram_view(message, preview_view)
-    bot_module._set_preview_message_id(user.id, preview_message.message_id, context)
+    editor_rt.set_preview_message_id(user.id, preview_message.message_id, context)
 
 
 async def add_words_edit_text_handler(
@@ -728,7 +729,7 @@ async def add_words_edit_text_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._active_word_flow_for_user(user.id, context)
+    flow = editor_rt.active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(
             bot_module._tg("add_words_flow_inactive", context=context, user=user)
@@ -752,7 +753,7 @@ async def add_words_show_json_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._active_word_flow_for_user(user.id, context)
+    flow = editor_rt.active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(
             bot_module._tg("add_words_flow_inactive", context=context, user=user)
@@ -778,18 +779,18 @@ async def add_words_regenerate_draft_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._active_word_flow_for_user(user.id, context)
+    flow = editor_rt.active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(
-            bot_module._tg("add_words_flow_inactive", context=context, user=user)
+            tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
         )
         return
     if not bot_module._smart_parsing_available(context):
         await edit_telegram_text_view(
             query,
             build_status_view(
-                text=bot_module._tg(
-                    "smart_parsing_unavailable",
+            text=tg_runtime.tg(
+                "smart_parsing_unavailable",
                     context=context,
                     user=user,
                 )
@@ -799,7 +800,7 @@ async def add_words_regenerate_draft_handler(
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg("re_recognizing_draft", context=context, user=user)
+            text=tg_runtime.tg("re_recognizing_draft", context=context, user=user)
         ),
     )
     stop_event = asyncio.Event()
@@ -812,7 +813,7 @@ async def add_words_regenerate_draft_handler(
     )
     try:
         flow = await asyncio.to_thread(
-            bot_module._regenerate_add_words_draft(context).execute,
+            editor_rt.regenerate_add_words_draft(context).execute,
             user_id=user.id,
             flow_id=flow.flow_id,
         )
@@ -858,10 +859,10 @@ async def add_words_publish_without_images_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._active_word_flow_for_user(user.id, context)
+    flow = editor_rt.active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(
-            bot_module._tg("add_words_flow_inactive", context=context, user=user)
+            tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
         )
         return
     result = flow.draft_result
@@ -883,25 +884,25 @@ async def add_words_publish_without_images_handler(
         "Validated items: "
         f"{len(result.draft.vocabulary_items)}/{len(result.draft.vocabulary_items)}"
     )
-    approved = bot_module._approve_add_words_draft(context).execute(
+    approved = editor_rt.approve_add_words_draft(context).execute(
         user_id=user.id,
         flow_id=flow.flow_id,
     )
     finalized = approved.import_result
     if not finalized.validation.is_valid or finalized.canonicalization is None:
         await query.edit_message_text(
-            bot_module._tg("draft_finalization_failed", context=context, user=user)
+            tg_runtime.tg("draft_finalization_failed", context=context, user=user)
         )
         return
     topic_id = approved.published_topic_id
-    bot_module._reload_training_service(context)
-    bot_module._preview_message_ids(context).pop(user.id, None)
+    tg_runtime.reload_training_service(context)
+    editor_rt.preview_message_ids(context).pop(user.id, None)
     await query.edit_message_text(
-        bot_module._tg(
+        tg_runtime.tg(
             "draft_approved_published",
             context=context,
             user=user,
-            destination=bot_module._publish_destination_text(
+            destination=tg_runtime.publish_destination_text(
                 context,
                 output_path=approved.output_path,
                 topic_id=topic_id,
@@ -922,10 +923,10 @@ async def add_words_approve_draft_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._active_word_flow_for_user(user.id, context)
+    flow = editor_rt.active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(
-            bot_module._tg("add_words_flow_inactive", context=context, user=user)
+            tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
         )
         return
     result = flow.draft_result
@@ -945,49 +946,49 @@ async def add_words_approve_draft_handler(
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg("saving_approved_draft", context=context, user=user)
+            text=tg_runtime.tg("saving_approved_draft", context=context, user=user)
         ),
     )
     saved_flow = await asyncio.to_thread(
-        bot_module._save_approved_add_words_draft(context).execute,
+        editor_rt.save_approved_add_words_draft(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg(
+            text=tg_runtime.tg(
                 "approved_draft_saved_generating_prompts",
                 context=context,
                 user=user,
-                checkpoint=bot_module._draft_checkpoint_text(saved_flow),
+                checkpoint=editor_rt.draft_checkpoint_text(saved_flow),
             )
         ),
     )
     prompt_flow = await asyncio.to_thread(
-        bot_module._generate_add_words_image_prompts(context).execute,
+        editor_rt.generate_add_words_image_prompts(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg(
+            text=tg_runtime.tg(
                 "image_prompts_generated_starting_review",
                 context=context,
                 user=user,
-                checkpoint=bot_module._draft_checkpoint_text(prompt_flow),
-                prompt_count=bot_module._draft_prompt_count(prompt_flow.draft_result) or 0,
+                checkpoint=editor_rt.draft_checkpoint_text(prompt_flow),
+                prompt_count=editor_rt.draft_prompt_count(prompt_flow.draft_result) or 0,
             )
         ),
     )
     image_review_flow = await asyncio.to_thread(
-        bot_module._start_image_review(context).execute,
+        editor_rt.start_image_review(context).execute,
         user_id=user.id,
         draft=prompt_flow.draft_result.draft,
     )
     await asyncio.to_thread(
-        bot_module._mark_add_words_image_review_started(context).execute,
+        editor_rt.mark_add_words_image_review_started(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
         image_review_flow_id=image_review_flow.flow_id,
@@ -995,16 +996,16 @@ async def add_words_approve_draft_handler(
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg(
+            text=tg_runtime.tg(
                 "image_prompts_generated_saved_continue_review",
                 context=context,
                 user=user,
-                checkpoint=bot_module._draft_checkpoint_text(prompt_flow),
-                prompt_count=bot_module._draft_prompt_count(prompt_flow.draft_result) or 0,
+                checkpoint=editor_rt.draft_checkpoint_text(prompt_flow),
+                prompt_count=editor_rt.draft_prompt_count(prompt_flow.draft_result) or 0,
             )
         ),
     )
-    await bot_module._send_image_review_step(query.message, context, image_review_flow, user=user)
+    await tg_runtime.send_image_review_step(query.message, context, image_review_flow, user=user)
 
 
 async def add_words_approve_auto_images_handler(
@@ -1017,16 +1018,14 @@ async def add_words_approve_auto_images_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._active_word_flow_for_user(user.id, context)
+    flow = editor_rt.active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(
-            bot_module._tg("add_words_flow_inactive", context=context, user=user)
+            tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
         )
         return
     if not bot_module._local_image_generation_available(context):
-        await query.edit_message_text(
-            bot_module._tg("auto_images_unavailable", context=context, user=user)
-        )
+        await query.edit_message_text(tg_runtime.tg("auto_images_unavailable", context=context, user=user))
         return
     result = flow.draft_result
     if not result.validation.is_valid:
@@ -1046,44 +1045,44 @@ async def add_words_approve_auto_images_handler(
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg("saving_approved_draft", context=context, user=user)
+            text=tg_runtime.tg("saving_approved_draft", context=context, user=user)
         ),
     )
     saved_flow = await asyncio.to_thread(
-        bot_module._save_approved_add_words_draft(context).execute,
+        editor_rt.save_approved_add_words_draft(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg(
+            text=tg_runtime.tg(
                 "approved_draft_saved_generating_prompts",
                 context=context,
                 user=user,
-                checkpoint=bot_module._draft_checkpoint_text(saved_flow),
+                checkpoint=editor_rt.draft_checkpoint_text(saved_flow),
             )
         ),
     )
     prompt_flow = await asyncio.to_thread(
-        bot_module._generate_add_words_image_prompts(context).execute,
+        editor_rt.generate_add_words_image_prompts(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg(
+            text=tg_runtime.tg(
                 "image_prompts_generated_publishing",
                 context=context,
                 user=user,
-                checkpoint=bot_module._draft_checkpoint_text(prompt_flow),
-                prompt_count=bot_module._draft_prompt_count(prompt_flow.draft_result) or 0,
+                checkpoint=editor_rt.draft_checkpoint_text(prompt_flow),
+                prompt_count=editor_rt.draft_prompt_count(prompt_flow.draft_result) or 0,
             )
         ),
     )
     approved = await asyncio.to_thread(
-        bot_module._approve_add_words_draft(context).execute,
+        editor_rt.approve_add_words_draft(context).execute,
         user_id=user.id,
         flow_id=flow.flow_id,
     )
@@ -1123,11 +1122,11 @@ async def add_words_approve_auto_images_handler(
             await edit_telegram_text_view(
                 query,
                 build_status_view(
-                    text=bot_module._tg(
+                    text=tg_runtime.tg(
                         "content_pack_published_generating_images",
                         context=context,
                         user=user,
-                        destination=bot_module._publish_destination_text(
+                        destination=tg_runtime.publish_destination_text(
                             context,
                             output_path=approved.output_path,
                             topic_id=approved.published_topic_id,
@@ -1154,8 +1153,8 @@ async def add_words_approve_auto_images_handler(
     finally:
         await progress_queue.put(None)
         await progress_task
-    bot_module._reload_training_service(context)
-    bot_module._preview_message_ids(context).pop(user.id, None)
+    tg_runtime.reload_training_service(context)
+    editor_rt.preview_message_ids(context).pop(user.id, None)
     enriched_pack = enrichment_result.content_pack
     topic = enriched_pack.get("topic", {})
     topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else topic_id
@@ -1169,11 +1168,11 @@ async def add_words_approve_auto_images_handler(
     if generation_metadata is not None and generation_metadata.status_messages:
         generation_notice = "\n" + "\n".join(generation_metadata.status_messages)
     await query.edit_message_text(
-        bot_module._tg(
+        tg_runtime.tg(
             "draft_approved_images_generated",
             context=context,
             user=user,
-            destination=bot_module._publish_destination_text(
+            destination=tg_runtime.publish_destination_text(
                 context,
                 output_path=approved.output_path,
                 topic_id=topic_id,
@@ -1183,9 +1182,9 @@ async def add_words_approve_auto_images_handler(
         + generation_notice,
         reply_markup=(
             ui_published_images_menu_keyboard(
-                tg=bot_module._tg,
+                tg=tg_runtime.tg,
                 topic_id=topic_id,
-                language=bot_module._telegram_ui_language(context, user),
+                language=tg_runtime.telegram_ui_language(context, user),
             )
             if topic_id
             else None

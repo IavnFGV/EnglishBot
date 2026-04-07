@@ -26,6 +26,7 @@ from englishbot.telegram.interaction import (
     get_image_review_photo_attach_interaction,
     start_image_review_photo_attach_interaction,
 )
+from englishbot.telegram import editor_runtime as editor_rt
 from englishbot.telegram import runtime as tg_runtime
 
 
@@ -144,7 +145,7 @@ async def published_image_item_handler(
         )
         return
     review_flow = await asyncio.to_thread(
-        bot_module._start_published_word_image_review(context).execute,
+        editor_rt.start_published_word_image_review(context).execute,
         user_id=user.id,
         topic_id=resolved_topic_id,
         item_id=item_id,
@@ -169,7 +170,7 @@ async def image_review_generate_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = tg_runtime.get_active_image_review(context).execute(user_id=user.id)
+    flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
             tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
@@ -227,7 +228,7 @@ async def image_review_search_handler(
     )
     try:
         updated_flow = await asyncio.to_thread(
-            bot_module._search_image_review_candidates(context).execute,
+            editor_rt.search_image_review_candidates(context).execute,
             user_id=user.id,
             flow_id=flow_id,
             query=flow.current_item.search_query,
@@ -272,7 +273,7 @@ async def image_review_next_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = tg_runtime.get_active_image_review(context).execute(user_id=user.id)
+    flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
             tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
@@ -294,7 +295,7 @@ async def image_review_next_handler(
     )
     try:
         updated_flow = await asyncio.to_thread(
-            bot_module._load_next_image_review_candidates(context).execute,
+            editor_rt.load_next_image_review_candidates(context).execute,
             user_id=user.id,
             flow_id=flow_id,
         )
@@ -338,7 +339,7 @@ async def image_review_previous_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = tg_runtime.get_active_image_review(context).execute(user_id=user.id)
+    flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
             tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
@@ -360,7 +361,7 @@ async def image_review_previous_handler(
     )
     try:
         updated_flow = await asyncio.to_thread(
-            bot_module._load_previous_image_review_candidates(context).execute,
+            editor_rt.load_previous_image_review_candidates(context).execute,
             user_id=user.id,
             flow_id=flow_id,
         )
@@ -404,21 +405,21 @@ async def image_review_pick_handler(
         return
     await query.answer()
     _, _, flow_id, candidate_index = query.data.split(":")
-    flow = tg_runtime.get_active_image_review(context).execute(user_id=user.id)
+    flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
             tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
         )
         return
     updated_flow = await asyncio.to_thread(
-        bot_module._select_image_review_candidate(context).execute,
+        editor_rt.select_image_review_candidate(context).execute,
         user_id=user.id,
         flow_id=flow_id,
         item_id=flow.current_item.item_id,
         candidate_index=int(candidate_index),
     )
     if updated_flow.completed:
-        if bot_module._image_review_origin(updated_flow) == "published_word_edit":
+        if editor_rt.image_review_origin(updated_flow) == "published_word_edit":
             await finish_image_review_interaction(
                 context,
                 flow_id=flow_id,
@@ -426,7 +427,7 @@ async def image_review_pick_handler(
                 source_message=query.message,
             )
             await asyncio.to_thread(
-                tg_runtime.publish_image_review(context).execute,
+                editor_rt.publish_image_review(context).execute,
                 user_id=user.id,
                 flow_id=flow_id,
                 output_path=None,
@@ -450,7 +451,7 @@ async def image_review_pick_handler(
                 ),
             )
             return
-        output_path = tg_runtime.resolve_image_review_publish_output_path(updated_flow)
+        output_path = editor_rt.resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
         await finish_image_review_interaction(
@@ -460,7 +461,7 @@ async def image_review_pick_handler(
             source_message=query.message,
         )
         await asyncio.to_thread(
-            tg_runtime.publish_image_review(context).execute,
+            editor_rt.publish_image_review(context).execute,
             user_id=user.id,
             flow_id=flow_id,
             output_path=output_path,
@@ -496,27 +497,27 @@ async def image_review_skip_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = tg_runtime.get_active_image_review(context).execute(user_id=user.id)
+    flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
             tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
         )
         return
     updated_flow = await asyncio.to_thread(
-        bot_module._skip_image_review_item(context).execute,
+        editor_rt.skip_image_review_item(context).execute,
         user_id=user.id,
         flow_id=flow_id,
         item_id=flow.current_item.item_id,
     )
     if updated_flow.completed:
-        if bot_module._image_review_origin(updated_flow) == "published_word_edit":
+        if editor_rt.image_review_origin(updated_flow) == "published_word_edit":
             await finish_image_review_interaction(
                 context,
                 flow_id=flow_id,
                 keep_source_message=True,
                 source_message=query.message,
             )
-            bot_module._cancel_image_review(context).execute(user_id=user.id)
+            editor_rt.cancel_image_review(context).execute(user_id=user.id)
             topic = updated_flow.content_pack.get("topic", {})
             topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
             raw_items = updated_flow.content_pack.get("vocabulary_items", [])
@@ -530,7 +531,7 @@ async def image_review_skip_handler(
                 ),
             )
             return
-        output_path = tg_runtime.resolve_image_review_publish_output_path(updated_flow)
+        output_path = editor_rt.resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
         await finish_image_review_interaction(
@@ -540,7 +541,7 @@ async def image_review_skip_handler(
             source_message=query.message,
         )
         await asyncio.to_thread(
-            tg_runtime.publish_image_review(context).execute,
+            editor_rt.publish_image_review(context).execute,
             user_id=user.id,
             flow_id=flow_id,
             output_path=output_path,
@@ -578,7 +579,7 @@ async def image_review_edit_prompt_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
+    flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
             bot_module._tg("image_review_flow_inactive", context=context, user=user)
@@ -600,7 +601,7 @@ async def image_review_edit_prompt_handler(
         mode=bot_module._IMAGE_REVIEW_AWAITING_PROMPT_TEXT,
         flow_id=flow_id,
         item_id=flow.current_item.item_id,
-        chat_id=bot_module._message_chat_id(prompt_message),
+        chat_id=tg_runtime.message_chat_id(prompt_message),
         message_id=getattr(prompt_message, "message_id", None),
     )
     await send_telegram_view(query.message, current_prompt_view)
@@ -618,7 +619,7 @@ async def image_review_edit_search_query_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
+    flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
             bot_module._tg("image_review_flow_inactive", context=context, user=user)
@@ -641,7 +642,7 @@ async def image_review_edit_search_query_handler(
         mode=bot_module._IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT,
         flow_id=flow_id,
         item_id=flow.current_item.item_id,
-        chat_id=bot_module._message_chat_id(prompt_message),
+        chat_id=tg_runtime.message_chat_id(prompt_message),
         message_id=getattr(prompt_message, "message_id", None),
     )
     await send_telegram_view(query.message, current_query_view)
@@ -657,7 +658,7 @@ async def image_review_show_json_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
+    flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
             bot_module._tg("image_review_flow_inactive", context=context, user=user)
@@ -698,7 +699,7 @@ async def image_review_attach_photo_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
+    flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
             bot_module._tg("image_review_flow_inactive", context=context, user=user)
@@ -731,7 +732,7 @@ async def image_review_photo_handler(
         return
     flow_id = attach_interaction.flow_id
     item_id = attach_interaction.item_id
-    flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
+    flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if (
         flow is None
         or flow.flow_id != flow_id
@@ -740,19 +741,19 @@ async def image_review_photo_handler(
     ):
         clear_image_review_photo_attach_interaction(context)
         await message.reply_text(
-            bot_module._tg("image_review_task_inactive", context=context, user=user)
+            tg_runtime.tg("image_review_task_inactive", context=context, user=user)
         )
         return
     clear_image_review_photo_attach_interaction(context)
     status_message = await message.reply_text(
-        bot_module._tg("saving_uploaded_photo", context=context, user=user)
+        tg_runtime.tg("saving_uploaded_photo", context=context, user=user)
     )
     photo = message.photo[-1]
     telegram_file = await photo.get_file()
     topic = flow.content_pack.get("topic", {})
     topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
     output_path = (
-        bot_module._image_review_assets_dir(context)
+        editor_rt.image_review_assets_dir(context)
         / topic_id
         / "review"
         / f"{item_id}--user-upload.jpg"
@@ -761,7 +762,7 @@ async def image_review_photo_handler(
     await telegram_file.download_to_drive(custom_path=str(output_path))
     image_ref = output_path.as_posix()
     updated_flow = await asyncio.to_thread(
-        bot_module._attach_uploaded_image(context).execute,
+        editor_rt.attach_uploaded_image(context).execute,
         user_id=user.id,
         flow_id=flow_id,
         item_id=item_id,
@@ -770,11 +771,11 @@ async def image_review_photo_handler(
     )
     await status_message.edit_text(
         build_status_view(
-            text=bot_module._tg("uploaded_photo_attached", context=context, user=user)
+            text=tg_runtime.tg("uploaded_photo_attached", context=context, user=user)
         ).text
     )
     if updated_flow.completed:
-        output_path = bot_module._resolve_image_review_publish_output_path(updated_flow)
+        output_path = editor_rt.resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
         await finish_image_review_interaction(
@@ -782,19 +783,19 @@ async def image_review_photo_handler(
             flow_id=flow_id,
         )
         await asyncio.to_thread(
-            bot_module._publish_image_review(context).execute,
+            editor_rt.publish_image_review(context).execute,
             user_id=user.id,
             flow_id=flow_id,
             output_path=output_path,
         )
-        bot_module._reload_training_service(context)
-        bot_module._clear_active_word_flow(user.id, context)
+        tg_runtime.reload_training_service(context)
+        tg_runtime.clear_active_word_flow(user.id, context)
         await message.reply_text(
-            bot_module._tg(
+            tg_runtime.tg(
                 "image_review_completed_published",
                 context=context,
                 user=user,
-                destination=bot_module._publish_destination_text(
+                destination=tg_runtime.publish_destination_text(
                     context,
                     output_path=output_path,
                     topic_id=topic_id,
@@ -802,4 +803,4 @@ async def image_review_photo_handler(
             )
         )
         return
-    await bot_module._send_image_review_step(message, context, updated_flow)
+    await tg_runtime.send_image_review_step(message, context, updated_flow)

@@ -25,6 +25,7 @@ Those are expected to live in [src/englishbot/telegram/interaction.py](/workspac
 The same direction now applies to shared runtime lookups: feature modules should prefer [src/englishbot/telegram/runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/runtime.py) for common `tg`, `service`, `content_store`, and UI-language access instead of treating `bot.py` as a global service locator.
 That migration is now underway in the heaviest Telegram feature modules too, especially homework-admin and editor/image-review flows.
 At this point the biggest remaining `bot_module._...` clusters in those modules are no longer generic runtime lookups, but more domain-specific cross-flow helpers such as active draft/image-review flow operations and editor publish orchestration.
+That editor-specific migration has now started moving into [src/englishbot/telegram/editor_runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_runtime.py), so the next reductions in `bot.py` should come from that layer rather than from more generic runtime-access cleanup.
 
 ## Main Sections
 

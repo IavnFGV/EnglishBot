@@ -53,6 +53,8 @@ This is the main runtime dependency container for Telegram handlers.
   Telegram interaction lifecycle helpers such as expected-input prompt state, named interaction ids and tags, lesson, chat-menu, TTS, image-review, and assignment-progress interaction policies, plus editor prompt/draft/image-review subflow state
 - [src/englishbot/telegram/runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/runtime.py)
   thin access layer for shared Telegram runtime dependencies such as `tg`, `service`, `content_store`, UI language, and small `bot_data` or `user_data` helpers
+- [src/englishbot/telegram/editor_runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_runtime.py)
+  thin editor-specific orchestration layer for active draft flows, image-review use cases, preview/checkpoint helpers, and publish-related helper calls
 
 ## Telegram Interaction Layer
 
@@ -83,6 +85,7 @@ Tracked-message and notification operations sit next to that layer, not inside i
 - [src/englishbot/telegram/flow_tracking.py](/workspaces/EnglishBot/src/englishbot/telegram/flow_tracking.py) owns message deletion, replacement, registry updates, and flow cleanup helpers
 - [src/englishbot/telegram/notifications.py](/workspaces/EnglishBot/src/englishbot/telegram/notifications.py) owns pending-notification storage, delivery, reminders, and dismiss behavior
 - [src/englishbot/telegram/runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/runtime.py) owns the thin “ask runtime for X” surface so Telegram feature modules do not need to reach into `bot.py` for every shared dependency
+- [src/englishbot/telegram/editor_runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_runtime.py) owns the thin “ask editor flow for X” surface so add-words and image-review flows do not need to pull these orchestration helpers from `bot.py` directly
 
 This runtime layer is now the preferred way to access shared Telegram runtime dependencies in larger feature modules such as:
 
