@@ -26,6 +26,12 @@ class TelegramExpectedInputPrompt:
     message_id: int
 
 
+@dataclass(frozen=True, slots=True)
+class ImageReviewPhotoAttachInteraction:
+    flow_id: str
+    item_id: str
+
+
 def lesson_interaction_id(*, session_id: str) -> str:
     return session_id
 
@@ -40,6 +46,16 @@ def published_word_edit_interaction_id(*, user_id: int) -> str:
 
 def tts_voice_interaction_id(*, user_id: int) -> str:
     return f"tts-voice:{user_id}"
+
+
+def assignment_progress_interaction_id(
+    *,
+    user_id: int,
+    kind_value: str,
+    goal_id: str | None = None,
+) -> str:
+    suffix = f":{goal_id}" if goal_id else ""
+    return f"assignment-progress:{user_id}:{kind_value}{suffix}"
 
 
 async def replace_chat_menu_message(
@@ -86,6 +102,133 @@ async def replace_tts_voice_message(
         fallback_chat_id=bot_module._message_chat_id(message),
     )
     return sent_message
+
+
+async def replace_image_review_context_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    flow_id: str,
+    message,
+    fallback_chat_id: int | None = None,
+) -> None:
+    await replace_flow_message(
+        context,
+        flow_id=flow_id,
+        tag=IMAGE_REVIEW_CONTEXT_TAG,
+        message=message,
+        fallback_chat_id=fallback_chat_id,
+    )
+
+
+async def replace_flow_messages(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    flow_id: str,
+    tag: str,
+    messages: list,
+    fallback_chat_id: int | None = None,
+) -> None:
+    from englishbot.telegram.flow_tracking import (
+        delete_tracked_flow_messages,
+        track_flow_message,
+    )
+
+    await delete_tracked_flow_messages(
+        context,
+        flow_id=flow_id,
+        tag=tag,
+    )
+    for message in messages:
+        track_flow_message(
+            context,
+            flow_id=flow_id,
+            tag=tag,
+            message=message,
+            fallback_chat_id=fallback_chat_id,
+        )
+
+
+async def replace_image_review_step_messages(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    flow_id: str,
+    messages: list,
+    fallback_chat_id: int | None = None,
+) -> None:
+    await replace_flow_messages(
+        context,
+        flow_id=flow_id,
+        tag=IMAGE_REVIEW_STEP_TAG,
+        messages=messages,
+        fallback_chat_id=fallback_chat_id,
+    )
+
+
+async def finish_image_review_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    flow_id: str,
+    keep_source_message: bool = False,
+    source_message=None,
+) -> None:
+    from englishbot.telegram.flow_tracking import (
+        delete_tracked_messages,
+        tracked_messages_except_source_message,
+    )
+    import englishbot.bot as bot_module
+
+    registry = bot_module._telegram_flow_messages(context)
+    if registry is None:
+        return
+    tracked_messages = registry.list(flow_id=flow_id)
+    if keep_source_message and source_message is not None:
+        tracked_messages = tracked_messages_except_source_message(
+            tracked_messages=tracked_messages,
+            message=source_message,
+        )
+    await delete_tracked_messages(
+        context,
+        tracked_messages=tracked_messages,
+    )
+    registry.clear(flow_id=flow_id)
+
+
+def start_image_review_photo_attach_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    flow_id: str,
+    item_id: str,
+) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data["words_flow_mode"] = "awaiting_image_review_photo"
+        user_data["image_review_flow_id"] = flow_id
+        user_data["image_review_item_id"] = item_id
+
+
+def get_image_review_photo_attach_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> ImageReviewPhotoAttachInteraction | None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return None
+    if user_data.get("words_flow_mode") != "awaiting_image_review_photo":
+        return None
+    flow_id = user_data.get("image_review_flow_id")
+    item_id = user_data.get("image_review_item_id")
+    if not isinstance(flow_id, str) or not flow_id:
+        return None
+    if not isinstance(item_id, str) or not item_id:
+        return None
+    return ImageReviewPhotoAttachInteraction(flow_id=flow_id, item_id=item_id)
+
+
+def clear_image_review_photo_attach_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data.pop("words_flow_mode", None)
+        user_data.pop("image_review_flow_id", None)
+        user_data.pop("image_review_item_id", None)
 
 
 def start_image_review_text_edit_interaction(

@@ -164,8 +164,13 @@ def assignment_progress_flow_id(
     kind,
     goal_id: str | None = None,
 ) -> str:
-    suffix = f":{goal_id}" if goal_id else ""
-    return f"assignment-progress:{user_id}:{kind.value}{suffix}"
+    from englishbot.telegram.interaction import assignment_progress_interaction_id
+
+    return assignment_progress_interaction_id(
+        user_id=user_id,
+        kind_value=kind.value,
+        goal_id=goal_id,
+    )
 
 
 def assignment_periods_for_kind(kind) -> tuple:

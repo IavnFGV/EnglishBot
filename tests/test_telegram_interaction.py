@@ -11,29 +11,37 @@ from englishbot.telegram.interaction import (
     CHAT_MENU_TAG,
     IMAGE_REVIEW_CONTEXT_TAG,
     IMAGE_REVIEW_STEP_TAG,
+    ImageReviewPhotoAttachInteraction,
     PUBLISHED_WORD_EDIT_TAG,
     TRAINING_FEEDBACK_TAG,
     TRAINING_QUESTION_TAG,
     TelegramExpectedInputPrompt,
     TTS_VOICE_TAG,
+    assignment_progress_interaction_id,
     chat_menu_interaction_id,
     clear_admin_goal_prompt_interaction,
     clear_expected_user_input,
+    clear_image_review_photo_attach_interaction,
     clear_image_review_text_edit_interaction,
     edit_expected_user_input_prompt,
     finish_interaction,
+    finish_image_review_interaction,
     finish_lesson_interaction,
     finish_published_word_edit_interaction,
+    get_image_review_photo_attach_interaction,
     get_expected_user_input_prompt,
     lesson_interaction_id,
     published_word_edit_interaction_id,
     replace_chat_menu_message,
+    replace_image_review_context_message,
+    replace_image_review_step_messages,
     replace_lesson_feedback_message,
     replace_lesson_question_message,
     replace_tts_voice_message,
     remember_expected_user_input,
     replace_flow_message,
     start_admin_goal_prompt_interaction,
+    start_image_review_photo_attach_interaction,
     start_image_review_text_edit_interaction,
     start_published_word_edit_interaction,
     tts_voice_interaction_id,
@@ -56,6 +64,10 @@ def test_named_interaction_ids_are_stable() -> None:
     assert chat_menu_interaction_id(user_id=7) == "chat-menu:7"
     assert published_word_edit_interaction_id(user_id=7) == "published-word-edit:7"
     assert tts_voice_interaction_id(user_id=7) == "tts-voice:7"
+    assert (
+        assignment_progress_interaction_id(user_id=7, kind_value="homework", goal_id="goal-1")
+        == "assignment-progress:7:homework:goal-1"
+    )
 
 
 def test_named_interaction_tags_are_stable() -> None:
@@ -105,6 +117,25 @@ def test_start_and_clear_image_review_text_edit_interaction() -> None:
     assert context.user_data.get("image_review_flow_id") is None
     assert context.user_data.get("image_review_item_id") is None
     assert get_expected_user_input_prompt(context) is None
+
+
+def test_start_get_and_clear_image_review_photo_attach_interaction() -> None:
+    context = SimpleNamespace(user_data={})
+
+    start_image_review_photo_attach_interaction(
+        context,
+        flow_id="review-1",
+        item_id="dragon",
+    )
+
+    assert get_image_review_photo_attach_interaction(context) == ImageReviewPhotoAttachInteraction(
+        flow_id="review-1",
+        item_id="dragon",
+    )
+
+    clear_image_review_photo_attach_interaction(context)
+
+    assert get_image_review_photo_attach_interaction(context) is None
 
 
 def test_start_and_clear_admin_goal_prompt_interaction() -> None:
@@ -205,8 +236,12 @@ class _FakeRegistry:
     def __init__(self) -> None:
         self.items: list[_FakeTracked] = []
 
-    def list(self, *, flow_id: str, tag: str):
-        return [item for item in self.items if item.flow_id == flow_id and item.tag == tag]
+    def list(self, *, flow_id: str, tag: str | None = None):
+        return [
+            item
+            for item in self.items
+            if item.flow_id == flow_id and (tag is None or item.tag == tag)
+        ]
 
     def track(self, *, flow_id: str, chat_id: int, message_id: int, tag: str) -> None:
         self.items.append(
@@ -408,6 +443,52 @@ async def test_replace_tts_voice_message_uses_named_tts_flow() -> None:
     assert [(item.flow_id, item.tag, item.message_id) for item in registry.items] == [
         ("tts-voice:7", "tts_voice", 20)
     ]
+
+
+@pytest.mark.anyio
+async def test_image_review_interaction_helpers_replace_and_finish_tracked_messages() -> None:
+    registry = _FakeRegistry()
+    registry.track(flow_id="review-1", chat_id=10, message_id=19, tag="image_review_context")
+    registry.track(flow_id="review-1", chat_id=10, message_id=30, tag="image_review_step")
+    registry.track(flow_id="review-1", chat_id=10, message_id=31, tag="image_review_step")
+    deleted: list[tuple[int, int]] = []
+
+    async def fake_delete_message(*, chat_id: int, message_id: int) -> None:
+        deleted.append((chat_id, message_id))
+
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(bot_data={"telegram_flow_message_repository": registry}),
+        bot=SimpleNamespace(delete_message=fake_delete_message),
+    )
+
+    await replace_image_review_context_message(
+        context,
+        flow_id="review-1",
+        message=SimpleNamespace(chat_id=10, message_id=20),
+        fallback_chat_id=10,
+    )
+    await replace_image_review_step_messages(
+        context,
+        flow_id="review-1",
+        messages=[
+            SimpleNamespace(chat_id=10, message_id=40),
+            SimpleNamespace(chat_id=10, message_id=41),
+        ],
+        fallback_chat_id=10,
+    )
+
+    assert deleted == [(10, 19), (10, 30), (10, 31)]
+    assert [(item.tag, item.message_id) for item in registry.items] == [
+        ("image_review_context", 20),
+        ("image_review_step", 40),
+        ("image_review_step", 41),
+    ]
+
+    await finish_image_review_interaction(context, flow_id="review-1")
+
+    assert deleted == [(10, 19), (10, 30), (10, 31), (10, 20), (10, 40), (10, 41)]
+    assert registry.items == []
 
 
 @pytest.mark.anyio

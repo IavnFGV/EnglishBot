@@ -297,6 +297,8 @@ async def add_words_text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import finish_published_word_edit_interaction
+
     words_flow_mode = context.user_data.get("words_flow_mode")
     if words_flow_mode not in {
         bot_module._ADD_WORDS_AWAITING_TEXT,
@@ -353,16 +355,10 @@ async def add_words_text_handler(
         context.user_data.pop("words_flow_mode", None)
         context.user_data.pop("published_edit_topic_id", None)
         context.user_data.pop("published_edit_item_id", None)
-        registry = bot_module._telegram_flow_messages(context)
-        flow_id = bot_module._published_word_edit_flow_id(user_id=user.id)
-        if registry is not None:
-            await bot_module._delete_tracked_messages(
-                context,
-                tracked_messages=registry.list(
-                    flow_id=flow_id,
-                    tag=bot_module._PUBLISHED_WORD_EDIT_TAG,
-                ),
-            )
+        await finish_published_word_edit_interaction(
+            context,
+            user_id=user.id,
+        )
         await bot_module._delete_message_if_possible(context, message=message)
         words = bot_module._list_editable_words(context).execute(topic_id=topic_id)
         await message.reply_text(
@@ -384,8 +380,6 @@ async def add_words_text_handler(
                 language=bot_module._telegram_ui_language(context, user),
             ),
         )
-        if registry is not None:
-            registry.clear(flow_id=flow_id, tag=bot_module._PUBLISHED_WORD_EDIT_TAG)
         return
     if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_PROMPT_TEXT:
         from englishbot.telegram.interaction import clear_image_review_text_edit_interaction

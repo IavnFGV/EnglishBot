@@ -12,6 +12,10 @@ from englishbot.presentation.telegram_views import (
     build_image_review_step_view,
     send_telegram_view,
 )
+from englishbot.telegram.interaction import (
+    replace_image_review_context_message,
+    replace_image_review_step_messages,
+)
 
 
 async def prepare_and_send_image_review_step(
@@ -94,15 +98,6 @@ async def send_current_published_image_preview(
     current_item = flow.current_item
     if current_item is None:
         return
-    registry = bot_module._telegram_flow_messages(context)
-    if registry is not None:
-        await bot_module._delete_tracked_messages(
-            context,
-            tracked_messages=registry.list(
-                flow_id=flow.flow_id,
-                tag=bot_module._IMAGE_REVIEW_CONTEXT_TAG,
-            ),
-        )
     fallback_chat_id = bot_module._message_chat_id(message)
     raw_items = flow.content_pack.get("vocabulary_items", [])
     if not isinstance(raw_items, list):
@@ -133,10 +128,9 @@ async def send_current_published_image_preview(
         ),
     )
     preview_message = await send_telegram_view(message, preview_view)
-    bot_module._track_flow_message(
+    await replace_image_review_context_message(
         context,
         flow_id=flow.flow_id,
-        tag=bot_module._IMAGE_REVIEW_CONTEXT_TAG,
         message=preview_message,
         fallback_chat_id=fallback_chat_id,
     )
@@ -162,12 +156,6 @@ async def send_image_review_step(
             )
         )
         return
-    registry = bot_module._telegram_flow_messages(context)
-    tracked_before = (
-        registry.list(flow_id=flow.flow_id, tag=bot_module._IMAGE_REVIEW_STEP_TAG)
-        if registry is not None
-        else []
-    )
     fallback_chat_id = bot_module._message_chat_id(message)
     total_items = len(flow.items)
     current_position = flow.current_index + 1
@@ -195,13 +183,7 @@ async def send_image_review_step(
         user=resolved_user,
     )
     summary_message = await send_telegram_view(message, summary_view)
-    bot_module._track_flow_message(
-        context,
-        flow_id=flow.flow_id,
-        tag=bot_module._IMAGE_REVIEW_STEP_TAG,
-        message=summary_message,
-        fallback_chat_id=fallback_chat_id,
-    )
+    step_messages = [summary_message]
     if current_item.candidates:
         strip_path = build_image_review_candidate_strip(
             flow=flow,
@@ -210,14 +192,13 @@ async def send_image_review_step(
         )
         with strip_path.open("rb") as photo_file:
             sent_photo = await message.reply_photo(photo=photo_file)
-        bot_module._track_flow_message(
-            context,
-            flow_id=flow.flow_id,
-            tag=bot_module._IMAGE_REVIEW_STEP_TAG,
-            message=sent_photo,
-            fallback_chat_id=fallback_chat_id,
-        )
-    await bot_module._delete_tracked_messages(context, tracked_messages=tracked_before)
+        step_messages.append(sent_photo)
+    await replace_image_review_step_messages(
+        context,
+        flow_id=flow.flow_id,
+        messages=step_messages,
+        fallback_chat_id=fallback_chat_id,
+    )
 
 
 def build_image_review_candidate_strip(*, flow, item_id: str, candidate_paths: list[Path]) -> Path:

@@ -14,6 +14,12 @@ from englishbot.presentation.telegram_views import (
     edit_telegram_text_view,
     send_telegram_view,
 )
+from englishbot.telegram.interaction import (
+    clear_image_review_photo_attach_interaction,
+    finish_image_review_interaction,
+    get_image_review_photo_attach_interaction,
+    start_image_review_photo_attach_interaction,
+)
 
 
 async def published_images_menu_handler(
@@ -401,14 +407,11 @@ async def image_review_pick_handler(
     )
     if updated_flow.completed:
         if bot_module._image_review_origin(updated_flow) == "published_word_edit":
-            registry = bot_module._telegram_flow_messages(context)
-            tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-            await bot_module._delete_tracked_messages(
+            await finish_image_review_interaction(
                 context,
-                tracked_messages=bot_module._tracked_messages_except_source_message(
-                    tracked_messages=tracked_messages,
-                    message=query.message,
-                ),
+                flow_id=flow_id,
+                keep_source_message=True,
+                source_message=query.message,
             )
             await asyncio.to_thread(
                 bot_module._publish_image_review(context).execute,
@@ -433,20 +436,15 @@ async def image_review_pick_handler(
                     language=bot_module._telegram_ui_language(context, user),
                 ),
             )
-            if registry is not None:
-                registry.clear(flow_id=flow_id)
             return
         output_path = bot_module._resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-        registry = bot_module._telegram_flow_messages(context)
-        tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-        await bot_module._delete_tracked_messages(
+        await finish_image_review_interaction(
             context,
-            tracked_messages=bot_module._tracked_messages_except_source_message(
-                tracked_messages=tracked_messages,
-                message=query.message,
-            ),
+            flow_id=flow_id,
+            keep_source_message=True,
+            source_message=query.message,
         )
         await asyncio.to_thread(
             bot_module._publish_image_review(context).execute,
@@ -468,8 +466,6 @@ async def image_review_pick_handler(
                 ),
             )
         )
-        if registry is not None:
-            registry.clear(flow_id=flow_id)
         return
     await query.edit_message_text(
         bot_module._tg("image_selected", context=context, user=user)
@@ -501,14 +497,11 @@ async def image_review_skip_handler(
     )
     if updated_flow.completed:
         if bot_module._image_review_origin(updated_flow) == "published_word_edit":
-            registry = bot_module._telegram_flow_messages(context)
-            tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-            await bot_module._delete_tracked_messages(
+            await finish_image_review_interaction(
                 context,
-                tracked_messages=bot_module._tracked_messages_except_source_message(
-                    tracked_messages=tracked_messages,
-                    message=query.message,
-                ),
+                flow_id=flow_id,
+                keep_source_message=True,
+                source_message=query.message,
             )
             bot_module._cancel_image_review(context).execute(user_id=user.id)
             topic = updated_flow.content_pack.get("topic", {})
@@ -522,20 +515,15 @@ async def image_review_skip_handler(
                     language=bot_module._telegram_ui_language(context, user),
                 ),
             )
-            if registry is not None:
-                registry.clear(flow_id=flow_id)
             return
         output_path = bot_module._resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-        registry = bot_module._telegram_flow_messages(context)
-        tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-        await bot_module._delete_tracked_messages(
+        await finish_image_review_interaction(
             context,
-            tracked_messages=bot_module._tracked_messages_except_source_message(
-                tracked_messages=tracked_messages,
-                message=query.message,
-            ),
+            flow_id=flow_id,
+            keep_source_message=True,
+            source_message=query.message,
         )
         await asyncio.to_thread(
             bot_module._publish_image_review(context).execute,
@@ -557,8 +545,6 @@ async def image_review_skip_handler(
                 ),
             )
         )
-        if registry is not None:
-            registry.clear(flow_id=flow_id)
         return
     await query.edit_message_text(
         bot_module._tg("image_skipped", context=context, user=user)
@@ -704,9 +690,11 @@ async def image_review_attach_photo_handler(
             bot_module._tg("image_review_flow_inactive", context=context, user=user)
         )
         return
-    context.user_data["words_flow_mode"] = bot_module._IMAGE_REVIEW_AWAITING_PHOTO
-    context.user_data["image_review_flow_id"] = flow_id
-    context.user_data["image_review_item_id"] = flow.current_item.item_id
+    start_image_review_photo_attach_interaction(
+        context,
+        flow_id=flow_id,
+        item_id=flow.current_item.item_id,
+    )
     await send_telegram_view(
         query.message,
         build_image_review_attach_photo_view(
@@ -720,14 +708,15 @@ async def image_review_photo_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    if context.user_data.get("words_flow_mode") != bot_module._IMAGE_REVIEW_AWAITING_PHOTO:
-        return
     message = update.effective_message
     user = update.effective_user
     if message is None or user is None or not getattr(message, "photo", None):
         return
-    flow_id = context.user_data.get("image_review_flow_id")
-    item_id = context.user_data.get("image_review_item_id")
+    attach_interaction = get_image_review_photo_attach_interaction(context)
+    if attach_interaction is None:
+        return
+    flow_id = attach_interaction.flow_id
+    item_id = attach_interaction.item_id
     flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
     if (
         flow is None
@@ -735,16 +724,12 @@ async def image_review_photo_handler(
         or flow.current_item is None
         or flow.current_item.item_id != item_id
     ):
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("image_review_flow_id", None)
-        context.user_data.pop("image_review_item_id", None)
+        clear_image_review_photo_attach_interaction(context)
         await message.reply_text(
             bot_module._tg("image_review_task_inactive", context=context, user=user)
         )
         return
-    context.user_data.pop("words_flow_mode", None)
-    context.user_data.pop("image_review_flow_id", None)
-    context.user_data.pop("image_review_item_id", None)
+    clear_image_review_photo_attach_interaction(context)
     status_message = await message.reply_text(
         bot_module._tg("saving_uploaded_photo", context=context, user=user)
     )
@@ -778,9 +763,10 @@ async def image_review_photo_handler(
         output_path = bot_module._resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
-        registry = bot_module._telegram_flow_messages(context)
-        tracked_messages = registry.list(flow_id=flow_id) if registry is not None else []
-        await bot_module._delete_tracked_messages(context, tracked_messages=tracked_messages)
+        await finish_image_review_interaction(
+            context,
+            flow_id=flow_id,
+        )
         await asyncio.to_thread(
             bot_module._publish_image_review(context).execute,
             user_id=user.id,
