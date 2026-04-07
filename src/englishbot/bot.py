@@ -2827,34 +2827,17 @@ def _hard_skip_keyboard(
     user,
     session_id: str,
 ) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = [
-        [
-            InlineKeyboardButton(
-                _tg("hard_skip_button", context=context, user=user),
-                callback_data=_hard_skip_callback_data(
-                    context=context,
-                    user_id=int(user.id),
-                    session_id=session_id,
-                ),
-            )
-        ]
-    ]
-    if _tts_service_enabled(context):
-        tts_row = [
-            InlineKeyboardButton(
-                _tg("tts_play_button", context=context, user=user),
-                callback_data="tts:current",
-            )
-        ]
-        if _tts_has_multiple_voices(context):
-            tts_row.append(
-                InlineKeyboardButton(
-                    _tg("tts_voice_menu_button", context=context, user=user),
-                    callback_data="tts:voices",
-                )
-            )
-        rows.append(tts_row)
-    return InlineKeyboardMarkup(rows)
+    from englishbot.telegram.training_markup import hard_skip_keyboard
+
+    return hard_skip_keyboard(
+        context=context,
+        user=user,
+        session_id=session_id,
+        tg=_tg,
+        hard_skip_callback_data=_hard_skip_callback_data,
+        tts_service_enabled=_tts_service_enabled,
+        tts_has_multiple_voices=_tts_has_multiple_voices,
+    )
 
 
 def _tts_buttons(
@@ -2862,20 +2845,14 @@ def _tts_buttons(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> list[InlineKeyboardButton]:
-    row = [
-        InlineKeyboardButton(
-            _tg("tts_play_button", context=context, user=user),
-            callback_data="tts:current",
-        )
-    ]
-    if _tts_has_multiple_voices(context):
-        row.append(
-            InlineKeyboardButton(
-                _tg("tts_voice_menu_button", context=context, user=user),
-                callback_data="tts:voices",
-            )
-        )
-    return row
+    from englishbot.telegram.training_markup import tts_buttons
+
+    return tts_buttons(
+        context=context,
+        user=user,
+        tg=_tg,
+        tts_has_multiple_voices=_tts_has_multiple_voices,
+    )
 
 
 def _question_reply_markup(
@@ -2885,24 +2862,20 @@ def _question_reply_markup(
     context: ContextTypes.DEFAULT_TYPE,
     user,
 ) -> InlineKeyboardMarkup | None:
-    if question.mode is TrainingMode.MEDIUM:
-        state = _get_medium_task_state(context)
-        if state is None or state.session_id != question.session_id or state.item_id != question.item_id:
-            state = _build_medium_task_state(question)
-        return _medium_task_keyboard(state, context=context, user=user)
-    if question.options:
-        rows = [[InlineKeyboardButton(option, callback_data=f"answer:{option}")] for option in question.options]
-        if _tts_service_enabled(context):
-            rows.append(_tts_buttons(context=context, user=user))
-        return InlineKeyboardMarkup(rows)
-    if (
-        user is not None
-        and active_session is not None
-        and active_session.id == question.session_id
-        and question.mode is TrainingMode.HARD
-    ):
-        return _hard_skip_keyboard(context=context, user=user, session_id=question.session_id)
-    return None
+    from englishbot.telegram.training_markup import question_reply_markup
+
+    return question_reply_markup(
+        question,
+        active_session=active_session,
+        context=context,
+        user=user,
+        get_medium_task_state=_get_medium_task_state,
+        build_medium_task_state=_build_medium_task_state,
+        medium_task_keyboard=_medium_task_keyboard,
+        tts_service_enabled=_tts_service_enabled,
+        tts_buttons_builder=_tts_buttons,
+        hard_skip_keyboard_builder=_hard_skip_keyboard,
+    )
 
 
 def _tts_voice_menu_markup(
@@ -2911,28 +2884,17 @@ def _tts_voice_menu_markup(
     user,
     item_id: str,
 ) -> InlineKeyboardMarkup:
-    variants = _tts_voice_variants(context)
-    selected_voice_name = _tts_selected_voice_name(context, item_id=item_id)
-    rows: list[list[InlineKeyboardButton]] = []
-    for index, voice_name in enumerate(variants):
-        prefix = "✓ " if voice_name == selected_voice_name else ""
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"{prefix}{_tts_voice_label(context, user=user, voice_name=voice_name)}",
-                    callback_data=f"tts:voice:{index}",
-                )
-            ]
-        )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                _tg("tts_voice_menu_back_button", context=context, user=user),
-                callback_data="tts:voice:back",
-            )
-        ]
+    from englishbot.telegram.training_markup import tts_voice_menu_markup
+
+    return tts_voice_menu_markup(
+        context=context,
+        user=user,
+        item_id=item_id,
+        tg=_tg,
+        tts_voice_variants=_tts_voice_variants,
+        tts_selected_voice_name=_tts_selected_voice_name,
+        tts_voice_label=_tts_voice_label,
     )
-    return InlineKeyboardMarkup(rows)
 
 
 async def tts_voice_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

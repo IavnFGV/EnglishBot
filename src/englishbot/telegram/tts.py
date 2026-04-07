@@ -7,6 +7,10 @@ from telegram import InputFile, Update
 from telegram.ext import ContextTypes
 
 from englishbot import bot as bot_module
+from englishbot.telegram.training_markup import (
+    question_reply_markup as training_question_reply_markup,
+    tts_voice_menu_markup as training_tts_voice_menu_markup,
+)
 
 
 async def tts_voice_menu_handler(
@@ -31,10 +35,14 @@ async def tts_voice_menu_handler(
         return
     await query.answer()
     await query.edit_message_reply_markup(
-        reply_markup=bot_module._tts_voice_menu_markup(
+        reply_markup=training_tts_voice_menu_markup(
             context=context,
             user=user,
             item_id=current_question.item_id,
+            tg=bot_module._tg,
+            tts_voice_variants=bot_module._tts_voice_variants,
+            tts_selected_voice_name=bot_module._tts_selected_voice_name,
+            tts_voice_label=bot_module._tts_voice_label,
         )
     )
 
@@ -73,11 +81,17 @@ async def tts_voice_select_handler(
     else:
         await query.answer()
     await query.edit_message_reply_markup(
-        reply_markup=bot_module._question_reply_markup(
+        reply_markup=training_question_reply_markup(
             current_question,
             active_session=active_session,
             context=context,
             user=user,
+            get_medium_task_state=bot_module._get_medium_task_state,
+            build_medium_task_state=bot_module._build_medium_task_state,
+            medium_task_keyboard=bot_module._medium_task_keyboard,
+            tts_service_enabled=bot_module._tts_service_enabled,
+            tts_buttons_builder=bot_module._tts_buttons,
+            hard_skip_keyboard_builder=bot_module._hard_skip_keyboard,
         )
     )
 

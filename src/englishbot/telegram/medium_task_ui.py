@@ -12,6 +12,7 @@ from englishbot.telegram.question_delivery import (
     medium_task_is_complete as delivery_medium_task_is_complete,
     medium_task_keyboard as delivery_medium_task_keyboard,
 )
+from englishbot.telegram.training_markup import tts_buttons as training_tts_buttons
 
 
 def clear_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -77,7 +78,12 @@ def medium_task_keyboard(
         context=context,
         user=user,
         tts_service_enabled=bot_module._tts_service_enabled,
-        tts_buttons=bot_module._tts_buttons,
+        tts_buttons=lambda *, context, user: training_tts_buttons(
+            context=context,
+            user=user,
+            tg=bot_module._tg,
+            tts_has_multiple_voices=bot_module._tts_has_multiple_voices,
+        ),
         tg=bot_module._tg,
         inline_keyboard_button_type=InlineKeyboardButton,
     )
@@ -97,7 +103,12 @@ def build_medium_question_view(
         user=user,
         resolve_existing_image_path=bot_module.resolve_existing_image_path,
         tts_service_enabled=bot_module._tts_service_enabled,
-        tts_buttons=bot_module._tts_buttons,
+        tts_buttons=lambda *, context, user: training_tts_buttons(
+            context=context,
+            user=user,
+            tg=bot_module._tg,
+            tts_has_multiple_voices=bot_module._tts_has_multiple_voices,
+        ),
         tg=bot_module._tg,
         inline_keyboard_button_type=InlineKeyboardButton,
     )

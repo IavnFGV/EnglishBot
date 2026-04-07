@@ -77,6 +77,7 @@ Examples:
 The file still owns some cross-cutting Telegram glue:
 
 - callback token wrappers that delegate into [src/englishbot/telegram/callback_tokens.py](/workspaces/EnglishBot/src/englishbot/telegram/callback_tokens.py)
+- training/TTS markup wrappers that delegate into [src/englishbot/telegram/training_markup.py](/workspaces/EnglishBot/src/englishbot/telegram/training_markup.py)
 - message cleanup helpers
 - tracked flow wrappers
 - assignment notification scheduling
