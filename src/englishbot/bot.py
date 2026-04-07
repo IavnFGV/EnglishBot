@@ -3110,6 +3110,11 @@ async def _send_feedback(
     user=None,
     feedback_update: _GoalFeedbackUpdate | None = None,
 ) -> None:
+    from englishbot.telegram.assignment_progress import (
+        assignment_round_progress_view,
+        render_assignment_round_progress_text,
+    )
+
     await delivery_send_feedback(
         message,
         outcome,
@@ -3120,8 +3125,8 @@ async def _send_feedback(
         build_answer_feedback_view=build_answer_feedback_view,
         assignment_kind_from_session=_assignment_kind_from_session,
         assignment_kind_and_goal_id_from_source_tag=_assignment_kind_and_goal_id_from_source_tag,
-        assignment_round_progress_view=_assignment_round_progress_view,
-        render_assignment_round_progress_text=_render_assignment_round_progress_text,
+        assignment_round_progress_view=assignment_round_progress_view,
+        render_assignment_round_progress_text=render_assignment_round_progress_text,
         assignment_round_complete_keyboard=_assignment_round_complete_keyboard,
         telegram_ui_language=_telegram_ui_language,
         compact_assignment_feedback_text=_compact_assignment_feedback_text,

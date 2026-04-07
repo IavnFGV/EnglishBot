@@ -105,6 +105,7 @@ Draft review previews and follow-up editor menus belong to the same rule: editor
 Checkpoint: Telegram feature modules no longer depend on `bot.py` for direct `view/keyboard/status` builders; remaining `bot.py` usage is mostly runtime access, wrapper compatibility, and shared cross-flow glue.
 The same is now true for the common tracked-message and notification helper surface: Telegram feature modules call `flow_tracking` / `notifications` helpers directly instead of routing those operations back through `bot.py`.
 The same is now true for the main editor modules: direct editor runtime, interaction-mode, and tokenized callback work no longer flows through `bot.py`.
+Assignment progress is one step more conservative: the real implementation already lives in [src/englishbot/telegram/assignment_progress.py](/workspaces/EnglishBot/src/englishbot/telegram/assignment_progress.py), but a small bot-level wrapper surface is still intentionally kept because existing bot-handler tests and monkeypatch-based compatibility checks use it directly.
 
 ## Why It Still Feels Big
 
