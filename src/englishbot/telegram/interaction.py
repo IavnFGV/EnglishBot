@@ -36,6 +36,13 @@ class ImageReviewPhotoAttachInteraction:
 
 
 @dataclass(frozen=True, slots=True)
+class ImageReviewTextEditInteraction:
+    mode: str
+    flow_id: str
+    item_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class AddWordsDraftEditInteraction:
     flow_id: str
 
@@ -269,6 +276,11 @@ def clear_image_review_photo_attach_interaction(context: ContextTypes.DEFAULT_TY
         user_data.pop("image_review_item_id", None)
 
 
+def has_active_interaction_mode(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user_data = getattr(context, "user_data", None)
+    return isinstance(user_data, dict) and user_data.get("words_flow_mode") is not None
+
+
 def start_add_words_text_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
     user_data = getattr(context, "user_data", None)
     if isinstance(user_data, dict):
@@ -483,6 +495,27 @@ def start_image_review_text_edit_interaction(
     )
 
 
+def get_image_review_text_edit_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> ImageReviewTextEditInteraction | None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return None
+    mode = user_data.get("words_flow_mode")
+    if mode not in {
+        "awaiting_image_review_prompt_text",
+        "awaiting_image_review_search_query_text",
+    }:
+        return None
+    flow_id = user_data.get("image_review_flow_id")
+    item_id = user_data.get("image_review_item_id")
+    if not isinstance(flow_id, str) or not flow_id:
+        return None
+    if not isinstance(item_id, str) or not item_id:
+        return None
+    return ImageReviewTextEditInteraction(mode=mode, flow_id=flow_id, item_id=item_id)
+
+
 def clear_image_review_text_edit_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
     user_data = getattr(context, "user_data", None)
     if isinstance(user_data, dict):
@@ -514,6 +547,16 @@ def clear_admin_goal_prompt_interaction(context: ContextTypes.DEFAULT_TYPE) -> N
     if isinstance(user_data, dict):
         user_data.pop("words_flow_mode", None)
     clear_expected_user_input(context)
+
+
+def get_admin_goal_prompt_mode(context: ContextTypes.DEFAULT_TYPE) -> str | None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return None
+    mode = user_data.get("words_flow_mode")
+    if mode in {"awaiting_admin_goal_target_text", "awaiting_admin_goal_deadline_text"}:
+        return mode
+    return None
 
 
 async def replace_lesson_question_message(

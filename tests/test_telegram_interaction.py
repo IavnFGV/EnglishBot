@@ -40,10 +40,13 @@ from englishbot.telegram.interaction import (
     finish_lesson_interaction,
     finish_published_word_edit_interaction,
     get_admin_goal_creation_state,
+    get_admin_goal_prompt_mode,
     get_image_review_photo_attach_interaction,
+    get_image_review_text_edit_interaction,
     get_expected_user_input_prompt,
     get_add_words_draft_edit_interaction,
     get_published_word_edit_prompt_interaction,
+    has_active_interaction_mode,
     is_add_words_text_interaction,
     lesson_interaction_id,
     published_word_edit_interaction_id,
@@ -158,6 +161,26 @@ def test_start_and_clear_image_review_text_edit_interaction() -> None:
     assert get_expected_user_input_prompt(context) is None
 
 
+def test_get_image_review_text_edit_interaction_returns_structured_state() -> None:
+    context = SimpleNamespace(user_data={})
+
+    start_image_review_text_edit_interaction(
+        context,
+        mode="awaiting_image_review_prompt_text",
+        flow_id="review-1",
+        item_id="dragon",
+        chat_id=5,
+        message_id=6,
+    )
+
+    interaction = get_image_review_text_edit_interaction(context)
+
+    assert interaction is not None
+    assert interaction.mode == "awaiting_image_review_prompt_text"
+    assert interaction.flow_id == "review-1"
+    assert interaction.item_id == "dragon"
+
+
 def test_start_get_and_clear_image_review_photo_attach_interaction() -> None:
     context = SimpleNamespace(user_data={})
 
@@ -185,6 +208,16 @@ def test_start_and_clear_add_words_text_interaction() -> None:
 
     clear_add_words_text_interaction(context)
     assert is_add_words_text_interaction(context) is False
+
+
+def test_has_active_interaction_mode_reflects_words_flow_mode_state() -> None:
+    context = SimpleNamespace(user_data={})
+
+    assert has_active_interaction_mode(context) is False
+
+    start_add_words_text_interaction(context)
+
+    assert has_active_interaction_mode(context) is True
 
 
 def test_start_get_and_clear_add_words_draft_edit_interaction() -> None:
@@ -247,6 +280,19 @@ def test_start_and_clear_admin_goal_prompt_interaction() -> None:
 
     assert context.user_data.get("words_flow_mode") is None
     assert get_expected_user_input_prompt(context) is None
+
+
+def test_get_admin_goal_prompt_mode_returns_named_mode() -> None:
+    context = SimpleNamespace(user_data={})
+
+    start_admin_goal_prompt_interaction(
+        context,
+        mode="awaiting_admin_goal_deadline_text",
+        chat_id=7,
+        message_id=8,
+    )
+
+    assert get_admin_goal_prompt_mode(context) == "awaiting_admin_goal_deadline_text"
 
 
 def test_start_update_get_and_clear_admin_goal_creation_state() -> None:

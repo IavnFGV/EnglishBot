@@ -3058,11 +3058,13 @@ async def group_text_observer_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import has_active_interaction_mode
+
     if not _is_group_chat(update):
         return
     if _optional_user_data(context, "awaiting_text_answer"):
         return
-    if _optional_user_data(context, "words_flow_mode") is not None:
+    if has_active_interaction_mode(context):
         return
     message = update.effective_message
     user = update.effective_user

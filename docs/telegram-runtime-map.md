@@ -87,6 +87,8 @@ That means new flows should prefer:
 - explicit dataclasses or getter/update/clear helpers for temporary `user_data` state
 
 Avoid introducing new ad hoc `context.user_data["some_flow_mode"]` branches directly inside handlers when the state belongs to a reusable Telegram interaction pattern.
+
+See [docs/telegram-interaction-contract.md](/workspaces/EnglishBot/docs/telegram-interaction-contract.md) for the short implementation rule set we now follow for new Telegram features.
 - [src/englishbot/telegram/tts.py](/workspaces/EnglishBot/src/englishbot/telegram/tts.py)
   learner TTS buttons and current-question audio flow
 

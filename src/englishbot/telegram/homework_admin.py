@@ -475,6 +475,7 @@ async def assign_goal_detail_callback_handler(update: Update, context: ContextTy
 async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from englishbot.telegram.interaction import (
         clear_admin_goal_prompt_interaction,
+        get_admin_goal_prompt_mode,
         update_admin_goal_creation_state,
     )
 
@@ -482,8 +483,10 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user = update.effective_user
     if message is None or message.text is None or user is None:
         return
-    flow_mode = context.user_data.get("words_flow_mode")
-    if flow_mode == bot_module._GOAL_AWAITING_TARGET_TEXT:
+    raw_flow_mode = getattr(getattr(context, "user_data", None), "get", lambda *_args, **_kwargs: None)(
+        "words_flow_mode"
+    )
+    if raw_flow_mode == bot_module._GOAL_AWAITING_TARGET_TEXT:
         bot_module._clear_self_goal_setup_state(context)
         await bot_module.send_telegram_view(
             message,
@@ -497,6 +500,7 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             ),
         )
         return
+    flow_mode = get_admin_goal_prompt_mode(context)
     if flow_mode not in {
         bot_module._ADMIN_GOAL_AWAITING_TARGET_TEXT,
         bot_module._ADMIN_GOAL_AWAITING_DEADLINE_TEXT,

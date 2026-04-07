@@ -9,7 +9,8 @@ If you are new to the project, read files in this order:
 1. [README.md](/workspaces/EnglishBot/README.md)
 2. [docs/1.0.0-plan.md](/workspaces/EnglishBot/docs/1.0.0-plan.md)
 3. [docs/telegram-runtime-map.md](/workspaces/EnglishBot/docs/telegram-runtime-map.md)
-4. [docs/bot-py-map.md](/workspaces/EnglishBot/docs/bot-py-map.md)
+4. [docs/telegram-interaction-contract.md](/workspaces/EnglishBot/docs/telegram-interaction-contract.md)
+5. [docs/bot-py-map.md](/workspaces/EnglishBot/docs/bot-py-map.md)
 
 ## Main Runtime
 

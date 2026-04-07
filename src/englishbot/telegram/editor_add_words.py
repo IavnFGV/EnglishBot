@@ -314,6 +314,7 @@ async def add_words_text_handler(
         clear_published_word_edit_prompt_interaction,
         finish_published_word_edit_interaction,
         get_add_words_draft_edit_interaction,
+        get_image_review_text_edit_interaction,
         get_published_word_edit_prompt_interaction,
     )
 
@@ -398,8 +399,9 @@ async def add_words_text_handler(
     if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_PROMPT_TEXT:
         from englishbot.telegram.interaction import clear_image_review_text_edit_interaction
 
-        review_flow_id = context.user_data.get("image_review_flow_id")
-        review_item_id = context.user_data.get("image_review_item_id")
+        review_interaction = get_image_review_text_edit_interaction(context)
+        review_flow_id = review_interaction.flow_id if review_interaction is not None else None
+        review_item_id = review_interaction.item_id if review_interaction is not None else None
         review_flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
         if (
             review_flow is None
@@ -462,8 +464,9 @@ async def add_words_text_handler(
     if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT:
         from englishbot.telegram.interaction import clear_image_review_text_edit_interaction
 
-        review_flow_id = context.user_data.get("image_review_flow_id")
-        review_item_id = context.user_data.get("image_review_item_id")
+        review_interaction = get_image_review_text_edit_interaction(context)
+        review_flow_id = review_interaction.flow_id if review_interaction is not None else None
+        review_item_id = review_interaction.item_id if review_interaction is not None else None
         review_flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
         if (
             review_flow is None
