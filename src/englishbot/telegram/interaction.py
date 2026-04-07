@@ -88,3 +88,49 @@ async def edit_expected_user_input_prompt(
         )
         return False
     return True
+
+
+async def replace_flow_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    flow_id: str,
+    tag: str,
+    message,
+    fallback_chat_id: int | None = None,
+) -> None:
+    from englishbot.telegram.flow_tracking import (
+        delete_tracked_flow_messages,
+        track_flow_message,
+    )
+
+    await delete_tracked_flow_messages(
+        context,
+        flow_id=flow_id,
+        tag=tag,
+    )
+    track_flow_message(
+        context,
+        flow_id=flow_id,
+        tag=tag,
+        message=message,
+        fallback_chat_id=fallback_chat_id,
+    )
+
+
+async def finish_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    flow_id: str,
+    tags: tuple[str, ...] = (),
+    clear_expected_input_prompt: bool = False,
+) -> None:
+    from englishbot.telegram.flow_tracking import delete_tracked_flow_messages
+
+    for tag in tags:
+        await delete_tracked_flow_messages(
+            context,
+            flow_id=flow_id,
+            tag=tag,
+        )
+    if clear_expected_input_prompt:
+        clear_expected_user_input(context)

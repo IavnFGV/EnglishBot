@@ -186,11 +186,6 @@ async def send_question(
     user = getattr(update, "effective_user", None)
     if message is None:
         return
-    await delete_tracked_flow_messages(
-        context,
-        flow_id=question.session_id,
-        tag=training_question_tag,
-    )
     clear_medium_task_state(context)
     view: TelegramTextView | TelegramPhotoView
     reply_markup = None
@@ -240,7 +235,9 @@ async def send_question(
             context,
             build_medium_task_state(question, message_id=getattr(sent_message, "message_id", None)),
         )
-    track_flow_message(
+    from englishbot.telegram.interaction import replace_flow_message
+
+    await replace_flow_message(
         context,
         flow_id=question.session_id,
         tag=training_question_tag,

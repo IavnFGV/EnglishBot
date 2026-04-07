@@ -60,10 +60,12 @@ async def process_answer(
         record_assignment_activity(context, user_id=user.id)
     active_session_id = getattr(active_session_before_submit, "session_id", None)
     if isinstance(active_session_id, str):
-        await delete_tracked_flow_messages(
+        from englishbot.telegram.interaction import finish_interaction
+
+        await finish_interaction(
             context,
             flow_id=active_session_id,
-            tag=training_question_tag,
+            tags=(training_question_tag,),
         )
     game_state = context.user_data.get("game_mode_state")
     if isinstance(game_state, dict) and game_state.get("active"):
@@ -250,21 +252,23 @@ async def send_feedback(
         text = f"{text}\n\n{assignment_progress_text}"
     flow_id = getattr(active_session, "session_id", None)
     if isinstance(flow_id, str):
-        await delete_tracked_flow_messages(
-            context,
-            flow_id=flow_id,
-            tag=training_feedback_tag,
+        from englishbot.telegram.interaction import replace_flow_message
+
+        sent_message = await message.reply_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode=view.parse_mode,
         )
-    sent_message = await message.reply_text(
-        text,
-        reply_markup=reply_markup,
-        parse_mode=view.parse_mode,
-    )
-    if isinstance(flow_id, str):
-        track_flow_message(
+        await replace_flow_message(
             context,
             flow_id=flow_id,
             tag=training_feedback_tag,
             message=sent_message,
             fallback_chat_id=message_chat_id(message),
         )
+        return
+    await message.reply_text(
+        text,
+        reply_markup=reply_markup,
+        parse_mode=view.parse_mode,
+    )

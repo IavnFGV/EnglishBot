@@ -3,14 +3,17 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+import pytest
 from telegram.error import BadRequest
 
 from englishbot.telegram.interaction import (
     TelegramExpectedInputPrompt,
     clear_expected_user_input,
     edit_expected_user_input_prompt,
+    finish_interaction,
     get_expected_user_input_prompt,
     remember_expected_user_input,
+    replace_flow_message,
 )
 
 
@@ -97,3 +100,93 @@ def test_edit_expected_user_input_prompt_treats_not_modified_as_success() -> Non
     )
 
     assert edited is True
+
+
+class _FakeTracked:
+    def __init__(self, *, flow_id: str, chat_id: int, message_id: int, tag: str) -> None:
+        self.flow_id = flow_id
+        self.chat_id = chat_id
+        self.message_id = message_id
+        self.tag = tag
+
+
+class _FakeRegistry:
+    def __init__(self) -> None:
+        self.items: list[_FakeTracked] = []
+
+    def list(self, *, flow_id: str, tag: str):
+        return [item for item in self.items if item.flow_id == flow_id and item.tag == tag]
+
+    def track(self, *, flow_id: str, chat_id: int, message_id: int, tag: str) -> None:
+        self.items.append(
+            _FakeTracked(flow_id=flow_id, chat_id=chat_id, message_id=message_id, tag=tag)
+        )
+
+    def remove(self, *, flow_id: str, chat_id: int, message_id: int) -> None:
+        self.items = [
+            item
+            for item in self.items
+            if not (
+                item.flow_id == flow_id
+                and item.chat_id == chat_id
+                and item.message_id == message_id
+            )
+        ]
+
+
+@pytest.mark.anyio
+async def test_replace_flow_message_replaces_previous_tracked_message() -> None:
+    registry = _FakeRegistry()
+    registry.track(flow_id="lesson-1", chat_id=10, message_id=20, tag="question")
+    deleted: list[tuple[int, int]] = []
+
+    async def fake_delete_message(*, chat_id: int, message_id: int) -> None:
+        deleted.append((chat_id, message_id))
+
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(bot_data={"telegram_flow_message_repository": registry}),
+        bot=SimpleNamespace(delete_message=fake_delete_message),
+    )
+    message = SimpleNamespace(chat_id=10, message_id=30)
+
+    await replace_flow_message(
+        context,
+        flow_id="lesson-1",
+        tag="question",
+        message=message,
+        fallback_chat_id=10,
+    )
+
+    assert deleted == [(10, 20)]
+    tracked = registry.list(flow_id="lesson-1", tag="question")
+    assert [(item.chat_id, item.message_id) for item in tracked] == [(10, 30)]
+
+
+@pytest.mark.anyio
+async def test_finish_interaction_clears_tags_and_prompt_state() -> None:
+    registry = _FakeRegistry()
+    registry.track(flow_id="lesson-1", chat_id=10, message_id=20, tag="question")
+    registry.track(flow_id="lesson-1", chat_id=10, message_id=21, tag="feedback")
+    deleted: list[tuple[int, int]] = []
+
+    async def fake_delete_message(*, chat_id: int, message_id: int) -> None:
+        deleted.append((chat_id, message_id))
+
+    context = SimpleNamespace(
+        user_data={"expected_user_input_state": {"chat_id": 10, "message_id": 99}},
+        application=SimpleNamespace(bot_data={"telegram_flow_message_repository": registry}),
+        bot=SimpleNamespace(delete_message=fake_delete_message),
+    )
+
+    await finish_interaction(
+        context,
+        flow_id="lesson-1",
+        tags=("question", "feedback"),
+        clear_expected_input_prompt=True,
+    )
+
+    assert deleted == [(10, 20), (10, 21)]
+    assert registry.list(flow_id="lesson-1", tag="question") == []
+    assert registry.list(flow_id="lesson-1", tag="feedback") == []
+    assert get_expected_user_input_prompt(context) is None
