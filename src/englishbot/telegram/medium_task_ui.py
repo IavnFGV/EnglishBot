@@ -5,7 +5,7 @@ import asyncio
 from telegram.ext import ContextTypes
 
 from englishbot import bot as bot_module
-from englishbot.telegram_buttons import InlineKeyboardButton
+from englishbot.telegram.buttons import InlineKeyboardButton
 from englishbot.telegram.question_delivery import (
     build_medium_question_view as delivery_build_medium_question_view,
     medium_task_answer_text as delivery_medium_task_answer_text,

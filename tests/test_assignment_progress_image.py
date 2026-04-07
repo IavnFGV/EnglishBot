@@ -10,7 +10,7 @@ from englishbot.application.homework_progress_use_cases import (
     AssignmentSessionKind,
     HomeworkProgressUseCase,
 )
-from englishbot.assignment_progress_image import (
+from englishbot.presentation.assignment_progress_image import (
     AssignmentProgressSegment,
     AssignmentProgressSnapshot,
     _segment_color,

@@ -13,7 +13,7 @@ from englishbot.application.add_words_use_cases import (
     ApproveAddWordsDraftUseCase,
     StartAddWordsFlowUseCase,
 )
-from englishbot.bootstrap import build_lesson_import_pipeline
+from englishbot.importing.runtime import build_lesson_import_pipeline
 from englishbot.config import RuntimeConfigService
 from englishbot.importing.cli import run_simulate_add_words_flow
 from englishbot.importing.validator import LessonExtractionValidator

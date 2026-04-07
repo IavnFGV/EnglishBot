@@ -28,24 +28,24 @@ Current architecture cleanup rules:
 First extraction steps already in place:
 
 - [src/englishbot/telegram/bootstrap.py](/workspaces/EnglishBot/src/englishbot/telegram/bootstrap.py) owns Telegram application wiring and handler registration, while `bot.py` keeps a compatibility `build_application(...)` facade
-- [src/englishbot/telegram_command_menu.py](/workspaces/EnglishBot/src/englishbot/telegram_command_menu.py) owns command visibility and post-init command setup
-- [src/englishbot/telegram_entry_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram_entry_handlers.py) owns `/start`, `/help`, and `/version`
-- [src/englishbot/telegram_navigation_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram_navigation_handlers.py) owns top-level menu navigation such as `/words`, `/assign`, start menu callbacks, and homework launch entry points
-- [src/englishbot/telegram_learner_entry_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram_learner_entry_handlers.py) owns learner training entry points such as continue/restart session, topic selection, lesson selection, and mode selection
-- [src/englishbot/telegram_answer_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram_answer_handlers.py) owns Telegram answer-entry handlers such as choice answers, text answers, medium-letter callbacks, and hard-skip entry handling
-- [src/englishbot/telegram_question_delivery.py](/workspaces/EnglishBot/src/englishbot/telegram_question_delivery.py) owns question rendering and delivery helpers for medium-mode letter UI and question message sending
-- [src/englishbot/telegram_answer_processing.py](/workspaces/EnglishBot/src/englishbot/telegram_answer_processing.py) owns learner answer processing and feedback delivery orchestration, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_editor_add_words.py](/workspaces/EnglishBot/src/englishbot/telegram_editor_add_words.py) owns the editor add-words flow, draft review actions, and published word text editing, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_editor_images.py](/workspaces/EnglishBot/src/englishbot/telegram_editor_images.py) owns published-image editing and image-review callbacks, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_tts.py](/workspaces/EnglishBot/src/englishbot/telegram_tts.py) owns TTS callbacks and current-question audio sending, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_homework_admin.py](/workspaces/EnglishBot/src/englishbot/telegram_homework_admin.py) owns homework goal/admin callbacks and assignment drill-down screens, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_admin_utils.py](/workspaces/EnglishBot/src/englishbot/telegram_admin_utils.py) owns operational admin commands such as `/makeadmin` and `/clearuser`, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_flow_tracking.py](/workspaces/EnglishBot/src/englishbot/telegram_flow_tracking.py) owns tracked Telegram flow-message registration, cleanup, and replacement helpers, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_assignment_progress.py](/workspaces/EnglishBot/src/englishbot/telegram_assignment_progress.py) owns assignment progress snapshot building, track rendering, and progress-image send/update helpers, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_notifications.py](/workspaces/EnglishBot/src/englishbot/telegram_notifications.py) owns pending-notification scheduling, delivery, reminder jobs, and dismiss-button rendering, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_image_review_support.py](/workspaces/EnglishBot/src/englishbot/telegram_image_review_support.py) owns image-review preview sending, local-candidate generation step handling, and review-step rendering helpers, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_game_mode.py](/workspaces/EnglishBot/src/englishbot/telegram_game_mode.py) owns game-mode round restart, repeat flow, per-answer game feedback, and game completion summary, while `bot.py` keeps compatibility wrappers
-- [src/englishbot/telegram_medium_task_ui.py](/workspaces/EnglishBot/src/englishbot/telegram_medium_task_ui.py) owns medium-mode state helpers, keyboard rendering, and medium question-view building, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/command_menu.py](/workspaces/EnglishBot/src/englishbot/telegram/command_menu.py) owns command visibility and post-init command setup
+- [src/englishbot/telegram/entry_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram/entry_handlers.py) owns `/start`, `/help`, and `/version`
+- [src/englishbot/telegram/navigation_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram/navigation_handlers.py) owns top-level menu navigation such as `/words`, `/assign`, start menu callbacks, and homework launch entry points
+- [src/englishbot/telegram/learner_entry_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram/learner_entry_handlers.py) owns learner training entry points such as continue/restart session, topic selection, lesson selection, and mode selection
+- [src/englishbot/telegram/answer_handlers.py](/workspaces/EnglishBot/src/englishbot/telegram/answer_handlers.py) owns Telegram answer-entry handlers such as choice answers, text answers, medium-letter callbacks, and hard-skip entry handling
+- [src/englishbot/telegram/question_delivery.py](/workspaces/EnglishBot/src/englishbot/telegram/question_delivery.py) owns question rendering and delivery helpers for medium-mode letter UI and question message sending
+- [src/englishbot/telegram/answer_processing.py](/workspaces/EnglishBot/src/englishbot/telegram/answer_processing.py) owns learner answer processing and feedback delivery orchestration, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/editor_add_words.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_add_words.py) owns the editor add-words flow, draft review actions, and published word text editing, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/editor_images.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_images.py) owns published-image editing and image-review callbacks, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/tts.py](/workspaces/EnglishBot/src/englishbot/telegram/tts.py) owns TTS callbacks and current-question audio sending, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/homework_admin.py](/workspaces/EnglishBot/src/englishbot/telegram/homework_admin.py) owns homework goal/admin callbacks and assignment drill-down screens, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/admin_utils.py](/workspaces/EnglishBot/src/englishbot/telegram/admin_utils.py) owns operational admin commands such as `/makeadmin` and `/clearuser`, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/flow_tracking.py](/workspaces/EnglishBot/src/englishbot/telegram/flow_tracking.py) owns tracked Telegram flow-message registration, cleanup, and replacement helpers, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/assignment_progress.py](/workspaces/EnglishBot/src/englishbot/telegram/assignment_progress.py) owns assignment progress snapshot building, track rendering, and progress-image send/update helpers, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/notifications.py](/workspaces/EnglishBot/src/englishbot/telegram/notifications.py) owns pending-notification scheduling, delivery, reminder jobs, and dismiss-button rendering, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/image_review_support.py](/workspaces/EnglishBot/src/englishbot/telegram/image_review_support.py) owns image-review preview sending, local-candidate generation step handling, and review-step rendering helpers, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/game_mode.py](/workspaces/EnglishBot/src/englishbot/telegram/game_mode.py) owns game-mode round restart, repeat flow, per-answer game feedback, and game completion summary, while `bot.py` keeps compatibility wrappers
+- [src/englishbot/telegram/medium_task_ui.py](/workspaces/EnglishBot/src/englishbot/telegram/medium_task_ui.py) owns medium-mode state helpers, keyboard rendering, and medium question-view building, while `bot.py` keeps compatibility wrappers
 - [src/englishbot/capabilities/ai_text.py](/workspaces/EnglishBot/src/englishbot/capabilities/ai_text.py) owns optional Ollama-backed smart parsing and lesson-import pipeline wiring, while Telegram bootstrap only registers the capability
 - [src/englishbot/capabilities/ai_images.py](/workspaces/EnglishBot/src/englishbot/capabilities/ai_images.py) owns optional image-generation and image-review wiring, while Telegram bootstrap only registers the capability
 - [src/englishbot/capabilities/tts.py](/workspaces/EnglishBot/src/englishbot/capabilities/tts.py) owns optional TTS capability registration, while Telegram runtime reads TTS through a grouped settings view
@@ -53,13 +53,12 @@ First extraction steps already in place:
 - [src/englishbot/audio_tooling/cli.py](/workspaces/EnglishBot/src/englishbot/audio_tooling/cli.py) owns shared audio batch-tool orchestration, while legacy root CLI entrypoints stay as thin compatible facades for existing commands and tests
 - [src/englishbot/image_tooling/cli.py](/workspaces/EnglishBot/src/englishbot/image_tooling/cli.py) owns shared image batch-tool orchestration, while legacy root CLI entrypoints stay as thin compatible facades for existing commands and tests
 - [src/englishbot/importing/cli.py](/workspaces/EnglishBot/src/englishbot/importing/cli.py) owns shared import and editor-simulation CLI orchestration, while legacy root entrypoints stay as thin compatible facades for existing commands and tests
-- [src/englishbot/application/training_runtime.py](/workspaces/EnglishBot/src/englishbot/application/training_runtime.py) now owns training-service runtime wiring, while [bootstrap.py](/workspaces/EnglishBot/src/englishbot/bootstrap.py) stays as a compatibility shim for legacy imports
-- [src/englishbot/importing/runtime.py](/workspaces/EnglishBot/src/englishbot/importing/runtime.py) now owns lesson-import pipeline runtime wiring, while [bootstrap.py](/workspaces/EnglishBot/src/englishbot/bootstrap.py) stays as a compatibility shim for legacy imports
-- [src/englishbot/importing/ollama_runtime.py](/workspaces/EnglishBot/src/englishbot/importing/ollama_runtime.py) now owns Ollama model-file resolution, while [ollama_runtime.py](/workspaces/EnglishBot/src/englishbot/ollama_runtime.py) stays as a compatibility shim for legacy imports
-- [src/englishbot/presentation/telegram_assignments_ui.py](/workspaces/EnglishBot/src/englishbot/presentation/telegram_assignments_ui.py), [src/englishbot/presentation/telegram_assignments_admin_ui.py](/workspaces/EnglishBot/src/englishbot/presentation/telegram_assignments_admin_ui.py), and [src/englishbot/presentation/telegram_editor_ui.py](/workspaces/EnglishBot/src/englishbot/presentation/telegram_editor_ui.py) now own the shared Telegram keyboard and view helpers, while legacy `bot_*_ui.py` modules stay as compatibility shims
-- [src/englishbot/presentation/assignment_progress_image.py](/workspaces/EnglishBot/src/englishbot/presentation/assignment_progress_image.py) now owns the homework progress PNG renderer, while [assignment_progress_image.py](/workspaces/EnglishBot/src/englishbot/assignment_progress_image.py) stays as a compatibility shim for existing imports and tests
-- [src/englishbot/telegram/command_menu.py](/workspaces/EnglishBot/src/englishbot/telegram/command_menu.py), [src/englishbot/telegram/assignment_progress.py](/workspaces/EnglishBot/src/englishbot/telegram/assignment_progress.py), [src/englishbot/telegram/notifications.py](/workspaces/EnglishBot/src/englishbot/telegram/notifications.py), [src/englishbot/telegram/flow_tracking.py](/workspaces/EnglishBot/src/englishbot/telegram/flow_tracking.py), and [src/englishbot/telegram/admin_utils.py](/workspaces/EnglishBot/src/englishbot/telegram/admin_utils.py) now own shared Telegram runtime infrastructure helpers, while the old root `telegram_*.py` modules remain as compatibility shims
-- the remaining Telegram handler modules now also live under [src/englishbot/telegram/](/workspaces/EnglishBot/src/englishbot/telegram), including answer flow, navigation, learner entry, editor flows, TTS, and game mode, while the old root `telegram_*.py` files stay as compatibility shims during the transition
+- [src/englishbot/application/training_runtime.py](/workspaces/EnglishBot/src/englishbot/application/training_runtime.py) owns training-service runtime wiring
+- [src/englishbot/importing/runtime.py](/workspaces/EnglishBot/src/englishbot/importing/runtime.py) owns lesson-import pipeline runtime wiring
+- [src/englishbot/importing/ollama_runtime.py](/workspaces/EnglishBot/src/englishbot/importing/ollama_runtime.py) owns Ollama model-file resolution
+- [src/englishbot/presentation/telegram_assignments_ui.py](/workspaces/EnglishBot/src/englishbot/presentation/telegram_assignments_ui.py), [src/englishbot/presentation/telegram_assignments_admin_ui.py](/workspaces/EnglishBot/src/englishbot/presentation/telegram_assignments_admin_ui.py), and [src/englishbot/presentation/telegram_editor_ui.py](/workspaces/EnglishBot/src/englishbot/presentation/telegram_editor_ui.py) own the shared Telegram keyboard and view helpers
+- [src/englishbot/presentation/assignment_progress_image.py](/workspaces/EnglishBot/src/englishbot/presentation/assignment_progress_image.py) owns the homework progress PNG renderer
+- [src/englishbot/telegram/buttons.py](/workspaces/EnglishBot/src/englishbot/telegram/buttons.py) owns the project-local inline button wrapper
 - [src/englishbot/webapp_server.py](/workspaces/EnglishBot/src/englishbot/webapp_server.py) owns Web App WSGI routing, request auth/session checks, and JSON or HTML response helpers, while `src/englishbot/webapp.py` stays a thin entrypoint facade
 - [src/englishbot/webapp_pages.py](/workspaces/EnglishBot/src/englishbot/webapp_pages.py) owns Web App page rendering for the admin panel and assignment guide, so the server layer no longer mixes routing with long inline HTML blocks
 - [src/englishbot/bot.py](/workspaces/EnglishBot/src/englishbot/bot.py) still exports the public handlers, but is being reduced toward wiring and shared helpers; dead compatibility leftovers are removed incrementally once they have no in-repo callers
@@ -193,8 +192,11 @@ The project is a simple modular monolith:
 - `englishbot.domain`: entities and repository interfaces
 - `englishbot.application`: small use cases plus focused logic components
 - `englishbot.infrastructure`: SQLite-backed runtime store, JSON content-pack loading, and persistence adapters
-- `englishbot.bot`: Telegram handlers and UI mapping
-- `englishbot.bootstrap`: dependency wiring
+- `englishbot.bot`: transitional Telegram facade plus shared adapter helpers
+- `englishbot.telegram`: package-based Telegram wiring, handlers, and runtime helpers
+- `englishbot.presentation`: Telegram-facing text, views, keyboards, and progress rendering helpers
+- `englishbot.application.training_runtime`: training-service runtime wiring
+- `englishbot.importing.runtime`: lesson-import runtime wiring
 
 The application layer is split into clear responsibilities:
 
@@ -210,6 +212,7 @@ The application layer is split into clear responsibilities:
 
 More details are in `ARCHITECTURE.md` and `docs/homework-progress.md`.
 The admin Telegram Web App MVP is documented in `docs/telegram-webapp-admin.md`.
+The `1.0.0` scope and release-surface policy are documented in `docs/1.0.0-plan.md`.
 
 ## Optional TTS Service
 

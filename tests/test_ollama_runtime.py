@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from englishbot.ollama_runtime import resolve_runtime_ollama_model
+from englishbot.importing.ollama_runtime import resolve_runtime_ollama_model
 
 
 def test_resolve_runtime_ollama_model_prefers_file_contents(tmp_path: Path) -> None:

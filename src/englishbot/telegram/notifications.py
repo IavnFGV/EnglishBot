@@ -6,7 +6,7 @@ from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
-from englishbot.telegram_buttons import InlineKeyboardButton
+from englishbot.telegram.buttons import InlineKeyboardButton
 
 
 def pending_notifications(context: ContextTypes.DEFAULT_TYPE) -> dict[str, object]:

@@ -13,7 +13,7 @@ from englishbot.application.homework_progress_use_cases import (
 )
 from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType
 from englishbot.presentation.telegram_ui_text import DEFAULT_TELEGRAM_UI_LANGUAGE
-from englishbot.telegram_buttons import InlineKeyboardButton
+from englishbot.telegram.buttons import InlineKeyboardButton
 
 TelegramTextGetter = Callable[..., str]
 

@@ -148,7 +148,7 @@ from englishbot.presentation.telegram_ui_text import (
     supported_telegram_ui_languages,
     telegram_ui_text,
 )
-from englishbot.telegram_buttons import InlineKeyboardButton
+from englishbot.telegram.buttons import InlineKeyboardButton
 from englishbot.telegram.answer_handlers import (
     choice_answer_handler as telegram_choice_answer_handler,
     hard_skip_handler as telegram_hard_skip_handler,

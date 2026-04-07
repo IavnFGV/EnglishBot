@@ -7,7 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src" / "englishbot"
 ALLOWED_DIRECT_BUTTON_MODULES = {
-    SRC_ROOT / "telegram_buttons.py",
+    SRC_ROOT / "telegram" / "buttons.py",
 }
 
 
@@ -39,4 +39,3 @@ def test_project_does_not_call_telegram_inlinekeyboardbutton_directly() -> None:
                 violations.append(str(path.relative_to(REPO_ROOT)))
 
     assert violations == []
-

@@ -19,7 +19,7 @@ from englishbot.presentation.telegram_views import (
     build_topic_selection_view,
     build_words_menu_view,
 )
-from englishbot.telegram_buttons import InlineKeyboardButton
+from englishbot.telegram.buttons import InlineKeyboardButton
 
 TelegramTextGetter = Callable[..., str]
 
