@@ -293,27 +293,27 @@ async def add_words_start_handler(
     user = update.effective_user
     if message is None or user is None:
         return
-    if not bot_module._has_menu_permission(
+    if not tg_runtime.has_menu_permission(
         context,
         user_id=user.id,
         permission=bot_module.PERMISSION_WORDS_ADD,
     ):
         await message.reply_text(
-            bot_module._tg("no_permission_add_words", context=context, user=user)
+            tg_runtime.tg("no_permission_add_words", context=context, user=user)
         )
         return
-    existing_flow = bot_module._active_word_flow_for_user(user.id, context)
+    existing_flow = tg_runtime.active_word_flow_for_user(user.id, context)
     if existing_flow is not None:
         await message.reply_text(
-            bot_module._tg("active_add_words_flow_exists", context=context, user=user)
+            tg_runtime.tg("active_add_words_flow_exists", context=context, user=user)
         )
         start_add_words_text_interaction(context)
         return
     start_add_words_text_interaction(context)
     await message.reply_text(
-        bot_module._tg("send_raw_lesson_text_with_menu", context=context, user=user),
+        tg_runtime.tg("send_raw_lesson_text_with_menu", context=context, user=user),
         reply_markup=ui_chat_menu_keyboard(
-            command_rows=bot_module._visible_command_rows(context, user_id=user.id)
+            command_rows=tg_runtime.visible_command_rows(context, user_id=user.id)
         ),
     )
 
@@ -328,12 +328,12 @@ async def add_words_cancel_handler(
     user = update.effective_user
     if message is None or user is None:
         return
-    bot_module._clear_active_word_flow(user.id, context)
+    tg_runtime.clear_active_word_flow(user.id, context)
     clear_add_words_text_interaction(context)
     await message.reply_text(
-        bot_module._tg("add_words_flow_cancelled", context=context, user=user),
+        tg_runtime.tg("add_words_flow_cancelled", context=context, user=user),
         reply_markup=ui_chat_menu_keyboard(
-            command_rows=bot_module._visible_command_rows(context, user_id=user.id)
+            command_rows=tg_runtime.visible_command_rows(context, user_id=user.id)
         ),
     )
 
@@ -350,16 +350,16 @@ async def add_words_cancel_callback_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._active_word_flow_for_user(user.id, context)
+    flow = tg_runtime.active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(
-            bot_module._tg("add_words_flow_inactive", context=context, user=user)
+            tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
         )
         return
-    bot_module._clear_active_word_flow(user.id, context)
+    tg_runtime.clear_active_word_flow(user.id, context)
     clear_add_words_text_interaction(context)
     await query.edit_message_text(
-        bot_module._tg("add_words_flow_cancelled", context=context, user=user)
+        tg_runtime.tg("add_words_flow_cancelled", context=context, user=user)
     )
     await ensure_chat_menu_message(context, message=query.message, user=user)
 
@@ -392,7 +392,7 @@ async def add_words_text_handler(
     user = update.effective_user
     if message is None or message.text is None or user is None:
         return
-    if not bot_module._has_menu_permission(
+    if not tg_runtime.has_menu_permission(
         context,
         user_id=user.id,
         permission=bot_module.PERMISSION_WORDS_ADD,
@@ -407,7 +407,7 @@ async def add_words_text_handler(
         if edit_interaction is None:
             clear_published_word_edit_prompt_interaction(context)
             await message.reply_text(
-                bot_module._tg("word_edit_task_inactive", context=context, user=user)
+                tg_runtime.tg("word_edit_task_inactive", context=context, user=user)
             )
             return
         topic_id = edit_interaction.topic_id
@@ -415,7 +415,7 @@ async def add_words_text_handler(
         parsed_pair = parse_edited_vocabulary_line(message.text)
         if parsed_pair is None:
             await message.reply_text(
-                bot_module._tg("send_one_line_word_format", context=context, user=user)
+                tg_runtime.tg("send_one_line_word_format", context=context, user=user)
             )
             return
         english_word, translation = parsed_pair
@@ -430,16 +430,16 @@ async def add_words_text_handler(
         except ValueError as error:
             await message.reply_text(str(error))
             return
-        bot_module._reload_training_service(context)
+        tg_runtime.reload_training_service(context)
         clear_published_word_edit_prompt_interaction(context)
         await finish_published_word_edit_interaction(
             context,
             user_id=user.id,
         )
         await delete_message_if_possible(context, message=message)
-        words = bot_module._list_editable_words(context).execute(topic_id=topic_id)
+        words = tg_runtime.list_editable_words(context).execute(topic_id=topic_id)
         await message.reply_text(
-            bot_module._tg(
+            tg_runtime.tg(
                 "word_updated",
                 context=context,
                 user=user,
@@ -448,9 +448,9 @@ async def add_words_text_handler(
             )
         )
         await message.reply_text(
-            bot_module._tg("choose_another_word_to_edit", context=context, user=user),
+            tg_runtime.tg("choose_another_word_to_edit", context=context, user=user),
             reply_markup=ui_editable_words_keyboard(
-                tg=bot_module._tg,
+                tg=tg_runtime.tg,
                 topic_id=topic_id,
                 words=words,
                 callback_data_for_item=lambda index: bot_module._editable_word_callback_data(
@@ -459,7 +459,7 @@ async def add_words_text_handler(
                     topic_id=topic_id,
                     item_index=index,
                 ),
-                language=bot_module._telegram_ui_language(context, user),
+                language=tg_runtime.telegram_ui_language(context, user),
             ),
         )
         return
@@ -469,7 +469,7 @@ async def add_words_text_handler(
         review_interaction = get_image_review_text_edit_interaction(context)
         review_flow_id = review_interaction.flow_id if review_interaction is not None else None
         review_item_id = review_interaction.item_id if review_interaction is not None else None
-        review_flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
+        review_flow = tg_runtime.get_active_image_review(context).execute(user_id=user.id)
         if (
             review_flow is None
             or review_flow.flow_id != review_flow_id
@@ -478,16 +478,16 @@ async def add_words_text_handler(
         ):
             clear_image_review_text_edit_interaction(context)
             await message.reply_text(
-                bot_module._tg("image_review_task_inactive", context=context, user=user)
+                tg_runtime.tg("image_review_task_inactive", context=context, user=user)
             )
             return
         clear_image_review_text_edit_interaction(context)
         status_message = await message.reply_text(
-            bot_module._tg("updating_image_prompt", context=context, user=user)
+            tg_runtime.tg("updating_image_prompt", context=context, user=user)
         )
         stop_event = asyncio.Event()
         heartbeat_task = asyncio.create_task(
-            bot_module._run_status_heartbeat(
+            tg_runtime.run_status_heartbeat(
                 status_message,
                 stage="Updating image prompt",
                 stop_event=stop_event,
@@ -523,10 +523,10 @@ async def add_words_text_handler(
         await delete_message_if_possible(context, message=message)
         await status_message.edit_text(
             build_status_view(
-                text=bot_module._tg("prompt_updated", context=context, user=user)
+                text=tg_runtime.tg("prompt_updated", context=context, user=user)
             ).text
         )
-        await bot_module._send_image_review_step(message, context, updated_flow)
+        await tg_runtime.send_image_review_step(message, context, updated_flow)
         return
     if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT:
         from englishbot.telegram.interaction import clear_image_review_text_edit_interaction

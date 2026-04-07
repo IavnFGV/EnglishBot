@@ -108,10 +108,10 @@ def publish_image_review(context: ContextTypes.DEFAULT_TYPE):
     return bot_module._publish_image_review(context)
 
 
-def resolve_image_review_publish_output_path(context: ContextTypes.DEFAULT_TYPE):
+def resolve_image_review_publish_output_path(flow):
     import englishbot.bot as bot_module
 
-    return bot_module._resolve_image_review_publish_output_path(context)
+    return bot_module._resolve_image_review_publish_output_path(flow)
 
 
 def known_assignment_users(
@@ -166,13 +166,19 @@ def draft_prompt_count(result) -> int | None:
 
 async def run_status_heartbeat(
     status_message,
-    context: ContextTypes.DEFAULT_TYPE,
     *,
-    lines: list[str],
+    stage: str,
+    stop_event,
+    interval_seconds: float = 10.0,
 ):
     import englishbot.bot as bot_module
 
-    return await bot_module._run_status_heartbeat(status_message, context, lines=lines)
+    return await bot_module._run_status_heartbeat(
+        status_message,
+        stage=stage,
+        stop_event=stop_event,
+        interval_seconds=interval_seconds,
+    )
 
 
 def visible_command_rows(
@@ -336,3 +342,36 @@ def local_image_generation_available(context: ContextTypes.DEFAULT_TYPE) -> bool
     import englishbot.bot as bot_module
 
     return bot_module._local_image_generation_available(context)
+
+
+def send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, flow, *, user=None):
+    import englishbot.bot as bot_module
+
+    return bot_module._send_image_review_step(message, context, flow, user=user)
+
+
+def prepare_and_send_image_review_step(message, context: ContextTypes.DEFAULT_TYPE, user_id: int, flow, *, user=None):
+    import englishbot.bot as bot_module
+
+    return bot_module._prepare_and_send_image_review_step(
+        message,
+        context,
+        user_id,
+        flow,
+        user=user,
+    )
+
+
+def publish_destination_text(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    output_path,
+    topic_id: str,
+) -> str:
+    import englishbot.bot as bot_module
+
+    return bot_module._publish_destination_text(
+        context,
+        output_path=output_path,
+        topic_id=topic_id,
+    )

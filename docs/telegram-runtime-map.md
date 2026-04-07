@@ -90,6 +90,8 @@ This runtime layer is now the preferred way to access shared Telegram runtime de
 - [src/englishbot/telegram/editor_images.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_images.py)
 - [src/englishbot/telegram/editor_add_words.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_add_words.py)
 
+The migration is intentionally incremental: feature modules can still call true cross-flow helpers from `bot.py`, but routine `tg` / UI-language / runtime-service access should move through `runtime.py`.
+
 ## Rule For New Telegram Features
 
 New Telegram features should reuse the interaction layer for transient UI state and tracked-message lifecycle.
