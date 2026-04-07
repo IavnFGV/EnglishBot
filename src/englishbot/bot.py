@@ -149,17 +149,17 @@ from englishbot.presentation.telegram_ui_text import (
     telegram_ui_text,
 )
 from englishbot.telegram_buttons import InlineKeyboardButton
-from englishbot.telegram_answer_handlers import (
+from englishbot.telegram.answer_handlers import (
     choice_answer_handler as telegram_choice_answer_handler,
     hard_skip_handler as telegram_hard_skip_handler,
     medium_answer_callback_handler as telegram_medium_answer_callback_handler,
     text_answer_handler as telegram_text_answer_handler,
 )
-from englishbot.telegram_answer_processing import (
+from englishbot.telegram.answer_processing import (
     process_answer as delivery_process_answer,
     send_feedback as delivery_send_feedback,
 )
-from englishbot.telegram_question_delivery import (
+from englishbot.telegram.question_delivery import (
     edit_training_question_view as delivery_edit_training_question_view,
     send_question as delivery_send_question,
 )
@@ -169,12 +169,12 @@ from englishbot.telegram.command_menu import (
     visible_command_rows as menu_visible_command_rows,
     visible_command_specs as menu_visible_command_specs,
 )
-from englishbot.telegram_entry_handlers import (
+from englishbot.telegram.entry_handlers import (
     help_handler as telegram_help_handler,
     start_handler as telegram_start_handler,
     version_handler as telegram_version_handler,
 )
-from englishbot.telegram_learner_entry_handlers import (
+from englishbot.telegram.learner_entry_handlers import (
     continue_session_handler as telegram_continue_session_handler,
     game_mode_placeholder_callback_handler as telegram_game_mode_placeholder_callback_handler,
     lesson_selected_handler as telegram_lesson_selected_handler,
@@ -182,7 +182,7 @@ from englishbot.telegram_learner_entry_handlers import (
     restart_session_handler as telegram_restart_session_handler,
     topic_selected_handler as telegram_topic_selected_handler,
 )
-from englishbot.telegram_navigation_handlers import (
+from englishbot.telegram.navigation_handlers import (
     assign_menu_callback_handler as telegram_assign_menu_callback_handler,
     assign_menu_handler as telegram_assign_menu_handler,
     start_assignment_round_callback_handler as telegram_start_assignment_round_callback_handler,
@@ -2038,7 +2038,7 @@ def _raw_training_session_by_id(
 
 
 async def words_goals_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         words_goals_callback_handler as homework_words_goals_callback_handler,
     )
 
@@ -2046,7 +2046,7 @@ async def words_goals_callback_handler(update: Update, context: ContextTypes.DEF
 
 
 async def words_progress_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         words_progress_callback_handler as homework_words_progress_callback_handler,
     )
 
@@ -2062,7 +2062,7 @@ def _clear_self_goal_setup_state(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def goal_setup_disabled_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         goal_setup_disabled_callback_handler as homework_goal_setup_disabled_callback_handler,
     )
 
@@ -2070,7 +2070,7 @@ async def goal_setup_disabled_callback_handler(update: Update, context: ContextT
 
 
 async def goal_type_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         goal_type_callback_handler as homework_goal_type_callback_handler,
     )
 
@@ -2078,7 +2078,7 @@ async def goal_type_callback_handler(update: Update, context: ContextTypes.DEFAU
 
 
 async def goal_reset_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         goal_reset_callback_handler as homework_goal_reset_callback_handler,
     )
 
@@ -2086,7 +2086,7 @@ async def goal_reset_callback_handler(update: Update, context: ContextTypes.DEFA
 
 
 async def admin_assign_goal_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_assign_goal_start_handler as homework_admin_assign_goal_start_handler,
     )
 
@@ -2094,7 +2094,7 @@ async def admin_assign_goal_start_handler(update: Update, context: ContextTypes.
 
 
 async def admin_goal_period_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_goal_period_callback_handler as homework_admin_goal_period_callback_handler,
     )
 
@@ -2102,7 +2102,7 @@ async def admin_goal_period_callback_handler(update: Update, context: ContextTyp
 
 
 async def admin_goal_target_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_goal_target_menu_callback_handler as homework_admin_goal_target_menu_callback_handler,
     )
 
@@ -2110,7 +2110,7 @@ async def admin_goal_target_menu_callback_handler(update: Update, context: Conte
 
 
 async def admin_goal_target_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_goal_target_callback_handler as homework_admin_goal_target_callback_handler,
     )
 
@@ -2118,7 +2118,7 @@ async def admin_goal_target_callback_handler(update: Update, context: ContextTyp
 
 
 async def admin_goal_source_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_goal_source_menu_callback_handler as homework_admin_goal_source_menu_callback_handler,
     )
 
@@ -2193,7 +2193,7 @@ def _assignment_goal_detail_keyboard(*, context: ContextTypes.DEFAULT_TYPE, user
 
 
 async def admin_goal_source_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_goal_source_callback_handler as homework_admin_goal_source_callback_handler,
     )
 
@@ -2201,7 +2201,7 @@ async def admin_goal_source_callback_handler(update: Update, context: ContextTyp
 
 
 async def admin_goal_manual_toggle_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_goal_manual_toggle_callback_handler as homework_admin_goal_manual_toggle_callback_handler,
     )
 
@@ -2209,7 +2209,7 @@ async def admin_goal_manual_toggle_callback_handler(update: Update, context: Con
 
 
 async def admin_goal_manual_done_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_goal_manual_done_callback_handler as homework_admin_goal_manual_done_callback_handler,
     )
 
@@ -2217,7 +2217,7 @@ async def admin_goal_manual_done_callback_handler(update: Update, context: Conte
 
 
 async def admin_goal_recipients_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_goal_recipients_callback_handler as homework_admin_goal_recipients_callback_handler,
     )
 
@@ -2225,7 +2225,7 @@ async def admin_goal_recipients_callback_handler(update: Update, context: Contex
 
 
 async def admin_goal_deadline_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_goal_deadline_callback_handler as homework_admin_goal_deadline_callback_handler,
     )
 
@@ -2295,7 +2295,7 @@ async def _finish_admin_goal_creation(*, query_or_message, context: ContextTypes
 
 
 async def admin_users_progress_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         admin_users_progress_callback_handler as homework_admin_users_progress_callback_handler,
     )
 
@@ -2303,7 +2303,7 @@ async def admin_users_progress_callback_handler(update: Update, context: Context
 
 
 async def assign_user_detail_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         assign_user_detail_callback_handler as homework_assign_user_detail_callback_handler,
     )
 
@@ -2311,7 +2311,7 @@ async def assign_user_detail_callback_handler(update: Update, context: ContextTy
 
 
 async def assign_goal_detail_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         assign_goal_detail_callback_handler as homework_assign_goal_detail_callback_handler,
     )
 
@@ -2335,7 +2335,7 @@ async def words_add_words_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         words_add_words_callback_handler as editor_words_add_words_callback_handler,
     )
 
@@ -2346,7 +2346,7 @@ async def words_edit_words_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         words_edit_words_callback_handler as editor_words_edit_words_callback_handler,
     )
 
@@ -2357,7 +2357,7 @@ async def words_edit_images_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         words_edit_images_callback_handler as editor_words_edit_images_callback_handler,
     )
 
@@ -2368,7 +2368,7 @@ async def words_edit_topic_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         words_edit_topic_callback_handler as editor_words_edit_topic_callback_handler,
     )
 
@@ -2379,7 +2379,7 @@ async def words_edit_item_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         words_edit_item_callback_handler as editor_words_edit_item_callback_handler,
     )
 
@@ -2390,7 +2390,7 @@ async def words_edit_cancel_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         words_edit_cancel_callback_handler as editor_words_edit_cancel_callback_handler,
     )
 
@@ -2398,7 +2398,7 @@ async def words_edit_cancel_callback_handler(
 
 
 async def add_words_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         add_words_start_handler as editor_add_words_start_handler,
     )
 
@@ -2406,7 +2406,7 @@ async def add_words_start_handler(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def add_words_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         add_words_cancel_handler as editor_add_words_cancel_handler,
     )
 
@@ -2417,7 +2417,7 @@ async def add_words_cancel_callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         add_words_cancel_callback_handler as editor_add_words_cancel_callback_handler,
     )
 
@@ -2425,7 +2425,7 @@ async def add_words_cancel_callback_handler(
 
 
 async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         add_words_text_handler as editor_add_words_text_handler,
     )
 
@@ -2433,7 +2433,7 @@ async def add_words_text_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_homework_admin import (
+    from englishbot.telegram.homework_admin import (
         goal_text_handler as homework_goal_text_handler,
     )
 
@@ -2441,7 +2441,7 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def add_words_edit_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         add_words_edit_text_handler as editor_add_words_edit_text_handler,
     )
 
@@ -2449,7 +2449,7 @@ async def add_words_edit_text_handler(update: Update, context: ContextTypes.DEFA
 
 
 async def add_words_show_json_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         add_words_show_json_handler as editor_add_words_show_json_handler,
     )
 
@@ -2460,7 +2460,7 @@ async def add_words_regenerate_draft_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         add_words_regenerate_draft_handler as editor_add_words_regenerate_draft_handler,
     )
 
@@ -2471,7 +2471,7 @@ async def add_words_publish_without_images_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         add_words_publish_without_images_handler as editor_add_words_publish_without_images_handler,
     )
 
@@ -2482,7 +2482,7 @@ async def add_words_approve_draft_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         add_words_approve_draft_handler as editor_add_words_approve_draft_handler,
     )
 
@@ -2493,7 +2493,7 @@ async def add_words_approve_auto_images_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_add_words import (
+    from englishbot.telegram.editor_add_words import (
         add_words_approve_auto_images_handler as editor_add_words_approve_auto_images_handler,
     )
 
@@ -2504,7 +2504,7 @@ async def published_images_menu_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         published_images_menu_handler as editor_published_images_menu_handler,
     )
 
@@ -2515,7 +2515,7 @@ async def published_image_item_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         published_image_item_handler as editor_published_image_item_handler,
     )
 
@@ -2526,7 +2526,7 @@ async def image_review_generate_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_generate_handler as editor_image_review_generate_handler,
     )
 
@@ -2537,7 +2537,7 @@ async def image_review_search_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_search_handler as editor_image_review_search_handler,
     )
 
@@ -2548,7 +2548,7 @@ async def image_review_next_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_next_handler as editor_image_review_next_handler,
     )
 
@@ -2559,7 +2559,7 @@ async def image_review_previous_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_previous_handler as editor_image_review_previous_handler,
     )
 
@@ -2570,7 +2570,7 @@ async def image_review_pick_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_pick_handler as editor_image_review_pick_handler,
     )
 
@@ -2581,7 +2581,7 @@ async def image_review_skip_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_skip_handler as editor_image_review_skip_handler,
     )
 
@@ -2592,7 +2592,7 @@ async def image_review_edit_prompt_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_edit_prompt_handler as editor_image_review_edit_prompt_handler,
     )
 
@@ -2603,7 +2603,7 @@ async def image_review_edit_search_query_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_edit_search_query_handler as editor_image_review_edit_search_query_handler,
     )
 
@@ -2614,7 +2614,7 @@ async def image_review_show_json_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_show_json_handler as editor_image_review_show_json_handler,
     )
 
@@ -2625,7 +2625,7 @@ async def image_review_attach_photo_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_attach_photo_handler as editor_image_review_attach_photo_handler,
     )
 
@@ -2633,7 +2633,7 @@ async def image_review_attach_photo_handler(
 
 
 async def image_review_photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_editor_images import (
+    from englishbot.telegram.editor_images import (
         image_review_photo_handler as editor_image_review_photo_handler,
     )
 
@@ -2751,7 +2751,7 @@ async def game_mode_placeholder_callback_handler(
 
 
 async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_game_mode import (
+    from englishbot.telegram.game_mode import (
         game_next_round_handler as telegram_game_next_round_handler,
     )
 
@@ -2759,7 +2759,7 @@ async def game_next_round_handler(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def game_repeat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_game_mode import (
+    from englishbot.telegram.game_mode import (
         game_repeat_handler as telegram_game_repeat_handler,
     )
 
@@ -2972,7 +2972,7 @@ def _tts_voice_menu_markup(
 
 
 async def tts_voice_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_tts import (
+    from englishbot.telegram.tts import (
         tts_voice_menu_handler as telegram_tts_voice_menu_handler,
     )
 
@@ -2980,7 +2980,7 @@ async def tts_voice_menu_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def tts_voice_select_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_tts import (
+    from englishbot.telegram.tts import (
         tts_voice_select_handler as telegram_tts_voice_select_handler,
     )
 
@@ -2988,7 +2988,7 @@ async def tts_voice_select_handler(update: Update, context: ContextTypes.DEFAULT
 
 
 async def tts_current_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_tts import (
+    from englishbot.telegram.tts import (
         tts_current_handler as telegram_tts_current_handler,
     )
 
@@ -2996,7 +2996,7 @@ async def tts_current_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def tts_next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_tts import (
+    from englishbot.telegram.tts import (
         tts_next_handler as telegram_tts_next_handler,
     )
 
@@ -3211,7 +3211,7 @@ async def _send_game_feedback(
     outcome: AnswerOutcome,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_game_mode import (
+    from englishbot.telegram.game_mode import (
         send_game_feedback as telegram_send_game_feedback,
     )
 
@@ -3223,7 +3223,7 @@ async def _finish_game_session(
     outcome: AnswerOutcome,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    from englishbot.telegram_game_mode import (
+    from englishbot.telegram.game_mode import (
         finish_game_session as telegram_finish_game_session,
     )
 
@@ -3235,7 +3235,7 @@ def _expects_text_answer_for_question(question: TrainingQuestion) -> bool:
 
 
 def _clear_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram_medium_task_ui import clear_medium_task_state
+    from englishbot.telegram.medium_task_ui import clear_medium_task_state
 
     clear_medium_task_state(context)
 
@@ -3245,25 +3245,25 @@ def _build_medium_task_state(
     *,
     message_id: int | None = None,
 ) -> _MediumTaskState:
-    from englishbot.telegram_medium_task_ui import build_medium_task_state
+    from englishbot.telegram.medium_task_ui import build_medium_task_state
 
     return build_medium_task_state(question, message_id=message_id)
 
 
 def _get_medium_task_state(context: ContextTypes.DEFAULT_TYPE) -> _MediumTaskState | None:
-    from englishbot.telegram_medium_task_ui import get_medium_task_state
+    from englishbot.telegram.medium_task_ui import get_medium_task_state
 
     return get_medium_task_state(context)
 
 
 def _set_medium_task_state(context: ContextTypes.DEFAULT_TYPE, state: _MediumTaskState) -> None:
-    from englishbot.telegram_medium_task_ui import set_medium_task_state
+    from englishbot.telegram.medium_task_ui import set_medium_task_state
 
     set_medium_task_state(context, state)
 
 
 def _medium_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
-    from englishbot.telegram_medium_task_ui import medium_task_lock
+    from englishbot.telegram.medium_task_ui import medium_task_lock
 
     return medium_task_lock(context)
 
@@ -3348,13 +3348,13 @@ def _set_tts_recent_request(
 
 
 def _medium_task_is_complete(state: _MediumTaskState) -> bool:
-    from englishbot.telegram_medium_task_ui import medium_task_is_complete
+    from englishbot.telegram.medium_task_ui import medium_task_is_complete
 
     return medium_task_is_complete(state)
 
 
 def _medium_task_answer_text(state: _MediumTaskState) -> str:
-    from englishbot.telegram_medium_task_ui import medium_task_answer_text
+    from englishbot.telegram.medium_task_ui import medium_task_answer_text
 
     return medium_task_answer_text(state)
 
@@ -3365,7 +3365,7 @@ def _medium_task_keyboard(
     context: ContextTypes.DEFAULT_TYPE | None = None,
     user=None,
 ) -> InlineKeyboardMarkup:
-    from englishbot.telegram_medium_task_ui import medium_task_keyboard
+    from englishbot.telegram.medium_task_ui import medium_task_keyboard
 
     return medium_task_keyboard(state, context=context, user=user)
 
@@ -3377,7 +3377,7 @@ def _build_medium_question_view(
     context: ContextTypes.DEFAULT_TYPE | None = None,
     user=None,
 ) -> TelegramTextView | TelegramPhotoView:
-    from englishbot.telegram_medium_task_ui import build_medium_question_view
+    from englishbot.telegram.medium_task_ui import build_medium_question_view
 
     return build_medium_question_view(
         question,
@@ -3758,7 +3758,7 @@ async def _prepare_and_send_image_review_step(
     *,
     user=None,
 ) -> None:
-    from englishbot.telegram_image_review_support import (
+    from englishbot.telegram.image_review_support import (
         prepare_and_send_image_review_step,
     )
 
@@ -3778,7 +3778,7 @@ async def _send_current_published_image_preview(
     *,
     user=None,
 ) -> None:
-    from englishbot.telegram_image_review_support import (
+    from englishbot.telegram.image_review_support import (
         send_current_published_image_preview,
     )
 
@@ -3797,7 +3797,7 @@ async def _send_image_review_step(
     *,
     user=None,
 ) -> None:
-    from englishbot.telegram_image_review_support import send_image_review_step
+    from englishbot.telegram.image_review_support import send_image_review_step
 
     await send_image_review_step(
         message,
@@ -3808,7 +3808,7 @@ async def _send_image_review_step(
 
 
 def _build_image_review_candidate_strip(*, flow, item_id: str, candidate_paths: list[Path]) -> Path:
-    from englishbot.telegram_image_review_support import (
+    from englishbot.telegram.image_review_support import (
         build_image_review_candidate_strip,
     )
 
