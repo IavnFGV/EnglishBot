@@ -388,6 +388,8 @@ async def add_words_text_handler(
             registry.clear(flow_id=flow_id, tag=bot_module._PUBLISHED_WORD_EDIT_TAG)
         return
     if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_PROMPT_TEXT:
+        from englishbot.telegram.interaction import clear_image_review_text_edit_interaction
+
         review_flow_id = context.user_data.get("image_review_flow_id")
         review_item_id = context.user_data.get("image_review_item_id")
         review_flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
@@ -397,18 +399,12 @@ async def add_words_text_handler(
             or review_flow.current_item is None
             or review_flow.current_item.item_id != review_item_id
         ):
-            context.user_data.pop("words_flow_mode", None)
-            context.user_data.pop("image_review_flow_id", None)
-            context.user_data.pop("image_review_item_id", None)
-            bot_module._clear_expected_user_input(context)
+            clear_image_review_text_edit_interaction(context)
             await message.reply_text(
                 bot_module._tg("image_review_task_inactive", context=context, user=user)
             )
             return
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("image_review_flow_id", None)
-        context.user_data.pop("image_review_item_id", None)
-        bot_module._clear_expected_user_input(context)
+        clear_image_review_text_edit_interaction(context)
         status_message = await message.reply_text(
             bot_module._tg("updating_image_prompt", context=context, user=user)
         )
@@ -456,6 +452,8 @@ async def add_words_text_handler(
         await bot_module._send_image_review_step(message, context, updated_flow)
         return
     if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT:
+        from englishbot.telegram.interaction import clear_image_review_text_edit_interaction
+
         review_flow_id = context.user_data.get("image_review_flow_id")
         review_item_id = context.user_data.get("image_review_item_id")
         review_flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
@@ -465,18 +463,12 @@ async def add_words_text_handler(
             or review_flow.current_item is None
             or review_flow.current_item.item_id != review_item_id
         ):
-            context.user_data.pop("words_flow_mode", None)
-            context.user_data.pop("image_review_flow_id", None)
-            context.user_data.pop("image_review_item_id", None)
-            bot_module._clear_expected_user_input(context)
+            clear_image_review_text_edit_interaction(context)
             await message.reply_text(
                 bot_module._tg("image_review_task_inactive", context=context, user=user)
             )
             return
-        context.user_data.pop("words_flow_mode", None)
-        context.user_data.pop("image_review_flow_id", None)
-        context.user_data.pop("image_review_item_id", None)
-        bot_module._clear_expected_user_input(context)
+        clear_image_review_text_edit_interaction(context)
         status_message = await message.reply_text(
             bot_module._tg("searching_pixabay", context=context, user=user)
         )

@@ -42,6 +42,36 @@ def tts_voice_interaction_id(*, user_id: int) -> str:
     return f"tts-voice:{user_id}"
 
 
+def start_image_review_text_edit_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    mode: str,
+    flow_id: str,
+    item_id: str,
+    chat_id: int | None,
+    message_id: int | None,
+) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data["words_flow_mode"] = mode
+        user_data["image_review_flow_id"] = flow_id
+        user_data["image_review_item_id"] = item_id
+    remember_expected_user_input(
+        context,
+        chat_id=chat_id,
+        message_id=message_id,
+    )
+
+
+def clear_image_review_text_edit_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data.pop("words_flow_mode", None)
+        user_data.pop("image_review_flow_id", None)
+        user_data.pop("image_review_item_id", None)
+    clear_expected_user_input(context)
+
+
 async def replace_lesson_question_message(
     context: ContextTypes.DEFAULT_TYPE,
     *,

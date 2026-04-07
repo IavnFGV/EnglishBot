@@ -570,6 +570,8 @@ async def image_review_edit_prompt_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import start_image_review_text_edit_interaction
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
@@ -582,9 +584,6 @@ async def image_review_edit_prompt_handler(
             bot_module._tg("image_review_flow_inactive", context=context, user=user)
         )
         return
-    context.user_data["words_flow_mode"] = bot_module._IMAGE_REVIEW_AWAITING_PROMPT_TEXT
-    context.user_data["image_review_flow_id"] = flow_id
-    context.user_data["image_review_item_id"] = flow.current_item.item_id
     instruction_view, current_prompt_view = build_image_review_prompt_edit_view(
         instruction_text=bot_module._tg("send_new_full_prompt", context=context, user=user),
         current_prompt_text=bot_module._tg(
@@ -596,8 +595,11 @@ async def image_review_edit_prompt_handler(
         instruction_markup=ForceReply(selective=True),
     )
     prompt_message = await send_telegram_view(query.message, instruction_view)
-    bot_module._remember_expected_user_input(
+    start_image_review_text_edit_interaction(
         context,
+        mode=bot_module._IMAGE_REVIEW_AWAITING_PROMPT_TEXT,
+        flow_id=flow_id,
+        item_id=flow.current_item.item_id,
         chat_id=bot_module._message_chat_id(prompt_message),
         message_id=getattr(prompt_message, "message_id", None),
     )
@@ -608,6 +610,8 @@ async def image_review_edit_search_query_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
+    from englishbot.telegram.interaction import start_image_review_text_edit_interaction
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
@@ -620,9 +624,6 @@ async def image_review_edit_search_query_handler(
             bot_module._tg("image_review_flow_inactive", context=context, user=user)
         )
         return
-    context.user_data["words_flow_mode"] = bot_module._IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT
-    context.user_data["image_review_flow_id"] = flow_id
-    context.user_data["image_review_item_id"] = flow.current_item.item_id
     current_query = flow.current_item.search_query or flow.current_item.english_word
     instruction_view, current_query_view = build_image_review_search_query_edit_view(
         instruction_text=bot_module._tg("send_new_search_query", context=context, user=user),
@@ -635,8 +636,11 @@ async def image_review_edit_search_query_handler(
         instruction_markup=ForceReply(selective=True),
     )
     prompt_message = await send_telegram_view(query.message, instruction_view)
-    bot_module._remember_expected_user_input(
+    start_image_review_text_edit_interaction(
         context,
+        mode=bot_module._IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT,
+        flow_id=flow_id,
+        item_id=flow.current_item.item_id,
         chat_id=bot_module._message_chat_id(prompt_message),
         message_id=getattr(prompt_message, "message_id", None),
     )
