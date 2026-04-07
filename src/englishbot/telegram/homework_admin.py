@@ -5,8 +5,71 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from englishbot import bot as bot_module
-from englishbot.domain.models import GoalPeriod, GoalType
 from englishbot.application.homework_progress_use_cases import GoalWordSource, LearnerProgressSummary
+from englishbot.domain.models import GoalPeriod, GoalType
+from englishbot.presentation.telegram_assignments_admin_ui import (
+    admin_goal_manual_keyboard as ui_admin_goal_manual_keyboard,
+    admin_goal_recipients_keyboard as ui_admin_goal_recipients_keyboard,
+    assignment_goal_detail_keyboard as ui_assignment_goal_detail_keyboard,
+    assignment_user_goals_keyboard as ui_assignment_user_goals_keyboard,
+    assignment_users_keyboard as ui_assignment_users_keyboard,
+)
+from englishbot.presentation.telegram_assignments_ui import (
+    admin_goal_custom_target_keyboard as ui_admin_goal_custom_target_keyboard,
+    admin_goal_deadline_keyboard as ui_admin_goal_deadline_keyboard,
+    admin_goal_period_keyboard as ui_admin_goal_period_keyboard,
+    admin_goal_source_keyboard as ui_admin_goal_source_keyboard,
+    admin_goal_target_keyboard as ui_admin_goal_target_keyboard,
+    assign_menu_keyboard as ui_assign_menu_keyboard,
+    goal_list_keyboard as ui_goal_list_keyboard,
+)
+from englishbot.presentation.telegram_views import build_assignment_menu_view
+
+
+def _admin_goal_manual_keyboard(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    page: int,
+):
+    from englishbot.telegram.interaction import get_admin_goal_creation_state
+
+    items = bot_module._content_store(context).list_all_vocabulary()
+    selected = set(get_admin_goal_creation_state(context).manual_word_ids)
+    keyboard, normalized_page = ui_admin_goal_manual_keyboard(
+        tg=bot_module._tg,
+        items=items,
+        selected_word_ids=selected,
+        page=page,
+        language=bot_module._telegram_ui_language(context, user),
+    )
+    bot_module._set_user_data(context, "admin_goal_manual_page", normalized_page)
+    return keyboard
+
+
+def _admin_goal_recipients_keyboard(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    page: int,
+):
+    from englishbot.telegram.interaction import get_admin_goal_creation_state
+
+    items = bot_module._known_assignment_users(
+        context,
+        viewer_user_id=user.id,
+        viewer_username=getattr(user, "username", None),
+    )
+    selected = set(get_admin_goal_creation_state(context).recipient_user_ids)
+    keyboard, normalized_page = ui_admin_goal_recipients_keyboard(
+        tg=bot_module._tg,
+        items=items,
+        selected_user_ids=selected,
+        page=page,
+        language=bot_module._telegram_ui_language(context, user),
+    )
+    bot_module._set_user_data(context, "admin_goal_recipients_page", normalized_page)
+    return keyboard
 
 
 async def words_goals_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -29,7 +92,8 @@ async def words_goals_callback_handler(update: Update, context: ContextTypes.DEF
     try:
         await query.edit_message_text(
             bot_module._render_progress_text(context=context, user=user),
-            reply_markup=bot_module._goal_list_keyboard(
+            reply_markup=ui_goal_list_keyboard(
+                tg=bot_module._tg,
                 goals=filtered_summary.active_goals,
                 language=bot_module._telegram_ui_language(context, user),
             ),
@@ -54,10 +118,15 @@ async def goal_setup_disabled_callback_handler(update: Update, context: ContextT
     clear_self_goal_target_interaction(context)
     await query.edit_message_text(
         bot_module._tg("self_goal_setup_disabled", context=context, user=user),
-        reply_markup=bot_module._assign_menu_view(
+        reply_markup=build_assignment_menu_view(
             text=bot_module._tg("assign_menu_title", context=context, user=user),
-            context=context,
-            user=user,
+            reply_markup=ui_assign_menu_keyboard(
+                tg=bot_module._tg,
+                is_admin=bool(user and bot_module._is_admin(user.id, context)),
+                guide_web_app_url=bot_module._assignment_guide_web_app_url(context, user=user),
+                admin_web_app_url=bot_module._admin_web_app_url(context, user=user),
+                language=bot_module._telegram_ui_language(context, user),
+            ),
         ).reply_markup,
     )
 
@@ -100,7 +169,8 @@ async def admin_assign_goal_start_handler(update: Update, context: ContextTypes.
     start_admin_goal_creation_state(context)
     await query.edit_message_text(
         bot_module._tg("assign_setup_intro", context=context, user=user),
-        reply_markup=bot_module._admin_goal_period_keyboard(
+        reply_markup=ui_admin_goal_period_keyboard(
+            tg=bot_module._tg,
             language=bot_module._telegram_ui_language(context, user)
         ),
     )
@@ -121,7 +191,8 @@ async def admin_goal_period_callback_handler(update: Update, context: ContextTyp
     )
     await query.edit_message_text(
         bot_module._tg("goal_source_prompt", context=context, user=user),
-        reply_markup=bot_module._admin_goal_source_keyboard(
+        reply_markup=ui_admin_goal_source_keyboard(
+            tg=bot_module._tg,
             language=bot_module._telegram_ui_language(context, user)
         ),
     )
@@ -135,7 +206,8 @@ async def admin_goal_target_menu_callback_handler(update: Update, context: Conte
     await query.answer()
     await query.edit_message_text(
         bot_module._tg("goal_target_prompt", context=context, user=user),
-        reply_markup=bot_module._admin_goal_target_keyboard(
+        reply_markup=ui_admin_goal_target_keyboard(
+            tg=bot_module._tg,
             language=bot_module._telegram_ui_language(context, user)
         ),
     )
@@ -160,7 +232,8 @@ async def admin_goal_target_callback_handler(update: Update, context: ContextTyp
         )
         await query.edit_message_text(
             bot_module._tg("goal_target_custom_prompt", context=context, user=user),
-            reply_markup=bot_module._admin_goal_custom_target_keyboard(
+            reply_markup=ui_admin_goal_custom_target_keyboard(
+                tg=bot_module._tg,
                 language=bot_module._telegram_ui_language(context, user)
             ),
         )
@@ -168,7 +241,8 @@ async def admin_goal_target_callback_handler(update: Update, context: ContextTyp
     update_admin_goal_creation_state(context, target_count=int(target))
     await query.edit_message_text(
         bot_module._tg("goal_source_prompt", context=context, user=user),
-        reply_markup=bot_module._admin_goal_source_keyboard(
+        reply_markup=ui_admin_goal_source_keyboard(
+            tg=bot_module._tg,
             language=bot_module._telegram_ui_language(context, user)
         ),
     )
@@ -182,7 +256,8 @@ async def admin_goal_source_menu_callback_handler(update: Update, context: Conte
     await query.answer()
     await query.edit_message_text(
         bot_module._tg("goal_source_prompt", context=context, user=user),
-        reply_markup=bot_module._admin_goal_source_keyboard(
+        reply_markup=ui_admin_goal_source_keyboard(
+            tg=bot_module._tg,
             language=bot_module._telegram_ui_language(context, user)
         ),
     )
@@ -203,7 +278,7 @@ async def admin_goal_source_callback_handler(update: Update, context: ContextTyp
         )
         await query.edit_message_text(
             bot_module._tg("assign_select_users_prompt", context=context, user=user),
-            reply_markup=bot_module._admin_goal_recipients_keyboard(context=context, user=user, page=0),
+            reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=0),
         )
         return
     source = query.data.split(":")[-1]
@@ -224,12 +299,12 @@ async def admin_goal_source_callback_handler(update: Update, context: ContextTyp
         update_admin_goal_creation_state(context, manual_word_ids=set())
         await query.edit_message_text(
             bot_module._tg("goal_source_manual_prompt", context=context, user=user),
-            reply_markup=bot_module._admin_goal_manual_keyboard(context=context, user=user, page=0),
+            reply_markup=_admin_goal_manual_keyboard(context=context, user=user, page=0),
         )
         return
     await query.edit_message_text(
         bot_module._tg("assign_select_users_prompt", context=context, user=user),
-        reply_markup=bot_module._admin_goal_recipients_keyboard(context=context, user=user, page=0),
+        reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=0),
     )
 
 
@@ -258,7 +333,7 @@ async def admin_goal_manual_toggle_callback_handler(update: Update, context: Con
         update_admin_goal_creation_state(context, manual_word_ids=selected)
     await query.edit_message_text(
         bot_module._tg("goal_source_manual_prompt", context=context, user=user),
-        reply_markup=bot_module._admin_goal_manual_keyboard(context=context, user=user, page=page),
+        reply_markup=_admin_goal_manual_keyboard(context=context, user=user, page=page),
     )
 
 
@@ -275,7 +350,7 @@ async def admin_goal_manual_done_callback_handler(update: Update, context: Conte
         return
     await query.edit_message_text(
         bot_module._tg("assign_select_users_prompt", context=context, user=user),
-        reply_markup=bot_module._admin_goal_recipients_keyboard(context=context, user=user, page=0),
+        reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=0),
     )
 
 
@@ -309,7 +384,8 @@ async def admin_goal_recipients_callback_handler(update: Update, context: Contex
         )
         await query.edit_message_text(
             bot_module._tg("admin_goal_deadline_prompt", context=context, user=user),
-            reply_markup=bot_module._admin_goal_deadline_keyboard(
+            reply_markup=ui_admin_goal_deadline_keyboard(
+                tg=bot_module._tg,
                 language=bot_module._telegram_ui_language(context, user)
             ),
         )
@@ -326,7 +402,7 @@ async def admin_goal_recipients_callback_handler(update: Update, context: Contex
         page = state.recipients_page
     await query.edit_message_text(
         bot_module._tg("assign_select_users_prompt", context=context, user=user),
-        reply_markup=bot_module._admin_goal_recipients_keyboard(context=context, user=user, page=page),
+        reply_markup=_admin_goal_recipients_keyboard(context=context, user=user, page=page),
     )
 
 
@@ -349,7 +425,8 @@ async def admin_goal_deadline_callback_handler(update: Update, context: ContextT
         )
         await query.edit_message_text(
             bot_module._tg("admin_goal_deadline_custom_prompt", context=context, user=user),
-            reply_markup=bot_module._admin_goal_deadline_keyboard(
+            reply_markup=ui_admin_goal_deadline_keyboard(
+                tg=bot_module._tg,
                 language=bot_module._telegram_ui_language(context, user)
             ),
         )
@@ -420,7 +497,11 @@ async def admin_users_progress_callback_handler(update: Update, context: Context
         )
     await query.edit_message_text(
         "\n".join(lines),
-        reply_markup=bot_module._assignment_users_keyboard(context=context, user=user, users=users),
+        reply_markup=ui_assignment_users_keyboard(
+            tg=bot_module._tg,
+            users=users,
+            language=bot_module._telegram_ui_language(context, user),
+        ),
     )
 
 
@@ -443,11 +524,11 @@ async def assign_user_detail_callback_handler(update: Update, context: ContextTy
     goals = bot_module._admin_user_goals_use_case(context).execute(user_id=target_user_id, include_history=True)
     await query.edit_message_text(
         bot_module._render_assignment_user_detail_text(context=context, user=user, item=target, goals=goals),
-        reply_markup=bot_module._assignment_user_goals_keyboard(
-            context=context,
+        reply_markup=ui_assignment_user_goals_keyboard(
+            tg=bot_module._tg,
             user_id=target_user_id,
             goals=goals,
-            user=user,
+            language=bot_module._telegram_ui_language(context, user),
         ),
     )
 
@@ -466,10 +547,10 @@ async def assign_goal_detail_callback_handler(update: Update, context: ContextTy
         return
     await query.edit_message_text(
         bot_module._render_assignment_goal_detail_text(context=context, user=user, detail=detail),
-        reply_markup=bot_module._assignment_goal_detail_keyboard(
-            context=context,
+        reply_markup=ui_assignment_goal_detail_keyboard(
+            tg=bot_module._tg,
             user_id=target_user_id,
-            user=user,
+            language=bot_module._telegram_ui_language(context, user),
         ),
     )
 
@@ -493,10 +574,15 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             message,
             bot_module.build_status_view(
                 text=bot_module._tg("self_goal_setup_disabled", context=context, user=user),
-                reply_markup=bot_module._assign_menu_view(
+                reply_markup=build_assignment_menu_view(
                     text=bot_module._tg("assign_menu_title", context=context, user=user),
-                    context=context,
-                    user=user,
+                    reply_markup=ui_assign_menu_keyboard(
+                        tg=bot_module._tg,
+                        is_admin=bool(user and bot_module._is_admin(user.id, context)),
+                        guide_web_app_url=bot_module._assignment_guide_web_app_url(context, user=user),
+                        admin_web_app_url=bot_module._admin_web_app_url(context, user=user),
+                        language=bot_module._telegram_ui_language(context, user),
+                    ),
                 ).reply_markup,
             ),
         )
@@ -508,7 +594,8 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     }:
         return
     if flow_mode == bot_module._ADMIN_GOAL_AWAITING_TARGET_TEXT:
-        prompt_reply_markup = bot_module._admin_goal_custom_target_keyboard(
+        prompt_reply_markup = ui_admin_goal_custom_target_keyboard(
+            tg=bot_module._tg,
             language=bot_module._telegram_ui_language(context, user)
         )
         try:
@@ -539,7 +626,8 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             return
         update_admin_goal_creation_state(context, target_count=target_count)
         clear_admin_goal_prompt_interaction(context)
-        next_reply_markup = bot_module._admin_goal_source_keyboard(
+        next_reply_markup = ui_admin_goal_source_keyboard(
+            tg=bot_module._tg,
             language=bot_module._telegram_ui_language(context, user)
         )
         edited = await bot_module._edit_expected_user_input_prompt(
@@ -559,7 +647,8 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         parsed_deadline = bot_module.datetime.strptime(deadline_text, "%Y-%m-%d").date().isoformat()
     except ValueError:
-        prompt_reply_markup = bot_module._admin_goal_deadline_keyboard(
+        prompt_reply_markup = ui_admin_goal_deadline_keyboard(
+            tg=bot_module._tg,
             language=bot_module._telegram_ui_language(context, user)
         )
         edited = await bot_module._edit_expected_user_input_prompt(

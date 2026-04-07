@@ -88,6 +88,7 @@ New editor Telegram flows should prefer calling presentation-layer keyboard buil
 The same applies to simple status/progress views such as `build_status_view(...)`: feature modules should import them from presentation directly instead of routing them through `bot.py`.
 Topic/word list views and editor cancel menus should follow the same rule: build them in the editor Telegram module with direct presentation imports unless there is a deliberate compatibility reason to keep a bot-level wrapper.
 Small game-mode UI pieces such as result keyboards should also live in presentation modules instead of growing new Telegram-specific wrappers in `bot.py`.
+Admin/homework Telegram modules should also prefer direct assignment presentation imports for menus and detail keyboards, keeping `bot.py` focused on shared runtime access and true cross-flow helpers.
 
 ## Why It Still Feels Big
 
