@@ -18,6 +18,22 @@ class TelegramExpectedInputPrompt:
     message_id: int
 
 
+def lesson_interaction_id(*, session_id: str) -> str:
+    return session_id
+
+
+def chat_menu_interaction_id(*, user_id: int) -> str:
+    return f"chat-menu:{user_id}"
+
+
+def published_word_edit_interaction_id(*, user_id: int) -> str:
+    return f"published-word-edit:{user_id}"
+
+
+def tts_voice_interaction_id(*, user_id: int) -> str:
+    return f"tts-voice:{user_id}"
+
+
 def remember_expected_user_input(
     context: ContextTypes.DEFAULT_TYPE,
     *,

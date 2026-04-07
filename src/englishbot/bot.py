@@ -1417,7 +1417,9 @@ def _quick_actions_view(
 
 
 def _chat_menu_flow_id(*, user_id: int) -> str:
-    return f"chat-menu:{user_id}"
+    from englishbot.telegram.interaction import chat_menu_interaction_id
+
+    return chat_menu_interaction_id(user_id=user_id)
 
 
 def _start_menu_view(

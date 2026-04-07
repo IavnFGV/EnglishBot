@@ -150,11 +150,15 @@ def track_flow_message(
 
 
 def published_word_edit_flow_id(*, user_id: int) -> str:
-    return f"published-word-edit:{user_id}"
+    from englishbot.telegram.interaction import published_word_edit_interaction_id
+
+    return published_word_edit_interaction_id(user_id=user_id)
 
 
 def tts_voice_flow_id(*, user_id: int) -> str:
-    return f"tts-voice:{user_id}"
+    from englishbot.telegram.interaction import tts_voice_interaction_id
+
+    return tts_voice_interaction_id(user_id=user_id)
 
 
 async def reply_voice_replacing_previous_tts(

@@ -8,12 +8,16 @@ from telegram.error import BadRequest
 
 from englishbot.telegram.interaction import (
     TelegramExpectedInputPrompt,
+    chat_menu_interaction_id,
     clear_expected_user_input,
     edit_expected_user_input_prompt,
     finish_interaction,
     get_expected_user_input_prompt,
+    lesson_interaction_id,
+    published_word_edit_interaction_id,
     remember_expected_user_input,
     replace_flow_message,
+    tts_voice_interaction_id,
 )
 
 
@@ -26,6 +30,13 @@ def test_remember_and_get_expected_user_input_prompt() -> None:
         chat_id=101,
         message_id=202,
     )
+
+
+def test_named_interaction_ids_are_stable() -> None:
+    assert lesson_interaction_id(session_id="lesson-1") == "lesson-1"
+    assert chat_menu_interaction_id(user_id=7) == "chat-menu:7"
+    assert published_word_edit_interaction_id(user_id=7) == "published-word-edit:7"
+    assert tts_voice_interaction_id(user_id=7) == "tts-voice:7"
 
 
 def test_clear_expected_user_input_prompt() -> None:
