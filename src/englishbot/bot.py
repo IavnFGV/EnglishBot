@@ -3191,72 +3191,33 @@ def _medium_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
 
 
 def _tts_task_lock(context: ContextTypes.DEFAULT_TYPE) -> asyncio.Lock:
-    user_data = _user_data_or_none(context)
-    if user_data is None:
-        return asyncio.Lock()
-    lock = user_data.get(_TTS_TASK_LOCK_KEY)
-    if isinstance(lock, asyncio.Lock):
-        return lock
-    created_lock = asyncio.Lock()
-    user_data[_TTS_TASK_LOCK_KEY] = created_lock
-    return created_lock
+    from englishbot.telegram.tts_state import tts_task_lock
+
+    return tts_task_lock(context)
 
 
 def _tts_selected_voice_store(context: ContextTypes.DEFAULT_TYPE) -> dict[str, str]:
-    user_data = _user_data_or_none(context)
-    if user_data is None:
-        return {}
-    current = user_data.get(_TTS_SELECTED_VOICE_KEY)
-    if isinstance(current, dict):
-        return current
-    created: dict[str, str] = {}
-    user_data[_TTS_SELECTED_VOICE_KEY] = created
-    return created
+    from englishbot.telegram.tts_state import tts_selected_voice_store
+
+    return tts_selected_voice_store(context)
 
 
 def _tts_selected_voice_name(context: ContextTypes.DEFAULT_TYPE, *, item_id: str) -> str | None:
-    variants = _tts_voice_variants(context)
-    if not variants:
-        return None
-    selected = _tts_selected_voice_store(context).get(item_id)
-    if selected in variants:
-        return selected
-    selected = variants[0]
-    _tts_selected_voice_store(context)[item_id] = selected
-    return selected
+    from englishbot.telegram.tts_state import tts_selected_voice_name
+
+    return tts_selected_voice_name(context, item_id=item_id)
 
 
 def _advance_tts_selected_voice_name(context: ContextTypes.DEFAULT_TYPE, *, item_id: str) -> str | None:
-    variants = _tts_voice_variants(context)
-    if not variants:
-        return None
-    current = _tts_selected_voice_name(context, item_id=item_id)
-    if current not in variants:
-        next_voice_name = variants[0]
-    else:
-        next_voice_name = variants[(variants.index(current) + 1) % len(variants)]
-    _tts_selected_voice_store(context)[item_id] = next_voice_name
-    return next_voice_name
+    from englishbot.telegram.tts_state import advance_tts_selected_voice_name
+
+    return advance_tts_selected_voice_name(context, item_id=item_id)
 
 
 def _tts_recent_request(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, str, float] | None:
-    value = _optional_user_data(context, _TTS_TASK_RECENT_KEY)
-    if (
-        isinstance(value, tuple)
-        and len(value) == 3
-        and isinstance(value[0], str)
-        and isinstance(value[1], str)
-        and isinstance(value[2], (int, float))
-    ):
-        return value[0], value[1], float(value[2])
-    if (
-        isinstance(value, tuple)
-        and len(value) == 2
-        and isinstance(value[0], str)
-        and isinstance(value[1], (int, float))
-    ):
-        return value[0], "", float(value[1])
-    return None
+    from englishbot.telegram.tts_state import tts_recent_request
+
+    return tts_recent_request(context)
 
 
 def _set_tts_recent_request(
@@ -3266,7 +3227,14 @@ def _set_tts_recent_request(
     voice_name: str,
     sent_at: float,
 ) -> None:
-    _set_user_data(context, _TTS_TASK_RECENT_KEY, (item_id, voice_name, sent_at))
+    from englishbot.telegram.tts_state import set_tts_recent_request
+
+    set_tts_recent_request(
+        context,
+        item_id=item_id,
+        voice_name=voice_name,
+        sent_at=sent_at,
+    )
 
 
 def _medium_task_is_complete(state: _MediumTaskState) -> bool:

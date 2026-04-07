@@ -251,9 +251,9 @@ def tts_voice_variants(context: ContextTypes.DEFAULT_TYPE):
 
 
 def tts_selected_voice_name(context: ContextTypes.DEFAULT_TYPE, *, item_id: str):
-    import englishbot.bot as bot_module
+    from englishbot.telegram.tts_state import tts_selected_voice_name as state_tts_selected_voice_name
 
-    return bot_module._tts_selected_voice_name(context, item_id=item_id)
+    return state_tts_selected_voice_name(context, item_id=item_id)
 
 
 def tts_voice_label(context: ContextTypes.DEFAULT_TYPE, *, user, voice_name: str) -> str:
@@ -263,9 +263,29 @@ def tts_voice_label(context: ContextTypes.DEFAULT_TYPE, *, user, voice_name: str
 
 
 def tts_recent_request(context: ContextTypes.DEFAULT_TYPE):
-    import englishbot.bot as bot_module
+    from englishbot.telegram.tts_state import tts_recent_request as state_tts_recent_request
 
-    return bot_module._tts_recent_request(context)
+    return state_tts_recent_request(context)
+
+
+def tts_task_lock(context: ContextTypes.DEFAULT_TYPE):
+    from englishbot.telegram.tts_state import tts_task_lock as state_tts_task_lock
+
+    return state_tts_task_lock(context)
+
+
+def tts_selected_voice_store(context: ContextTypes.DEFAULT_TYPE):
+    from englishbot.telegram.tts_state import tts_selected_voice_store as state_tts_selected_voice_store
+
+    return state_tts_selected_voice_store(context)
+
+
+def advance_tts_selected_voice_name(context: ContextTypes.DEFAULT_TYPE, *, item_id: str):
+    from englishbot.telegram.tts_state import (
+        advance_tts_selected_voice_name as state_advance_tts_selected_voice_name,
+    )
+
+    return state_advance_tts_selected_voice_name(context, item_id=item_id)
 
 
 def set_tts_recent_request(
@@ -275,9 +295,9 @@ def set_tts_recent_request(
     voice_name: str,
     sent_at: float,
 ) -> None:
-    import englishbot.bot as bot_module
+    from englishbot.telegram.tts_state import set_tts_recent_request as state_set_tts_recent_request
 
-    bot_module._set_tts_recent_request(
+    state_set_tts_recent_request(
         context,
         item_id=item_id,
         voice_name=voice_name,

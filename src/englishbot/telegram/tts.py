@@ -76,7 +76,7 @@ async def tts_voice_select_handler(
         if index < 0 or index >= len(variants):
             await query.answer()
             return
-        bot_module._tts_selected_voice_store(context)[current_question.item_id] = variants[index]
+        tg_runtime.tts_selected_voice_store(context)[current_question.item_id] = variants[index]
         await query.answer(tg_runtime.tts_voice_label(context, user=user, voice_name=variants[index]))
     else:
         await query.answer()
@@ -123,7 +123,7 @@ async def send_tts_for_current_question(
         await query.answer(tg_runtime.tg("no_active_session_begin", context=context, user=user))
         return
     if advance_voice:
-        selected_voice_name = bot_module._advance_tts_selected_voice_name(
+        selected_voice_name = tg_runtime.advance_tts_selected_voice_name(
             context,
             item_id=current_question.item_id,
         )
@@ -135,7 +135,7 @@ async def send_tts_for_current_question(
     if selected_voice_name is None:
         await query.answer(tg_runtime.tg("tts_unavailable", context=context, user=user))
         return
-    lock = bot_module._tts_task_lock(context)
+    lock = tg_runtime.tts_task_lock(context)
     if lock.locked():
         await query.answer(tg_runtime.tg("tts_already_sending", context=context, user=user))
         return

@@ -109,6 +109,7 @@ The same is now true for the main editor modules: direct editor runtime, interac
 Assignment progress is one step more conservative: the real implementation already lives in [src/englishbot/telegram/assignment_progress.py](/workspaces/EnglishBot/src/englishbot/telegram/assignment_progress.py), but a small bot-level wrapper surface is still intentionally kept because existing bot-handler tests and monkeypatch-based compatibility checks use it directly.
 Notifications are similar: the module now owns its fixed dismiss callback, timing windows, and requeue wiring, but the `_PendingNotification` compatibility surface is still intentionally preserved in `bot.py` for wrapper-level tests and callers.
 Shared Telegram facade dataclasses now also live outside `bot.py`: `AssignmentRoundProgressView` and `PendingNotification` are defined in [src/englishbot/telegram/models.py](/workspaces/EnglishBot/src/englishbot/telegram/models.py), while `bot.py` keeps compatibility aliases for existing tests and import paths.
+The same cleanup now applies to TTS transient Telegram state: selected voice, repeat cooldown tracking, and per-user TTS locks live in [src/englishbot/telegram/tts_state.py](/workspaces/EnglishBot/src/englishbot/telegram/tts_state.py), while `bot.py` keeps compatibility wrappers and stable test constants.
 
 ## Why It Still Feels Big
 
