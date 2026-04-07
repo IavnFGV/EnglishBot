@@ -7,6 +7,8 @@ from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
 from englishbot import bot as bot_module
+from englishbot.domain.models import GoalType
+from englishbot.telegram.models import PendingNotification
 from englishbot.telegram import runtime as tg_runtime
 from englishbot.telegram.buttons import InlineKeyboardButton
 from englishbot.telegram.flow_tracking import delete_message_if_possible
@@ -122,8 +124,6 @@ def schedule_notification(
     *,
     notification,
 ) -> None:
-    import englishbot.bot as bot_module
-
     delay_seconds = notification_wait_seconds(context, user_id=notification.recipient_user_id)
     not_before_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
     repository = pending_notification_repository(context)
@@ -136,7 +136,7 @@ def schedule_notification(
         )
     else:
         pending = pending_notifications(context)
-        pending[notification.key] = bot_module._PendingNotification(
+        pending[notification.key] = PendingNotification(
             key=notification.key,
             recipient_user_id=notification.recipient_user_id,
             text=notification.text,
@@ -226,8 +226,6 @@ async def deliver_pending_notification_job(context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def homework_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    import englishbot.bot as bot_module
-
     rows = tg_runtime.content_store(context).list_users_goal_overview()
     today = datetime.now(UTC).date().isoformat()
     for row in rows:
@@ -237,7 +235,7 @@ async def homework_assignment_reminder_job(context: ContextTypes.DEFAULT_TYPE) -
             continue
         schedule_notification(
             context,
-            notification=bot_module._PendingNotification(
+            notification=PendingNotification(
                 key=f"assignment-reminder:{today}:{user_id}",
                 recipient_user_id=user_id,
                 text=tg_runtime.tg(
@@ -275,13 +273,11 @@ def schedule_assignment_assigned_notifications(
     *,
     goals: list,
 ) -> None:
-    import englishbot.bot as bot_module
-
     for goal in goals:
         language = tg_runtime.telegram_ui_language_for_user_id(context, user_id=int(goal.user_id))
         goal_type_key = {
-            bot_module.GoalType.NEW_WORDS.value: "goal_type_new_words",
-            bot_module.GoalType.WORD_LEVEL_HOMEWORK.value: "goal_type_word_level_homework",
+            GoalType.NEW_WORDS.value: "goal_type_new_words",
+            GoalType.WORD_LEVEL_HOMEWORK.value: "goal_type_word_level_homework",
         }.get(goal.goal_type.value)
         period_label = tg_runtime.tg("goal_period_homework", language=language)
         goal_type_label = tg_runtime.tg(goal_type_key, language=language) if goal_type_key is not None else goal.goal_type.value
@@ -292,7 +288,7 @@ def schedule_assignment_assigned_notifications(
                 tg_runtime.tg(
                     (
                         "assignment_assigned_word_level_homework"
-                        if goal.goal_type.value == bot_module.GoalType.WORD_LEVEL_HOMEWORK.value
+                        if goal.goal_type.value == GoalType.WORD_LEVEL_HOMEWORK.value
                         else "assignment_assigned_new_words"
                     ),
                     language=language,
@@ -302,7 +298,7 @@ def schedule_assignment_assigned_notifications(
                 ),
             ]
         )
-        notification = bot_module._PendingNotification(
+        notification = PendingNotification(
             key=f"assignment-assigned:{goal.goal_period.value}:{goal.id}:{goal.user_id}",
             recipient_user_id=goal.user_id,
             text=text,
@@ -316,8 +312,6 @@ def schedule_goal_completed_notifications(
     learner,
     completed_goals,
 ) -> None:
-    import englishbot.bot as bot_module
-
     role_repository = tg_runtime.optional_bot_data(context, "telegram_user_role_repository")
     if role_repository is None:
         return
@@ -326,7 +320,7 @@ def schedule_goal_completed_notifications(
     learner_name = getattr(learner, "username", None) or getattr(learner, "first_name", None) or str(learner.id)
     for admin_user_id in admin_ids:
         for goal in completed_goals:
-            notification = bot_module._PendingNotification(
+            notification = PendingNotification(
                 key=f"assignment-completed:{goal.goal.id}:{admin_user_id}",
                 recipient_user_id=admin_user_id,
                 text=(

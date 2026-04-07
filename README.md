@@ -18,6 +18,33 @@ The project is being simplified toward a teachable `1.0.0` architecture:
 - one obvious core scope: words, lessons, homework, progress, stats
 - optional tooling kept outside the default path and documented as extensions
 
+## Quick Start
+
+For the `1.0.0` core product, the shortest path is:
+
+1. Open the default lightweight devcontainer: `.devcontainer/devcontainer.json`
+2. Configure your bot settings in `.env`
+3. Start the bot:
+
+```bash
+python -m englishbot
+```
+
+Core Docker runtime:
+
+```bash
+docker compose up -d --build
+```
+
+Optional Docker overlay for Web App, TTS, and nginx:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.optional.yml up -d --build
+```
+
+Use the `cpu` or `gpu` devcontainer profiles only when you are actively working
+with optional local AI tooling such as Ollama or ComfyUI.
+
 Current architecture cleanup rules:
 
 - the default developer workflow must not require Ollama or ComfyUI

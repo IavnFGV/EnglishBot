@@ -108,6 +108,7 @@ Tracked-message registry access has also been normalized one level deeper: modul
 The same is now true for the main editor modules: direct editor runtime, interaction-mode, and tokenized callback work no longer flows through `bot.py`.
 Assignment progress is one step more conservative: the real implementation already lives in [src/englishbot/telegram/assignment_progress.py](/workspaces/EnglishBot/src/englishbot/telegram/assignment_progress.py), but a small bot-level wrapper surface is still intentionally kept because existing bot-handler tests and monkeypatch-based compatibility checks use it directly.
 Notifications are similar: the module now owns its fixed dismiss callback, timing windows, and requeue wiring, but the `_PendingNotification` compatibility surface is still intentionally preserved in `bot.py` for wrapper-level tests and callers.
+Shared Telegram facade dataclasses now also live outside `bot.py`: `AssignmentRoundProgressView` and `PendingNotification` are defined in [src/englishbot/telegram/models.py](/workspaces/EnglishBot/src/englishbot/telegram/models.py), while `bot.py` keeps compatibility aliases for existing tests and import paths.
 
 ## Why It Still Feels Big
 

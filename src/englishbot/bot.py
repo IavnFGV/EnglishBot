@@ -166,6 +166,10 @@ from englishbot.telegram.answer_handlers import (
     medium_answer_callback_handler as telegram_medium_answer_callback_handler,
     text_answer_handler as telegram_text_answer_handler,
 )
+from englishbot.telegram.models import (
+    AssignmentRoundProgressView as _AssignmentRoundProgressView,
+)
+from englishbot.telegram.models import PendingNotification as _PendingNotification
 from englishbot.telegram.answer_processing import (
     process_answer as delivery_process_answer,
     send_feedback as delivery_send_feedback,
@@ -285,14 +289,6 @@ class _GoalFeedbackUpdate:
 
 
 @dataclass(frozen=True, slots=True)
-class _AssignmentRoundProgressView:
-    completed_word_count: int
-    total_word_count: int
-    remaining_word_count: int
-    variant_key: str
-
-
-@dataclass(frozen=True, slots=True)
 class _MediumTaskState:
     session_id: str
     item_id: str
@@ -300,13 +296,6 @@ class _MediumTaskState:
     shuffled_letters: tuple[str, ...]
     selected_letter_indexes: tuple[int, ...]
     message_id: int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class _PendingNotification:
-    key: str
-    recipient_user_id: int
-    text: str
 
 
 def _draft_checkpoint_text(flow) -> str:

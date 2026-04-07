@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import hashlib
 import tempfile
 from pathlib import Path
 
@@ -8,11 +9,13 @@ from telegram import InputMediaPhoto
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
+from englishbot.domain.models import GoalPeriod, GoalStatus, GoalType
 from englishbot.presentation.assignment_progress_image import (
     AssignmentProgressSegment,
     AssignmentProgressSnapshot,
     render_assignment_progress_image,
 )
+from englishbot.telegram.models import AssignmentRoundProgressView
 from englishbot.telegram import runtime as tg_runtime
 from englishbot.telegram.flow_tracking import (
     delete_tracked_flow_messages,
@@ -29,13 +32,11 @@ def assignment_round_progress_view(
     goal_id: str | None = None,
     active_session=None,
 ):
-    import englishbot.bot as bot_module
-
     if goal_id is not None and tg_runtime.optional_bot_data(context, "content_store") is not None:
         store = tg_runtime.content_store(context)
         goals = store.list_user_goals(
             user_id=user_id,
-            statuses=(bot_module.GoalStatus.ACTIVE, bot_module.GoalStatus.COMPLETED),
+            statuses=(GoalStatus.ACTIVE, GoalStatus.COMPLETED),
         )
         goal = next(
             (
@@ -43,7 +44,7 @@ def assignment_round_progress_view(
                 for item in goals
                 if item.id == goal_id
                 and item.goal_period in assignment_periods_for_kind(kind)
-                and item.goal_type in {bot_module.GoalType.NEW_WORDS, bot_module.GoalType.WORD_LEVEL_HOMEWORK}
+                and item.goal_type in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}
             ),
             None,
         )
@@ -62,7 +63,7 @@ def assignment_round_progress_view(
         )
         total_word_count = len(rows)
         remaining_word_count = max(0, total_word_count - completed_word_count)
-        return bot_module._AssignmentRoundProgressView(
+        return AssignmentRoundProgressView(
             completed_word_count=completed_word_count,
             total_word_count=total_word_count,
             remaining_word_count=remaining_word_count,
@@ -78,7 +79,7 @@ def assignment_round_progress_view(
     launch_view = next((item for item in launch_views if item.kind is kind), None)
     if launch_view is None:
         return None
-    return bot_module._AssignmentRoundProgressView(
+    return AssignmentRoundProgressView(
         completed_word_count=launch_view.completed_word_count,
         total_word_count=launch_view.total_word_count,
         remaining_word_count=launch_view.remaining_word_count,
@@ -87,11 +88,9 @@ def assignment_round_progress_view(
 
 
 def assignment_progress_variant_index(*, variant_key: str, variant_count: int) -> int:
-    import englishbot.bot as bot_module
-
     if variant_count <= 0:
         return 0
-    digest = bot_module.hashlib.sha256(variant_key.encode("utf-8")).digest()
+    digest = hashlib.sha256(variant_key.encode("utf-8")).digest()
     return int.from_bytes(digest[:4], "big") % variant_count
 
 
@@ -178,9 +177,7 @@ def assignment_progress_flow_id(
 
 
 def assignment_periods_for_kind(kind) -> tuple:
-    import englishbot.bot as bot_module
-
-    return (bot_module.GoalPeriod(kind.value),)
+    return (GoalPeriod(kind.value),)
 
 
 def build_assignment_progress_snapshot(
@@ -192,14 +189,12 @@ def build_assignment_progress_snapshot(
     goal_id: str | None = None,
     active_session=None,
 ) -> AssignmentProgressSnapshot | None:
-    import englishbot.bot as bot_module
-
     if tg_runtime.optional_bot_data(context, "content_store") is None:
         return None
     store = tg_runtime.content_store(context)
     goals = store.list_user_goals(
         user_id=user_id,
-        statuses=((bot_module.GoalStatus.ACTIVE, bot_module.GoalStatus.COMPLETED) if goal_id is not None else (bot_module.GoalStatus.ACTIVE,)),
+        statuses=((GoalStatus.ACTIVE, GoalStatus.COMPLETED) if goal_id is not None else (GoalStatus.ACTIVE,)),
     )
     progress_by_word: dict[str, AssignmentProgressSegment] = {}
     relevant_periods = assignment_periods_for_kind(kind)
@@ -208,7 +203,7 @@ def build_assignment_progress_snapshot(
             continue
         if goal.goal_period not in relevant_periods:
             continue
-        if goal.goal_type not in {bot_module.GoalType.NEW_WORDS, bot_module.GoalType.WORD_LEVEL_HOMEWORK}:
+        if goal.goal_type not in {GoalType.NEW_WORDS, GoalType.WORD_LEVEL_HOMEWORK}:
             continue
         for row in store.list_goal_word_details(goal_id=goal.id, user_id=user_id):
             word_id = str(row["word_id"])
@@ -259,9 +254,7 @@ def assignment_word_progress_value(
     goal,
     row: dict[str, object],
 ) -> float:
-    import englishbot.bot as bot_module
-
-    if goal.goal_type is bot_module.GoalType.WORD_LEVEL_HOMEWORK:
+    if goal.goal_type is GoalType.WORD_LEVEL_HOMEWORK:
         required_level = int(goal.required_level or 2)
         medium_success_count = int(row.get("medium_success_count") or 0)
         if required_level <= 1 and bool(row.get("easy_mastered")):
