@@ -365,7 +365,7 @@ Supported callback routes:
 
 `/assign` is now the dedicated homework area.
 
-What changed in `0.8.x`:
+What changed in the simplified `1.0.0` direction:
 
 - learners no longer choose between `daily`, `weekly`, and `all assignments`
 - the bot shows one homework entry point and one active homework summary
