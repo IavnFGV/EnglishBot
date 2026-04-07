@@ -14,6 +14,9 @@ Today it is mostly:
 - keyboard and small view builders that have not been moved yet
 - public wrapper handlers that call the real implementation modules under [src/englishbot/telegram/](/workspaces/EnglishBot/src/englishbot/telegram)
 
+After the Telegram interaction-layer work, `bot.py` no longer owns most prompt state or tracked-message lifecycle rules directly.
+Those are expected to live in [src/englishbot/telegram/interaction.py](/workspaces/EnglishBot/src/englishbot/telegram/interaction.py).
+
 ## Main Sections
 
 Read the file in this order.

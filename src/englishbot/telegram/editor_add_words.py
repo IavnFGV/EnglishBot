@@ -338,7 +338,9 @@ async def add_words_text_handler(
         permission=bot_module.PERMISSION_WORDS_ADD,
     ):
         context.user_data.pop("words_flow_mode", None)
-        bot_module._clear_expected_user_input(context)
+        from englishbot.telegram.interaction import clear_expected_user_input
+
+        clear_expected_user_input(context)
         return
     if words_flow_mode == bot_module._PUBLISHED_WORD_AWAITING_EDIT_TEXT:
         edit_interaction = get_published_word_edit_prompt_interaction(context)

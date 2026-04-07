@@ -21,6 +21,7 @@ CHAT_MENU_TAG = "chat_menu"
 ADD_WORDS_AWAITING_TEXT_MODE = "awaiting_raw_text"
 ADD_WORDS_AWAITING_EDIT_TEXT_MODE = "awaiting_edit_text"
 PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE = "awaiting_published_word_edit_text"
+SELF_GOAL_AWAITING_TARGET_MODE = "awaiting_goal_target_text"
 
 
 @dataclass(frozen=True, slots=True)
@@ -472,6 +473,22 @@ def clear_admin_goal_creation_state(
             user_data.pop(key, None)
     if clear_prompt:
         clear_admin_goal_prompt_interaction(context)
+
+
+def is_self_goal_target_interaction(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user_data = getattr(context, "user_data", None)
+    return isinstance(user_data, dict) and user_data.get("words_flow_mode") == SELF_GOAL_AWAITING_TARGET_MODE
+
+
+def clear_self_goal_target_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if not isinstance(user_data, dict):
+        return
+    user_data.pop("goal_period", None)
+    user_data.pop("goal_type", None)
+    user_data.pop("goal_target_count", None)
+    if user_data.get("words_flow_mode") == SELF_GOAL_AWAITING_TARGET_MODE:
+        user_data.pop("words_flow_mode", None)
 
 
 def start_image_review_text_edit_interaction(

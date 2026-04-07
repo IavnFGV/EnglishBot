@@ -1424,12 +1424,6 @@ def _quick_actions_view(
     )
 
 
-def _chat_menu_flow_id(*, user_id: int) -> str:
-    from englishbot.telegram.interaction import chat_menu_interaction_id
-
-    return chat_menu_interaction_id(user_id=user_id)
-
-
 def _start_menu_view(
     *,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1574,27 +1568,6 @@ def _help_view(
             )
         ),
     )
-
-
-def _remember_expected_user_input(
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    chat_id: int | None,
-    message_id: int | None,
-) -> None:
-    from englishbot.telegram.interaction import remember_expected_user_input
-
-    remember_expected_user_input(
-        context,
-        chat_id=chat_id,
-        message_id=message_id,
-    )
-
-
-def _clear_expected_user_input(context: ContextTypes.DEFAULT_TYPE) -> None:
-    from englishbot.telegram.interaction import clear_expected_user_input
-
-    clear_expected_user_input(context)
 
 
 async def _edit_expected_user_input_prompt(
@@ -2053,11 +2026,9 @@ async def words_progress_callback_handler(update: Update, context: ContextTypes.
 
 
 def _clear_self_goal_setup_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    _pop_user_data(context, "goal_period", default=None)
-    _pop_user_data(context, "goal_type", default=None)
-    _pop_user_data(context, "goal_target_count", default=None)
-    if _optional_user_data(context, "words_flow_mode") == _GOAL_AWAITING_TARGET_TEXT:
-        _pop_user_data(context, "words_flow_mode", default=None)
+    from englishbot.telegram.interaction import clear_self_goal_target_interaction
+
+    clear_self_goal_target_interaction(context)
 
 
 async def goal_setup_disabled_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3717,18 +3688,6 @@ def _track_flow_message(
         message=message,
         fallback_chat_id=fallback_chat_id,
     )
-
-
-def _published_word_edit_flow_id(*, user_id: int) -> str:
-    from englishbot.telegram.flow_tracking import published_word_edit_flow_id
-
-    return published_word_edit_flow_id(user_id=user_id)
-
-
-def _tts_voice_flow_id(*, user_id: int) -> str:
-    from englishbot.telegram.flow_tracking import tts_voice_flow_id
-
-    return tts_voice_flow_id(user_id=user_id)
 
 
 async def _reply_voice_replacing_previous_tts(

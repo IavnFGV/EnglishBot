@@ -44,12 +44,14 @@ async def words_progress_callback_handler(update: Update, context: ContextTypes.
 
 
 async def goal_setup_disabled_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import clear_self_goal_target_interaction
+
     query = update.callback_query
     user = update.effective_user
     if query is None or user is None:
         return
     await query.answer()
-    bot_module._clear_self_goal_setup_state(context)
+    clear_self_goal_target_interaction(context)
     await query.edit_message_text(
         bot_module._tg("self_goal_setup_disabled", context=context, user=user),
         reply_markup=bot_module._assign_menu_view(
@@ -475,7 +477,9 @@ async def assign_goal_detail_callback_handler(update: Update, context: ContextTy
 async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from englishbot.telegram.interaction import (
         clear_admin_goal_prompt_interaction,
+        clear_self_goal_target_interaction,
         get_admin_goal_prompt_mode,
+        is_self_goal_target_interaction,
         update_admin_goal_creation_state,
     )
 
@@ -483,11 +487,8 @@ async def goal_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user = update.effective_user
     if message is None or message.text is None or user is None:
         return
-    raw_flow_mode = getattr(getattr(context, "user_data", None), "get", lambda *_args, **_kwargs: None)(
-        "words_flow_mode"
-    )
-    if raw_flow_mode == bot_module._GOAL_AWAITING_TARGET_TEXT:
-        bot_module._clear_self_goal_setup_state(context)
+    if is_self_goal_target_interaction(context):
+        clear_self_goal_target_interaction(context)
         await bot_module.send_telegram_view(
             message,
             bot_module.build_status_view(
