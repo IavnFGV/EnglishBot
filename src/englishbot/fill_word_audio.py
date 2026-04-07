@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -12,6 +11,7 @@ from englishbot.cli import (
     create_content_store,
 )
 from englishbot.application.fill_word_audio_use_cases import FillWordAudioUseCase
+from englishbot.audio_tooling import run_fill_word_audio
 from englishbot.tts_service import TtsServiceClient
 
 app = typer.Typer(
@@ -53,33 +53,20 @@ def main(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    config_service = create_cli_runtime_config_service(repo_root=_REPO_ROOT)
-    configure_cli_logging(log_level=log_level, config_service=config_service)
-    store = create_content_store(config_service=config_service)
-    use_case = FillWordAudioUseCase(
-        store=store,
-        tts_client=TtsServiceClient(
-            base_url=config_service.get_str("tts_service_base_url"),
-            timeout_sec=config_service.get_int("tts_service_timeout_sec"),
-        ),
-        assets_dir=assets_dir,
-        voice_name=config_service.get_str("tts_voice_name"),
-    )
-    summary = use_case.execute(
+    run_fill_word_audio(
         topic_id=topic_id,
+        assets_dir=assets_dir,
         limit=limit,
         force=force,
         dry_run=dry_run,
         delay_sec=delay_sec,
-    )
-    logging.getLogger(__name__).info(
-        "Word audio backfill completed scanned=%s updated=%s skipped=%s failed=%s topic_id=%s dry_run=%s",
-        summary.scanned_count,
-        summary.updated_count,
-        summary.skipped_count,
-        summary.failed_count,
-        topic_id,
-        dry_run,
+        log_level=log_level,
+        repo_root=_REPO_ROOT,
+        create_runtime_config_service_fn=create_cli_runtime_config_service,
+        configure_cli_logging_fn=configure_cli_logging,
+        create_content_store_fn=create_content_store,
+        fill_word_audio_use_case_cls=FillWordAudioUseCase,
+        tts_service_client_cls=TtsServiceClient,
     )
 
 
