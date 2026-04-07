@@ -86,6 +86,7 @@ The file still owns some cross-cutting Telegram glue:
 
 New editor Telegram flows should prefer calling presentation-layer keyboard builders directly and use `bot.py` only when a compatibility wrapper is still needed.
 The same applies to simple status/progress views such as `build_status_view(...)`: feature modules should import them from presentation directly instead of routing them through `bot.py`.
+Topic/word list views and editor cancel menus should follow the same rule: build them in the editor Telegram module with direct presentation imports unless there is a deliberate compatibility reason to keep a bot-level wrapper.
 
 ## Why It Still Feels Big
 

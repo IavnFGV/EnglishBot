@@ -14,9 +14,15 @@ from englishbot.presentation.add_words_text import (
     parse_edited_vocabulary_line,
 )
 from englishbot.presentation.telegram_editor_ui import (
+    editable_topics_keyboard as ui_editable_topics_keyboard,
     editable_words_keyboard as ui_editable_words_keyboard,
+    published_image_topics_keyboard as ui_published_image_topics_keyboard,
+    published_word_edit_keyboard as ui_published_word_edit_keyboard,
+    chat_menu_keyboard as ui_chat_menu_keyboard,
 )
 from englishbot.presentation.telegram_views import (
+    build_editable_topics_view,
+    build_editable_words_view,
     build_published_word_edit_prompt_view,
     build_status_view,
     edit_telegram_text_view,
@@ -69,11 +75,18 @@ async def words_edit_words_callback_handler(
         )
         return
     topics = bot_module._list_editable_topics(context).execute()
-    topics_view = bot_module._editable_topics_view(
+    topic_item_counts = bot_module._topic_item_counts(
+        context,
+        [topic.id for topic in topics],
+    )
+    topics_view = build_editable_topics_view(
         text=bot_module._tg("choose_topic_edit_words", context=context, user=user),
-        topics=topics,
-        context=context,
-        user=update.effective_user,
+        reply_markup=ui_editable_topics_keyboard(
+            topics,
+            tg=bot_module._tg,
+            topic_item_counts=topic_item_counts,
+            language=bot_module._telegram_ui_language(context, user),
+        ),
     )
     await query.edit_message_text(
         topics_view.text,
@@ -100,12 +113,18 @@ async def words_edit_images_callback_handler(
         )
         return
     topics = bot_module._list_editable_topics(context).execute()
-    topics_view = bot_module._editable_topics_view(
+    topic_item_counts = bot_module._topic_item_counts(
+        context,
+        [topic.id for topic in topics],
+    )
+    topics_view = build_editable_topics_view(
         text=bot_module._tg("choose_topic_edit_images", context=context, user=user),
-        topics=topics,
-        context=context,
-        user=update.effective_user,
-        for_images=True,
+        reply_markup=ui_published_image_topics_keyboard(
+            topics,
+            tg=bot_module._tg,
+            topic_item_counts=topic_item_counts,
+            language=bot_module._telegram_ui_language(context, user),
+        ),
     )
     await query.edit_message_text(
         topics_view.text,
@@ -118,21 +137,30 @@ async def words_edit_topic_callback_handler(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     query = update.callback_query
-    if query is None:
+    user = update.effective_user
+    if query is None or user is None:
         return
     await query.answer()
     _, _, topic_id = query.data.split(":")
     words = bot_module._list_editable_words(context).execute(topic_id=topic_id)
-    words_view = bot_module._editable_words_view(
+    words_view = build_editable_words_view(
         text=bot_module._tg(
             "choose_word_to_edit",
             context=context,
             user=update.effective_user,
         ),
-        topic_id=topic_id,
-        words=words,
-        context=context,
-        user=update.effective_user,
+        reply_markup=ui_editable_words_keyboard(
+            tg=bot_module._tg,
+            topic_id=topic_id,
+            words=words,
+            callback_data_for_item=lambda index: bot_module._editable_word_callback_data(
+                context=context,
+                user_id=int(user.id),
+                topic_id=topic_id,
+                item_index=index,
+            ),
+            language=bot_module._telegram_ui_language(context, user),
+        ),
     )
     await query.edit_message_text(
         words_view.text,
@@ -171,7 +199,8 @@ async def words_edit_item_callback_handler(
             user=user,
             value=f"{selected_word.english_word}: {selected_word.translation}",
         ),
-        instruction_markup=bot_module._published_word_edit_keyboard(
+        instruction_markup=ui_published_word_edit_keyboard(
+            tg=bot_module._tg,
             topic_id=topic_id,
             language=bot_module._telegram_ui_language(context, update.effective_user),
         ),
@@ -260,7 +289,7 @@ async def add_words_start_handler(
     start_add_words_text_interaction(context)
     await message.reply_text(
         bot_module._tg("send_raw_lesson_text_with_menu", context=context, user=user),
-        reply_markup=bot_module._chat_menu_keyboard(
+        reply_markup=ui_chat_menu_keyboard(
             command_rows=bot_module._visible_command_rows(context, user_id=user.id)
         ),
     )
@@ -280,7 +309,7 @@ async def add_words_cancel_handler(
     clear_add_words_text_interaction(context)
     await message.reply_text(
         bot_module._tg("add_words_flow_cancelled", context=context, user=user),
-        reply_markup=bot_module._chat_menu_keyboard(
+        reply_markup=ui_chat_menu_keyboard(
             command_rows=bot_module._visible_command_rows(context, user_id=user.id)
         ),
     )
