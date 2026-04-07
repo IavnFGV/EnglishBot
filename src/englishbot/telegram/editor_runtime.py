@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import dataclass
 
 from telegram.ext import ContextTypes
+
+
+@dataclass(frozen=True, slots=True)
+class EditorAICapabilities:
+    smart_parsing_available: bool
+    local_image_generation_available: bool
 
 
 def active_word_flow_for_user(user_id: int, context: ContextTypes.DEFAULT_TYPE):
@@ -195,3 +202,42 @@ def generate_content_pack_images(context: ContextTypes.DEFAULT_TYPE):
     import englishbot.bot as bot_module
 
     return bot_module._generate_content_pack_images(context)
+
+
+def smart_parsing_available(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    import englishbot.bot as bot_module
+
+    return bot_module._smart_parsing_available(context)
+
+
+def editor_ai_capabilities(context: ContextTypes.DEFAULT_TYPE) -> EditorAICapabilities:
+    import englishbot.bot as bot_module
+
+    capabilities = bot_module._editor_ai_capabilities(context)
+    return EditorAICapabilities(
+        smart_parsing_available=capabilities.smart_parsing_available,
+        local_image_generation_available=capabilities.local_image_generation_available,
+    )
+
+
+def update_editable_word(context: ContextTypes.DEFAULT_TYPE):
+    import englishbot.bot as bot_module
+
+    return bot_module._update_editable_word(context)
+
+
+async def send_current_published_image_preview(
+    message,
+    context: ContextTypes.DEFAULT_TYPE,
+    flow,
+    *,
+    user=None,
+) -> None:
+    import englishbot.bot as bot_module
+
+    await bot_module._send_current_published_image_preview(
+        message,
+        context,
+        flow,
+        user=user,
+    )

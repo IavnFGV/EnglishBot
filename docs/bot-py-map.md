@@ -26,7 +26,7 @@ The same direction now applies to shared runtime lookups: feature modules should
 That migration is now underway in the heaviest Telegram feature modules too, especially homework-admin and editor/image-review flows.
 At this point the biggest remaining `bot_module._...` clusters in those modules are no longer generic runtime lookups, but more domain-specific cross-flow helpers such as active draft/image-review flow operations and editor publish orchestration.
 That editor-specific migration has now started moving into [src/englishbot/telegram/editor_runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_runtime.py), so the next reductions in `bot.py` should come from that layer rather than from more generic runtime-access cleanup.
-The `editor_add_words.py` module is now close to the end of that cleanup wave: most of its old direct `bot_module._...` usage is gone, and the main leftovers are now small constants, callback-data helpers, and a few leaf editor checks rather than broad orchestration.
+That editor cleanup wave is now effectively complete for the two main editor modules: [src/englishbot/telegram/editor_add_words.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_add_words.py) and [src/englishbot/telegram/editor_images.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_images.py) no longer call `bot_module._...` directly. They now use `presentation`, `interaction`, `runtime`, `editor_runtime`, and `callback_tokens` as their stable seams.
 
 ## Main Sections
 
@@ -104,6 +104,7 @@ Admin/homework Telegram modules should also prefer direct assignment presentatio
 Draft review previews and follow-up editor menus belong to the same rule: editor modules should compose them from presentation helpers directly instead of routing through `bot.py`.
 Checkpoint: Telegram feature modules no longer depend on `bot.py` for direct `view/keyboard/status` builders; remaining `bot.py` usage is mostly runtime access, wrapper compatibility, and shared cross-flow glue.
 The same is now true for the common tracked-message and notification helper surface: Telegram feature modules call `flow_tracking` / `notifications` helpers directly instead of routing those operations back through `bot.py`.
+The same is now true for the main editor modules: direct editor runtime, interaction-mode, and tokenized callback work no longer flows through `bot.py`.
 
 ## Why It Still Feels Big
 

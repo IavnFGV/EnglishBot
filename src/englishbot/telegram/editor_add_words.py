@@ -31,16 +31,25 @@ from englishbot.presentation.telegram_views import (
     edit_telegram_text_view,
     send_telegram_view,
 )
+from englishbot.telegram.callback_tokens import editable_word_callback_data
 from englishbot.telegram.flow_tracking import (
     delete_message_if_possible,
     ensure_chat_menu_message,
 )
 from englishbot.telegram import editor_runtime as editor_rt
 from englishbot.telegram import runtime as tg_runtime
+from englishbot.telegram.interaction import (
+    ADD_WORDS_AWAITING_EDIT_TEXT_MODE,
+    ADD_WORDS_AWAITING_TEXT_MODE,
+    IMAGE_REVIEW_AWAITING_PHOTO_MODE,
+    IMAGE_REVIEW_AWAITING_PROMPT_TEXT_MODE,
+    IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT_MODE,
+    PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE,
+)
 
 
 def _draft_review_view(*, flow_id: str, result, is_valid: bool, context: ContextTypes.DEFAULT_TYPE, user):
-    capabilities = bot_module._editor_ai_capabilities(context)
+    capabilities = editor_rt.editor_ai_capabilities(context)
     return ui_draft_review_view(
         result=result,
         reply_markup=ui_draft_review_keyboard(
@@ -177,8 +186,8 @@ async def words_edit_topic_callback_handler(
             tg=tg_runtime.tg,
             topic_id=topic_id,
             words=words,
-            callback_data_for_item=lambda index: bot_module._editable_word_callback_data(
-                context=context,
+            callback_data_for_item=lambda index: editable_word_callback_data(
+                store=tg_runtime.content_store(context),
                 user_id=int(user.id),
                 topic_id=topic_id,
                 item_index=index,
@@ -381,12 +390,12 @@ async def add_words_text_handler(
 
     words_flow_mode = context.user_data.get("words_flow_mode")
     if words_flow_mode not in {
-        bot_module._ADD_WORDS_AWAITING_TEXT,
-        bot_module._ADD_WORDS_AWAITING_EDIT_TEXT,
-        bot_module._IMAGE_REVIEW_AWAITING_PROMPT_TEXT,
-        bot_module._IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT,
-        bot_module._IMAGE_REVIEW_AWAITING_PHOTO,
-        bot_module._PUBLISHED_WORD_AWAITING_EDIT_TEXT,
+        ADD_WORDS_AWAITING_TEXT_MODE,
+        ADD_WORDS_AWAITING_EDIT_TEXT_MODE,
+        IMAGE_REVIEW_AWAITING_PROMPT_TEXT_MODE,
+        IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT_MODE,
+        IMAGE_REVIEW_AWAITING_PHOTO_MODE,
+        PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE,
     }:
         return
     message = update.effective_message
@@ -403,7 +412,7 @@ async def add_words_text_handler(
 
         clear_expected_user_input(context)
         return
-    if words_flow_mode == bot_module._PUBLISHED_WORD_AWAITING_EDIT_TEXT:
+    if words_flow_mode == PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE:
         edit_interaction = get_published_word_edit_prompt_interaction(context)
         if edit_interaction is None:
             clear_published_word_edit_prompt_interaction(context)
@@ -422,7 +431,7 @@ async def add_words_text_handler(
         english_word, translation = parsed_pair
         try:
             updated_word = await asyncio.to_thread(
-                bot_module._update_editable_word(context).execute,
+                editor_rt.update_editable_word(context).execute,
                 topic_id=topic_id,
                 item_id=item_id,
                 english_word=english_word,
@@ -454,8 +463,8 @@ async def add_words_text_handler(
                 tg=tg_runtime.tg,
                 topic_id=topic_id,
                 words=words,
-                callback_data_for_item=lambda index: bot_module._editable_word_callback_data(
-                    context=context,
+                callback_data_for_item=lambda index: editable_word_callback_data(
+                    store=tg_runtime.content_store(context),
                     user_id=int(user.id),
                     topic_id=topic_id,
                     item_index=index,
@@ -464,7 +473,7 @@ async def add_words_text_handler(
             ),
         )
         return
-    if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_PROMPT_TEXT:
+    if words_flow_mode == IMAGE_REVIEW_AWAITING_PROMPT_TEXT_MODE:
         from englishbot.telegram.interaction import clear_image_review_text_edit_interaction
 
         review_interaction = get_image_review_text_edit_interaction(context)
@@ -529,7 +538,7 @@ async def add_words_text_handler(
         )
         await tg_runtime.send_image_review_step(message, context, updated_flow)
         return
-    if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT:
+    if words_flow_mode == IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT_MODE:
         from englishbot.telegram.interaction import clear_image_review_text_edit_interaction
 
         review_interaction = get_image_review_text_edit_interaction(context)
@@ -593,12 +602,12 @@ async def add_words_text_handler(
         )
         await tg_runtime.send_image_review_step(message, context, updated_flow)
         return
-    if words_flow_mode == bot_module._IMAGE_REVIEW_AWAITING_PHOTO:
+    if words_flow_mode == IMAGE_REVIEW_AWAITING_PHOTO_MODE:
         await message.reply_text(
             tg_runtime.tg("send_photo_not_text", context=context, user=user)
         )
         return
-    if words_flow_mode == bot_module._ADD_WORDS_AWAITING_EDIT_TEXT:
+    if words_flow_mode == ADD_WORDS_AWAITING_EDIT_TEXT_MODE:
         draft_edit_interaction = get_add_words_draft_edit_interaction(context)
         active_flow_id = draft_edit_interaction.flow_id if draft_edit_interaction is not None else None
         flow = editor_rt.active_word_flow_for_user(user.id, context)
@@ -724,12 +733,12 @@ async def add_words_edit_text_handler(
     flow = editor_rt.active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(
-            bot_module._tg("add_words_flow_inactive", context=context, user=user)
+            tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
         )
         return
     start_add_words_draft_edit_interaction(context, flow_id=flow.flow_id)
     await query.message.reply_text(
-        bot_module._tg("edit_word_list_instruction", context=context, user=user),
+        tg_runtime.tg("edit_word_list_instruction", context=context, user=user),
         reply_markup=ForceReply(selective=True),
     )
     await query.message.reply_text(format_draft_edit_text(flow.draft_result.draft))
@@ -748,7 +757,7 @@ async def add_words_show_json_handler(
     flow = editor_rt.active_word_flow_for_user(user.id, context)
     if flow is None or flow.flow_id != flow_id:
         await query.edit_message_text(
-            bot_module._tg("add_words_flow_inactive", context=context, user=user)
+            tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
         )
         return
     payload = json.dumps(
@@ -777,7 +786,7 @@ async def add_words_regenerate_draft_handler(
             tg_runtime.tg("add_words_flow_inactive", context=context, user=user)
         )
         return
-    if not bot_module._smart_parsing_available(context):
+    if not editor_rt.smart_parsing_available(context):
         await edit_telegram_text_view(
             query,
             build_status_view(

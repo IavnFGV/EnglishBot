@@ -18,13 +18,19 @@ from englishbot.presentation.telegram_views import (
     edit_telegram_text_view,
     send_telegram_view,
 )
-from englishbot.telegram.callback_tokens import PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION
+from englishbot.telegram.callback_tokens import (
+    PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
+    consume_callback_token,
+    published_image_item_callback_data,
+)
 from englishbot.telegram.flow_tracking import delete_message_if_possible
 from englishbot.telegram.interaction import (
     clear_image_review_photo_attach_interaction,
     finish_image_review_interaction,
     get_image_review_photo_attach_interaction,
     start_image_review_photo_attach_interaction,
+    IMAGE_REVIEW_AWAITING_PROMPT_TEXT_MODE,
+    IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT_MODE,
 )
 from englishbot.telegram import editor_runtime as editor_rt
 from englishbot.telegram import runtime as tg_runtime
@@ -59,8 +65,8 @@ async def published_images_menu_handler(
             tg=tg_runtime.tg,
             topic_id=topic_id,
             raw_items=raw_items,
-            callback_data_for_item=lambda index: bot_module._published_image_item_callback_data(
-                context=context,
+            callback_data_for_item=lambda index: published_image_item_callback_data(
+                store=tg_runtime.content_store(context),
                 user_id=int(user.id),
                 topic_id=topic_id,
                 item_index=index,
@@ -80,8 +86,8 @@ async def published_image_item_handler(
         return
     await query.answer()
     token = query.data.removeprefix("words:edit_published_image:")
-    payload = bot_module._consume_callback_token(
-        context=context,
+    payload = consume_callback_token(
+        store=tg_runtime.content_store(context),
         user_id=int(user.id),
         action=PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
         token=token,
@@ -150,7 +156,7 @@ async def published_image_item_handler(
         topic_id=resolved_topic_id,
         item_id=item_id,
     )
-    await bot_module._send_current_published_image_preview(
+    await editor_rt.send_current_published_image_preview(
         query.message,
         context,
         review_flow,
@@ -582,12 +588,12 @@ async def image_review_edit_prompt_handler(
     flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
-            bot_module._tg("image_review_flow_inactive", context=context, user=user)
+            tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
         )
         return
     instruction_view, current_prompt_view = build_image_review_prompt_edit_view(
-        instruction_text=bot_module._tg("send_new_full_prompt", context=context, user=user),
-        current_prompt_text=bot_module._tg(
+        instruction_text=tg_runtime.tg("send_new_full_prompt", context=context, user=user),
+        current_prompt_text=tg_runtime.tg(
             "current_prompt",
             context=context,
             user=user,
@@ -598,7 +604,7 @@ async def image_review_edit_prompt_handler(
     prompt_message = await send_telegram_view(query.message, instruction_view)
     start_image_review_text_edit_interaction(
         context,
-        mode=bot_module._IMAGE_REVIEW_AWAITING_PROMPT_TEXT,
+        mode=IMAGE_REVIEW_AWAITING_PROMPT_TEXT_MODE,
         flow_id=flow_id,
         item_id=flow.current_item.item_id,
         chat_id=tg_runtime.message_chat_id(prompt_message),
@@ -622,13 +628,13 @@ async def image_review_edit_search_query_handler(
     flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
-            bot_module._tg("image_review_flow_inactive", context=context, user=user)
+            tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
         )
         return
     current_query = flow.current_item.search_query or flow.current_item.english_word
     instruction_view, current_query_view = build_image_review_search_query_edit_view(
-        instruction_text=bot_module._tg("send_new_search_query", context=context, user=user),
-        current_query_text=bot_module._tg(
+        instruction_text=tg_runtime.tg("send_new_search_query", context=context, user=user),
+        current_query_text=tg_runtime.tg(
             "current_query",
             context=context,
             user=user,
@@ -639,7 +645,7 @@ async def image_review_edit_search_query_handler(
     prompt_message = await send_telegram_view(query.message, instruction_view)
     start_image_review_text_edit_interaction(
         context,
-        mode=bot_module._IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT,
+        mode=IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT_MODE,
         flow_id=flow_id,
         item_id=flow.current_item.item_id,
         chat_id=tg_runtime.message_chat_id(prompt_message),
@@ -661,7 +667,7 @@ async def image_review_show_json_handler(
     flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
-            bot_module._tg("image_review_flow_inactive", context=context, user=user)
+            tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
         )
         return
     current_item_id = flow.current_item.item_id
@@ -702,7 +708,7 @@ async def image_review_attach_photo_handler(
     flow = editor_rt.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
-            bot_module._tg("image_review_flow_inactive", context=context, user=user)
+            tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
         )
         return
     start_image_review_photo_attach_interaction(
@@ -713,7 +719,7 @@ async def image_review_attach_photo_handler(
     await send_telegram_view(
         query.message,
         build_image_review_attach_photo_view(
-            instruction_text=bot_module._tg("attach_one_photo", context=context, user=user),
+            instruction_text=tg_runtime.tg("attach_one_photo", context=context, user=user),
             instruction_markup=ForceReply(selective=True),
         ),
     )

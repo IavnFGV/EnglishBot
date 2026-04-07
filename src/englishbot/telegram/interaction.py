@@ -22,6 +22,9 @@ ASSIGNMENT_PROGRESS_TAG = "assignment_progress"
 CHAT_MENU_TAG = "chat_menu"
 ADD_WORDS_AWAITING_TEXT_MODE = "awaiting_raw_text"
 ADD_WORDS_AWAITING_EDIT_TEXT_MODE = "awaiting_edit_text"
+IMAGE_REVIEW_AWAITING_PROMPT_TEXT_MODE = "awaiting_image_review_prompt_text"
+IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT_MODE = "awaiting_image_review_search_query_text"
+IMAGE_REVIEW_AWAITING_PHOTO_MODE = "awaiting_image_review_photo"
 PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE = "awaiting_published_word_edit_text"
 SELF_GOAL_AWAITING_TARGET_MODE = "awaiting_goal_target_text"
 
@@ -258,7 +261,7 @@ def start_image_review_photo_attach_interaction(
 ) -> None:
     user_data = getattr(context, "user_data", None)
     if isinstance(user_data, dict):
-        user_data["words_flow_mode"] = "awaiting_image_review_photo"
+        user_data["words_flow_mode"] = IMAGE_REVIEW_AWAITING_PHOTO_MODE
         user_data["image_review_flow_id"] = flow_id
         user_data["image_review_item_id"] = item_id
 
@@ -269,7 +272,7 @@ def get_image_review_photo_attach_interaction(
     user_data = getattr(context, "user_data", None)
     if not isinstance(user_data, dict):
         return None
-    if user_data.get("words_flow_mode") != "awaiting_image_review_photo":
+    if user_data.get("words_flow_mode") != IMAGE_REVIEW_AWAITING_PHOTO_MODE:
         return None
     flow_id = user_data.get("image_review_flow_id")
     item_id = user_data.get("image_review_item_id")
@@ -531,8 +534,8 @@ def get_image_review_text_edit_interaction(
         return None
     mode = user_data.get("words_flow_mode")
     if mode not in {
-        "awaiting_image_review_prompt_text",
-        "awaiting_image_review_search_query_text",
+        IMAGE_REVIEW_AWAITING_PROMPT_TEXT_MODE,
+        IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT_MODE,
     }:
         return None
     flow_id = user_data.get("image_review_flow_id")
