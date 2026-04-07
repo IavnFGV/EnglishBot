@@ -26,6 +26,7 @@ from englishbot.telegram.interaction import (
     get_image_review_photo_attach_interaction,
     start_image_review_photo_attach_interaction,
 )
+from englishbot.telegram import runtime as tg_runtime
 
 
 async def published_images_menu_handler(
@@ -39,22 +40,22 @@ async def published_images_menu_handler(
     await query.answer()
     _, _, topic_id = query.data.split(":")
     try:
-        content_pack = bot_module._content_store(context).get_content_pack(topic_id)
+        content_pack = tg_runtime.content_store(context).get_content_pack(topic_id)
     except ValueError:
         await query.edit_message_text(
-            bot_module._tg("published_content_not_found", context=context, user=user)
+            tg_runtime.tg("published_content_not_found", context=context, user=user)
         )
         return
     raw_items = content_pack.get("vocabulary_items", [])
     if not isinstance(raw_items, list) or not raw_items:
         await query.edit_message_text(
-            bot_module._tg("no_vocabulary_items_found", context=context, user=user)
+            tg_runtime.tg("no_vocabulary_items_found", context=context, user=user)
         )
         return
     await query.edit_message_text(
-        bot_module._tg("choose_word_edit_image", context=context, user=user),
+        tg_runtime.tg("choose_word_edit_image", context=context, user=user),
         reply_markup=ui_published_image_items_keyboard(
-            tg=bot_module._tg,
+            tg=tg_runtime.tg,
             topic_id=topic_id,
             raw_items=raw_items,
             callback_data_for_item=lambda index: bot_module._published_image_item_callback_data(
@@ -63,7 +64,7 @@ async def published_images_menu_handler(
                 topic_id=topic_id,
                 item_index=index,
             ),
-            language=bot_module._telegram_ui_language(context, user),
+            language=tg_runtime.telegram_ui_language(context, user),
         ),
     )
 
@@ -88,7 +89,7 @@ async def published_image_item_handler(
     )
     if payload is None:
         await query.edit_message_text(
-            bot_module._tg("selected_word_unavailable", context=context, user=user)
+            tg_runtime.tg("selected_word_unavailable", context=context, user=user)
         )
         return
     topic_id = payload.get("topic_id")
@@ -100,7 +101,7 @@ async def published_image_item_handler(
         selection = payload.get("selection")
         if not isinstance(selection, str) or ":" not in selection:
             await query.edit_message_text(
-                bot_module._tg("selected_word_unavailable", context=context, user=user)
+                tg_runtime.tg("selected_word_unavailable", context=context, user=user)
             )
             return
         resolved_topic_id, raw_item_index = selection.rsplit(":", 1)
@@ -108,38 +109,38 @@ async def published_image_item_handler(
             resolved_item_index = int(raw_item_index)
         except ValueError:
             await query.edit_message_text(
-                bot_module._tg("selected_word_unavailable", context=context, user=user)
+                tg_runtime.tg("selected_word_unavailable", context=context, user=user)
             )
             return
     try:
-        content_pack = bot_module._content_store(context).get_content_pack(resolved_topic_id)
+        content_pack = tg_runtime.content_store(context).get_content_pack(resolved_topic_id)
     except ValueError:
         await query.edit_message_text(
-            bot_module._tg("published_content_not_found", context=context, user=user)
+            tg_runtime.tg("published_content_not_found", context=context, user=user)
         )
         return
     raw_items = content_pack.get("vocabulary_items", [])
     if not isinstance(raw_items, list):
         await query.edit_message_text(
-            bot_module._tg("no_vocabulary_items_found", context=context, user=user)
+            tg_runtime.tg("no_vocabulary_items_found", context=context, user=user)
         )
         return
     try:
         selected_item = raw_items[resolved_item_index]
     except (ValueError, IndexError):
         await query.edit_message_text(
-            bot_module._tg("selected_word_unavailable", context=context, user=user)
+            tg_runtime.tg("selected_word_unavailable", context=context, user=user)
         )
         return
     if not isinstance(selected_item, dict):
         await query.edit_message_text(
-            bot_module._tg("selected_word_unavailable", context=context, user=user)
+            tg_runtime.tg("selected_word_unavailable", context=context, user=user)
         )
         return
     item_id = str(selected_item.get("id", "")).strip()
     if not item_id:
         await query.edit_message_text(
-            bot_module._tg("selected_word_unavailable", context=context, user=user)
+            tg_runtime.tg("selected_word_unavailable", context=context, user=user)
         )
         return
     review_flow = await asyncio.to_thread(
@@ -168,21 +169,21 @@ async def image_review_generate_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
+    flow = tg_runtime.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
-            bot_module._tg("image_review_flow_inactive", context=context, user=user)
+            tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
         )
         return
-    if not bot_module._local_image_generation_available(context):
+    if not tg_runtime.local_image_generation_available(context):
         await query.edit_message_text(
-            bot_module._tg("image_generation_unavailable", context=context, user=user)
+            tg_runtime.tg("image_generation_unavailable", context=context, user=user)
         )
         return
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg("start_image_generation", context=context, user=user)
+            text=tg_runtime.tg("start_image_generation", context=context, user=user)
         ),
     )
     await bot_module._prepare_and_send_image_review_step(
@@ -204,10 +205,10 @@ async def image_review_search_handler(
         return
     await query.answer()
     _, _, flow_id = query.data.split(":")
-    flow = bot_module._get_active_image_review(context).execute(user_id=user.id)
+    flow = tg_runtime.get_active_image_review(context).execute(user_id=user.id)
     if flow is None or flow.flow_id != flow_id or flow.current_item is None:
         await query.edit_message_text(
-            bot_module._tg("image_review_flow_inactive", context=context, user=user)
+            tg_runtime.tg("image_review_flow_inactive", context=context, user=user)
         )
         return
     current_position = flow.current_index + 1
@@ -215,7 +216,7 @@ async def image_review_search_handler(
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg(
+            text=tg_runtime.tg(
                 "pixabay_search_progress",
                 context=context,
                 user=user,
@@ -242,14 +243,14 @@ async def image_review_search_handler(
         await edit_telegram_text_view(
             query,
             build_status_view(
-                text=bot_module._tg("searching_pixabay_failed", context=context, user=user)
+                text=tg_runtime.tg("searching_pixabay_failed", context=context, user=user)
             ),
         )
         return
     await edit_telegram_text_view(
         query,
         build_status_view(
-            text=bot_module._tg(
+            text=tg_runtime.tg(
                 "pixabay_candidates_ready",
                 context=context,
                 user=user,

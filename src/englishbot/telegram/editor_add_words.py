@@ -35,6 +35,7 @@ from englishbot.telegram.flow_tracking import (
     delete_message_if_possible,
     ensure_chat_menu_message,
 )
+from englishbot.telegram import runtime as tg_runtime
 
 
 def _draft_review_view(*, flow_id: str, result, is_valid: bool, context: ContextTypes.DEFAULT_TYPE, user):
@@ -44,10 +45,10 @@ def _draft_review_view(*, flow_id: str, result, is_valid: bool, context: Context
         reply_markup=ui_draft_review_keyboard(
             flow_id,
             is_valid,
-            tg=bot_module._tg,
+            tg=tg_runtime.tg,
             show_auto_image_button=capabilities.local_image_generation_available,
             show_regenerate_button=capabilities.smart_parsing_available,
-            language=bot_module._telegram_ui_language(context, user),
+            language=tg_runtime.telegram_ui_language(context, user),
         ),
     )
 
@@ -63,18 +64,18 @@ async def words_add_words_callback_handler(
     if query is None or user is None:
         return
     await query.answer()
-    if not bot_module._has_menu_permission(
+    if not tg_runtime.has_menu_permission(
         context,
         user_id=user.id,
         permission=bot_module.PERMISSION_WORDS_ADD,
     ):
         await query.edit_message_text(
-            bot_module._tg("only_editors_add_words", context=context, user=user)
+            tg_runtime.tg("only_editors_add_words", context=context, user=user)
         )
         return
     start_add_words_text_interaction(context)
     await query.edit_message_text(
-        bot_module._tg("send_raw_lesson_text", context=context, user=user)
+        tg_runtime.tg("send_raw_lesson_text", context=context, user=user)
     )
 
 
@@ -87,27 +88,27 @@ async def words_edit_words_callback_handler(
     if query is None or user is None:
         return
     await query.answer()
-    if not bot_module._has_menu_permission(
+    if not tg_runtime.has_menu_permission(
         context,
         user_id=user.id,
         permission=bot_module.PERMISSION_WORDS_EDIT,
     ):
         await query.edit_message_text(
-            bot_module._tg("only_editors_edit_words", context=context, user=user)
+            tg_runtime.tg("only_editors_edit_words", context=context, user=user)
         )
         return
-    topics = bot_module._list_editable_topics(context).execute()
-    topic_item_counts = bot_module._topic_item_counts(
+    topics = tg_runtime.list_editable_topics(context).execute()
+    topic_item_counts = tg_runtime.topic_item_counts(
         context,
         [topic.id for topic in topics],
     )
     topics_view = build_editable_topics_view(
-        text=bot_module._tg("choose_topic_edit_words", context=context, user=user),
+        text=tg_runtime.tg("choose_topic_edit_words", context=context, user=user),
         reply_markup=ui_editable_topics_keyboard(
             topics,
-            tg=bot_module._tg,
+            tg=tg_runtime.tg,
             topic_item_counts=topic_item_counts,
-            language=bot_module._telegram_ui_language(context, user),
+            language=tg_runtime.telegram_ui_language(context, user),
         ),
     )
     await query.edit_message_text(
@@ -125,27 +126,27 @@ async def words_edit_images_callback_handler(
     if query is None or user is None:
         return
     await query.answer()
-    if not bot_module._has_menu_permission(
+    if not tg_runtime.has_menu_permission(
         context,
         user_id=user.id,
         permission=bot_module.PERMISSION_WORD_IMAGES_EDIT,
     ):
         await query.edit_message_text(
-            bot_module._tg("only_editors_edit_images", context=context, user=user)
+            tg_runtime.tg("only_editors_edit_images", context=context, user=user)
         )
         return
-    topics = bot_module._list_editable_topics(context).execute()
-    topic_item_counts = bot_module._topic_item_counts(
+    topics = tg_runtime.list_editable_topics(context).execute()
+    topic_item_counts = tg_runtime.topic_item_counts(
         context,
         [topic.id for topic in topics],
     )
     topics_view = build_editable_topics_view(
-        text=bot_module._tg("choose_topic_edit_images", context=context, user=user),
+        text=tg_runtime.tg("choose_topic_edit_images", context=context, user=user),
         reply_markup=ui_published_image_topics_keyboard(
             topics,
-            tg=bot_module._tg,
+            tg=tg_runtime.tg,
             topic_item_counts=topic_item_counts,
-            language=bot_module._telegram_ui_language(context, user),
+            language=tg_runtime.telegram_ui_language(context, user),
         ),
     )
     await query.edit_message_text(
@@ -164,15 +165,15 @@ async def words_edit_topic_callback_handler(
         return
     await query.answer()
     _, _, topic_id = query.data.split(":")
-    words = bot_module._list_editable_words(context).execute(topic_id=topic_id)
+    words = tg_runtime.list_editable_words(context).execute(topic_id=topic_id)
     words_view = build_editable_words_view(
-        text=bot_module._tg(
+        text=tg_runtime.tg(
             "choose_word_to_edit",
             context=context,
             user=update.effective_user,
         ),
         reply_markup=ui_editable_words_keyboard(
-            tg=bot_module._tg,
+            tg=tg_runtime.tg,
             topic_id=topic_id,
             words=words,
             callback_data_for_item=lambda index: bot_module._editable_word_callback_data(
@@ -181,7 +182,7 @@ async def words_edit_topic_callback_handler(
                 topic_id=topic_id,
                 item_index=index,
             ),
-            language=bot_module._telegram_ui_language(context, user),
+            language=tg_runtime.telegram_ui_language(context, user),
         ),
     )
     await query.edit_message_text(
@@ -205,26 +206,26 @@ async def words_edit_item_callback_handler(
         return
     await query.answer()
     _, _, topic_id, item_index = query.data.split(":")
-    words = bot_module._list_editable_words(context).execute(topic_id=topic_id)
+    words = tg_runtime.list_editable_words(context).execute(topic_id=topic_id)
     try:
         selected_word = words[int(item_index)]
     except (ValueError, IndexError):
         await query.edit_message_text(
-            bot_module._tg("selected_word_unavailable", context=context, user=user)
+            tg_runtime.tg("selected_word_unavailable", context=context, user=user)
         )
         return
     instruction_view, current_value_view = build_published_word_edit_prompt_view(
-        instruction_text=bot_module._tg("send_updated_word_format", context=context, user=user),
-        current_value_text=bot_module._tg(
+        instruction_text=tg_runtime.tg("send_updated_word_format", context=context, user=user),
+        current_value_text=tg_runtime.tg(
             "current_value",
             context=context,
             user=user,
             value=f"{selected_word.english_word}: {selected_word.translation}",
         ),
         instruction_markup=ui_published_word_edit_keyboard(
-            tg=bot_module._tg,
+            tg=tg_runtime.tg,
             topic_id=topic_id,
-            language=bot_module._telegram_ui_language(context, update.effective_user),
+            language=tg_runtime.telegram_ui_language(context, update.effective_user),
         ),
         current_value_markup=ForceReply(selective=True),
     )
@@ -236,7 +237,7 @@ async def words_edit_item_callback_handler(
         context,
         topic_id=topic_id,
         item_id=selected_word.id,
-        chat_id=bot_module._message_chat_id(query.message),
+        chat_id=tg_runtime.message_chat_id(query.message),
         message_id=getattr(query.message, "message_id", None),
     )
     helper_message = await send_telegram_view(query.message, current_value_view)
@@ -245,7 +246,7 @@ async def words_edit_item_callback_handler(
         user_id=user.id,
         source_message=query.message,
         helper_message=helper_message,
-        fallback_chat_id=bot_module._message_chat_id(query.message),
+        fallback_chat_id=tg_runtime.message_chat_id(query.message),
     )
 
 

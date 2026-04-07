@@ -84,6 +84,12 @@ Tracked-message and notification operations sit next to that layer, not inside i
 - [src/englishbot/telegram/notifications.py](/workspaces/EnglishBot/src/englishbot/telegram/notifications.py) owns pending-notification storage, delivery, reminders, and dismiss behavior
 - [src/englishbot/telegram/runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/runtime.py) owns the thin “ask runtime for X” surface so Telegram feature modules do not need to reach into `bot.py` for every shared dependency
 
+This runtime layer is now the preferred way to access shared Telegram runtime dependencies in larger feature modules such as:
+
+- [src/englishbot/telegram/homework_admin.py](/workspaces/EnglishBot/src/englishbot/telegram/homework_admin.py)
+- [src/englishbot/telegram/editor_images.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_images.py)
+- [src/englishbot/telegram/editor_add_words.py](/workspaces/EnglishBot/src/englishbot/telegram/editor_add_words.py)
+
 ## Rule For New Telegram Features
 
 New Telegram features should reuse the interaction layer for transient UI state and tracked-message lifecycle.

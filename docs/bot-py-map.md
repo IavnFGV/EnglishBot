@@ -23,6 +23,7 @@ Today it is mostly:
 After the Telegram interaction-layer work, `bot.py` no longer owns most prompt state or tracked-message lifecycle rules directly.
 Those are expected to live in [src/englishbot/telegram/interaction.py](/workspaces/EnglishBot/src/englishbot/telegram/interaction.py).
 The same direction now applies to shared runtime lookups: feature modules should prefer [src/englishbot/telegram/runtime.py](/workspaces/EnglishBot/src/englishbot/telegram/runtime.py) for common `tg`, `service`, `content_store`, and UI-language access instead of treating `bot.py` as a global service locator.
+That migration is now underway in the heaviest Telegram feature modules too, especially homework-admin and editor/image-review flows.
 
 ## Main Sections
 

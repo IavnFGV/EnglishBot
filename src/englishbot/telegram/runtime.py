@@ -312,3 +312,27 @@ def generate_image_review_candidates(context: ContextTypes.DEFAULT_TYPE):
     import englishbot.bot as bot_module
 
     return bot_module._generate_image_review_candidates(context)
+
+
+def list_editable_topics(context: ContextTypes.DEFAULT_TYPE):
+    import englishbot.bot as bot_module
+
+    return bot_module._list_editable_topics(context)
+
+
+def list_editable_words(context: ContextTypes.DEFAULT_TYPE):
+    import englishbot.bot as bot_module
+
+    return bot_module._list_editable_words(context)
+
+
+def topic_item_counts(context: ContextTypes.DEFAULT_TYPE, topic_ids: list[str]):
+    import englishbot.bot as bot_module
+
+    return bot_module._topic_item_counts(context, topic_ids)
+
+
+def local_image_generation_available(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    import englishbot.bot as bot_module
+
+    return bot_module._local_image_generation_available(context)
