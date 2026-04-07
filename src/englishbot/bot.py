@@ -3875,41 +3875,22 @@ def _published_image_items_keyboard(
     user_id: int | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    if context is not None and user_id is not None:
-        rows: list[list[InlineKeyboardButton]] = []
-        for index, raw_item in enumerate(raw_items):
-            if not isinstance(raw_item, dict):
-                continue
-            english_word = str(raw_item.get("english_word", "")).strip() or str(
-                raw_item.get("id", "")
-            ).strip()
-            translation = str(raw_item.get("translation", "")).strip()
-            has_image = bool(str(raw_item.get("image_ref", "")).strip())
-            label = _editable_word_button_label(
-                english_word=english_word,
-                translation=translation,
-                has_image=has_image,
-            )
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        label[:64],
-                        callback_data=_published_image_item_callback_data(
-                            context=context,
-                            user_id=user_id,
-                            topic_id=topic_id,
-                            item_index=index,
-                        ),
-                    )
-                ]
-            )
-        if not rows:
-            rows = [[InlineKeyboardButton(_tg("no_items", language=language), callback_data="words:menu")]]
-        return InlineKeyboardMarkup(rows)
     return ui_published_image_items_keyboard(
         tg=_tg,
         topic_id=topic_id,
         raw_items=raw_items,
+        callback_data_for_item=(
+            (
+                lambda index: _published_image_item_callback_data(
+                    context=context,
+                    user_id=user_id,
+                    topic_id=topic_id,
+                    item_index=index,
+                )
+            )
+            if context is not None and user_id is not None
+            else None
+        ),
         language=language,
     )
 
@@ -3936,32 +3917,22 @@ def _editable_words_keyboard(
     user_id: int | None = None,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
-    if context is not None and user_id is not None:
-        rows = [
-            [
-                InlineKeyboardButton(
-                    _editable_word_button_label(
-                        english_word=word.english_word,
-                        translation=word.translation,
-                        has_image=getattr(word, "has_image", False),
-                    )[:64],
-                    callback_data=_editable_word_callback_data(
-                        context=context,
-                        user_id=user_id,
-                        topic_id=topic_id,
-                        item_index=index,
-                    ),
-                )
-            ]
-            for index, word in enumerate(words)
-        ]
-        if not rows:
-            rows = [[InlineKeyboardButton(_tg("no_words", language=language), callback_data="words:menu")]]
-        return InlineKeyboardMarkup(rows)
     return ui_editable_words_keyboard(
         tg=_tg,
         topic_id=topic_id,
         words=words,
+        callback_data_for_item=(
+            (
+                lambda index: _editable_word_callback_data(
+                    context=context,
+                    user_id=user_id,
+                    topic_id=topic_id,
+                    item_index=index,
+                )
+            )
+            if context is not None and user_id is not None
+            else None
+        ),
         language=language,
     )
 

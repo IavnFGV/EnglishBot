@@ -78,6 +78,7 @@ The file still owns some cross-cutting Telegram glue:
 
 - callback token wrappers that delegate into [src/englishbot/telegram/callback_tokens.py](/workspaces/EnglishBot/src/englishbot/telegram/callback_tokens.py)
 - training/TTS markup wrappers that delegate into [src/englishbot/telegram/training_markup.py](/workspaces/EnglishBot/src/englishbot/telegram/training_markup.py)
+- tokenized editor keyboard wrappers that delegate into [src/englishbot/presentation/telegram_editor_ui.py](/workspaces/EnglishBot/src/englishbot/presentation/telegram_editor_ui.py)
 - message cleanup helpers
 - tracked flow wrappers
 - assignment notification scheduling
