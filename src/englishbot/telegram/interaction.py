@@ -42,6 +42,32 @@ def tts_voice_interaction_id(*, user_id: int) -> str:
     return f"tts-voice:{user_id}"
 
 
+async def replace_chat_menu_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    message,
+    user,
+) -> None:
+    user_id = getattr(user, "id", None)
+    if not isinstance(user_id, int):
+        return
+    import englishbot.bot as bot_module
+
+    sent_message = await bot_module.send_telegram_view(
+        message,
+        bot_module._quick_actions_view(context=context, user=user),
+    )
+    if sent_message is None:
+        return
+    await replace_flow_message(
+        context,
+        flow_id=chat_menu_interaction_id(user_id=user_id),
+        tag=CHAT_MENU_TAG,
+        message=sent_message,
+        fallback_chat_id=bot_module._message_chat_id(message),
+    )
+
+
 def start_image_review_text_edit_interaction(
     context: ContextTypes.DEFAULT_TYPE,
     *,

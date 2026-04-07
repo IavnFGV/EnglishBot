@@ -60,29 +60,12 @@ async def ensure_chat_menu_message(
     message,
     user,
 ) -> None:
-    import englishbot.bot as bot_module
+    from englishbot.telegram.interaction import replace_chat_menu_message
 
-    user_id = getattr(user, "id", None)
-    if not isinstance(user_id, int):
-        return
-    flow_id = bot_module._chat_menu_flow_id(user_id=user_id)
-    await delete_tracked_flow_messages(
+    await replace_chat_menu_message(
         context,
-        flow_id=flow_id,
-        tag=bot_module._CHAT_MENU_TAG,
-    )
-    sent_message = await bot_module.send_telegram_view(
-        message,
-        bot_module._quick_actions_view(context=context, user=user),
-    )
-    if sent_message is None:
-        return
-    track_flow_message(
-        context,
-        flow_id=flow_id,
-        tag=bot_module._CHAT_MENU_TAG,
-        message=sent_message,
-        fallback_chat_id=bot_module._message_chat_id(message),
+        message=message,
+        user=user,
     )
 
 

@@ -27,6 +27,7 @@ from englishbot.telegram.interaction import (
     get_expected_user_input_prompt,
     lesson_interaction_id,
     published_word_edit_interaction_id,
+    replace_chat_menu_message,
     replace_lesson_feedback_message,
     replace_lesson_question_message,
     remember_expected_user_input,
@@ -329,6 +330,48 @@ async def test_lesson_interaction_helpers_use_named_lesson_tags() -> None:
     assert deleted == [(10, 20), (10, 21)]
     assert registry.items == []
     assert get_expected_user_input_prompt(context) is None
+
+
+@pytest.mark.anyio
+async def test_replace_chat_menu_message_uses_named_chat_menu_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _FakeRegistry()
+    registry.track(flow_id="chat-menu:7", chat_id=10, message_id=19, tag="chat_menu")
+    deleted: list[tuple[int, int]] = []
+    sent_views: list[object] = []
+
+    async def fake_delete_message(*, chat_id: int, message_id: int) -> None:
+        deleted.append((chat_id, message_id))
+
+    async def fake_send_telegram_view(message, view):
+        sent_views.append(view)
+        assert getattr(message, "chat_id", None) == 10
+        return SimpleNamespace(chat_id=10, message_id=20)
+
+    monkeypatch.setattr("englishbot.bot.send_telegram_view", fake_send_telegram_view)
+    monkeypatch.setattr(
+        "englishbot.bot._quick_actions_view",
+        lambda *, context, user: {"kind": "quick-actions", "user_id": user.id},
+    )
+
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(bot_data={"telegram_flow_message_repository": registry}),
+        bot=SimpleNamespace(delete_message=fake_delete_message),
+    )
+
+    await replace_chat_menu_message(
+        context,
+        message=SimpleNamespace(chat_id=10, message_id=5),
+        user=SimpleNamespace(id=7),
+    )
+
+    assert sent_views == [{"kind": "quick-actions", "user_id": 7}]
+    assert deleted == [(10, 19)]
+    assert [(item.flow_id, item.tag, item.message_id) for item in registry.items] == [
+        ("chat-menu:7", "chat_menu", 20)
+    ]
 
 
 @pytest.mark.anyio
