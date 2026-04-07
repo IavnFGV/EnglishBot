@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -12,6 +11,7 @@ from englishbot.image_generation.clients import (
     LocalPlaceholderImageGenerationClient,
 )
 from englishbot.image_generation.pipeline import ContentPackImageEnricher
+from englishbot.image_tooling import run_generate_lesson_images
 
 app = typer.Typer(
     add_completion=False,
@@ -58,31 +58,19 @@ def main(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    configure_logging(log_level.upper())
-    if backend == "placeholder":
-        image_client = LocalPlaceholderImageGenerationClient()
-    elif backend == "comfyui":
-        image_client = ComfyUIImageGenerationClient(
-            base_url=comfyui_base_url,
-            checkpoint_name=comfyui_checkpoint,
-            vae_name=comfyui_vae,
-        )
-    else:
-        raise typer.BadParameter(
-            "Backend must be one of: placeholder, comfyui.",
-            param_hint="--backend",
-        )
-
-    enricher = ContentPackImageEnricher(image_client)
-    enriched_pack = enricher.enrich_file(
+    run_generate_lesson_images(
         input_path=input_path,
         assets_dir=assets_dir,
+        backend=backend,
+        comfyui_base_url=comfyui_base_url,
+        comfyui_checkpoint=comfyui_checkpoint,
+        comfyui_vae=comfyui_vae,
         force=force,
-    )
-    logging.getLogger(__name__).info(
-        "Image generation completed item_count=%s input_path=%s",
-        len(enriched_pack.get("vocabulary_items", [])),
-        input_path,
+        log_level=log_level,
+        configure_logging_fn=configure_logging,
+        comfyui_client_cls=ComfyUIImageGenerationClient,
+        placeholder_client_factory=LocalPlaceholderImageGenerationClient,
+        content_pack_image_enricher_cls=ContentPackImageEnricher,
     )
 
 

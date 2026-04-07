@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -13,6 +12,7 @@ from englishbot.cli import (
 )
 from englishbot.application.fill_word_images_use_cases import FillWordImagesUseCase
 from englishbot.image_generation.pixabay import PixabayImageSearchClient, RemoteImageDownloader
+from englishbot.image_tooling import run_fill_word_images
 
 app = typer.Typer(
     add_completion=False,
@@ -53,30 +53,21 @@ def main(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    config_service = create_cli_runtime_config_service(repo_root=_REPO_ROOT)
-    configure_cli_logging(log_level=log_level, config_service=config_service)
-    store = create_content_store(config_service=config_service)
-    use_case = FillWordImagesUseCase(
-        store=store,
-        image_search_client=PixabayImageSearchClient(config_service=config_service),
-        remote_image_downloader=RemoteImageDownloader(),
-        assets_dir=assets_dir,
-    )
-    summary = use_case.execute(
+    run_fill_word_images(
         topic_id=topic_id,
+        assets_dir=assets_dir,
         limit=limit,
         force=force,
         dry_run=dry_run,
         delay_sec=delay_sec,
-    )
-    logging.getLogger(__name__).info(
-        "Word image backfill completed scanned=%s updated=%s skipped=%s failed=%s topic_id=%s dry_run=%s",
-        summary.scanned_count,
-        summary.updated_count,
-        summary.skipped_count,
-        summary.failed_count,
-        topic_id,
-        dry_run,
+        log_level=log_level,
+        repo_root=_REPO_ROOT,
+        create_runtime_config_service_fn=create_cli_runtime_config_service,
+        configure_cli_logging_fn=configure_cli_logging,
+        create_content_store_fn=create_content_store,
+        fill_word_images_use_case_cls=FillWordImagesUseCase,
+        image_search_client_cls=PixabayImageSearchClient,
+        remote_image_downloader_cls=RemoteImageDownloader,
     )
 
 

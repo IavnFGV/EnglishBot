@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -14,6 +13,7 @@ from englishbot.application.image_rerank_manifest_use_cases import (
 )
 from englishbot.image_generation.ollama_reranker import OllamaPixabayVisionRerankerClient
 from englishbot.image_generation.pixabay import PixabayImageSearchClient
+from englishbot.image_tooling import run_rerank_image_manifest
 
 app = typer.Typer(
     add_completion=False,
@@ -54,36 +54,22 @@ def main(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    config_service = create_cli_runtime_config_service(repo_root=_REPO_ROOT)
-    configure_cli_logging(log_level=log_level, config_service=config_service)
-    manifest = read_image_rerank_manifest(input_path=input)
-    resolved_model = ollama_model or config_service.get_str("ollama_model")
-    resolved_base_url = ollama_base_url or config_service.get_str("ollama_base_url")
-    resolved_timeout = ollama_timeout_sec or config_service.get_int("ollama_timeout_sec")
-    use_case = RerankImageManifestUseCase(
-        image_search_client=PixabayImageSearchClient(config_service=config_service),
-        reranker_client=OllamaPixabayVisionRerankerClient(
-            base_url=resolved_base_url,
-            model=resolved_model,
-            timeout=resolved_timeout,
-        ),
+    run_rerank_image_manifest(
+        input_path=input,
+        output=output,
         candidate_count=candidate_count,
-    )
-    decisions = use_case.execute(
-        manifest=manifest,
-        model_name=resolved_model,
-        progress_callback=lambda partial_decisions: write_image_rerank_decisions(
-            decisions=partial_decisions,
-            output_path=output,
-        ),
-    )
-    write_image_rerank_decisions(decisions=decisions, output_path=output)
-    logging.getLogger(__name__).info(
-        "Image rerank decisions written output=%s item_count=%s model=%s candidate_count=%s",
-        output,
-        decisions.item_count,
-        resolved_model,
-        candidate_count,
+        ollama_model=ollama_model,
+        ollama_base_url=ollama_base_url,
+        ollama_timeout_sec=ollama_timeout_sec,
+        log_level=log_level,
+        repo_root=_REPO_ROOT,
+        create_runtime_config_service_fn=create_cli_runtime_config_service,
+        configure_cli_logging_fn=configure_cli_logging,
+        read_image_rerank_manifest_fn=read_image_rerank_manifest,
+        rerank_image_manifest_use_case_cls=RerankImageManifestUseCase,
+        write_image_rerank_decisions_fn=write_image_rerank_decisions,
+        image_search_client_cls=PixabayImageSearchClient,
+        reranker_client_cls=OllamaPixabayVisionRerankerClient,
     )
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -15,6 +14,7 @@ from englishbot.application.image_rerank_manifest_use_cases import (
     ExportImageRerankManifestUseCase,
     write_image_rerank_manifest,
 )
+from englishbot.image_tooling import run_export_image_rerank_manifest
 
 app = typer.Typer(
     add_completion=False,
@@ -47,21 +47,18 @@ def main(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    config_service = create_cli_runtime_config_service(repo_root=_REPO_ROOT)
-    configure_cli_logging(log_level=log_level, config_service=config_service)
-    store = create_content_store(config_service=config_service)
-    manifest = ExportImageRerankManifestUseCase(store=store).execute(
+    run_export_image_rerank_manifest(
+        output=output,
         topic_id=topic_id,
         limit=limit,
         only_missing_images=only_missing_images,
-    )
-    write_image_rerank_manifest(manifest=manifest, output_path=output)
-    logging.getLogger(__name__).info(
-        "Image rerank manifest exported output=%s item_count=%s topic_id=%s only_missing_images=%s",
-        output,
-        manifest.item_count,
-        topic_id,
-        only_missing_images,
+        log_level=log_level,
+        repo_root=_REPO_ROOT,
+        create_runtime_config_service_fn=create_cli_runtime_config_service,
+        configure_cli_logging_fn=configure_cli_logging,
+        create_content_store_fn=create_content_store,
+        export_image_rerank_manifest_use_case_cls=ExportImageRerankManifestUseCase,
+        write_image_rerank_manifest_fn=write_image_rerank_manifest,
     )
 
 

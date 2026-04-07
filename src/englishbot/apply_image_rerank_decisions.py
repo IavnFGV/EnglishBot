@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -16,6 +15,7 @@ from englishbot.application.image_rerank_manifest_use_cases import (
     read_image_rerank_decisions,
 )
 from englishbot.image_generation.pixabay import RemoteImageDownloader
+from englishbot.image_tooling import run_apply_image_rerank_decisions
 
 app = typer.Typer(
     add_completion=False,
@@ -44,24 +44,18 @@ def main(
         typer.Option("--log-level", help="Logging level, for example INFO or DEBUG."),
     ] = "INFO",
 ) -> None:
-    config_service = create_cli_runtime_config_service(repo_root=_REPO_ROOT)
-    configure_cli_logging(log_level=log_level, config_service=config_service)
-    store = create_content_store(config_service=config_service)
-    decisions = read_image_rerank_decisions(input_path=input)
-    summary = ApplyImageRerankDecisionsUseCase(
-        store=store,
-        remote_image_downloader=RemoteImageDownloader(),
+    run_apply_image_rerank_decisions(
+        input_path=input,
         assets_dir=assets_dir,
-    ).execute(
-        decisions=decisions,
         dry_run=dry_run,
-    )
-    logging.getLogger(__name__).info(
-        "Image rerank decisions applied input=%s updated=%s failed=%s dry_run=%s",
-        input,
-        summary["updated_count"],
-        summary["failed_count"],
-        dry_run,
+        log_level=log_level,
+        repo_root=_REPO_ROOT,
+        create_runtime_config_service_fn=create_cli_runtime_config_service,
+        configure_cli_logging_fn=configure_cli_logging,
+        create_content_store_fn=create_content_store,
+        read_image_rerank_decisions_fn=read_image_rerank_decisions,
+        apply_image_rerank_decisions_use_case_cls=ApplyImageRerankDecisionsUseCase,
+        remote_image_downloader_cls=RemoteImageDownloader,
     )
 
 
