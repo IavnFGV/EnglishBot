@@ -17,6 +17,29 @@ from englishbot.infrastructure.sqlite_store import (
 from englishbot.webapp import create_web_app
 
 
+def test_webapp_create_web_app_delegates_to_webapp_server(monkeypatch) -> None:
+    import englishbot.webapp as webapp_module
+
+    settings = Settings(
+        telegram_token="test-token",
+        log_level="INFO",
+        content_db_path=Path("test-webapp.db"),
+    )
+    expected_app = object()
+    captured: dict[str, object] = {}
+
+    def fake_create_web_app(passed_settings):
+        captured["settings"] = passed_settings
+        return expected_app
+
+    monkeypatch.setattr(webapp_module, "server_create_web_app", fake_create_web_app)
+
+    result = webapp_module.create_web_app(settings)
+
+    assert result is expected_app
+    assert captured == {"settings": settings}
+
+
 def test_webapp_session_endpoint_allows_query_link_admin(tmp_path: Path) -> None:
     _seed_user_store(
         tmp_path=tmp_path,

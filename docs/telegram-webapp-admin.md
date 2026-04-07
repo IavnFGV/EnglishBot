@@ -21,7 +21,9 @@
 - bot entrypoint: `src/englishbot/__main__.py`
 - bot wiring and handlers: `src/englishbot/bot.py`
 - runtime SQLite store: `src/englishbot/infrastructure/sqlite_store.py`
-- new Web App server: `src/englishbot/webapp.py`
+- Web App entrypoint facade: `src/englishbot/webapp.py`
+- Web App WSGI server and auth/session routing: `src/englishbot/webapp_server.py`
+- Web App page rendering: `src/englishbot/webapp_pages.py`
 - Telegram Web App auth helpers: `src/englishbot/webapp_auth.py`
 
 ## Storage Notes
