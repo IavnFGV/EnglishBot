@@ -1494,6 +1494,132 @@ async def test_image_review_attach_photo_flow_saves_user_image_and_publishes(
 
 
 @pytest.mark.anyio
+async def test_published_image_attach_photo_returns_to_word_list(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("englishbot.bot.build_training_service", lambda db_path=None: "training-service")
+    flow = ImageReviewFlowState(
+        flow_id="review123",
+        editor_user_id=42,
+        content_pack={
+            "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+            "metadata": {"image_review_origin": "published_word_edit"},
+            "vocabulary_items": [
+                {
+                    "id": "castle",
+                    "english_word": "Castle",
+                    "translation": "замок",
+                    "image_ref": "assets/fairy-tales/castle.png",
+                },
+                {
+                    "id": "prince",
+                    "english_word": "Prince",
+                    "translation": "принц",
+                },
+            ],
+        },
+        items=[
+            ImageReviewItem(
+                item_id="castle",
+                english_word="Castle",
+                translation="замок",
+                prompt="Prompt for Castle",
+                candidates=[],
+            )
+        ],
+    )
+    callback_message = _FakeCallbackMessage(tmp_path)
+    callback_query = _FakeQuery("words:image_attach_photo:review123", callback_message)
+    callback_update = SimpleNamespace(
+        callback_query=callback_query,
+        effective_user=SimpleNamespace(id=42),
+    )
+    photo_message = _FakeCallbackMessage(tmp_path)
+    photo_message.photo = [_FakePhotoSize(b"jpg-bytes")]
+    photo_message.chat_id = 1
+    photo_update = SimpleNamespace(
+        effective_message=photo_message,
+        effective_user=SimpleNamespace(id=42),
+    )
+    publish_use_case = _FakePublishImageReviewUseCase()
+    registry = _FakeTelegramFlowMessageRepository()
+    registry.track(flow_id="review123", chat_id=1, message_id=999, tag="image_review_step")
+    registry.track(flow_id="review123", chat_id=1, message_id=888, tag="image_review_context")
+    fake_bot = _FakeBot()
+
+    class _PublishedAttachUseCase:
+        def __init__(self) -> None:
+            self.image_ref: str | None = None
+
+        def execute(  # noqa: PLR0913
+            self,
+            *,
+            user_id: int,  # noqa: ARG002
+            flow_id: str,
+            item_id: str,
+            image_ref: str,
+            output_path: Path,  # noqa: ARG002
+        ) -> ImageReviewFlowState:
+            assert flow_id == "review123"
+            assert item_id == "castle"
+            self.image_ref = image_ref
+            return ImageReviewFlowState(
+                flow_id="review123",
+                editor_user_id=42,
+                content_pack={
+                    "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
+                    "metadata": {"image_review_origin": "published_word_edit"},
+                    "vocabulary_items": [
+                        {
+                            "id": "castle",
+                            "english_word": "Castle",
+                            "translation": "замок",
+                            "image_ref": image_ref,
+                        },
+                        {
+                            "id": "prince",
+                            "english_word": "Prince",
+                            "translation": "принц",
+                        },
+                    ],
+                },
+                items=flow.items,
+                current_index=1,
+            )
+
+    attach_use_case = _PublishedAttachUseCase()
+    context = SimpleNamespace(
+        bot=fake_bot,
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": _FakeContentStore(flow.content_pack),
+                "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(flow),
+                "image_review_attach_uploaded_image_use_case": attach_use_case,
+                "image_review_publish_use_case": publish_use_case,
+                "word_import_preview_message_ids": {},
+                "image_review_assets_dir": tmp_path / "assets",
+                "telegram_flow_message_repository": registry,
+            }
+        ),
+    )
+
+    await image_review_attach_photo_handler(callback_update, context)  # type: ignore[arg-type]
+    await image_review_photo_handler(photo_update, context)  # type: ignore[arg-type]
+
+    assert attach_use_case.image_ref is not None
+    assert publish_use_case.called_user_id == 42
+    assert publish_use_case.called_flow_id == "review123"
+    assert publish_use_case.output_path is None
+    assert context.user_data.get("words_flow_mode") is None
+    assert fake_bot.deleted_messages == [(1, 999), (1, 888)]
+    assert any("Uploaded photo attached." in edit for edit in photo_message.replies[0].edits)
+    assert photo_message.reply_text_calls[-1] == "Image selected.\nChoose another word to edit."
+    assert registry.list(flow_id="review123") == []
+
+
+@pytest.mark.anyio
 async def test_published_image_pick_flow_overwrites_existing_topic_file_instead_of_creating_duplicate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

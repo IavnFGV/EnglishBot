@@ -781,6 +781,36 @@ async def image_review_photo_handler(
         ).text
     )
     if updated_flow.completed:
+        if editor_rt.image_review_origin(updated_flow) == "published_word_edit":
+            await finish_image_review_interaction(
+                context,
+                flow_id=flow_id,
+            )
+            await asyncio.to_thread(
+                editor_rt.publish_image_review(context).execute,
+                user_id=user.id,
+                flow_id=flow_id,
+                output_path=None,
+            )
+            tg_runtime.reload_training_service(context)
+            topic = updated_flow.content_pack.get("topic", {})
+            topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
+            raw_items = updated_flow.content_pack.get("vocabulary_items", [])
+            await message.reply_text(
+                "\n".join(
+                    (
+                        tg_runtime.tg("image_selected", context=context, user=user),
+                        tg_runtime.tg("choose_another_word_to_edit", context=context, user=user),
+                    )
+                ),
+                reply_markup=ui_published_image_items_keyboard(
+                    tg=tg_runtime.tg,
+                    topic_id=topic_id,
+                    raw_items=raw_items if isinstance(raw_items, list) else [],
+                    language=tg_runtime.telegram_ui_language(context, user),
+                ),
+            )
+            return
         output_path = editor_rt.resolve_image_review_publish_output_path(updated_flow)
         topic = updated_flow.content_pack.get("topic", {})
         topic_id = str(topic.get("id", "")).strip() if isinstance(topic, dict) else ""
