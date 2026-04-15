@@ -13,6 +13,7 @@ from englishbot.presentation.telegram_assignments_admin_ui import (
     assignment_goal_detail_keyboard as ui_assignment_goal_detail_keyboard,
     assignment_user_goals_keyboard as ui_assignment_user_goals_keyboard,
     assignment_users_keyboard as ui_assignment_users_keyboard,
+    goal_source_topic_keyboard as ui_goal_source_topic_keyboard,
 )
 from englishbot.presentation.telegram_assignments_ui import (
     admin_goal_custom_target_keyboard as ui_admin_goal_custom_target_keyboard,
@@ -287,7 +288,7 @@ async def admin_goal_source_callback_handler(update: Update, context: ContextTyp
     update_admin_goal_creation_state(context, source=source)
     if source == GoalWordSource.TOPIC.value:
         topics = tg_runtime.service(context).list_topics()
-        keyboard = bot_module.ui_goal_source_topic_keyboard(
+        keyboard = ui_goal_source_topic_keyboard(
             tg=tg_runtime.tg,
             topics=topics,
             language=tg_runtime.telegram_ui_language(context, user),

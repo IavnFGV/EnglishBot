@@ -15,6 +15,7 @@ from englishbot.bot import (
     _admin_goal_deadline_keyboard,
     _admin_goal_manual_keyboard,
     _admin_goal_recipients_keyboard,
+    admin_goal_source_callback_handler,
     admin_goal_deadline_callback_handler,
     admin_goal_recipients_callback_handler,
     assign_goal_detail_callback_handler,
@@ -463,6 +464,40 @@ async def test_admin_goal_period_callback_handler_uses_homework_goal_type_for_ho
 
     assert context.user_data["admin_goal_period"] == "homework"
     assert context.user_data["admin_goal_type"] == "word_level_homework"
+
+
+@pytest.mark.anyio
+async def test_admin_goal_source_callback_handler_opens_topic_picker() -> None:
+    query = _RecordingQuery()
+    query.data = "words:admin_goal_source:topic"
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    list_topics=lambda: [
+                        SimpleNamespace(id="months", title="Months"),
+                        SimpleNamespace(id="animals", title="Animals"),
+                    ]
+                )
+            }
+        ),
+    )
+
+    await admin_goal_source_callback_handler(
+        SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(id=123, language_code="ru"),
+        ),
+        context,  # type: ignore[arg-type]
+    )
+
+    assert context.user_data["admin_goal_source"] == "topic"
+    assert query.edits[-1][0] == "Выберите тему-источник:"
+    keyboard = query.edits[-1][1]
+    assert keyboard.inline_keyboard[0][0].callback_data == "words:admin_goal_source:topic:months"
+    assert keyboard.inline_keyboard[1][0].callback_data == "words:admin_goal_source:topic:animals"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "assign:admin_goal_source_menu"
 
 
 @pytest.mark.anyio
