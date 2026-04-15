@@ -1,4 +1,5 @@
 from pathlib import Path
+import tomllib
 
 
 def test_switch_devcontainer_profile_supports_default_profile() -> None:
@@ -75,3 +76,9 @@ def test_dockerfile_uses_profile_controlled_python_extras() -> None:
 
     assert "ARG PYTHON_EXTRAS=dev,llm" in dockerfile
     assert 'python -m pip install ".[${PYTHON_EXTRAS}]"' in dockerfile
+
+
+def test_pixabay_runtime_dependency_is_installed_without_llm_extra() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert "requests>=2.32.0,<3.0.0" in pyproject["project"]["dependencies"]

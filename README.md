@@ -838,7 +838,7 @@ What it does:
 - supports one default devcontainer plus optional `cpu` and `gpu` AI profiles
 - installs Ollama only when profile build arg `OLLAMA_INSTALL=1`
 - installs ComfyUI only when profile build arg `COMFYUI_INSTALL=1`
-- installs Python extras per profile through `PYTHON_EXTRAS` (`dev,llm` for `cpu/gpu`, `dev` for the default no-AI profile)
+- installs base runtime dependencies for every profile, then adds Python extras through `PYTHON_EXTRAS` (`dev,llm` for `cpu/gpu`, `dev` for the default no-AI profile)
 - reuses pip cache through a named Docker volume mounted to `/home/vscode/.cache/pip`
 
 Simplified rule for `1.0.0` work:
