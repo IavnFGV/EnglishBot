@@ -501,6 +501,60 @@ def test_multiple_active_homeworks_can_coexist(tmp_path: Path) -> None:
     assert goals_by_id[second_goal.id].status is GoalStatus.ACTIVE
 
 
+def test_start_assignment_round_uses_single_selected_homework_goal_without_mixing_words(
+    tmp_path: Path,
+) -> None:
+    store = SQLiteContentStore(db_path=tmp_path / "data" / "englishbot.db")
+    store.upsert_content_pack(
+        {
+            "topic": {"id": "animals", "title": "Animals"},
+            "lessons": [],
+            "vocabulary_items": [
+                {"id": "cat", "english_word": "Cat", "translation": "кот"},
+                {"id": "dog", "english_word": "Dog", "translation": "собака"},
+                {"id": "fox", "english_word": "Fox", "translation": "лиса"},
+            ],
+        }
+    )
+    use_case = HomeworkProgressUseCase(store=store)
+
+    later_goal = use_case.create_goal(
+        user_id=20,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=1,
+        target_word_ids=["cat"],
+        deadline_date="2026-04-20",
+    )
+    earlier_goal = use_case.create_goal(
+        user_id=20,
+        goal_period=GoalPeriod.HOMEWORK,
+        goal_type=GoalType.WORD_LEVEL_HOMEWORK,
+        target_count=2,
+        target_word_ids=["dog", "fox"],
+        deadline_date="2026-04-18",
+    )
+
+    start_use_case = StartAssignmentRoundUseCase(
+        store=store,
+        vocabulary_repository=SQLiteVocabularyRepository(store),
+        progress_repository=SQLiteUserProgressRepository(store),
+        session_repository=SQLiteSessionRepository(store),
+        question_factory=QuestionFactory(random.Random(7)),
+        batch_size=2,
+    )
+
+    question = start_use_case.execute(user_id=20, kind=AssignmentSessionKind.HOMEWORK)
+    session = SQLiteSessionRepository(store).get_active_by_user(20)
+
+    assert session is not None
+    assert question.session_id == session.id
+    assert session.source_tag == f"assignment:homework:{earlier_goal.id}"
+    assert [item.vocabulary_item_id for item in session.items] == ["dog", "fox"]
+    assert "cat" not in [item.vocabulary_item_id for item in session.items]
+    assert later_goal.id != earlier_goal.id
+
+
 def test_assignment_launch_summary_handles_naive_goal_created_at_from_existing_db(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     goal = HomeworkProgressUseCase(store=store).create_goal(
