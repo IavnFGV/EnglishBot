@@ -315,6 +315,18 @@ def build_application(
     )
     app.add_handler(
         CallbackQueryHandler(
+            bot_module.admin_goal_manual_topic_menu_callback_handler,
+            pattern=r"^words:admin_goal_manual_topic_menu$",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            bot_module.admin_goal_manual_topic_callback_handler,
+            pattern=r"^words:admin_goal_manual_topic:",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
             bot_module.admin_goal_manual_toggle_callback_handler,
             pattern=r"^words:admin_goal_manual:page:",
         )

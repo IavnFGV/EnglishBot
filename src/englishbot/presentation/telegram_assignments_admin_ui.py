@@ -132,6 +132,7 @@ def admin_goal_manual_keyboard(
     items,
     selected_word_ids: set[str],
     page: int,
+    back_callback_data: str = "assign:admin_goal_source_menu",
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> tuple[InlineKeyboardMarkup, int]:
     page_size = 8
@@ -179,7 +180,7 @@ def admin_goal_manual_keyboard(
             ]
         )
     rows.append([InlineKeyboardButton(tg("goal_manual_done", language=language), callback_data="words:admin_goal_manual:done")])
-    rows.append([InlineKeyboardButton(tg("back", language=language), callback_data="assign:admin_goal_source_menu")])
+    rows.append([InlineKeyboardButton(tg("back", language=language), callback_data=back_callback_data)])
     return InlineKeyboardMarkup(rows), normalized_page
 
 
@@ -327,5 +328,27 @@ def goal_source_topic_keyboard(
         [InlineKeyboardButton(topic.title[:40], callback_data=f"words:admin_goal_source:topic:{topic.id}")]
         for topic in topics
     ]
+    rows.append([InlineKeyboardButton(tg("back", language=language), callback_data="assign:admin_goal_source_menu")])
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_goal_manual_topic_keyboard(
+    *,
+    tg: TelegramTextGetter,
+    topics,
+    selected_topic_id: str | None,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    rows = [[
+        InlineKeyboardButton(
+            f"{'✅ ' if selected_topic_id is None else ''}{tg('goal_source_manual_all_words', language=language)}",
+            callback_data="words:admin_goal_manual_topic:all",
+        )
+    ]]
+    for topic in topics:
+        marker = "✅ " if topic.id == selected_topic_id else ""
+        rows.append(
+            [InlineKeyboardButton(f"{marker}{topic.title[:40]}", callback_data=f"words:admin_goal_manual_topic:{topic.id}")]
+        )
     rows.append([InlineKeyboardButton(tg("back", language=language), callback_data="assign:admin_goal_source_menu")])
     return InlineKeyboardMarkup(rows)

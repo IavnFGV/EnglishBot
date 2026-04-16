@@ -2170,6 +2170,22 @@ async def admin_goal_manual_toggle_callback_handler(update: Update, context: Con
     await homework_admin_goal_manual_toggle_callback_handler(update, context)
 
 
+async def admin_goal_manual_topic_menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.homework_admin import (
+        admin_goal_manual_topic_menu_callback_handler as homework_admin_goal_manual_topic_menu_callback_handler,
+    )
+
+    await homework_admin_goal_manual_topic_menu_callback_handler(update, context)
+
+
+async def admin_goal_manual_topic_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.homework_admin import (
+        admin_goal_manual_topic_callback_handler as homework_admin_goal_manual_topic_callback_handler,
+    )
+
+    await homework_admin_goal_manual_topic_callback_handler(update, context)
+
+
 async def admin_goal_manual_done_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from englishbot.telegram.homework_admin import (
         admin_goal_manual_done_callback_handler as homework_admin_goal_manual_done_callback_handler,

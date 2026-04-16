@@ -9,6 +9,7 @@ from englishbot.application.homework_progress_use_cases import GoalWordSource, L
 from englishbot.domain.models import GoalPeriod, GoalType
 from englishbot.presentation.telegram_assignments_admin_ui import (
     admin_goal_manual_keyboard as ui_admin_goal_manual_keyboard,
+    admin_goal_manual_topic_keyboard as ui_admin_goal_manual_topic_keyboard,
     admin_goal_recipients_keyboard as ui_admin_goal_recipients_keyboard,
     assignment_goal_detail_keyboard as ui_assignment_goal_detail_keyboard,
     assignment_user_goals_keyboard as ui_assignment_user_goals_keyboard,
@@ -37,17 +38,38 @@ def _admin_goal_manual_keyboard(
 ):
     from englishbot.telegram.interaction import get_admin_goal_creation_state
 
-    items = tg_runtime.content_store(context).list_all_vocabulary()
-    selected = set(get_admin_goal_creation_state(context).manual_word_ids)
+    state = get_admin_goal_creation_state(context)
+    if state.manual_topic_id is None:
+        items = tg_runtime.content_store(context).list_all_vocabulary()
+    else:
+        items = tg_runtime.content_store(context).list_vocabulary_by_topic(state.manual_topic_id)
+    selected = set(state.manual_word_ids)
     keyboard, normalized_page = ui_admin_goal_manual_keyboard(
         tg=tg_runtime.tg,
         items=items,
         selected_word_ids=selected,
         page=page,
+        back_callback_data="words:admin_goal_manual_topic_menu",
         language=tg_runtime.telegram_ui_language(context, user),
     )
     tg_runtime.set_user_data(context, "admin_goal_manual_page", normalized_page)
     return keyboard
+
+
+def _admin_goal_manual_topic_keyboard(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+):
+    from englishbot.telegram.interaction import get_admin_goal_creation_state
+
+    topics = tg_runtime.service(context).list_topics()
+    return ui_admin_goal_manual_topic_keyboard(
+        tg=tg_runtime.tg,
+        topics=topics,
+        selected_topic_id=get_admin_goal_creation_state(context).manual_topic_id,
+        language=tg_runtime.telegram_ui_language(context, user),
+    )
 
 
 def _admin_goal_recipients_keyboard(
@@ -299,10 +321,10 @@ async def admin_goal_source_callback_handler(update: Update, context: ContextTyp
         )
         return
     if source == GoalWordSource.MANUAL.value:
-        update_admin_goal_creation_state(context, manual_word_ids=set())
+        update_admin_goal_creation_state(context, manual_word_ids=set(), manual_topic_id="")
         await query.edit_message_text(
-            tg_runtime.tg("goal_source_manual_prompt", context=context, user=user),
-            reply_markup=_admin_goal_manual_keyboard(context=context, user=user, page=0),
+            tg_runtime.tg("goal_source_manual_topic_prompt", context=context, user=user),
+            reply_markup=_admin_goal_manual_topic_keyboard(context=context, user=user),
         )
         return
     await query.edit_message_text(
@@ -337,6 +359,41 @@ async def admin_goal_manual_toggle_callback_handler(update: Update, context: Con
     await query.edit_message_text(
         tg_runtime.tg("goal_source_manual_prompt", context=context, user=user),
         reply_markup=_admin_goal_manual_keyboard(context=context, user=user, page=page),
+    )
+
+
+async def admin_goal_manual_topic_menu_callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return
+    await query.answer()
+    await query.edit_message_text(
+        tg_runtime.tg("goal_source_manual_topic_prompt", context=context, user=user),
+        reply_markup=_admin_goal_manual_topic_keyboard(context=context, user=user),
+    )
+
+
+async def admin_goal_manual_topic_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.interaction import update_admin_goal_creation_state
+
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or query.data is None:
+        return
+    await query.answer()
+    selected_topic = query.data.split(":", 4)[-1]
+    update_admin_goal_creation_state(
+        context,
+        manual_topic_id="" if selected_topic == "all" else selected_topic,
+    )
+    tg_runtime.set_user_data(context, "admin_goal_manual_page", 0)
+    await query.edit_message_text(
+        tg_runtime.tg("goal_source_manual_prompt", context=context, user=user),
+        reply_markup=_admin_goal_manual_keyboard(context=context, user=user, page=0),
     )
 
 

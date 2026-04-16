@@ -15,6 +15,8 @@ from englishbot.bot import (
     _admin_goal_deadline_keyboard,
     _admin_goal_manual_keyboard,
     _admin_goal_recipients_keyboard,
+    admin_goal_manual_topic_callback_handler,
+    admin_goal_manual_topic_menu_callback_handler,
     admin_goal_source_callback_handler,
     admin_goal_deadline_callback_handler,
     admin_goal_recipients_callback_handler,
@@ -498,6 +500,111 @@ async def test_admin_goal_source_callback_handler_opens_topic_picker() -> None:
     assert keyboard.inline_keyboard[0][0].callback_data == "words:admin_goal_source:topic:months"
     assert keyboard.inline_keyboard[1][0].callback_data == "words:admin_goal_source:topic:animals"
     assert keyboard.inline_keyboard[-1][0].callback_data == "assign:admin_goal_source_menu"
+
+
+@pytest.mark.anyio
+async def test_admin_goal_source_callback_handler_opens_manual_topic_picker() -> None:
+    query = _RecordingQuery()
+    query.data = "words:admin_goal_source:manual"
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    list_topics=lambda: [
+                        SimpleNamespace(id="months", title="Months"),
+                        SimpleNamespace(id="animals", title="Animals"),
+                    ]
+                )
+            }
+        ),
+    )
+
+    await admin_goal_source_callback_handler(
+        SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(id=123, language_code="ru"),
+        ),
+        context,  # type: ignore[arg-type]
+    )
+
+    assert context.user_data["admin_goal_source"] == "manual"
+    assert query.edits[-1][0] == "Выберите тему для просмотра слов:"
+    keyboard = query.edits[-1][1]
+    assert keyboard.inline_keyboard[0][0].text == "✅ Все слова"
+    assert keyboard.inline_keyboard[0][0].callback_data == "words:admin_goal_manual_topic:all"
+    assert keyboard.inline_keyboard[1][0].callback_data == "words:admin_goal_manual_topic:months"
+    assert keyboard.inline_keyboard[2][0].callback_data == "words:admin_goal_manual_topic:animals"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "assign:admin_goal_source_menu"
+
+
+@pytest.mark.anyio
+async def test_admin_goal_manual_topic_callback_handler_opens_filtered_word_picker() -> None:
+    query = _RecordingQuery()
+    query.data = "words:admin_goal_manual_topic:animals"
+    context = SimpleNamespace(
+        user_data={"admin_goal_source": "manual"},
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": SimpleNamespace(
+                    list_vocabulary_by_topic=lambda topic_id: [
+                        SimpleNamespace(id="cat", english_word="Cat"),
+                        SimpleNamespace(id="dog", english_word="Dog"),
+                    ]
+                    if topic_id == "animals"
+                    else [],
+                    list_all_vocabulary=lambda: [],
+                )
+            }
+        ),
+    )
+
+    await admin_goal_manual_topic_callback_handler(
+        SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(id=123, language_code="en"),
+        ),
+        context,  # type: ignore[arg-type]
+    )
+
+    assert context.user_data["admin_goal_manual_topic_id"] == "animals"
+    assert query.edits[-1][0] == "Select words for this goal:"
+    keyboard = query.edits[-1][1]
+    assert keyboard.inline_keyboard[0][0].text == "☑️ Cat"
+    assert keyboard.inline_keyboard[1][0].text == "☑️ Dog"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "words:admin_goal_manual_topic_menu"
+
+
+@pytest.mark.anyio
+async def test_admin_goal_manual_topic_menu_callback_handler_returns_to_topic_picker() -> None:
+    query = _RecordingQuery()
+    query.data = "words:admin_goal_manual_topic_menu"
+    context = SimpleNamespace(
+        user_data={"admin_goal_manual_topic_id": "animals"},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    list_topics=lambda: [
+                        SimpleNamespace(id="months", title="Months"),
+                        SimpleNamespace(id="animals", title="Animals"),
+                    ]
+                )
+            }
+        ),
+    )
+
+    await admin_goal_manual_topic_menu_callback_handler(
+        SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(id=123, language_code="en"),
+        ),
+        context,  # type: ignore[arg-type]
+    )
+
+    assert query.edits[-1][0] == "Choose a topic to browse words:"
+    keyboard = query.edits[-1][1]
+    assert keyboard.inline_keyboard[0][0].text == "All words"
+    assert keyboard.inline_keyboard[2][0].text == "✅ Animals"
 
 
 @pytest.mark.anyio

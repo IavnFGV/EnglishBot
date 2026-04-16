@@ -67,6 +67,7 @@ class AdminGoalCreationState:
     target_count: int | None = None
     source: str | None = None
     deadline_date: str | None = None
+    manual_topic_id: str | None = None
     manual_word_ids: frozenset[str] = frozenset()
     recipient_user_ids: frozenset[int] = frozenset()
     recipients_page: int = 0
@@ -78,6 +79,7 @@ ADMIN_GOAL_STATE_KEYS = (
     "admin_goal_target_count",
     "admin_goal_source",
     "admin_goal_deadline_date",
+    "admin_goal_manual_topic_id",
     "admin_goal_manual_word_ids",
     "admin_goal_recipient_user_ids",
     "admin_goal_recipients_page",
@@ -429,6 +431,12 @@ def get_admin_goal_creation_state(context: ContextTypes.DEFAULT_TYPE) -> AdminGo
             if isinstance(user_data.get("admin_goal_deadline_date"), str)
             else None
         ),
+        manual_topic_id=(
+            user_data.get("admin_goal_manual_topic_id")
+            if isinstance(user_data.get("admin_goal_manual_topic_id"), str)
+            and user_data.get("admin_goal_manual_topic_id")
+            else None
+        ),
         manual_word_ids=manual_word_ids,
         recipient_user_ids=recipient_user_ids,
         recipients_page=recipients_page,
@@ -443,6 +451,7 @@ def update_admin_goal_creation_state(
     target_count: int | None = None,
     source: str | None = None,
     deadline_date: str | None = None,
+    manual_topic_id: str | None = None,
     manual_word_ids: set[str] | frozenset[str] | None = None,
     recipient_user_ids: set[int] | frozenset[int] | None = None,
     recipients_page: int | None = None,
@@ -460,6 +469,8 @@ def update_admin_goal_creation_state(
         user_data["admin_goal_source"] = source
     if deadline_date is not None:
         user_data["admin_goal_deadline_date"] = deadline_date
+    if manual_topic_id is not None:
+        user_data["admin_goal_manual_topic_id"] = manual_topic_id
     if manual_word_ids is not None:
         user_data["admin_goal_manual_word_ids"] = set(manual_word_ids)
     if recipient_user_ids is not None:
