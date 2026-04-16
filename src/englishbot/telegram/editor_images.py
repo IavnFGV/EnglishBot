@@ -71,6 +71,7 @@ async def published_images_menu_handler(
                 topic_id=topic_id,
                 item_index=index,
             ),
+            back_callback_data="words:edit_images",
             language=tg_runtime.telegram_ui_language(context, user),
         ),
     )
@@ -444,6 +445,7 @@ async def image_review_pick_handler(
                         topic_id=topic_id,
                         item_index=index,
                     ),
+                    back_callback_data="words:edit_images",
                     language=tg_runtime.telegram_ui_language(context, user),
                 ),
             )
@@ -530,6 +532,7 @@ async def image_review_skip_handler(
                         topic_id=topic_id,
                         item_index=index,
                     ),
+                    back_callback_data="words:edit_images",
                     language=tg_runtime.telegram_ui_language(context, user),
                 ),
             )
@@ -810,6 +813,7 @@ async def image_review_photo_handler(
                         topic_id=topic_id,
                         item_index=index,
                     ),
+                    back_callback_data="words:edit_images",
                     language=tg_runtime.telegram_ui_language(context, user),
                 ),
             )

@@ -161,6 +161,7 @@ async def test_editor_can_edit_published_word_from_words_menu(
     assert topic_query.edits[-1][0] == "Choose a word to edit."
     assert topic_query.edits[-1][1].inline_keyboard[0][0].text == "* Mathematics — математика"
     assert topic_query.edits[-1][1].inline_keyboard[1][0].text == "Science — естественные науки"
+    assert topic_query.edits[-1][1].inline_keyboard[-1][0].callback_data == "words:edit_words"
 
     item_query = _RecordingQuery(
         editable_word_callback_data(
@@ -268,6 +269,7 @@ async def test_editor_can_cancel_published_word_edit_and_return_to_word_list(
     assert cancel_query.answered is True
     assert cancel_query.edits[-1][0] == "Edit cancelled. Choose a word to edit."
     assert cancel_query.edits[-1][1] is not None
+    assert cancel_query.edits[-1][1].inline_keyboard[-1][0].callback_data == "words:edit_words"
     assert context.bot.deleted_messages == [(1, 1)]
     assert context.user_data.get("words_flow_mode") is None
     assert context.user_data.get("published_edit_topic_id") is None

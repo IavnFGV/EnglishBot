@@ -196,6 +196,7 @@ async def words_edit_topic_callback_handler(
                 topic_id=topic_id,
                 item_index=index,
             ),
+            back_callback_data="words:edit_words",
             language=tg_runtime.telegram_ui_language(context, user),
         ),
     )
@@ -317,6 +318,7 @@ async def words_edit_cancel_callback_handler(
                 topic_id=topic_id,
                 item_index=index,
             ),
+            back_callback_data="words:edit_words",
             language=tg_runtime.telegram_ui_language(context, user),
         ),
     )
@@ -498,6 +500,7 @@ async def add_words_text_handler(
                     topic_id=topic_id,
                     item_index=index,
                 ),
+                back_callback_data="words:edit_words",
                 language=tg_runtime.telegram_ui_language(context, user),
             ),
         )

@@ -288,6 +288,7 @@ def published_image_items_keyboard(
     topic_id: str,
     raw_items: list[object],
     callback_data_for_item: Callable[[int], str],
+    back_callback_data: str = "words:edit_images",
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
@@ -315,6 +316,7 @@ def published_image_items_keyboard(
         )
     if not rows:
         rows = [[InlineKeyboardButton(tg("no_items", language=language), callback_data="words:menu")]]
+    rows.append([InlineKeyboardButton(tg("back", language=language), callback_data=back_callback_data)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -348,6 +350,7 @@ def editable_words_keyboard(
     topic_id: str,
     words,
     callback_data_for_item: Callable[[int], str],
+    back_callback_data: str = "words:edit_words",
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows = [
@@ -365,6 +368,7 @@ def editable_words_keyboard(
     ]
     if not rows:
         rows = [[InlineKeyboardButton(tg("no_words", language=language), callback_data="words:menu")]]
+    rows.append([InlineKeyboardButton(tg("back", language=language), callback_data=back_callback_data)])
     return InlineKeyboardMarkup(rows)
 
 

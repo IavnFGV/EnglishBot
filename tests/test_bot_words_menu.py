@@ -938,6 +938,7 @@ def test_published_image_items_keyboard_uses_short_index_based_callback_data() -
     button = keyboard.inline_keyboard[0][0]
     assert button.callback_data == "words:edit_published_image:image-token-1"
     assert len(button.callback_data) < 64
+    assert keyboard.inline_keyboard[-1][0].callback_data == "words:edit_images"
 
 
 def test_published_image_items_keyboard_marks_items_with_attached_image() -> None:
@@ -1005,6 +1006,7 @@ def test_editable_words_keyboard_marks_items_with_attached_image() -> None:
 
     assert keyboard.inline_keyboard[0][0].text == "* Mathematics — математика"
     assert keyboard.inline_keyboard[1][0].text == "Science — естественные науки"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "words:edit_words"
 
 
 def test_image_review_keyboard_uses_short_callback_data_for_long_item_id() -> None:
