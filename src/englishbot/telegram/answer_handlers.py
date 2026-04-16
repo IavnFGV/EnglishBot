@@ -37,7 +37,6 @@ async def hard_skip_handler(
         context=context,
         user_id=int(user.id),
         token=token,
-        fallback_key="session_id",
     )
     if payload is None:
         return

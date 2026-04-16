@@ -31,7 +31,11 @@ from englishbot.presentation.telegram_views import (
     edit_telegram_text_view,
     send_telegram_view,
 )
-from englishbot.telegram.callback_tokens import editable_word_callback_data
+from englishbot.telegram.callback_tokens import (
+    EDITABLE_WORD_CALLBACK_ACTION,
+    consume_callback_token,
+    editable_word_callback_data,
+)
 from englishbot.telegram.flow_tracking import (
     delete_message_if_possible,
     ensure_chat_menu_message,
@@ -212,13 +216,31 @@ async def words_edit_item_callback_handler(
 
     query = update.callback_query
     user = update.effective_user
-    if query is None or user is None:
+    if query is None or user is None or query.data is None:
         return
     await query.answer()
-    _, _, topic_id, item_index = query.data.split(":")
-    words = tg_runtime.list_editable_words(context).execute(topic_id=topic_id)
+    token = query.data.removeprefix("words:edit_item:")
+    payload = consume_callback_token(
+        store=tg_runtime.content_store(context),
+        user_id=int(user.id),
+        action=EDITABLE_WORD_CALLBACK_ACTION,
+        token=token,
+    )
+    if payload is None:
+        await query.edit_message_text(
+            tg_runtime.tg("selected_word_unavailable", context=context, user=user)
+        )
+        return
+    resolved_topic_id = payload.get("topic_id")
+    resolved_item_index = payload.get("item_index")
+    if not isinstance(resolved_topic_id, str) or not isinstance(resolved_item_index, int):
+        await query.edit_message_text(
+            tg_runtime.tg("selected_word_unavailable", context=context, user=user)
+        )
+        return
+    words = tg_runtime.list_editable_words(context).execute(topic_id=resolved_topic_id)
     try:
-        selected_word = words[int(item_index)]
+        selected_word = words[resolved_item_index]
     except (ValueError, IndexError):
         await query.edit_message_text(
             tg_runtime.tg("selected_word_unavailable", context=context, user=user)
@@ -234,7 +256,7 @@ async def words_edit_item_callback_handler(
         ),
         instruction_markup=ui_published_word_edit_keyboard(
             tg=tg_runtime.tg,
-            topic_id=topic_id,
+            topic_id=resolved_topic_id,
             language=tg_runtime.telegram_ui_language(context, update.effective_user),
         ),
         current_value_markup=ForceReply(selective=True),
@@ -245,7 +267,7 @@ async def words_edit_item_callback_handler(
     )
     start_published_word_edit_prompt_interaction(
         context,
-        topic_id=topic_id,
+        topic_id=resolved_topic_id,
         item_id=selected_word.id,
         chat_id=tg_runtime.message_chat_id(query.message),
         message_id=getattr(query.message, "message_id", None),
@@ -289,6 +311,13 @@ async def words_edit_cancel_callback_handler(
             tg=tg_runtime.tg,
             topic_id=topic_id,
             words=words,
+            callback_data_for_item=lambda index: editable_word_callback_data(
+                store=tg_runtime.content_store(context),
+                user_id=int(user.id),
+                topic_id=topic_id,
+                item_index=index,
+            ),
+            language=tg_runtime.telegram_ui_language(context, user),
         ),
     )
 

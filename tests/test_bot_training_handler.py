@@ -1922,6 +1922,157 @@ async def test_tts_voice_select_handler_restores_question_keyboard() -> None:
 
 
 @pytest.mark.anyio
+async def test_tts_voice_back_handler_restores_medium_question_keyboard() -> None:
+    question = TrainingQuestion(
+        session_id="session-medium-voice",
+        item_id="apple",
+        mode=TrainingMode.MEDIUM,
+        prompt="Translation: яблоко\nVisual clue: Image is shown above.\nShuffled letters hint: APLEP\nType the English word.",
+        image_ref=None,
+        correct_answer="APPLE",
+        letter_hint="APLEP",
+    )
+    message = _FakeEditableMessage("question")
+    message.message_id = 77
+    query = _FakeQuery("tts:voice:back", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": _MediumQuestionService(question),
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
+                ),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    await bot.tts_voice_select_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.answer_payloads == [(None, None)]
+    markup = message.edit_reply_markup_calls[-1]
+    assert markup.inline_keyboard[-2][0].callback_data == "medium:backspace"
+    assert markup.inline_keyboard[-1][0].callback_data == "medium:noop:check"
+    assert any(button.text == "A" for row in markup.inline_keyboard[:-1] for button in row)
+
+
+@pytest.mark.anyio
+async def test_tts_voice_back_handler_restores_hard_question_keyboard() -> None:
+    message = _FakeEditableMessage("question")
+    query = _FakeQuery("tts:voice:back", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    created: list[dict[str, object]] = []
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(id="session-1"),  # noqa: ARG005
+                    get_current_question=lambda user_id: TrainingQuestion(  # noqa: ARG005
+                        session_id="session-1",
+                        item_id="cloud",
+                        mode=TrainingMode.HARD,
+                        prompt="Type the word",
+                        image_ref=None,
+                        correct_answer="cloud",
+                    ),
+                ),
+                "content_store": SimpleNamespace(
+                    create_telegram_callback_token=lambda **kwargs: created.append(kwargs) or "hard-token-1"
+                ),
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
+                ),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    await bot.tts_voice_select_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.answer_payloads == [(None, None)]
+    markup = message.edit_reply_markup_calls[-1]
+    assert markup.inline_keyboard[0][0].text == "⏭ Skip"
+    assert markup.inline_keyboard[0][0].callback_data == "hard:skip:hard-token-1"
+    assert [button.text for button in markup.inline_keyboard[1]] == ["🔊 Play", "🎙 Voice"]
+    assert created == [
+        {
+            "user_id": 123,
+            "action": "hard_skip",
+            "payload": {"session_id": "session-1"},
+            "ttl_seconds": 172800,
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_tts_voice_select_handler_restores_hard_question_keyboard() -> None:
+    message = _FakeEditableMessage("question")
+    query = _FakeQuery("tts:voice:1", message)
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(id=123, language_code="en"),
+    )
+    created: list[dict[str, object]] = []
+    context = SimpleNamespace(
+        user_data={},
+        application=SimpleNamespace(
+            bot_data={
+                "training_service": SimpleNamespace(
+                    get_active_session=lambda user_id: SimpleNamespace(id="session-1"),  # noqa: ARG005
+                    get_current_question=lambda user_id: TrainingQuestion(  # noqa: ARG005
+                        session_id="session-1",
+                        item_id="cloud",
+                        mode=TrainingMode.HARD,
+                        prompt="Type the word",
+                        image_ref=None,
+                        correct_answer="cloud",
+                    ),
+                ),
+                "content_store": SimpleNamespace(
+                    create_telegram_callback_token=lambda **kwargs: created.append(kwargs) or "hard-token-2"
+                ),
+                "settings": SimpleNamespace(
+                    tts_service_enabled=True,
+                    tts_voice_name="en_US-libritts-high",
+                    tts_voice_variants=("en_GB-cori-high",),
+                ),
+                "telegram_ui_language": "en",
+            }
+        ),
+    )
+
+    await bot.tts_voice_select_handler(update, context)  # type: ignore[arg-type]
+
+    assert query.answer_payloads == [("🇬🇧 British · Cori", None)]
+    assert context.user_data[bot._TTS_SELECTED_VOICE_KEY]["cloud"] == "en_GB-cori-high"
+    markup = message.edit_reply_markup_calls[-1]
+    assert markup.inline_keyboard[0][0].text == "⏭ Skip"
+    assert markup.inline_keyboard[0][0].callback_data == "hard:skip:hard-token-2"
+    assert [button.text for button in markup.inline_keyboard[1]] == ["🔊 Play", "🎙 Voice"]
+    assert created == [
+        {
+            "user_id": 123,
+            "action": "hard_skip",
+            "payload": {"session_id": "session-1"},
+            "ttl_seconds": 172800,
+        }
+    ]
+
+
+@pytest.mark.anyio
 async def test_process_answer_shows_assignment_progress_for_homework_assignment() -> None:
     message = _FakeMessage("cloud")
     message.from_user = SimpleNamespace(id=123, language_code="en")

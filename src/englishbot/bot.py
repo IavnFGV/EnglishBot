@@ -2727,7 +2727,6 @@ def _create_callback_token(
     user_id: int,
     action: str,
     payload: dict[str, object],
-    fallback_value: str,
 ) -> str:
     from englishbot.telegram.callback_tokens import create_callback_token
 
@@ -2736,7 +2735,6 @@ def _create_callback_token(
         user_id=user_id,
         action=action,
         payload=payload,
-        fallback_value=fallback_value,
     )
 
 
@@ -2746,8 +2744,6 @@ def _consume_callback_token(
     user_id: int,
     action: str,
     token: str,
-    fallback_key: str,
-    allow_colon_fallback: bool = False,
 ) -> dict[str, object] | None:
     from englishbot.telegram.callback_tokens import consume_callback_token
 
@@ -2756,8 +2752,6 @@ def _consume_callback_token(
         user_id=user_id,
         action=action,
         token=token,
-        fallback_key=fallback_key,
-        allow_colon_fallback=allow_colon_fallback,
     )
 
 
@@ -3833,8 +3827,8 @@ def _published_image_items_keyboard(
     *,
     topic_id: str,
     raw_items: list[object],
-    context: ContextTypes.DEFAULT_TYPE | None = None,
-    user_id: int | None = None,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     return ui_published_image_items_keyboard(
@@ -3842,16 +3836,12 @@ def _published_image_items_keyboard(
         topic_id=topic_id,
         raw_items=raw_items,
         callback_data_for_item=(
-            (
-                lambda index: _published_image_item_callback_data(
-                    context=context,
-                    user_id=user_id,
-                    topic_id=topic_id,
-                    item_index=index,
-                )
+            lambda index: _published_image_item_callback_data(
+                context=context,
+                user_id=user_id,
+                topic_id=topic_id,
+                item_index=index,
             )
-            if context is not None and user_id is not None
-            else None
         ),
         language=language,
     )
@@ -3875,8 +3865,8 @@ def _editable_words_keyboard(
     *,
     topic_id: str,
     words,
-    context: ContextTypes.DEFAULT_TYPE | None = None,
-    user_id: int | None = None,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     return ui_editable_words_keyboard(
@@ -3884,16 +3874,12 @@ def _editable_words_keyboard(
         topic_id=topic_id,
         words=words,
         callback_data_for_item=(
-            (
-                lambda index: _editable_word_callback_data(
-                    context=context,
-                    user_id=user_id,
-                    topic_id=topic_id,
-                    item_index=index,
-                )
+            lambda index: _editable_word_callback_data(
+                context=context,
+                user_id=user_id,
+                topic_id=topic_id,
+                item_index=index,
             )
-            if context is not None and user_id is not None
-            else None
         ),
         language=language,
     )

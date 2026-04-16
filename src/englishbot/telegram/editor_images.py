@@ -91,34 +91,19 @@ async def published_image_item_handler(
         user_id=int(user.id),
         action=PUBLISHED_IMAGE_ITEM_CALLBACK_ACTION,
         token=token,
-        fallback_key="selection",
-        allow_colon_fallback=True,
     )
     if payload is None:
         await query.edit_message_text(
             tg_runtime.tg("selected_word_unavailable", context=context, user=user)
         )
         return
-    topic_id = payload.get("topic_id")
-    item_index = payload.get("item_index")
-    if isinstance(topic_id, str) and isinstance(item_index, int):
-        resolved_topic_id = topic_id
-        resolved_item_index = item_index
-    else:
-        selection = payload.get("selection")
-        if not isinstance(selection, str) or ":" not in selection:
-            await query.edit_message_text(
-                tg_runtime.tg("selected_word_unavailable", context=context, user=user)
-            )
-            return
-        resolved_topic_id, raw_item_index = selection.rsplit(":", 1)
-        try:
-            resolved_item_index = int(raw_item_index)
-        except ValueError:
-            await query.edit_message_text(
-                tg_runtime.tg("selected_word_unavailable", context=context, user=user)
-            )
-            return
+    resolved_topic_id = payload.get("topic_id")
+    resolved_item_index = payload.get("item_index")
+    if not isinstance(resolved_topic_id, str) or not isinstance(resolved_item_index, int):
+        await query.edit_message_text(
+            tg_runtime.tg("selected_word_unavailable", context=context, user=user)
+        )
+        return
     try:
         content_pack = tg_runtime.content_store(context).get_content_pack(resolved_topic_id)
     except ValueError:
@@ -453,6 +438,12 @@ async def image_review_pick_handler(
                     tg=tg_runtime.tg,
                     topic_id=topic_id,
                     raw_items=raw_items if isinstance(raw_items, list) else [],
+                    callback_data_for_item=lambda index: published_image_item_callback_data(
+                        store=tg_runtime.content_store(context),
+                        user_id=int(user.id),
+                        topic_id=topic_id,
+                        item_index=index,
+                    ),
                     language=tg_runtime.telegram_ui_language(context, user),
                 ),
             )
@@ -533,6 +524,12 @@ async def image_review_skip_handler(
                     tg=tg_runtime.tg,
                     topic_id=topic_id,
                     raw_items=raw_items if isinstance(raw_items, list) else [],
+                    callback_data_for_item=lambda index: published_image_item_callback_data(
+                        store=tg_runtime.content_store(context),
+                        user_id=int(user.id),
+                        topic_id=topic_id,
+                        item_index=index,
+                    ),
                     language=tg_runtime.telegram_ui_language(context, user),
                 ),
             )
@@ -807,6 +804,12 @@ async def image_review_photo_handler(
                     tg=tg_runtime.tg,
                     topic_id=topic_id,
                     raw_items=raw_items if isinstance(raw_items, list) else [],
+                    callback_data_for_item=lambda index: published_image_item_callback_data(
+                        store=tg_runtime.content_store(context),
+                        user_id=int(user.id),
+                        topic_id=topic_id,
+                        item_index=index,
+                    ),
                     language=tg_runtime.telegram_ui_language(context, user),
                 ),
             )

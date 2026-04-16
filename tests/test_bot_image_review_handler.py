@@ -363,15 +363,25 @@ class _FakeContentStore:
             "topic": {"id": "fairy-tales", "title": "Fairy Tales"},
             "vocabulary_items": [],
         }
+        self._created_tokens: dict[str, dict[str, object]] = {}
 
     def get_content_pack(self, topic_id: str) -> dict[str, object]:
         assert topic_id == "fairy-tales"
         return self._content_pack
 
+    def create_telegram_callback_token(self, **kwargs):  # noqa: ANN003
+        payload = kwargs.get("payload", {})
+        item_index = payload.get("item_index", 0)
+        token = f"tokenized-item-{item_index}"
+        self._created_tokens[token] = dict(payload)
+        return token
+
     def consume_telegram_callback_token(self, **kwargs):  # noqa: ANN003
         token = kwargs.get("token")
         if token == "tokenized-item":
             return {"topic_id": "fairy-tales", "item_index": 0}
+        if token in self._created_tokens:
+            return self._created_tokens[token]
         return None
 
 
@@ -1866,6 +1876,7 @@ async def test_published_image_skip_returns_to_word_list(
         bot=fake_bot,
         application=SimpleNamespace(
             bot_data={
+                "content_store": _FakeContentStore(flow.content_pack),
                 "image_review_get_active_use_case": _FakeGetActiveImageReviewUseCase(flow),
                 "image_review_skip_use_case": _FakeSkipImageReviewItemUseCase(
                     ImageReviewFlowState(

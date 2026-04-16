@@ -805,6 +805,16 @@ def test_topic_keyboards_show_item_counts_when_provided() -> None:
 
 
 def test_published_image_items_keyboard_uses_short_index_based_callback_data() -> None:
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": SimpleNamespace(
+                    create_telegram_callback_token=lambda **kwargs: "image-token-1"
+                ),
+                "telegram_ui_language": "en",
+            }
+        )
+    )
     keyboard = _published_image_items_keyboard(
         topic_id="school-subjects",
         raw_items=[
@@ -814,14 +824,26 @@ def test_published_image_items_keyboard_uses_short_index_based_callback_data() -
                 "translation": "физкультура",
             }
         ],
+        context=context,  # type: ignore[arg-type]
+        user_id=42,
     )
 
     button = keyboard.inline_keyboard[0][0]
-    assert button.callback_data == "words:edit_published_image:school-subjects:0"
+    assert button.callback_data == "words:edit_published_image:image-token-1"
     assert len(button.callback_data) < 64
 
 
 def test_published_image_items_keyboard_marks_items_with_attached_image() -> None:
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": SimpleNamespace(
+                    create_telegram_callback_token=lambda **kwargs: "image-token-2"
+                ),
+                "telegram_ui_language": "en",
+            }
+        )
+    )
     keyboard = _published_image_items_keyboard(
         topic_id="school-subjects",
         raw_items=[
@@ -837,6 +859,8 @@ def test_published_image_items_keyboard_marks_items_with_attached_image() -> Non
                 "translation": "естественные науки",
             },
         ],
+        context=context,  # type: ignore[arg-type]
+        user_id=42,
     )
 
     assert keyboard.inline_keyboard[0][0].text == "* Mathematics — математика"
@@ -844,6 +868,16 @@ def test_published_image_items_keyboard_marks_items_with_attached_image() -> Non
 
 
 def test_editable_words_keyboard_marks_items_with_attached_image() -> None:
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "content_store": SimpleNamespace(
+                    create_telegram_callback_token=lambda **kwargs: "word-token-1"
+                ),
+                "telegram_ui_language": "en",
+            }
+        )
+    )
     keyboard = _editable_words_keyboard(
         topic_id="school-subjects",
         words=[
@@ -858,6 +892,8 @@ def test_editable_words_keyboard_marks_items_with_attached_image() -> None:
                 has_image=False,
             ),
         ],
+        context=context,  # type: ignore[arg-type]
+        user_id=42,
     )
 
     assert keyboard.inline_keyboard[0][0].text == "* Mathematics — математика"

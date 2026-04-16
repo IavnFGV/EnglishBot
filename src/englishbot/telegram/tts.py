@@ -15,6 +15,27 @@ from englishbot.telegram.training_markup import (
 )
 
 
+def restore_previous_question_reply_markup(
+    *,
+    current_question,
+    active_session,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+):
+    return training_question_reply_markup(
+        current_question,
+        active_session=active_session,
+        context=context,
+        user=user,
+        get_medium_task_state=bot_module._get_medium_task_state,
+        build_medium_task_state=bot_module._build_medium_task_state,
+        medium_task_keyboard=bot_module._medium_task_keyboard,
+        tts_service_enabled=tg_runtime.tts_service_enabled,
+        tts_buttons_builder=bot_module._tts_buttons,
+        hard_skip_keyboard_builder=bot_module._hard_skip_keyboard,
+    )
+
+
 async def tts_voice_menu_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -81,17 +102,11 @@ async def tts_voice_select_handler(
     else:
         await query.answer()
     await query.edit_message_reply_markup(
-        reply_markup=training_question_reply_markup(
-            current_question,
+        reply_markup=restore_previous_question_reply_markup(
+            current_question=current_question,
             active_session=active_session,
             context=context,
             user=user,
-            get_medium_task_state=bot_module._get_medium_task_state,
-            build_medium_task_state=bot_module._build_medium_task_state,
-            medium_task_keyboard=bot_module._medium_task_keyboard,
-            tts_service_enabled=tg_runtime.tts_service_enabled,
-            tts_buttons_builder=bot_module._tts_buttons,
-            hard_skip_keyboard_builder=bot_module._hard_skip_keyboard,
         )
     )
 

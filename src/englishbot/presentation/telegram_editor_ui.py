@@ -287,7 +287,7 @@ def published_image_items_keyboard(
     tg: TelegramTextGetter,
     topic_id: str,
     raw_items: list[object],
-    callback_data_for_item: Callable[[int], str] | None = None,
+    callback_data_for_item: Callable[[int], str],
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
@@ -309,11 +309,7 @@ def published_image_items_keyboard(
             [
                 InlineKeyboardButton(
                     label[:64],
-                    callback_data=(
-                        callback_data_for_item(index)
-                        if callback_data_for_item is not None
-                        else f"words:edit_published_image:{topic_id}:{index}"
-                    ),
+                    callback_data=callback_data_for_item(index),
                 )
             ]
         )
@@ -351,7 +347,7 @@ def editable_words_keyboard(
     tg: TelegramTextGetter,
     topic_id: str,
     words,
-    callback_data_for_item: Callable[[int], str] | None = None,
+    callback_data_for_item: Callable[[int], str],
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows = [
@@ -362,11 +358,7 @@ def editable_words_keyboard(
                     translation=word.translation,
                     has_image=getattr(word, "has_image", False),
                 )[:64],
-                callback_data=(
-                    callback_data_for_item(index)
-                    if callback_data_for_item is not None
-                    else f"words:edit_item:{topic_id}:{index}"
-                ),
+                callback_data=callback_data_for_item(index),
             )
         ]
         for index, word in enumerate(words)

@@ -16,6 +16,7 @@ from englishbot.bot import (
     words_edit_words_callback_handler,
 )
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
+from englishbot.telegram.callback_tokens import editable_word_callback_data
 
 
 class _RecordingQuery:
@@ -161,7 +162,14 @@ async def test_editor_can_edit_published_word_from_words_menu(
     assert topic_query.edits[-1][1].inline_keyboard[0][0].text == "* Mathematics — математика"
     assert topic_query.edits[-1][1].inline_keyboard[1][0].text == "Science — естественные науки"
 
-    item_query = _RecordingQuery("words:edit_item:school-subjects:0")
+    item_query = _RecordingQuery(
+        editable_word_callback_data(
+            store=store,
+            user_id=42,
+            topic_id="school-subjects",
+            item_index=0,
+        )
+    )
     item_update = SimpleNamespace(
         callback_query=item_query,
         effective_user=SimpleNamespace(id=42),

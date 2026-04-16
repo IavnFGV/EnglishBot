@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from englishbot.telegram.callback_tokens import (
     CALLBACK_TOKEN_TTL_SECONDS,
     EDITABLE_WORD_CALLBACK_ACTION,
@@ -16,16 +18,13 @@ from englishbot.telegram.callback_tokens import (
 
 
 def test_create_callback_token_uses_fallback_when_store_has_no_creator() -> None:
-    assert (
+    with pytest.raises(RuntimeError, match="callback token creation"):
         create_callback_token(
             store=SimpleNamespace(),
             user_id=7,
             action="some-action",
             payload={"id": "x"},
-            fallback_value="fallback",
         )
-        == "fallback"
-    )
 
 
 def test_create_callback_token_uses_store_creator_with_default_ttl() -> None:
@@ -40,7 +39,6 @@ def test_create_callback_token_uses_store_creator_with_default_ttl() -> None:
         user_id=7,
         action="some-action",
         payload={"id": "x"},
-        fallback_value="fallback",
     )
 
     assert token == "token-123"
@@ -54,38 +52,28 @@ def test_create_callback_token_uses_store_creator_with_default_ttl() -> None:
     ]
 
 
-def test_consume_callback_token_uses_plain_fallback_without_store_consumer() -> None:
-    assert consume_callback_token(
+def test_consume_callback_token_returns_none_without_store_consumer() -> None:
+    assert (
+        consume_callback_token(
         store=SimpleNamespace(),
         user_id=7,
         action="some-action",
         token="plain-token",
-        fallback_key="value",
-    ) == {"value": "plain-token"}
+    )
+        is None
+    )
 
 
-def test_consume_callback_token_rejects_colon_fallback_by_default() -> None:
+def test_consume_callback_token_returns_none_when_token_is_unknown() -> None:
     assert (
         consume_callback_token(
             store=SimpleNamespace(consume_telegram_callback_token=lambda **kwargs: None),
             user_id=7,
             action="some-action",
             token="topic:3",
-            fallback_key="value",
         )
         is None
     )
-
-
-def test_consume_callback_token_allows_colon_fallback_when_requested() -> None:
-    assert consume_callback_token(
-        store=SimpleNamespace(consume_telegram_callback_token=lambda **kwargs: None),
-        user_id=7,
-        action="some-action",
-        token="topic:3",
-        fallback_key="value",
-        allow_colon_fallback=True,
-    ) == {"value": "topic:3"}
 
 
 def test_consume_callback_token_returns_resolved_payload() -> None:
@@ -96,7 +84,6 @@ def test_consume_callback_token_returns_resolved_payload() -> None:
         user_id=7,
         action="some-action",
         token="abc",
-        fallback_key="value",
     ) == {"topic_id": "weather", "item_index": 2}
 
 
