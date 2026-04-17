@@ -93,6 +93,47 @@ def test_build_training_question_view_uses_photo_view_when_image_exists(tmp_path
     assert view.caption == "<b>dragon</b>"
 
 
+def test_build_training_question_view_keeps_context_hint_in_photo_caption(tmp_path: Path) -> None:
+    image_path = tmp_path / "question.txt"
+    image_path.write_text("fake-image", encoding="utf-8")
+    question = SimpleNamespace(
+        prompt=(
+            "Translation: Monday\n"
+            "Context hint: On ****** I go to school.\n"
+            "Visual clue: Image is shown above.\n"
+            "Choose the correct English word."
+        ),
+        mode=TrainingMode.EASY,
+        letter_hint=None,
+    )
+
+    view = build_training_question_view(question, image_path=image_path)
+
+    assert isinstance(view, TelegramPhotoView)
+    assert "Context hint: On ****** I go to school." in view.caption
+
+
+def test_build_training_question_view_keeps_ru_context_hint_in_photo_caption(tmp_path: Path) -> None:
+    image_path = tmp_path / "question.txt"
+    image_path.write_text("fake-image", encoding="utf-8")
+    question = SimpleNamespace(
+        prompt=(
+            "Перевод: понедельник\n"
+            "Контекстная подсказка: On ****** I go to school.\n"
+            "Подсказка: Картинка показана выше.\n"
+            "Выбери правильное английское слово."
+        ),
+        mode=TrainingMode.EASY,
+        letter_hint=None,
+    )
+
+    view = build_training_question_view(question, image_path=image_path)
+
+    assert isinstance(view, TelegramPhotoView)
+    assert view.caption.startswith("<b>понедельник</b>")
+    assert "Контекстная подсказка: On ****** I go to school." in view.caption
+
+
 def test_build_medium_question_text_includes_context_hint_when_present() -> None:
     question = SimpleNamespace(
         prompt=(

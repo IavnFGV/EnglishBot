@@ -11,6 +11,7 @@ from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from englishbot.domain.models import TrainingMode, TrainingQuestion
 from englishbot.importing.models import ImportLessonResult
 from englishbot.presentation.add_words_text import format_draft_preview
+from englishbot.presentation.telegram_ui_text import telegram_ui_text
 
 if TYPE_CHECKING:
     from englishbot.application.services import AnswerOutcome
@@ -39,6 +40,14 @@ _CORRECT_FEEDBACK_EMOJIS: tuple[str, ...] = (
     "🍉",
 )
 _INCORRECT_FEEDBACK_EMOJI = "🙂"
+_TRANSLATION_LINE_PREFIXES = tuple(
+    telegram_ui_text("question_translation_line", language=language, translation="")
+    for language in ("en", "ru", "uk")
+)
+_VISUAL_LINE_PREFIXES = tuple(
+    telegram_ui_text("question_visual_line", language=language, clue="")
+    for language in ("en", "ru", "uk")
+)
 
 
 @dataclass(frozen=True)
@@ -357,14 +366,33 @@ async def edit_telegram_text_view(target, view: TelegramTextView):
 def _extract_translation_from_prompt(prompt: str) -> str:
     for line in prompt.splitlines():
         stripped = line.strip()
-        if stripped.startswith("Translation:"):
-            return stripped.removeprefix("Translation:").strip()
+        for prefix in _TRANSLATION_LINE_PREFIXES:
+            if stripped.startswith(prefix):
+                return stripped.removeprefix(prefix).strip()
     return prompt.strip()
+
+
+def _extract_compact_hint_lines(prompt: str) -> list[str]:
+    lines = [line.strip() for line in prompt.splitlines() if line.strip()]
+    if not lines:
+        return []
+    hint_lines: list[str] = []
+    saw_translation = False
+    for line in lines:
+        if not saw_translation:
+            if line.startswith(_TRANSLATION_LINE_PREFIXES):
+                saw_translation = True
+            continue
+        if line.startswith(_VISUAL_LINE_PREFIXES):
+            break
+        hint_lines.append(line)
+    return hint_lines
 
 
 def _render_compact_training_question(question: TrainingQuestion) -> str:
     translation = html.escape(_extract_translation_from_prompt(question.prompt))
     parts = [f"<b>{translation}</b>"]
+    parts.extend(html.escape(line) for line in _extract_compact_hint_lines(question.prompt))
     if question.mode is not TrainingMode.EASY and question.letter_hint:
         parts.append(f"<b>{html.escape(question.letter_hint)}</b>")
     return "\n\n".join(part for part in parts if part.strip())
