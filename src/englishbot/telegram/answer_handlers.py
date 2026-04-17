@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 from englishbot.application.homework_progress_use_cases import AssignmentSessionKind
 from englishbot.domain.models import SessionItem, TrainingMode
+from englishbot.telegram.training_markup import active_session_id
 
 logger = logging.getLogger("englishbot.bot")
 
@@ -44,7 +45,7 @@ async def hard_skip_handler(
     if not session_id:
         return
     active_session = active_training_session(context, user_id=user.id)
-    if active_session is None or active_session.id != session_id:
+    if active_session is None or active_session_id(active_session) != session_id:
         return
     try:
         current_question = service(context).get_current_question(user_id=user.id)

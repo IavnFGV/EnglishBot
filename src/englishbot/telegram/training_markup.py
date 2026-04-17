@@ -7,6 +7,16 @@ from englishbot.domain.models import TrainingMode, TrainingQuestion
 from englishbot.telegram.buttons import InlineKeyboardButton
 
 
+def active_session_id(active_session) -> str | None:
+    session_id = getattr(active_session, "session_id", None)
+    if isinstance(session_id, str) and session_id.strip():
+        return session_id
+    legacy_id = getattr(active_session, "id", None)
+    if isinstance(legacy_id, str) and legacy_id.strip():
+        return legacy_id
+    return None
+
+
 def tts_buttons(
     *,
     context: ContextTypes.DEFAULT_TYPE,
@@ -90,7 +100,7 @@ def question_reply_markup(
     if (
         user is not None
         and active_session is not None
-        and active_session.id == question.session_id
+        and active_session_id(active_session) == question.session_id
         and question.mode is TrainingMode.HARD
     ):
         return hard_skip_keyboard_builder(context=context, user=user, session_id=question.session_id)

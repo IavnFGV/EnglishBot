@@ -12,6 +12,7 @@ from englishbot.presentation.telegram_views import TelegramPhotoView, TelegramTe
 from englishbot.presentation.telegram_views import build_training_question_view
 from englishbot.presentation.telegram_views import send_telegram_view
 from englishbot.presentation.telegram_ui_text import telegram_ui_text
+from englishbot.telegram.training_markup import active_session_id
 
 
 _VISUAL_LINE_PREFIXES = tuple(
@@ -235,7 +236,7 @@ async def send_question(
         if (
             user is not None
             and active_session is not None
-            and active_session.id == question.session_id
+            and active_session_id(active_session) == question.session_id
             and question.mode is TrainingMode.HARD
         ):
             reply_markup = hard_skip_keyboard(
