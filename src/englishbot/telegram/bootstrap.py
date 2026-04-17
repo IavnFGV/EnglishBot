@@ -42,6 +42,10 @@ from englishbot.application.published_content_use_cases import (
     ListEditableWordsUseCase,
     UpdateEditableWordUseCase,
 )
+from englishbot.application.media_catalog_use_cases import (
+    ExportMediaCatalogWorkbookUseCase,
+    ImportMediaCatalogWorkbookUseCase,
+)
 from englishbot.application.services import QuestionFactory
 from englishbot.application.training_runtime import build_training_service
 from englishbot.capabilities import (
@@ -157,6 +161,16 @@ def build_application(
     app.bot_data["update_editable_word_use_case"] = UpdateEditableWordUseCase(
         db_path=settings.content_db_path
     )
+    app.bot_data["export_media_catalog_use_case"] = ExportMediaCatalogWorkbookUseCase(
+        store=content_store,
+        assets_dir=settings.assets_dir,
+        web_app_base_url=settings.web_app_base_url,
+        public_asset_signing_secret=settings.public_asset_signing_secret,
+    )
+    app.bot_data["import_media_catalog_use_case"] = ImportMediaCatalogWorkbookUseCase(
+        store=content_store,
+        assets_dir=settings.assets_dir,
+    )
     app.bot_data["homework_progress_use_case"] = HomeworkProgressUseCase(store=content_store)
     app.bot_data["list_user_goals_use_case"] = ListUserGoalsUseCase(store=content_store)
     app.bot_data["get_user_progress_summary_use_case"] = GetUserProgressSummaryUseCase(
@@ -248,6 +262,13 @@ def build_application(
     app.add_handler(CallbackQueryHandler(bot_module.medium_answer_callback_handler, pattern=r"^medium:"))
     app.add_handler(CallbackQueryHandler(bot_module.choice_answer_handler, pattern=r"^answer:"))
     app.add_handler(CallbackQueryHandler(bot_module.words_menu_callback_handler, pattern=r"^words:menu$"))
+    app.add_handler(CallbackQueryHandler(bot_module.words_catalog_callback_handler, pattern=r"^words:catalog$"))
+    app.add_handler(
+        CallbackQueryHandler(bot_module.words_catalog_export_callback_handler, pattern=r"^words:catalog:export$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(bot_module.words_catalog_import_callback_handler, pattern=r"^words:catalog:import$")
+    )
     app.add_handler(CallbackQueryHandler(bot_module.assign_menu_callback_handler, pattern=r"^assign:menu$"))
     app.add_handler(CallbackQueryHandler(bot_module.noop_callback_handler, pattern=r"^assign:noop$"))
     app.add_handler(
@@ -435,6 +456,7 @@ def build_application(
         CallbackQueryHandler(bot_module.add_words_cancel_callback_handler, pattern=r"^words:cancel:")
     )
     app.add_handler(MessageHandler(filters.PHOTO, bot_module.image_review_photo_handler), group=0)
+    app.add_handler(MessageHandler(filters.Document.ALL, bot_module.words_catalog_document_handler), group=0)
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, bot_module.add_words_text_handler),
         group=0,

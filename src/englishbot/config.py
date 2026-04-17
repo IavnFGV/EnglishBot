@@ -61,6 +61,17 @@ _SETTING_DEFINITIONS: dict[str, RuntimeSettingDefinition] = {
         Path("data/englishbot.db"),
         "path",
     ),
+    "assets_dir": RuntimeSettingDefinition(
+        "assets_dir",
+        ("ASSETS_DIR",),
+        Path("assets"),
+        "path",
+    ),
+    "public_asset_signing_secret": RuntimeSettingDefinition(
+        "public_asset_signing_secret",
+        ("PUBLIC_ASSET_SIGNING_SECRET",),
+        "",
+    ),
     "pixabay_api_key": RuntimeSettingDefinition("pixabay_api_key", ("PIXABAY_API_KEY",), ""),
     "pixabay_base_url": RuntimeSettingDefinition(
         "pixabay_base_url",
@@ -364,6 +375,8 @@ class Settings:
     web_app_dev_user_ids: tuple[int, ...] = ()
     admin_bootstrap_secret: str = ""
     content_db_path: Path = Path("data/englishbot.db")
+    assets_dir: Path = Path("assets")
+    public_asset_signing_secret: str = ""
     pixabay_api_key: str = ""
     pixabay_base_url: str = "https://pixabay.com/api/"
     ollama_enabled: bool = True
@@ -457,6 +470,8 @@ class Settings:
             web_app_dev_user_ids=tuple(service.get("web_app_dev_user_ids")),
             admin_bootstrap_secret=service.get_str("admin_bootstrap_secret"),
             content_db_path=service.get_path("content_db_path") or Path("data/englishbot.db"),
+            assets_dir=service.get_path("assets_dir") or Path("assets"),
+            public_asset_signing_secret=service.get_str("public_asset_signing_secret"),
             pixabay_api_key=service.get_str("pixabay_api_key"),
             pixabay_base_url=service.get_str("pixabay_base_url"),
             ollama_enabled=bool(service.get("ollama_enabled")),

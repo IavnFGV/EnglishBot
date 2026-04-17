@@ -1519,6 +1519,7 @@ def _words_menu_view(
                     permission=PERMISSION_WORD_IMAGES_EDIT,
                 )
             ),
+            can_manage_catalog=bool(user and _is_admin(user.id, context)),
             language=_telegram_ui_language(context, user),
         ),
     )
@@ -1838,6 +1839,47 @@ async def words_menu_callback_handler(update: Update, context: ContextTypes.DEFA
         tg=_tg,
         words_menu_view=_words_menu_view,
     )
+
+
+async def words_catalog_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from englishbot.telegram.catalog_admin import (
+        words_catalog_callback_handler as telegram_words_catalog_callback_handler,
+    )
+
+    await telegram_words_catalog_callback_handler(update, context)
+
+
+async def words_catalog_export_callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    from englishbot.telegram.catalog_admin import (
+        words_catalog_export_callback_handler as telegram_words_catalog_export_callback_handler,
+    )
+
+    await telegram_words_catalog_export_callback_handler(update, context)
+
+
+async def words_catalog_import_callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    from englishbot.telegram.catalog_admin import (
+        words_catalog_import_callback_handler as telegram_words_catalog_import_callback_handler,
+    )
+
+    await telegram_words_catalog_import_callback_handler(update, context)
+
+
+async def words_catalog_document_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    from englishbot.telegram.catalog_admin import (
+        words_catalog_document_handler as telegram_words_catalog_document_handler,
+    )
+
+    await telegram_words_catalog_document_handler(update, context)
 
 
 def _goal_setup_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:
@@ -3746,6 +3788,7 @@ def _words_menu_keyboard(
     can_add_words: bool,
     can_edit_words: bool,
     can_edit_images: bool,
+    can_manage_catalog: bool = False,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     return ui_words_menu_keyboard(
@@ -3753,6 +3796,7 @@ def _words_menu_keyboard(
         can_add_words=can_add_words,
         can_edit_words=can_edit_words,
         can_edit_images=can_edit_images,
+        can_manage_catalog=can_manage_catalog,
         language=language,
     )
 

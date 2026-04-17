@@ -174,6 +174,28 @@
 - persistent storage для `data/` и `assets/`
 - отдельные backup-правила для `data/englishbot.db` и каталога `assets/`
 
+### Workbook Import Recovery
+
+Для workbook import теперь есть встроенный safety-path:
+
+- перед применением workbook создаётся pre-import snapshot SQLite базы
+- backup сохраняется в `data/backups/`
+- изменения по темам применяются атомарно в одной SQLite транзакции
+
+Практически это означает:
+
+- если import падает до commit, SQLite откатывает изменения автоматически
+- если import завершился, но результат оказался неверным, можно вручную восстановить последний pre-import backup
+
+Минимальный rollback-порядок:
+
+1. остановить бота
+2. выбрать нужный backup в `data/backups/`
+3. заменить `data/englishbot.db`
+4. снова запустить бота
+
+Если import запускался через CLI, путь к backup выводится в результате команды.
+
 Предпочтительный практический вариант:
 
 - хостинг: `Hetzner Cloud`

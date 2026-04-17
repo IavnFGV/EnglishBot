@@ -8,12 +8,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlencode
 
+from PIL import Image
+
 from englishbot.config import Settings
 from englishbot.infrastructure.sqlite_store import (
     SQLiteContentStore,
     SQLiteTelegramUserLoginRepository,
     SQLiteTelegramUserRoleRepository,
 )
+from englishbot.public_assets import build_public_asset_preview_url
 from englishbot.webapp import create_web_app
 
 
@@ -165,6 +168,46 @@ def test_webapp_users_endpoint_returns_users_for_admin_and_updates_roles(tmp_pat
     assert role_repository.list_roles_for_user(user_id=8) == ("admin",)
 
 
+def test_webapp_public_asset_preview_requires_valid_signature_and_returns_image(tmp_path: Path) -> None:
+    _seed_user_store(
+        tmp_path=tmp_path,
+        logins=[],
+        roles=[],
+    )
+    asset_path = tmp_path / "assets" / "animals" / "animals-cat.png"
+    asset_path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (300, 180), color=(200, 20, 20)).save(asset_path)
+    settings = Settings(
+        telegram_token="test-token",
+        log_level="INFO",
+        content_db_path=tmp_path / "data" / "englishbot.db",
+        assets_dir=tmp_path / "assets",
+        public_asset_signing_secret="preview-secret",
+        web_app_base_url="https://admin.example.com",
+    )
+    app = create_web_app(settings)
+    preview_url = build_public_asset_preview_url(
+        base_url=settings.web_app_base_url,
+        signing_secret=settings.public_asset_signing_secret,
+        image_ref=asset_path.as_posix(),
+        assets_dir=settings.assets_dir,
+    )
+    assert preview_url is not None
+
+    ok_response = _request(app, "GET", preview_url.removeprefix("https://admin.example.com"))
+    bad_response = _request(
+        app,
+        "GET",
+        "/public-assets/preview?path=animals/animals-cat.png&sig=broken",
+    )
+
+    assert ok_response.status_code == 200
+    assert ok_response.raw_headers["Content-Type"] == "image/jpeg"
+    assert ok_response.raw_headers["Cache-Control"] == "public, max-age=86400"
+    assert ok_response.body_bytes.startswith(b"\xff\xd8")
+    assert bad_response.status_code == 403
+
+
 def _seed_user_store(
     *,
     tmp_path: Path,
@@ -234,12 +277,15 @@ def _request(
         captured["headers"] = response_headers
 
     chunks = app(environ, start_response)
-    payload = b"".join(chunks).decode("utf-8")
+    body_bytes = b"".join(chunks)
+    payload = body_bytes.decode("utf-8", errors="ignore")
     status_code = int(str(captured["status"]).split(" ", maxsplit=1)[0])
     headers = dict(captured["headers"])
     content_type = str(headers.get("Content-Type", ""))
     return SimpleNamespace(
         status_code=status_code,
         body=payload,
+        body_bytes=body_bytes,
         json=(json.loads(payload) if "application/json" in content_type else None),
+        raw_headers=headers,
     )

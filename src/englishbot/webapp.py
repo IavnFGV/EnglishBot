@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from wsgiref.simple_server import make_server
+from socketserver import ThreadingMixIn
+from wsgiref.simple_server import WSGIServer, make_server
 
 from englishbot.cli import configure_cli_logging, create_cli_runtime_config_service
 from englishbot.config import Settings
@@ -11,6 +12,10 @@ from englishbot.webapp_server import create_web_app as server_create_web_app
 logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+class ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
+    daemon_threads = True
 
 
 def create_web_app(settings: Settings):
@@ -28,7 +33,12 @@ def main() -> None:
         settings.web_app_port,
         settings.content_db_path,
     )
-    with make_server(settings.web_app_host, settings.web_app_port, application) as server:
+    with make_server(
+        settings.web_app_host,
+        settings.web_app_port,
+        application,
+        server_class=ThreadingWSGIServer,
+    ) as server:
         server.serve_forever()
 
 

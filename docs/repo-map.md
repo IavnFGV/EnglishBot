@@ -12,6 +12,8 @@ If you are new to the project, read files in this order:
 4. [docs/telegram-runtime-map.md](/workspaces/EnglishBot/docs/telegram-runtime-map.md)
 5. [docs/telegram-interaction-contract.md](/workspaces/EnglishBot/docs/telegram-interaction-contract.md)
 6. [docs/bot-py-map.md](/workspaces/EnglishBot/docs/bot-py-map.md)
+7. [docs/media-catalog-workbook.md](/workspaces/EnglishBot/docs/media-catalog-workbook.md)
+8. [docs/deployment-recommendations.md](/workspaces/EnglishBot/docs/deployment-recommendations.md)
 
 ## Main Runtime
 
@@ -83,6 +85,8 @@ These top-level modules are intentionally still public entrypoints, not refactor
 - [src/englishbot/export_image_rerank_manifest.py](/workspaces/EnglishBot/src/englishbot/export_image_rerank_manifest.py)
 - [src/englishbot/rerank_image_manifest.py](/workspaces/EnglishBot/src/englishbot/rerank_image_manifest.py)
 - [src/englishbot/apply_image_rerank_decisions.py](/workspaces/EnglishBot/src/englishbot/apply_image_rerank_decisions.py)
+- [src/englishbot/media_catalog.py](/workspaces/EnglishBot/src/englishbot/media_catalog.py)
+  Workbook import/export for centralized vocabulary management against the SQLite DB, including pre-import backups.
 
 ## Quick Mental Model
 

@@ -174,6 +174,22 @@ def test_settings_from_config_service_reads_admin_bootstrap_secret(tmp_path: Pat
     assert settings.admin_bootstrap_secret == "recover-me"
 
 
+def test_settings_from_config_service_reads_assets_preview_settings(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "TELEGRAM_BOT_TOKEN=test-token\n"
+        "ASSETS_DIR=custom-assets\n"
+        "PUBLIC_ASSET_SIGNING_SECRET=preview-secret\n",
+        encoding="utf-8",
+    )
+    service = create_runtime_config_service(env_file_path=env_file, environ={})
+
+    settings = Settings.from_config_service(service)
+
+    assert settings.assets_dir == Path("custom-assets")
+    assert settings.public_asset_signing_secret == "preview-secret"
+
+
 def test_clients_can_read_defaults_from_injected_config_service(tmp_path: Path) -> None:
     service = make_test_config_service(
         {
