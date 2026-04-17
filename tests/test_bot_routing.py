@@ -8,12 +8,14 @@ from englishbot.bot import (
     goal_text_handler,
     group_text_observer_handler,
     image_review_edit_search_query_handler,
+    image_review_photo_handler,
     image_review_next_handler,
     image_review_previous_handler,
     image_review_search_handler,
     raw_update_logger_handler,
     text_answer_handler,
     version_handler,
+    words_catalog_photo_handler,
 )
 from englishbot.config import Settings
 from englishbot.image_generation.smart_generation import DisabledImageGenerationGateway
@@ -110,6 +112,43 @@ def test_text_answer_handler_is_registered_after_add_words_handler() -> None:
         index for index, handler in enumerate(app.handlers[0]) if handler.callback is goal_text_handler
     )
     assert add_words_index < goal_text_index
+
+
+def test_build_application_registers_catalog_photo_handler_after_image_review_photo_handler() -> None:
+    settings = Settings(
+        telegram_token="test-token",
+        log_level="INFO",
+        editor_user_ids=(),
+        content_db_path=Path("test-photo-routing.db"),
+        pixabay_api_key="",
+        pixabay_base_url="https://pixabay.com/api/",
+        ollama_base_url="http://127.0.0.1:11434",
+        ollama_model="qwen2.5:7b",
+        ollama_temperature=None,
+        ollama_top_p=None,
+        ollama_num_predict=None,
+        ollama_extract_line_prompt_path=Path("prompts/ollama_extract_line_prompt.txt"),
+        ollama_image_prompt_path=Path("prompts/ollama_image_prompt_prompt.txt"),
+    )
+    config_service = make_test_config_service(
+        {
+            "telegram_token": settings.telegram_token,
+            "log_level": settings.log_level,
+            "editor_user_ids": settings.editor_user_ids,
+            "content_db_path": settings.content_db_path,
+            "pixabay_api_key": settings.pixabay_api_key,
+            "pixabay_base_url": settings.pixabay_base_url,
+            "ollama_base_url": settings.ollama_base_url,
+            "ollama_model": settings.ollama_model,
+            "ollama_extract_line_prompt_path": settings.ollama_extract_line_prompt_path,
+            "ollama_image_prompt_path": settings.ollama_image_prompt_path,
+        }
+    )
+
+    app = build_application(settings, config_service=config_service)
+
+    assert any(handler.callback is image_review_photo_handler for handler in app.handlers[0])
+    assert any(handler.callback is words_catalog_photo_handler for handler in app.handlers[1])
 
 
 def test_build_application_uses_injected_config_service() -> None:

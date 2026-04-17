@@ -96,8 +96,11 @@ Operational rule:
 - `docker-compose.yml` is the core bot runtime
 - `docker-compose.optional.yml` is an explicit overlay for Web App, TTS, and nginx
 - use the overlay only when you intentionally need those optional services
-- `scripts/deploy-docker-app.sh` deploys only the core bot by default
-- set `DEPLOY_OPTIONAL_SERVICES=true` when you want deploy or rollback to include the optional overlay too
+- `scripts/deploy-docker-app.sh` now defaults to `DEPLOY_OPTIONAL_SERVICES=auto`
+- in `auto` mode, deploy and rollback include the optional overlay when either:
+  - the previous release already used optional services
+  - or `shared/.env` contains Web App/TTS configuration such as `WEB_APP_BASE_URL`, `PUBLIC_ASSET_SIGNING_SECRET`, or `TTS_SERVICE_ENABLED=true`
+- you can still force the behavior with `DEPLOY_OPTIONAL_SERVICES=true` or `DEPLOY_OPTIONAL_SERVICES=false`
 
 ## GitHub Actions auto-deploy
 
@@ -132,8 +135,10 @@ Backup behavior detail:
 Optional GitHub repository variable:
 
 - `DEPLOY_OPTIONAL_SERVICES`
-  - set to `true` if the deploy workflow should also recreate the optional Web App, TTS, and nginx overlay
-  - leave unset or set to `false` for core bot-only deploys
+  - supported values: `auto`, `true`, `false`
+  - `auto` is the recommended default and lets the server infer whether the optional Web App, TTS, and nginx overlay should be recreated
+  - set to `true` to force optional overlay deploys
+  - set to `false` to force a core bot-only deploy
 
 ### First-time server preparation for auto-deploy
 
@@ -154,6 +159,12 @@ If that environment also needs Web App, TTS, and nginx during auto-deploy, run d
 
 ```bash
 DEPLOY_OPTIONAL_SERVICES=true bash scripts/deploy-docker-app.sh
+```
+
+If the environment already has Web App/TTS config in `shared/.env`, you can also just use the default auto mode:
+
+```bash
+bash scripts/deploy-docker-app.sh
 ```
 
 The same flag is respected by:
@@ -184,6 +195,7 @@ Runtime note:
 - before certificates are issued, `englishbot-nginx` starts in HTTP mode on port `80`
 - after certificates are present, `englishbot-nginx` switches to HTTPS + HTTP->HTTPS redirect on restart
 - deploy scripts use `--force-recreate` so changes in bind-mounted runtime config such as `shared/.env` are applied reliably
+- deploy scripts also resolve optional overlay mode before every release and rollback so Web App-only code changes do not get stranded on a stale `englishbot-webapp` container by accident
 
 ## Offline image rerank loop
 

@@ -53,7 +53,7 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_BRANCH: main
-          DEPLOY_OPTIONAL_SERVICES: ${{ vars.DEPLOY_OPTIONAL_SERVICES || 'false' }}
+          DEPLOY_OPTIONAL_SERVICES: ${{ vars.DEPLOY_OPTIONAL_SERVICES || 'auto' }}
         run: |
           ssh -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "cd /srv/englishbot/app && \

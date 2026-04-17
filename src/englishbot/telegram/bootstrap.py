@@ -467,7 +467,7 @@ def build_application(
         CallbackQueryHandler(bot_module.add_words_cancel_callback_handler, pattern=r"^words:cancel:")
     )
     app.add_handler(MessageHandler(filters.PHOTO, bot_module.image_review_photo_handler), group=0)
-    app.add_handler(MessageHandler(filters.PHOTO, bot_module.words_catalog_photo_handler), group=0)
+    app.add_handler(MessageHandler(filters.PHOTO, bot_module.words_catalog_photo_handler), group=1)
     app.add_handler(MessageHandler(filters.Document.ALL, bot_module.words_catalog_document_handler), group=0)
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, bot_module.add_words_text_handler),

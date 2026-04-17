@@ -8,7 +8,7 @@ DEPLOY_TAG_PREFIX="${DEPLOY_TAG_PREFIX:-deploy-v}"
 TARGET_TAG="${1:-}"
 CORE_COMPOSE_FILE="${CORE_COMPOSE_FILE:-docker-compose.yml}"
 OPTIONAL_COMPOSE_FILE="${OPTIONAL_COMPOSE_FILE:-docker-compose.optional.yml}"
-DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-}"
+DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-auto}"
 
 if [[ ! -d "${APP_DIR}" ]]; then
   echo "App directory does not exist: ${APP_DIR}" >&2
@@ -38,9 +38,12 @@ if [[ -f "${CURRENT_RELEASE_FILE}" ]]; then
   fi
 fi
 
-if [[ -z "${DEPLOY_OPTIONAL_SERVICES}" ]]; then
-  DEPLOY_OPTIONAL_SERVICES="false"
-fi
+DEPLOY_OPTIONAL_SERVICES="$(
+  PYTHONPATH=src python -m englishbot.deploy.optional_services \
+    --mode "${DEPLOY_OPTIONAL_SERVICES}" \
+    --current-release-file "${CURRENT_RELEASE_FILE}" \
+    --shared-env-file "${SHARED_DIR}/.env"
+)"
 
 compose_args=(-f "${CORE_COMPOSE_FILE}")
 if [[ "${DEPLOY_OPTIONAL_SERVICES}" == "true" ]]; then
