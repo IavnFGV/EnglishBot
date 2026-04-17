@@ -129,9 +129,13 @@ def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
     assert 'DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"' in script
     assert 'CORE_COMPOSE_FILE="${CORE_COMPOSE_FILE:-docker-compose.yml}"' in script
     assert 'OPTIONAL_COMPOSE_FILE="${OPTIONAL_COMPOSE_FILE:-docker-compose.optional.yml}"' in script
-    assert 'DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-false}"' in script
+    assert 'DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-auto}"' in script
     assert 'git fetch origin "${DEPLOY_BRANCH}"' in script
     assert 'git reset --hard "origin/${DEPLOY_BRANCH}"' in script
+    assert 'python -m englishbot.deploy.optional_services \\' in script
+    assert '--mode "${DEPLOY_OPTIONAL_SERVICES}" \\' in script
+    assert '--current-release-file "${CURRENT_RELEASE_FILE}" \\' in script
+    assert '--shared-env-file "${SHARED_DIR}/.env"' in script
     assert 'BUILD_COUNTER_FILE="${BUILD_COUNTER_FILE:-${SHARED_DIR}/deploy/build-counter.env}"' in script
     assert 'CURRENT_RELEASE_FILE="${CURRENT_RELEASE_FILE:-${SHARED_DIR}/deploy/current-release.env}"' in script
     assert 'DB_BACKUP_FILE="${DB_BACKUP_FILE:-${SHARED_DIR}/deploy/last-db-backup.env}"' in script
@@ -221,9 +225,13 @@ def test_server_rollback_script_supports_previous_or_explicit_deploy_tag() -> No
     assert 'DEPLOY_TAG_PREFIX="${DEPLOY_TAG_PREFIX:-deploy-v}"' in script
     assert 'CORE_COMPOSE_FILE="${CORE_COMPOSE_FILE:-docker-compose.yml}"' in script
     assert 'OPTIONAL_COMPOSE_FILE="${OPTIONAL_COMPOSE_FILE:-docker-compose.optional.yml}"' in script
-    assert 'DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-}"' in script
+    assert 'DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-auto}"' in script
     assert 'git fetch --tags origin' in script
     assert 'TARGET_TAG="${1:-}"' in script
+    assert 'python -m englishbot.deploy.optional_services \\' in script
+    assert '--mode "${DEPLOY_OPTIONAL_SERVICES}" \\' in script
+    assert '--current-release-file "${CURRENT_RELEASE_FILE}" \\' in script
+    assert '--shared-env-file "${SHARED_DIR}/.env"' in script
     assert 'git for-each-ref --sort=-creatordate --format=' in script
     assert 'git checkout --detach "${TARGET_TAG}"' in script
     assert 'ENGLISHBOT_GIT_BRANCH="rollback:${TARGET_TAG}"' in script
