@@ -28,8 +28,20 @@ if [[ ! -f "${CORE_COMPOSE_FILE}" ]]; then
   exit 1
 fi
 
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "${PYTHON_BIN}" ]]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  else
+    echo "python3 or python is required on the deploy host." >&2
+    exit 1
+  fi
+fi
+
 DEPLOY_OPTIONAL_SERVICES="$(
-  PYTHONPATH=src python -m englishbot.deploy.optional_services \
+  PYTHONPATH=src "${PYTHON_BIN}" -m englishbot.deploy.optional_services \
     --mode "${DEPLOY_OPTIONAL_SERVICES}" \
     --current-release-file "${CURRENT_RELEASE_FILE}" \
     --shared-env-file "${SHARED_DIR}/.env"

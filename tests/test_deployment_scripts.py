@@ -130,9 +130,15 @@ def test_server_deploy_script_fetches_branch_and_restarts_compose() -> None:
     assert 'CORE_COMPOSE_FILE="${CORE_COMPOSE_FILE:-docker-compose.yml}"' in script
     assert 'OPTIONAL_COMPOSE_FILE="${OPTIONAL_COMPOSE_FILE:-docker-compose.optional.yml}"' in script
     assert 'DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-auto}"' in script
+    assert 'PYTHON_BIN="${PYTHON_BIN:-}"' in script
+    assert 'if command -v python3 >/dev/null 2>&1; then' in script
+    assert 'PYTHON_BIN="python3"' in script
+    assert 'elif command -v python >/dev/null 2>&1; then' in script
+    assert 'PYTHON_BIN="python"' in script
+    assert 'echo "python3 or python is required on the deploy host." >&2' in script
     assert 'git fetch origin "${DEPLOY_BRANCH}"' in script
     assert 'git reset --hard "origin/${DEPLOY_BRANCH}"' in script
-    assert 'python -m englishbot.deploy.optional_services \\' in script
+    assert '"${PYTHON_BIN}" -m englishbot.deploy.optional_services \\' in script
     assert '--mode "${DEPLOY_OPTIONAL_SERVICES}" \\' in script
     assert '--current-release-file "${CURRENT_RELEASE_FILE}" \\' in script
     assert '--shared-env-file "${SHARED_DIR}/.env"' in script
@@ -226,9 +232,15 @@ def test_server_rollback_script_supports_previous_or_explicit_deploy_tag() -> No
     assert 'CORE_COMPOSE_FILE="${CORE_COMPOSE_FILE:-docker-compose.yml}"' in script
     assert 'OPTIONAL_COMPOSE_FILE="${OPTIONAL_COMPOSE_FILE:-docker-compose.optional.yml}"' in script
     assert 'DEPLOY_OPTIONAL_SERVICES="${DEPLOY_OPTIONAL_SERVICES:-auto}"' in script
+    assert 'PYTHON_BIN="${PYTHON_BIN:-}"' in script
+    assert 'if command -v python3 >/dev/null 2>&1; then' in script
+    assert 'PYTHON_BIN="python3"' in script
+    assert 'elif command -v python >/dev/null 2>&1; then' in script
+    assert 'PYTHON_BIN="python"' in script
+    assert 'echo "python3 or python is required on the deploy host." >&2' in script
     assert 'git fetch --tags origin' in script
     assert 'TARGET_TAG="${1:-}"' in script
-    assert 'python -m englishbot.deploy.optional_services \\' in script
+    assert '"${PYTHON_BIN}" -m englishbot.deploy.optional_services \\' in script
     assert '--mode "${DEPLOY_OPTIONAL_SERVICES}" \\' in script
     assert '--current-release-file "${CURRENT_RELEASE_FILE}" \\' in script
     assert '--shared-env-file "${SHARED_DIR}/.env"' in script
