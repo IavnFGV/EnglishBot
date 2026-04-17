@@ -42,6 +42,7 @@ class QuestionFactory:
         all_topic_items: list[VocabularyItem],
     ) -> TrainingQuestion:
         language = session.ui_language or DEFAULT_TELEGRAM_UI_LANGUAGE
+        context_hint_line = self._context_hint_line(item, language=language)
         is_bonus_hard = session.bonus_item_id == item.id and session.bonus_mode is not None
         question_mode = session.mode
         for session_item in session.items:
@@ -51,12 +52,18 @@ class QuestionFactory:
         if is_bonus_hard:
             question_mode = session.bonus_mode
             first_letter = next((char for char in item.english_word if char.isalpha()), item.english_word[:1]).upper()
-            prompt = (
-                f"{telegram_ui_text('question_translation_line', language=language, translation=item.translation)}\n"
-                f"{telegram_ui_text('question_visual_line', language=language, clue=self._image_line(item, language=language))}\n"
-                f"{telegram_ui_text('question_first_letter_line', language=language, first_letter=first_letter)}\n"
-                f"{telegram_ui_text('question_bonus_prompt', language=language)}"
-            )
+            prompt_lines = [
+                telegram_ui_text("question_translation_line", language=language, translation=item.translation),
+                *([context_hint_line] if context_hint_line else []),
+                telegram_ui_text(
+                    "question_visual_line",
+                    language=language,
+                    clue=self._image_line(item, language=language),
+                ),
+                telegram_ui_text("question_first_letter_line", language=language, first_letter=first_letter),
+                telegram_ui_text("question_bonus_prompt", language=language),
+            ]
+            prompt = "\n".join(prompt_lines)
             return TrainingQuestion(
                 session_id=session.id,
                 item_id=item.id,
@@ -71,11 +78,17 @@ class QuestionFactory:
             question_mode = TrainingMode.HARD
         if question_mode is TrainingMode.EASY:
             options = self._build_choice_options(item, all_topic_items)
-            prompt = (
-                f"{telegram_ui_text('question_translation_line', language=language, translation=item.translation)}\n"
-                f"{telegram_ui_text('question_visual_line', language=language, clue=self._image_line(item, language=language))}\n"
-                f"{telegram_ui_text('question_easy_prompt', language=language)}"
-            )
+            prompt_lines = [
+                telegram_ui_text("question_translation_line", language=language, translation=item.translation),
+                *([context_hint_line] if context_hint_line else []),
+                telegram_ui_text(
+                    "question_visual_line",
+                    language=language,
+                    clue=self._image_line(item, language=language),
+                ),
+                telegram_ui_text("question_easy_prompt", language=language),
+            ]
+            prompt = "\n".join(prompt_lines)
             return TrainingQuestion(
                 session_id=session.id,
                 item_id=item.id,
@@ -87,12 +100,18 @@ class QuestionFactory:
             )
         if question_mode is TrainingMode.MEDIUM:
             scrambled = self._scramble_word(item.english_word)
-            prompt = (
-                f"{telegram_ui_text('question_translation_line', language=language, translation=item.translation)}\n"
-                f"{telegram_ui_text('question_visual_line', language=language, clue=self._image_line(item, language=language))}\n"
-                f"{telegram_ui_text('question_shuffled_letters_line', language=language, letters=scrambled)}\n"
-                f"{telegram_ui_text('question_medium_prompt', language=language)}"
-            )
+            prompt_lines = [
+                telegram_ui_text("question_translation_line", language=language, translation=item.translation),
+                *([context_hint_line] if context_hint_line else []),
+                telegram_ui_text(
+                    "question_visual_line",
+                    language=language,
+                    clue=self._image_line(item, language=language),
+                ),
+                telegram_ui_text("question_shuffled_letters_line", language=language, letters=scrambled),
+                telegram_ui_text("question_medium_prompt", language=language),
+            ]
+            prompt = "\n".join(prompt_lines)
             return TrainingQuestion(
                 session_id=session.id,
                 item_id=item.id,
@@ -104,12 +123,18 @@ class QuestionFactory:
                 letter_hint=scrambled,
             )
         first_letter = next((char for char in item.english_word if char.isalpha()), item.english_word[:1]).upper()
-        prompt = (
-            f"{telegram_ui_text('question_translation_line', language=language, translation=item.translation)}\n"
-            f"{telegram_ui_text('question_visual_line', language=language, clue=self._image_line(item, language=language))}\n"
-            f"{telegram_ui_text('question_first_letter_line', language=language, first_letter=first_letter)}\n"
-            f"{telegram_ui_text('question_hard_prompt', language=language)}"
-        )
+        prompt_lines = [
+            telegram_ui_text("question_translation_line", language=language, translation=item.translation),
+            *([context_hint_line] if context_hint_line else []),
+            telegram_ui_text(
+                "question_visual_line",
+                language=language,
+                clue=self._image_line(item, language=language),
+            ),
+            telegram_ui_text("question_first_letter_line", language=language, first_letter=first_letter),
+            telegram_ui_text("question_hard_prompt", language=language),
+        ]
+        prompt = "\n".join(prompt_lines)
         return TrainingQuestion(
             session_id=session.id,
             item_id=item.id,
@@ -126,6 +151,21 @@ class QuestionFactory:
             "question_visual_image_shown" if item.image_ref else "question_visual_no_image",
             language=language,
         )
+
+    def _context_hint_line(self, item: VocabularyItem, *, language: str) -> str | None:
+        if not item.meaning_hint:
+            return None
+        masked_hint = self._mask_hint_answer(item.meaning_hint, answer=item.english_word)
+        return telegram_ui_text("question_context_hint_line", language=language, hint=masked_hint)
+
+    def _mask_hint_answer(self, hint: str, *, answer: str) -> str:
+        normalized_hint = hint.strip()
+        normalized_answer = answer.strip()
+        if not normalized_hint or not normalized_answer:
+            return normalized_hint
+        placeholder = "".join("*" if not character.isspace() else character for character in normalized_answer)
+        pattern = re.compile(rf"(?<!\w){re.escape(normalized_answer)}(?!\w)", re.IGNORECASE)
+        return pattern.sub(placeholder, normalized_hint)
 
     def _build_choice_options(
         self, correct_item: VocabularyItem, all_topic_items: list[VocabularyItem]

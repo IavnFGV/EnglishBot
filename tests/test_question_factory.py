@@ -117,3 +117,31 @@ def test_question_factory_hard_prompt_uses_session_language() -> None:
     assert "Перевод: солнце" in question.prompt
     assert "Первая буква: S" in question.prompt
     assert question.input_hint == "Используй первую букву как подсказку и напиши слово по-английски."
+
+
+def test_question_factory_masks_answer_inside_context_hint() -> None:
+    factory = QuestionFactory(random.Random(17))
+    session = TrainingSession(
+        id="session-context-1",
+        user_id=1,
+        topic_id="week",
+        mode=TrainingMode.HARD,
+        ui_language="en",
+        items=[SessionItem(order=0, vocabulary_item_id="monday")],
+    )
+    item = VocabularyItem(
+        id="monday",
+        english_word="Monday",
+        translation="понедельник",
+        topic_id="week",
+        meaning_hint="On Monday I go to school.",
+    )
+
+    question = factory.create_question(
+        session=session,
+        item=item,
+        all_topic_items=[item],
+    )
+
+    assert "Context hint: On ****** I go to school." in question.prompt
+    assert "Context hint: On Monday I go to school." not in question.prompt

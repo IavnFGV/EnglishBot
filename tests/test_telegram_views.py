@@ -36,6 +36,7 @@ from englishbot.presentation.telegram_views import (
     edit_telegram_text_view,
     send_telegram_view,
 )
+from englishbot.telegram.question_delivery import build_medium_question_text
 
 
 class _FakeMessage:
@@ -90,6 +91,28 @@ def test_build_training_question_view_uses_photo_view_when_image_exists(tmp_path
     assert isinstance(view, TelegramPhotoView)
     assert view.photo_path == image_path
     assert view.caption == "<b>dragon</b>"
+
+
+def test_build_medium_question_text_includes_context_hint_when_present() -> None:
+    question = SimpleNamespace(
+        prompt=(
+            "Translation: Monday\n"
+            "Context hint: On ****** I go to school.\n"
+            "Visual clue: No image yet. Use the translation clue.\n"
+            "Shuffled letters hint: Nmadyo\n"
+            "Type the English word."
+        ),
+    )
+    state = SimpleNamespace(
+        shuffled_letters=("N", "m", "a", "d", "y", "o"),
+        selected_letter_indexes=(),
+        target_word="Monday",
+    )
+
+    text = build_medium_question_text(question, state)
+
+    assert "On ****** I go to school." in text
+    assert "<b>_ _ _ _ _ _</b>" in text
 
 
 def test_build_answer_feedback_view_renders_incorrect_answer_with_summary() -> None:

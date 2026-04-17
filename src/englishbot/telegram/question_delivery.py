@@ -14,6 +14,12 @@ from englishbot.presentation.telegram_views import send_telegram_view
 from englishbot.presentation.telegram_ui_text import telegram_ui_text
 
 
+_VISUAL_LINE_PREFIXES = tuple(
+    telegram_ui_text("question_visual_line", language=language, clue="")
+    for language in ("en", "ru", "uk")
+)
+
+
 def medium_task_is_complete(state) -> bool:
     return len(state.selected_letter_indexes) >= sum(
         1 for character in state.target_word if not character.isspace()
@@ -99,13 +105,25 @@ def medium_task_keyboard(
 
 def build_medium_question_text(question, state) -> str:
     translation = question.prompt.strip()
+    context_hint: str | None = None
     for line in question.prompt.splitlines():
         stripped = line.strip()
-        if stripped.startswith("Translation:"):
-            translation = stripped.removeprefix("Translation:").strip()
+        if ":" not in stripped:
+            continue
+        _, value = stripped.split(":", 1)
+        if translation == question.prompt.strip():
+            translation = value.strip()
+            continue
+        if stripped.startswith(_VISUAL_LINE_PREFIXES):
             break
+        context_hint = value.strip()
+        break
     slots = html.escape(medium_task_slots_text(state))
-    return f"🧩 <b>{html.escape(translation)}</b>\n\n<b>{slots}</b>"
+    lines = [f"🧩 <b>{html.escape(translation)}</b>"]
+    if context_hint:
+        lines.append(html.escape(context_hint))
+    lines.append(f"<b>{slots}</b>")
+    return "\n\n".join(lines)
 
 
 def build_medium_question_view(
