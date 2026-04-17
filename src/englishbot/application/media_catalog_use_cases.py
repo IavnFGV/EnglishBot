@@ -17,7 +17,7 @@ from englishbot.domain.models import Topic
 from englishbot.image_generation.pixabay import RemoteImageDownloader
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 from englishbot.logging_utils import logged_service_call
-from englishbot.public_assets import build_public_asset_preview_url
+from englishbot.public_assets import build_public_asset_file_url, resolve_signed_public_asset_file_path
 
 TOPICS_SHEET = "topics"
 WORDS_IN_TOPICS_SHEET = "words_in_topics"
@@ -102,28 +102,7 @@ class ExportMediaCatalogWorkbookUseCase:
             workbook=workbook,
             sheet_name=WORDS_IN_TOPICS_SHEET,
             headers=WORDS_IN_TOPICS_HEADERS,
-            rows=[
-                (
-                    row.topic_title,
-                    row.english_word,
-                    row.translation,
-                    row.meaning_hint,
-                    _preview_formula_for_item(
-                        image_ref=row.image_ref,
-                        image_source=row.image_source,
-                        assets_dir=self._assets_dir,
-                        web_app_base_url=self._web_app_base_url,
-                        public_asset_signing_secret=self._public_asset_signing_secret,
-                    ),
-                    row.image_ref,
-                    row.image_source,
-                    row.image_prompt,
-                    row.pixabay_search_query,
-                    row.source_fragment,
-                    _bool_cell_value(row.is_active),
-                )
-                for row in export.words_in_topics
-            ],
+            rows=[self._worksheet_row_for_item(row=row, row_index=index + 2) for index, row in enumerate(export.words_in_topics)],
         )
         self._add_topic_title_validation(
             workbook=workbook,
@@ -133,6 +112,29 @@ class ExportMediaCatalogWorkbookUseCase:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         workbook.save(output_path)
         return export
+
+    def _worksheet_row_for_item(self, *, row: WordInTopicRow, row_index: int) -> tuple[object, ...]:
+        exported_image_ref = _exported_image_ref_for_item(
+            image_ref=row.image_ref,
+            assets_dir=self._assets_dir,
+            web_app_base_url=self._web_app_base_url,
+            public_asset_signing_secret=self._public_asset_signing_secret,
+        )
+        return (
+            row.topic_title,
+            row.english_word,
+            row.translation,
+            row.meaning_hint,
+            _preview_formula_for_cell(row_index=row_index, image_ref_column_index=6)
+            if _is_remote_url(exported_image_ref or "")
+            else None,
+            exported_image_ref,
+            row.image_source,
+            row.image_prompt,
+            row.pixabay_search_query,
+            row.source_fragment,
+            _bool_cell_value(row.is_active),
+        )
 
     def _build_export(self, *, topic_id: str | None) -> CatalogWorkbookExport:
         topics = tuple(
@@ -217,10 +219,14 @@ class ImportMediaCatalogWorkbookUseCase:
         *,
         store: SQLiteContentStore,
         assets_dir: Path = Path("assets"),
+        web_app_base_url: str = "",
+        public_asset_signing_secret: str = "",
         remote_image_downloader: RemoteImageDownloader | None = None,
     ) -> None:
         self._store = store
         self._assets_dir = assets_dir
+        self._web_app_base_url = web_app_base_url
+        self._public_asset_signing_secret = public_asset_signing_secret
         self._remote_image_downloader = remote_image_downloader or RemoteImageDownloader()
 
     @logged_service_call(
@@ -302,6 +308,7 @@ class ImportMediaCatalogWorkbookUseCase:
                         item=item,
                         existing_items_by_word=existing_items_by_word,
                         assets_dir=self._assets_dir,
+                        public_asset_signing_secret=self._public_asset_signing_secret,
                         remote_image_downloader=self._remote_image_downloader,
                     )
                     for item in topic_rows
@@ -367,6 +374,7 @@ def _build_content_pack_item(
     item: dict[str, object],
     existing_items_by_word: dict[str, str],
     assets_dir: Path,
+    public_asset_signing_secret: str,
     remote_image_downloader: RemoteImageDownloader,
 ) -> dict[str, object]:
     item_id = _resolve_item_id(
@@ -377,16 +385,24 @@ def _build_content_pack_item(
     image_ref = item.get("image_ref")
     image_source = item.get("image_source")
     if isinstance(image_ref, str) and _is_remote_url(image_ref):
-        original_image_url = image_ref
-        image_ref = _download_remote_image_ref(
-            url=original_image_url,
-            topic_id=topic_id,
-            item_id=item_id,
+        resolved_local_asset = _resolve_signed_public_image_ref(
+            image_ref=image_ref,
             assets_dir=assets_dir,
-            remote_image_downloader=remote_image_downloader,
+            public_asset_signing_secret=public_asset_signing_secret,
         )
-        if image_source is None:
-            image_source = original_image_url
+        if resolved_local_asset is not None:
+            image_ref = resolved_local_asset
+        else:
+            original_image_url = image_ref
+            image_ref = _download_remote_image_ref(
+                url=original_image_url,
+                topic_id=topic_id,
+                item_id=item_id,
+                assets_dir=assets_dir,
+                remote_image_downloader=remote_image_downloader,
+            )
+            if image_source is None:
+                image_source = original_image_url
     return {
         "id": item_id,
         "english_word": item["english_word"],
@@ -429,32 +445,46 @@ def _download_remote_image_ref(
     return output_path.as_posix()
 
 
-def _preview_formula_for_item(
+def _exported_image_ref_for_item(
     *,
     image_ref: str | None,
-    image_source: str | None,
     assets_dir: Path,
     web_app_base_url: str,
     public_asset_signing_secret: str,
 ) -> str | None:
-    preview_url: str | None = None
-    if image_ref and _is_remote_url(image_ref):
-        preview_url = image_ref
-    elif image_ref:
-        try:
-            preview_url = build_public_asset_preview_url(
-                base_url=web_app_base_url,
-                signing_secret=public_asset_signing_secret,
-                image_ref=image_ref,
-                assets_dir=assets_dir,
-            )
-        except (OSError, RuntimeError, ValueError):
-            preview_url = None
-    if preview_url is None and image_source and _is_remote_url(image_source):
-        preview_url = image_source
-    if preview_url is None:
+    if image_ref is None:
         return None
-    return f'=IMAGE("{_escape_formula_string(preview_url)}")'
+    if _is_remote_url(image_ref):
+        return image_ref
+    try:
+        exported_ref = build_public_asset_file_url(
+            base_url=web_app_base_url,
+            signing_secret=public_asset_signing_secret,
+            image_ref=image_ref,
+            assets_dir=assets_dir,
+        )
+    except (OSError, RuntimeError, ValueError):
+        exported_ref = None
+    return exported_ref or image_ref
+
+
+def _resolve_signed_public_image_ref(
+    *,
+    image_ref: str,
+    assets_dir: Path,
+    public_asset_signing_secret: str,
+) -> str | None:
+    normalized_secret = public_asset_signing_secret.strip()
+    if not normalized_secret:
+        return None
+    resolved_path = resolve_signed_public_asset_file_path(
+        url=image_ref,
+        signing_secret=normalized_secret,
+        assets_dir=assets_dir,
+    )
+    if resolved_path is None:
+        return None
+    return resolved_path.as_posix()
 
 
 def _normalized_optional_str(value: object) -> str | None:
@@ -490,8 +520,9 @@ def _bool_cell_value(value: bool) -> str:
     return "TRUE" if value else "FALSE"
 
 
-def _escape_formula_string(value: str) -> str:
-    return value.replace('"', '""')
+def _preview_formula_for_cell(*, row_index: int, image_ref_column_index: int) -> str:
+    image_ref_column = _excel_column_name(image_ref_column_index)
+    return f'=IF({image_ref_column}{row_index}="","",IMAGE({image_ref_column}{row_index}))'
 
 
 def _column_widths_for_headers(headers: tuple[str, ...]) -> dict[str, int]:

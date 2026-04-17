@@ -88,6 +88,8 @@ def import_workbook(
     result = ImportMediaCatalogWorkbookUseCase(
         store=store,
         assets_dir=runtime_settings.assets_dir,
+        web_app_base_url=runtime_settings.web_app_base_url,
+        public_asset_signing_secret=runtime_settings.public_asset_signing_secret,
     ).execute(input_path=input_path, topic_id=topic_id)
     backup_suffix = f" backup={result.backup_path}" if result.backup_path is not None else ""
     typer.echo(f"updated={result.updated_count} db={resolved_db_path}{backup_suffix}")

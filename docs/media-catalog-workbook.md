@@ -90,14 +90,16 @@ One row means one word in one topic.
 For image editing in the workbook:
 
 - `preview` is an export-only helper column that shows the current image
-- put the desired image link into `image_ref`
+- `image_ref` is the one working image column for editors
+- when the runtime already has a local image, export writes `image_ref` as a signed server URL
+- if you want to replace the image, paste an external `http` or `https` URL directly into `image_ref`
 - if `image_ref` contains an `http` or `https` URL, the importer downloads that image into local `assets/<topic>/<item>.<ext>`
 - after download, the DB stores the local asset path in `image_ref`
 - the original remote URL is preserved in `image_source` when `image_source` was empty
 
-This keeps the runtime on local assets even if the editor works with remote URLs in the workbook.
+This keeps the runtime on local assets even though the spreadsheet always works with URLs.
 
-For local runtime images, the `preview` cell uses a signed URL from the server so Google Sheets can render the image without exposing the raw assets directory.
+The `preview` column simply renders the current `image_ref`, so if you replace the URL in `image_ref`, the preview updates in the sheet immediately.
 
 ## Editing Model
 

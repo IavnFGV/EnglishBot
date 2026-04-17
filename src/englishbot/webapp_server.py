@@ -14,6 +14,7 @@ from englishbot.infrastructure.sqlite_store import (
     SQLiteTelegramUserRoleRepository,
 )
 from englishbot.public_assets import (
+    resolve_public_asset_path,
     resolve_public_asset_preview_path,
     verify_public_asset_signature,
 )
@@ -75,6 +76,13 @@ def create_web_app(settings: Settings) -> Callable:
                 return json_response(start_response, 200, {"session": session_payload(session)})
             if is_read_request and path == "/public-assets/preview":
                 return public_asset_preview_response(
+                    environ,
+                    start_response,
+                    settings=settings,
+                    method=method,
+                )
+            if is_read_request and path == "/public-assets/file":
+                return public_asset_file_response(
                     environ,
                     start_response,
                     settings=settings,
@@ -356,6 +364,34 @@ def public_asset_preview_response(
         assets_dir=settings.assets_dir,
     )
     return file_response(start_response, preview_path, method=method)
+
+
+def public_asset_file_response(
+    environ,
+    start_response,
+    *,
+    settings: Settings,
+    method: str,
+) -> list[bytes]:  # noqa: ANN001
+    relative_path = query_param(environ, "path")
+    signature = query_param(environ, "sig")
+    signing_secret = settings.public_asset_signing_secret.strip()
+    if relative_path is None or signature is None or not signing_secret:
+        return json_response(start_response, 404, {"message": "Not found."})
+    if not verify_public_asset_signature(
+        relative_path=relative_path,
+        variant="file",
+        signature=signature,
+        signing_secret=signing_secret,
+    ):
+        return json_response(start_response, 403, {"message": "Access denied."})
+    asset_path = resolve_public_asset_path(
+        relative_path=relative_path,
+        assets_dir=settings.assets_dir,
+    )
+    if not asset_path.is_file():
+        raise FileNotFoundError(asset_path)
+    return file_response(start_response, asset_path, method=method)
 
 
 def file_response(start_response, file_path: Path, *, method: str) -> list[bytes]:  # noqa: ANN001

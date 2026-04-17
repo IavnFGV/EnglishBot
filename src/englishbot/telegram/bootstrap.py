@@ -170,6 +170,8 @@ def build_application(
     app.bot_data["import_media_catalog_use_case"] = ImportMediaCatalogWorkbookUseCase(
         store=content_store,
         assets_dir=settings.assets_dir,
+        web_app_base_url=settings.web_app_base_url,
+        public_asset_signing_secret=settings.public_asset_signing_secret,
     )
     app.bot_data["homework_progress_use_case"] = HomeworkProgressUseCase(store=content_store)
     app.bot_data["list_user_goals_use_case"] = ListUserGoalsUseCase(store=content_store)

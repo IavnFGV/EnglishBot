@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 from pathlib import Path, PurePosixPath
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 
 from englishbot.image_generation.previews import ensure_square_preview
 
 PUBLIC_ASSET_PREVIEW_SIZE_PX = 256
+PUBLIC_ASSET_FILE_ENDPOINT_PATH = "/public-assets/file"
+PUBLIC_ASSET_PREVIEW_ENDPOINT_PATH = "/public-assets/preview"
 
 
 def build_public_asset_preview_url(
@@ -34,7 +36,33 @@ def build_public_asset_preview_url(
         signing_secret=normalized_secret,
     )
     encoded_path = quote(relative_path, safe="/")
-    return f"{normalized_base_url}/public-assets/preview?path={encoded_path}&sig={signature}"
+    return f"{normalized_base_url}{PUBLIC_ASSET_PREVIEW_ENDPOINT_PATH}?path={encoded_path}&sig={signature}"
+
+
+def build_public_asset_file_url(
+    *,
+    base_url: str,
+    signing_secret: str,
+    image_ref: str,
+    assets_dir: Path,
+) -> str | None:
+    normalized_base_url = base_url.rstrip("/")
+    normalized_secret = signing_secret.strip()
+    if not normalized_base_url or not normalized_secret:
+        return None
+    relative_path = normalize_public_asset_relative_path(image_ref=image_ref, assets_dir=assets_dir)
+    if relative_path is None:
+        return None
+    source_path = resolve_public_asset_path(relative_path=relative_path, assets_dir=assets_dir)
+    if not source_path.is_file():
+        return None
+    signature = sign_public_asset_path(
+        relative_path=relative_path,
+        variant="file",
+        signing_secret=normalized_secret,
+    )
+    encoded_path = quote(relative_path, safe="/")
+    return f"{normalized_base_url}{PUBLIC_ASSET_FILE_ENDPOINT_PATH}?path={encoded_path}&sig={signature}"
 
 
 def sign_public_asset_path(
@@ -97,3 +125,31 @@ def resolve_public_asset_preview_path(*, relative_path: str, assets_dir: Path) -
     if not source_path.is_file():
         raise FileNotFoundError(source_path)
     return ensure_square_preview(source_path=source_path, size=PUBLIC_ASSET_PREVIEW_SIZE_PX)
+
+
+def resolve_signed_public_asset_file_path(
+    *,
+    url: str,
+    signing_secret: str,
+    assets_dir: Path,
+) -> Path | None:
+    parsed = urlparse(url)
+    if parsed.path != PUBLIC_ASSET_FILE_ENDPOINT_PATH:
+        return None
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    relative_path = str(query.get("path", [""])[0]).strip()
+    signature = str(query.get("sig", [""])[0]).strip()
+    if not relative_path or not signature:
+        return None
+    if not verify_public_asset_signature(
+        relative_path=relative_path,
+        variant="file",
+        signature=signature,
+        signing_secret=signing_secret,
+    ):
+        return None
+    try:
+        resolved = resolve_public_asset_path(relative_path=relative_path, assets_dir=assets_dir)
+    except ValueError:
+        return None
+    return resolved

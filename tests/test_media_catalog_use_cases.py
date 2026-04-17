@@ -92,9 +92,8 @@ def test_export_media_catalog_workbook_writes_two_simple_sheets(tmp_path: Path) 
     assert topics_sheet["A2"].value == "Cleaning Stuff"
     assert words_sheet["A2"].value == "Cleaning Stuff"
     assert words_sheet["B2"].value == "broom"
-    assert str(words_sheet["E2"].value).startswith('=IMAGE("https://admin.example.com/public-assets/preview?path=')
-    preview_path = local_asset_path.with_name("cleaning-stuff-broom--preview-256.jpg")
-    assert preview_path.is_file()
+    assert words_sheet["E2"].value == '=IF(F2="","",IMAGE(F2))'
+    assert str(words_sheet["F2"].value).startswith("https://admin.example.com/public-assets/file?path=")
     validations = list(words_sheet.data_validations.dataValidation)
     assert len(validations) == 1
     assert validations[0].formula1 == "=topics!$A$2:$A$3"
@@ -184,6 +183,45 @@ def test_import_media_catalog_workbook_uses_unique_topic_titles_and_word_matchin
     lexeme = store.get_lexeme_by_normalized_headword("fairy")
     assert lexeme is not None
     assert store.get_content_pack("fairy-tales")["lessons"] == [{"id": "fairy-tales-1", "title": "Lesson 1"}]
+
+
+def test_import_media_catalog_workbook_preserves_signed_local_asset_reference_without_redownload(
+    tmp_path: Path,
+) -> None:
+    store = _build_store(tmp_path)
+    downloader = FakeRemoteImageDownloader()
+    local_asset_path = tmp_path / "assets" / "cleaning-stuff" / "cleaning-stuff-broom.png"
+    local_asset_path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (320, 240), color=(10, 20, 30)).save(local_asset_path)
+    pack = store.get_content_pack("cleaning-stuff")
+    pack["vocabulary_items"][0]["image_ref"] = local_asset_path.as_posix()
+    store.upsert_content_pack(pack)
+    workbook_path = tmp_path / "exports" / "catalog.xlsx"
+
+    ExportMediaCatalogWorkbookUseCase(
+        store=store,
+        assets_dir=tmp_path / "assets",
+        web_app_base_url="https://admin.example.com",
+        public_asset_signing_secret="preview-secret",
+    ).execute(output_path=workbook_path)
+
+    result = ImportMediaCatalogWorkbookUseCase(
+        store=store,
+        assets_dir=tmp_path / "assets",
+        web_app_base_url="https://admin.example.com",
+        public_asset_signing_secret="preview-secret",
+        remote_image_downloader=downloader,
+    ).execute(input_path=workbook_path)
+
+    assert result.updated_count == 2
+    assert downloader.calls == [
+        (
+            "https://img.example/fairy.png",
+            tmp_path / "assets" / "fairy-tales" / "fairy-tales-fairy.png",
+        )
+    ]
+    broom_item = next(item for item in store.list_vocabulary_by_topic("cleaning-stuff") if item.english_word == "broom")
+    assert broom_item.image_ref == local_asset_path.as_posix()
 
 
 def test_import_media_catalog_workbook_rolls_back_all_topics_on_apply_failure(

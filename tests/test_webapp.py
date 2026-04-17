@@ -16,7 +16,7 @@ from englishbot.infrastructure.sqlite_store import (
     SQLiteTelegramUserLoginRepository,
     SQLiteTelegramUserRoleRepository,
 )
-from englishbot.public_assets import build_public_asset_preview_url
+from englishbot.public_assets import build_public_asset_file_url, build_public_asset_preview_url
 from englishbot.webapp import create_web_app
 
 
@@ -205,6 +205,46 @@ def test_webapp_public_asset_preview_requires_valid_signature_and_returns_image(
     assert ok_response.raw_headers["Content-Type"] == "image/jpeg"
     assert ok_response.raw_headers["Cache-Control"] == "public, max-age=86400"
     assert ok_response.body_bytes.startswith(b"\xff\xd8")
+    assert bad_response.status_code == 403
+
+
+def test_webapp_public_asset_file_requires_valid_signature_and_returns_original_file(tmp_path: Path) -> None:
+    _seed_user_store(
+        tmp_path=tmp_path,
+        logins=[],
+        roles=[],
+    )
+    asset_path = tmp_path / "assets" / "animals" / "animals-cat.png"
+    asset_path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (120, 80), color=(20, 200, 20)).save(asset_path)
+    settings = Settings(
+        telegram_token="test-token",
+        log_level="INFO",
+        content_db_path=tmp_path / "data" / "englishbot.db",
+        assets_dir=tmp_path / "assets",
+        public_asset_signing_secret="preview-secret",
+        web_app_base_url="https://admin.example.com",
+    )
+    app = create_web_app(settings)
+    file_url = build_public_asset_file_url(
+        base_url=settings.web_app_base_url,
+        signing_secret=settings.public_asset_signing_secret,
+        image_ref=asset_path.as_posix(),
+        assets_dir=settings.assets_dir,
+    )
+    assert file_url is not None
+
+    ok_response = _request(app, "GET", file_url.removeprefix("https://admin.example.com"))
+    bad_response = _request(
+        app,
+        "GET",
+        "/public-assets/file?path=animals/animals-cat.png&sig=broken",
+    )
+
+    assert ok_response.status_code == 200
+    assert ok_response.raw_headers["Content-Type"] == "image/png"
+    assert ok_response.raw_headers["Cache-Control"] == "public, max-age=86400"
+    assert ok_response.body_bytes.startswith(b"\x89PNG")
     assert bad_response.status_code == 403
 
 
