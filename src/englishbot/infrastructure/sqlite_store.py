@@ -982,6 +982,40 @@ class SQLiteContentStore:
         if cursor.rowcount == 0:
             raise ValueError("Vocabulary item was not found.")
 
+    def update_word_media_fields(
+        self,
+        *,
+        item_id: str,
+        image_ref: str | None,
+        image_source: str | None,
+        image_prompt: str | None,
+        pixabay_search_query: str | None,
+        source_fragment: str | None,
+    ) -> None:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE learning_items
+                SET image_ref = ?,
+                    image_source = ?,
+                    image_prompt = ?,
+                    pixabay_search_query = ?,
+                    source_fragment = ?
+                WHERE id = ?
+                """,
+                (
+                    image_ref,
+                    image_source,
+                    image_prompt,
+                    pixabay_search_query,
+                    source_fragment,
+                    item_id,
+                ),
+            )
+        if cursor.rowcount == 0:
+            raise ValueError("Vocabulary item was not found.")
+
     def update_word_audio(
         self,
         *,
@@ -1117,6 +1151,22 @@ class SQLiteContentStore:
 
     def upsert_content_pack(self, content_pack: dict[str, object]) -> str:
         self.initialize()
+        with _connect(self._db_path) as connection:
+            return self._upsert_content_pack_with_connection(connection, content_pack)
+
+    def upsert_content_packs_atomically(self, content_packs: list[dict[str, object]]) -> list[str]:
+        self.initialize()
+        with _connect(self._db_path) as connection:
+            return [
+                self._upsert_content_pack_with_connection(connection, content_pack)
+                for content_pack in content_packs
+            ]
+
+    def _upsert_content_pack_with_connection(
+        self,
+        connection: sqlite3.Connection,
+        content_pack: dict[str, object],
+    ) -> str:
         topic_raw = content_pack.get("topic", {})
         if not isinstance(topic_raw, dict):
             raise ValueError("Content pack topic must be an object.")
@@ -1128,100 +1178,99 @@ class SQLiteContentStore:
         items_raw = content_pack.get("vocabulary_items", [])
         if not isinstance(lessons_raw, list) or not isinstance(items_raw, list):
             raise ValueError("Content pack lessons and vocabulary_items must be lists.")
-        with _connect(self._db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO topics (id, title) VALUES (?, ?)
+            ON CONFLICT(id) DO UPDATE SET title=excluded.title
+            """,
+            (topic_id, title),
+        )
+        existing_lesson_rows = connection.execute(
+            "SELECT id FROM lessons WHERE topic_id = ?",
+            (topic_id,),
+        ).fetchall()
+        existing_lesson_ids = [row["id"] for row in existing_lesson_rows]
+        for lesson_id in existing_lesson_ids:
             connection.execute(
-                """
-                INSERT INTO topics (id, title) VALUES (?, ?)
-                ON CONFLICT(id) DO UPDATE SET title=excluded.title
-                """,
-                (topic_id, title),
+                "DELETE FROM lesson_learning_items WHERE lesson_id = ?",
+                (lesson_id,),
             )
-            existing_lesson_rows = connection.execute(
-                "SELECT id FROM lessons WHERE topic_id = ?",
-                (topic_id,),
-            ).fetchall()
-            existing_lesson_ids = [row["id"] for row in existing_lesson_rows]
-            for lesson_id in existing_lesson_ids:
+        connection.execute("DELETE FROM topic_learning_items WHERE topic_id = ?", (topic_id,))
+        connection.execute("DELETE FROM lessons WHERE topic_id = ?", (topic_id,))
+        for lesson_raw in lessons_raw:
+            if not isinstance(lesson_raw, dict):
+                continue
+            lesson_id = str(lesson_raw.get("id", "")).strip()
+            lesson_title = str(lesson_raw.get("title", "")).strip()
+            if not lesson_id or not lesson_title:
+                continue
+            connection.execute(
+                "INSERT INTO lessons (id, title, topic_id) VALUES (?, ?, ?)",
+                (lesson_id, lesson_title, topic_id),
+            )
+        sort_order = 0
+        for item_raw in items_raw:
+            if not isinstance(item_raw, dict):
+                continue
+            item_id = str(item_raw.get("id", "")).strip()
+            english_word = str(item_raw.get("english_word", "")).strip()
+            translation = str(item_raw.get("translation", "")).strip()
+            if not item_id or not english_word or not translation:
+                continue
+            lesson_id = item_raw.get("lesson_id")
+            if lesson_id is not None:
+                lesson_id = str(lesson_id).strip() or None
+            expanded_items = _expand_slash_synonym_items(
+                item_id=item_id,
+                english_word=english_word,
+                translation=translation,
+                topic_id=topic_id,
+                lesson_id=lesson_id,
+                meaning_hint=_optional_json_str(item_raw.get("meaning_hint")),
+                image_ref=_optional_json_str(item_raw.get("image_ref")),
+                image_source=_optional_json_str(item_raw.get("image_source")),
+                image_prompt=_optional_json_str(item_raw.get("image_prompt")),
+                pixabay_search_query=_optional_json_str(item_raw.get("pixabay_search_query")),
+                audio_ref=_optional_json_str(item_raw.get("audio_ref")),
+                telegram_voice_file_id=_optional_json_str(
+                    item_raw.get("telegram_voice_file_id")
+                ),
+                source_fragment=_optional_json_str(item_raw.get("source_fragment")),
+                is_active=bool(item_raw.get("is_active", True)),
+            )
+            for expanded_item in expanded_items:
+                lexeme_id = self._upsert_lexeme(connection, headword=expanded_item.english_word)
+                self._upsert_learning_item(connection, item=expanded_item, lexeme_id=lexeme_id)
                 connection.execute(
-                    "DELETE FROM lesson_learning_items WHERE lesson_id = ?",
-                    (lesson_id,),
-                )
-            connection.execute("DELETE FROM topic_learning_items WHERE topic_id = ?", (topic_id,))
-            connection.execute("DELETE FROM lessons WHERE topic_id = ?", (topic_id,))
-            for lesson_raw in lessons_raw:
-                if not isinstance(lesson_raw, dict):
-                    continue
-                lesson_id = str(lesson_raw.get("id", "")).strip()
-                lesson_title = str(lesson_raw.get("title", "")).strip()
-                if not lesson_id or not lesson_title:
-                    continue
-                connection.execute(
-                    "INSERT INTO lessons (id, title, topic_id) VALUES (?, ?, ?)",
-                    (lesson_id, lesson_title, topic_id),
-                )
-            sort_order = 0
-            for item_raw in items_raw:
-                if not isinstance(item_raw, dict):
-                    continue
-                item_id = str(item_raw.get("id", "")).strip()
-                english_word = str(item_raw.get("english_word", "")).strip()
-                translation = str(item_raw.get("translation", "")).strip()
-                if not item_id or not english_word or not translation:
-                    continue
-                lesson_id = item_raw.get("lesson_id")
-                if lesson_id is not None:
-                    lesson_id = str(lesson_id).strip() or None
-                expanded_items = _expand_slash_synonym_items(
-                    item_id=item_id,
-                    english_word=english_word,
-                    translation=translation,
-                    topic_id=topic_id,
-                    lesson_id=lesson_id,
-                    meaning_hint=_optional_json_str(item_raw.get("meaning_hint")),
-                    image_ref=_optional_json_str(item_raw.get("image_ref")),
-                    image_source=_optional_json_str(item_raw.get("image_source")),
-                    image_prompt=_optional_json_str(item_raw.get("image_prompt")),
-                    pixabay_search_query=_optional_json_str(item_raw.get("pixabay_search_query")),
-                    audio_ref=_optional_json_str(item_raw.get("audio_ref")),
-                    telegram_voice_file_id=_optional_json_str(
-                        item_raw.get("telegram_voice_file_id")
+                    """
+                    INSERT INTO topic_learning_items (id, topic_id, learning_item_id, sort_order)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(topic_id, learning_item_id) DO UPDATE SET
+                        sort_order=excluded.sort_order
+                    """,
+                    (
+                        f"{topic_id}:{expanded_item.id}",
+                        topic_id,
+                        expanded_item.id,
+                        sort_order,
                     ),
-                    source_fragment=_optional_json_str(item_raw.get("source_fragment")),
-                    is_active=bool(item_raw.get("is_active", True)),
                 )
-                for expanded_item in expanded_items:
-                    lexeme_id = self._upsert_lexeme(connection, headword=expanded_item.english_word)
-                    self._upsert_learning_item(connection, item=expanded_item, lexeme_id=lexeme_id)
+                if lesson_id is not None:
                     connection.execute(
                         """
-                        INSERT INTO topic_learning_items (id, topic_id, learning_item_id, sort_order)
+                        INSERT INTO lesson_learning_items (id, lesson_id, learning_item_id, sort_order)
                         VALUES (?, ?, ?, ?)
-                        ON CONFLICT(topic_id, learning_item_id) DO UPDATE SET
+                        ON CONFLICT(lesson_id, learning_item_id) DO UPDATE SET
                             sort_order=excluded.sort_order
                         """,
                         (
-                            f"{topic_id}:{expanded_item.id}",
-                            topic_id,
+                            f"{lesson_id}:{expanded_item.id}",
+                            lesson_id,
                             expanded_item.id,
                             sort_order,
                         ),
                     )
-                    if lesson_id is not None:
-                        connection.execute(
-                            """
-                            INSERT INTO lesson_learning_items (id, lesson_id, learning_item_id, sort_order)
-                            VALUES (?, ?, ?, ?)
-                            ON CONFLICT(lesson_id, learning_item_id) DO UPDATE SET
-                                sort_order=excluded.sort_order
-                            """,
-                            (
-                                f"{lesson_id}:{expanded_item.id}",
-                                lesson_id,
-                                expanded_item.id,
-                                sort_order,
-                            ),
-                        )
-                    sort_order += 1
+                sort_order += 1
         return topic_id
 
     def get_progress(self, user_id: int, item_id: str) -> UserProgress | None:

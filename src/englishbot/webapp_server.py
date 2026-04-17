@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 from collections.abc import Callable
+from email.utils import formatdate
+from pathlib import Path
 
 from englishbot.config import Settings
 from englishbot.infrastructure.sqlite_store import (
     SQLiteContentStore,
     SQLiteTelegramUserLoginRepository,
     SQLiteTelegramUserRoleRepository,
+)
+from englishbot.public_assets import (
+    resolve_public_asset_preview_path,
+    verify_public_asset_signature,
 )
 from englishbot.webapp_auth import (
     TelegramWebAppSession,
@@ -66,6 +73,13 @@ def create_web_app(settings: Settings) -> Callable:
                         },
                     )
                 return json_response(start_response, 200, {"session": session_payload(session)})
+            if is_read_request and path == "/public-assets/preview":
+                return public_asset_preview_response(
+                    environ,
+                    start_response,
+                    settings=settings,
+                    method=method,
+                )
             if is_read_request and path == "/api/users":
                 _session, error_response = require_admin(
                     environ,
@@ -130,6 +144,8 @@ def create_web_app(settings: Settings) -> Callable:
         except json.JSONDecodeError:
             logger.warning("Invalid JSON body in web app request", exc_info=True)
             return json_response(start_response, 400, {"message": "Invalid JSON body."})
+        except FileNotFoundError:
+            return json_response(start_response, 404, {"message": "Not found."})
         except Exception:
             logger.exception("Unhandled web app error path=%s method=%s", path, method)
             return json_response(start_response, 500, {"message": "Internal server error."})
@@ -311,6 +327,49 @@ def html_response(start_response, html: str) -> list[bytes]:  # noqa: ANN001
             ("Content-Type", "text/html; charset=utf-8"),
             ("Content-Length", str(len(body))),
             ("Cache-Control", "no-store"),
+        ],
+    )
+    return [body]
+
+
+def public_asset_preview_response(
+    environ,
+    start_response,
+    *,
+    settings: Settings,
+    method: str,
+) -> list[bytes]:  # noqa: ANN001
+    relative_path = query_param(environ, "path")
+    signature = query_param(environ, "sig")
+    signing_secret = settings.public_asset_signing_secret.strip()
+    if relative_path is None or signature is None or not signing_secret:
+        return json_response(start_response, 404, {"message": "Not found."})
+    if not verify_public_asset_signature(
+        relative_path=relative_path,
+        variant="preview",
+        signature=signature,
+        signing_secret=signing_secret,
+    ):
+        return json_response(start_response, 403, {"message": "Access denied."})
+    preview_path = resolve_public_asset_preview_path(
+        relative_path=relative_path,
+        assets_dir=settings.assets_dir,
+    )
+    return file_response(start_response, preview_path, method=method)
+
+
+def file_response(start_response, file_path: Path, *, method: str) -> list[bytes]:  # noqa: ANN001
+    body = b"" if method == "HEAD" else file_path.read_bytes()
+    content_type, _encoding = mimetypes.guess_type(file_path.name)
+    stat = file_path.stat()
+    start_response(
+        "200 OK",
+        [
+            ("Content-Type", content_type or "application/octet-stream"),
+            ("Content-Length", str(stat.st_size)),
+            ("Cache-Control", "public, max-age=86400"),
+            ("Last-Modified", formatdate(stat.st_mtime, usegmt=True)),
+            ("X-Content-Type-Options", "nosniff"),
         ],
     )
     return [body]

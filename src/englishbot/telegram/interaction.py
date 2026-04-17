@@ -28,6 +28,7 @@ IMAGE_REVIEW_AWAITING_SEARCH_QUERY_TEXT_MODE = "awaiting_image_review_search_que
 IMAGE_REVIEW_AWAITING_PHOTO_MODE = "awaiting_image_review_photo"
 PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE = "awaiting_published_word_edit_text"
 SELF_GOAL_AWAITING_TARGET_MODE = "awaiting_goal_target_text"
+CATALOG_WORKBOOK_AWAITING_DOCUMENT_MODE = "awaiting_catalog_workbook_document"
 
 
 @dataclass(frozen=True, slots=True)
@@ -596,6 +597,37 @@ def get_admin_goal_prompt_mode(context: ContextTypes.DEFAULT_TYPE) -> str | None
     if mode in {"awaiting_admin_goal_target_text", "awaiting_admin_goal_deadline_text"}:
         return mode
     return None
+
+
+def start_catalog_workbook_import_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int | None,
+    message_id: int | None,
+) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data["words_flow_mode"] = CATALOG_WORKBOOK_AWAITING_DOCUMENT_MODE
+    remember_expected_user_input(
+        context,
+        chat_id=chat_id,
+        message_id=message_id,
+    )
+
+
+def is_catalog_workbook_import_interaction(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user_data = getattr(context, "user_data", None)
+    return (
+        isinstance(user_data, dict)
+        and user_data.get("words_flow_mode") == CATALOG_WORKBOOK_AWAITING_DOCUMENT_MODE
+    )
+
+
+def clear_catalog_workbook_import_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict) and user_data.get("words_flow_mode") == CATALOG_WORKBOOK_AWAITING_DOCUMENT_MODE:
+        user_data.pop("words_flow_mode", None)
+    clear_expected_user_input(context)
 
 
 async def replace_lesson_question_message(

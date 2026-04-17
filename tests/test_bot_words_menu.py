@@ -1028,6 +1028,7 @@ def test_words_menu_keyboard_uses_russian_labels_when_requested() -> None:
         can_add_words=True,
         can_edit_words=True,
         can_edit_images=True,
+        can_manage_catalog=True,
         language="ru",
     )
 
@@ -1035,6 +1036,7 @@ def test_words_menu_keyboard_uses_russian_labels_when_requested() -> None:
     assert keyboard.inline_keyboard[1][0].text == "Добавить слова"
     assert keyboard.inline_keyboard[2][0].text == "Редактировать слова"
     assert keyboard.inline_keyboard[3][0].text == "Редактировать картинку слова"
+    assert keyboard.inline_keyboard[4][0].text == "Каталог Excel"
 
 
 def test_words_menu_keyboard_supports_granular_permissions() -> None:
@@ -1042,6 +1044,7 @@ def test_words_menu_keyboard_supports_granular_permissions() -> None:
         can_add_words=False,
         can_edit_words=True,
         can_edit_images=False,
+        can_manage_catalog=False,
     )
 
     assert [row[0].callback_data for row in keyboard.inline_keyboard] == [

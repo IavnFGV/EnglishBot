@@ -51,6 +51,8 @@ If the operational process changes, update this document in the same change set.
 4. Put Web App settings into `/srv/englishbot/shared/.env` if admin access is needed:
    - `WEB_APP_BASE_URL`
    - optional `WEB_APP_PORT`
+   - `PUBLIC_ASSET_SIGNING_SECRET` if workbook previews should render in Google Sheets
+   - optional `ASSETS_DIR` when runtime assets are not stored under the default `assets/`
 5. Put TTS settings into `/srv/englishbot/shared/.env` if the separate TTS container should run:
    - `TTS_SERVICE_ENABLED=true`
    - optional `TTS_SERVICE_BASE_URL`
@@ -172,6 +174,8 @@ Runtime note:
 - `englishbot-webapp` runs the admin Web App process
 - `englishbot-tts` runs the separate Piper-backed HTTP TTS service on `8090`
 - `englishbot-nginx` terminates TLS on `443` and proxies to `englishbot-webapp:8080`
+- workbook preview images are served through the Web App at `/public-assets/preview`
+- preview URLs are signed and read-only; do not expose the whole assets directory as a public nginx alias
 - `docker-compose.optional.yml` is the optional overlay that adds `englishbot-webapp`, `englishbot-tts`, and `englishbot-nginx`
 - both share the same runtime SQLite database and assets directory
 - `englishbot-tts` persists downloaded voice models in `shared/tts/voices/`
@@ -312,6 +316,7 @@ bash scripts/restore-runtime-db.sh /srv/englishbot/shared/backups/db/<backup-fil
 - `tts/cache/` keeps cached OGG voice files from the TTS service
 - `tts/voices/` keeps downloaded Piper voice model files
 - `assets/` keeps generated and downloaded images plus cached per-word audio assets under `assets/<topic>/audio/`
+- `assets/<topic>/*--preview-256.jpg` keeps cached workbook preview thumbnails for Google Sheets
 - `nginx/acme/` keeps ACME HTTP-01 challenge files for Let's Encrypt
 - `nginx/certs/` keeps TLS certificate files for the admin Web App reverse proxy
 - `backups/db/` keeps the latest 5 rolling SQLite backup copies

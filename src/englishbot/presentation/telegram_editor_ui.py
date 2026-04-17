@@ -210,6 +210,7 @@ def words_menu_keyboard(
     can_add_words: bool,
     can_edit_words: bool,
     can_edit_images: bool,
+    can_manage_catalog: bool = False,
     language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
 ) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(tg("training_topics", language=language), callback_data="words:topics")]]
@@ -219,7 +220,35 @@ def words_menu_keyboard(
         rows.append([InlineKeyboardButton(tg("edit_words", language=language), callback_data="words:edit_words")])
     if can_edit_images:
         rows.append([InlineKeyboardButton(tg("edit_word_image", language=language), callback_data="words:edit_images")])
+    if can_manage_catalog:
+        rows.append([InlineKeyboardButton(tg("catalog_workbook", language=language), callback_data="words:catalog")])
     return InlineKeyboardMarkup(rows)
+
+
+def catalog_workbook_menu_keyboard(
+    *,
+    tg: TelegramTextGetter,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(tg("catalog_export_workbook", language=language), callback_data="words:catalog:export")],
+            [InlineKeyboardButton(tg("catalog_import_workbook", language=language), callback_data="words:catalog:import")],
+            [InlineKeyboardButton(tg("back", language=language), callback_data="words:menu")],
+        ]
+    )
+
+
+def catalog_workbook_import_keyboard(
+    *,
+    tg: TelegramTextGetter,
+    language: str = DEFAULT_TELEGRAM_UI_LANGUAGE,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(tg("back", language=language), callback_data="words:catalog")],
+        ]
+    )
 
 
 def published_images_menu_keyboard(
