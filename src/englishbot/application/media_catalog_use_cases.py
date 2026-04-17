@@ -29,7 +29,6 @@ WORDS_IN_TOPICS_HEADERS = (
     "translation",
     "meaning_hint",
     "preview",
-    "preview_url",
     "image_ref",
     "image_source",
     "image_prompt",
@@ -45,7 +44,6 @@ class WordInTopicRow:
     english_word: str
     translation: str
     meaning_hint: str | None
-    preview_url: str | None
     image_ref: str | None
     image_source: str | None
     image_prompt: str | None
@@ -110,10 +108,13 @@ class ExportMediaCatalogWorkbookUseCase:
                     row.english_word,
                     row.translation,
                     row.meaning_hint,
-                    _preview_formula(row_index=index + 2, preview_url_column_index=6)
-                    if row.preview_url
-                    else None,
-                    row.preview_url,
+                    _preview_formula_for_item(
+                        image_ref=row.image_ref,
+                        image_source=row.image_source,
+                        assets_dir=self._assets_dir,
+                        web_app_base_url=self._web_app_base_url,
+                        public_asset_signing_secret=self._public_asset_signing_secret,
+                    ),
                     row.image_ref,
                     row.image_source,
                     row.image_prompt,
@@ -121,7 +122,7 @@ class ExportMediaCatalogWorkbookUseCase:
                     row.source_fragment,
                     _bool_cell_value(row.is_active),
                 )
-                for index, row in enumerate(export.words_in_topics)
+                for row in export.words_in_topics
             ],
         )
         self._add_topic_title_validation(
@@ -151,13 +152,6 @@ class ExportMediaCatalogWorkbookUseCase:
                 english_word=item.english_word,
                 translation=item.translation,
                 meaning_hint=item.meaning_hint,
-                preview_url=_preview_url_for_item(
-                    image_ref=item.image_ref,
-                    image_source=item.image_source,
-                    assets_dir=self._assets_dir,
-                    web_app_base_url=self._web_app_base_url,
-                    public_asset_signing_secret=self._public_asset_signing_secret,
-                ),
                 image_ref=item.image_ref,
                 image_source=item.image_source,
                 image_prompt=item.image_prompt,
@@ -274,12 +268,12 @@ class ImportMediaCatalogWorkbookUseCase:
                     "english_word": english_word,
                     "translation": translation,
                     "meaning_hint": _normalized_optional_str(row[3]),
-                    "image_ref": _normalized_optional_str(row[6]),
-                    "image_source": _normalized_optional_str(row[7]),
-                    "image_prompt": _normalized_optional_str(row[8]),
-                    "pixabay_search_query": _normalized_optional_str(row[9]),
-                    "source_fragment": _normalized_optional_str(row[10]),
-                    "is_active": _bool_from_cell(row[11]),
+                    "image_ref": _normalized_optional_str(row[5]),
+                    "image_source": _normalized_optional_str(row[6]),
+                    "image_prompt": _normalized_optional_str(row[7]),
+                    "pixabay_search_query": _normalized_optional_str(row[8]),
+                    "source_fragment": _normalized_optional_str(row[9]),
+                    "is_active": _bool_from_cell(row[10]),
                 }
             )
 
@@ -435,7 +429,7 @@ def _download_remote_image_ref(
     return output_path.as_posix()
 
 
-def _preview_url_for_item(
+def _preview_formula_for_item(
     *,
     image_ref: str | None,
     image_source: str | None,
@@ -443,9 +437,10 @@ def _preview_url_for_item(
     web_app_base_url: str,
     public_asset_signing_secret: str,
 ) -> str | None:
+    preview_url: str | None = None
     if image_ref and _is_remote_url(image_ref):
-        return image_ref
-    if image_ref:
+        preview_url = image_ref
+    elif image_ref:
         try:
             preview_url = build_public_asset_preview_url(
                 base_url=web_app_base_url,
@@ -455,11 +450,11 @@ def _preview_url_for_item(
             )
         except (OSError, RuntimeError, ValueError):
             preview_url = None
-        if preview_url is not None:
-            return preview_url
-    if image_source and _is_remote_url(image_source):
-        return image_source
-    return None
+    if preview_url is None and image_source and _is_remote_url(image_source):
+        preview_url = image_source
+    if preview_url is None:
+        return None
+    return f'=IMAGE("{_escape_formula_string(preview_url)}")'
 
 
 def _normalized_optional_str(value: object) -> str | None:
@@ -495,9 +490,8 @@ def _bool_cell_value(value: bool) -> str:
     return "TRUE" if value else "FALSE"
 
 
-def _preview_formula(*, row_index: int, preview_url_column_index: int) -> str:
-    preview_url_column = _excel_column_name(preview_url_column_index)
-    return f'=IF({preview_url_column}{row_index}="","",IMAGE({preview_url_column}{row_index}))'
+def _escape_formula_string(value: str) -> str:
+    return value.replace('"', '""')
 
 
 def _column_widths_for_headers(headers: tuple[str, ...]) -> dict[str, int]:

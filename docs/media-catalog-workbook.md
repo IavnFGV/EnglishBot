@@ -76,7 +76,6 @@ Columns:
 - `translation`
 - `meaning_hint`
 - `preview`
-- `preview_url`
 - `image_ref`
 - `image_source`
 - `image_prompt`
@@ -90,6 +89,7 @@ One row means one word in one topic.
 
 For image editing in the workbook:
 
+- `preview` is an export-only helper column that shows the current image
 - put the desired image link into `image_ref`
 - if `image_ref` contains an `http` or `https` URL, the importer downloads that image into local `assets/<topic>/<item>.<ext>`
 - after download, the DB stores the local asset path in `image_ref`
@@ -97,31 +97,7 @@ For image editing in the workbook:
 
 This keeps the runtime on local assets even if the editor works with remote URLs in the workbook.
 
-The export also includes:
-
-- `preview_url`
-  a direct image URL that Google Sheets can load
-- `preview`
-  an already prepared formula cell that renders the image preview in Google Sheets
-
-Preview URLs are generated only when all of these are configured:
-
-- `WEB_APP_BASE_URL`
-- `PUBLIC_ASSET_SIGNING_SECRET`
-- the local image file exists under `ASSETS_DIR`
-
-Security model:
-
-- Google Sheets never reads arbitrary filesystem paths
-- the workbook gets signed read-only preview URLs
-- the server serves only preview-sized cached images, not directory listings
-- unsigned or tampered URLs are rejected
-
-Operational note:
-
-- preview images are cached on disk as `--preview-256.jpg`
-- the Web App server runs in threaded mode so a Sheets burst does not serialize through one request at a time
-- nginx still stays in front as the public HTTPS entrypoint
+For local runtime images, the `preview` cell uses a signed URL from the server so Google Sheets can render the image without exposing the raw assets directory.
 
 ## Editing Model
 
@@ -156,7 +132,8 @@ Example:
 - Before applying workbook changes, the importer creates a SQLite backup snapshot in `data/backups/`.
 - Topics not present in the workbook stay untouched.
 - If you need to handle hundreds of words, exporting one topic at a time is usually easier to review.
-- `preview` and `preview_url` are export-only helper columns. Import ignores them.
+- `image_ref` is the only workbook column used to replace the image source.
+- `preview` is ignored by import and exists only for easier browsing in spreadsheets.
 
 ## Rollback
 

@@ -11,9 +11,7 @@ Highlights:
 - workbook format is intentionally text-only so large catalogs stay lightweight
 - export now uses a simplified two-sheet format: `topics` and `words_in_topics`
 - image-related fields can now be mass-edited through links and metadata instead of Telegram-only UI
-- export now includes Google-Sheets-friendly `preview` and `preview_url` columns for image browsing
-- signed preview URLs are served through the Web App instead of exposing the raw assets directory
-- preview requests use cached `256px` thumbnails and the Web App server now runs in threaded mode
+- workbook keeps image editing simple with one editable `image_ref` column
 - admins can open workbook import/export directly from the `/words` menu in Telegram
 - workbook import now applies all topic updates atomically and creates a pre-import SQLite backup snapshot
 - added workbook-flow documentation in `docs/media-catalog-workbook.md`

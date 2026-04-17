@@ -92,8 +92,7 @@ def test_export_media_catalog_workbook_writes_two_simple_sheets(tmp_path: Path) 
     assert topics_sheet["A2"].value == "Cleaning Stuff"
     assert words_sheet["A2"].value == "Cleaning Stuff"
     assert words_sheet["B2"].value == "broom"
-    assert words_sheet["E2"].value == '=IF(F2="","",IMAGE(F2))'
-    assert words_sheet["F2"].value.startswith("https://admin.example.com/public-assets/preview?path=")
+    assert str(words_sheet["E2"].value).startswith('=IMAGE("https://admin.example.com/public-assets/preview?path=')
     preview_path = local_asset_path.with_name("cleaning-stuff-broom--preview-256.jpg")
     assert preview_path.is_file()
     validations = list(words_sheet.data_validations.dataValidation)
@@ -120,7 +119,6 @@ def test_import_media_catalog_workbook_uses_unique_topic_titles_and_word_matchin
             "Fairy",
             "",
             "",
-            "",
             "https://img.example/detergent-fairy.png",
             "https://img.example/detergent-fairy-preview.png",
             "detergent bottle",
@@ -134,7 +132,6 @@ def test_import_media_catalog_workbook_uses_unique_topic_titles_and_word_matchin
             "Products",
             "soap",
             "мыло",
-            "",
             "",
             "",
             "",
@@ -208,7 +205,6 @@ def test_import_media_catalog_workbook_rolls_back_all_topics_on_apply_failure(
             "Products",
             "soap",
             "мыло",
-            "",
             "",
             "",
             "",

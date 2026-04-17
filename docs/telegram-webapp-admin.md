@@ -47,7 +47,7 @@ This keeps the implementation small and compatible with the current project stat
    - `ADMIN_USER_IDS`
    - `WEB_APP_BASE_URL`
    - `PUBLIC_ASSET_SIGNING_SECRET` if workbook previews should render in Google Sheets
-   - optional `ADMIN_BOOTSTRAP_SECRET` for emergency admin recovery
+    - optional `ADMIN_BOOTSTRAP_SECRET` for emergency admin recovery
 2. Start the bot:
 
 ```bash

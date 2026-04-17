@@ -58,13 +58,12 @@ def test_media_catalog_cli_exports_and_imports_simple_workbook(
     topics_sheet = workbook[TOPICS_SHEET]
     words_sheet = workbook[WORDS_IN_TOPICS_SHEET]
     topics_sheet.append(["Pets"])
-    words_sheet["H2"] = "https://img.example/preview/cat-sm.png"
+    words_sheet["G2"] = "https://img.example/preview/cat-sm.png"
     words_sheet.append(
         [
             "Animals",
             "Dog",
             "собака",
-            "",
             "",
             "",
             "https://img.example/dog.png",
@@ -80,7 +79,6 @@ def test_media_catalog_cli_exports_and_imports_simple_workbook(
             "Pets",
             "Hamster",
             "хомяк",
-            "",
             "",
             "",
             "",
