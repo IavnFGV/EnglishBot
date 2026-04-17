@@ -12,6 +12,7 @@ Highlights:
 - export now uses a simplified two-sheet format: `topics` and `words_in_topics`
 - image-related fields can now be mass-edited through links and metadata instead of Telegram-only UI
 - workbook keeps image editing simple with one editable `image_ref` column
+- added Telegram `Image Saver` mode in the catalog admin flow to upload an image and get a ready-to-paste `image_ref` URL
 - admins can open workbook import/export directly from the `/words` menu in Telegram
 - workbook import now applies all topic updates atomically and creates a pre-import SQLite backup snapshot
 - added workbook-flow documentation in `docs/media-catalog-workbook.md`

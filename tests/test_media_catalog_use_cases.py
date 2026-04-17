@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from englishbot.application.media_catalog_use_cases import (
     WORDS_IN_TOPICS_SHEET,
     ExportMediaCatalogWorkbookUseCase,
     ImportMediaCatalogWorkbookUseCase,
+    SaveCatalogUploadedImageUseCase,
 )
 from englishbot.infrastructure.sqlite_store import SQLiteContentStore
 
@@ -279,3 +281,23 @@ def test_import_media_catalog_workbook_rolls_back_all_topics_on_apply_failure(
     broom_item = next(item for item in cleaning_items if item.english_word == "broom")
     assert broom_item.translation == "метла"
     assert store.get_topic("products") is None
+
+
+def test_save_catalog_uploaded_image_use_case_stores_file_and_returns_public_url(tmp_path: Path) -> None:
+    input_path = tmp_path / "incoming.png"
+    input_path.write_bytes(b"image-bytes")
+
+    result = SaveCatalogUploadedImageUseCase(
+        assets_dir=tmp_path / "assets",
+        web_app_base_url="https://admin.example.com",
+        public_asset_signing_secret="preview-secret",
+    ).execute(
+        input_path=input_path,
+        original_file_name="dragon.png",
+        mime_type="image/png",
+    )
+
+    assert result.asset_path.is_file()
+    assert result.asset_path.read_bytes() == b"image-bytes"
+    assert result.asset_path.parent.name == datetime.now(UTC).strftime("%Y%m%d")
+    assert str(result.public_url).startswith("https://admin.example.com/public-assets/file?path=catalog-uploads/")

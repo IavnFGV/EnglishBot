@@ -1871,6 +1871,17 @@ async def words_catalog_import_callback_handler(
     await telegram_words_catalog_import_callback_handler(update, context)
 
 
+async def words_catalog_image_saver_callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    from englishbot.telegram.catalog_admin import (
+        words_catalog_image_saver_callback_handler as telegram_words_catalog_image_saver_callback_handler,
+    )
+
+    await telegram_words_catalog_image_saver_callback_handler(update, context)
+
+
 async def words_catalog_document_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1880,6 +1891,17 @@ async def words_catalog_document_handler(
     )
 
     await telegram_words_catalog_document_handler(update, context)
+
+
+async def words_catalog_photo_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    from englishbot.telegram.catalog_admin import (
+        words_catalog_photo_handler as telegram_words_catalog_photo_handler,
+    )
+
+    await telegram_words_catalog_photo_handler(update, context)
 
 
 def _goal_setup_keyboard(*, language: str = DEFAULT_TELEGRAM_UI_LANGUAGE) -> InlineKeyboardMarkup:

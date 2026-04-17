@@ -20,9 +20,11 @@ Admins can open this flow from the bot:
 
 1. `/words`
 2. `Catalog Workbook`
-3. `Export Workbook` or `Import Workbook`
+3. `Export Workbook`, `Import Workbook`, or `Image Saver`
 
 `Import Workbook` expects an edited `.xlsx` file back in Telegram.
+
+`Image Saver` accepts a photo or an image file in Telegram, saves it into centralized assets storage, and returns a ready-to-paste URL for `image_ref`.
 
 ## CLI
 
@@ -100,6 +102,18 @@ For image editing in the workbook:
 This keeps the runtime on local assets even though the spreadsheet always works with URLs.
 
 The `preview` column simply renders the current `image_ref`, so if you replace the URL in `image_ref`, the preview updates in the sheet immediately.
+
+## Image Saver
+
+If you already have an image file locally and want a workbook-ready link:
+
+1. Open `/words`
+2. Open `Catalog Workbook`
+3. Tap `Image Saver`
+4. Send a photo or an image file
+5. Copy the returned URL into `image_ref`
+
+The bot stores the uploaded file under centralized assets and returns a signed server URL.
 
 ## Editing Model
 

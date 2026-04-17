@@ -29,6 +29,7 @@ IMAGE_REVIEW_AWAITING_PHOTO_MODE = "awaiting_image_review_photo"
 PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE = "awaiting_published_word_edit_text"
 SELF_GOAL_AWAITING_TARGET_MODE = "awaiting_goal_target_text"
 CATALOG_WORKBOOK_AWAITING_DOCUMENT_MODE = "awaiting_catalog_workbook_document"
+CATALOG_IMAGE_SAVER_AWAITING_MEDIA_MODE = "awaiting_catalog_image_saver_media"
 
 
 @dataclass(frozen=True, slots=True)
@@ -615,6 +616,22 @@ def start_catalog_workbook_import_interaction(
     )
 
 
+def start_catalog_image_saver_interaction(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int | None,
+    message_id: int | None,
+) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data["words_flow_mode"] = CATALOG_IMAGE_SAVER_AWAITING_MEDIA_MODE
+    remember_expected_user_input(
+        context,
+        chat_id=chat_id,
+        message_id=message_id,
+    )
+
+
 def is_catalog_workbook_import_interaction(context: ContextTypes.DEFAULT_TYPE) -> bool:
     user_data = getattr(context, "user_data", None)
     return (
@@ -623,9 +640,24 @@ def is_catalog_workbook_import_interaction(context: ContextTypes.DEFAULT_TYPE) -
     )
 
 
+def is_catalog_image_saver_interaction(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user_data = getattr(context, "user_data", None)
+    return (
+        isinstance(user_data, dict)
+        and user_data.get("words_flow_mode") == CATALOG_IMAGE_SAVER_AWAITING_MEDIA_MODE
+    )
+
+
 def clear_catalog_workbook_import_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
     user_data = getattr(context, "user_data", None)
     if isinstance(user_data, dict) and user_data.get("words_flow_mode") == CATALOG_WORKBOOK_AWAITING_DOCUMENT_MODE:
+        user_data.pop("words_flow_mode", None)
+    clear_expected_user_input(context)
+
+
+def clear_catalog_image_saver_interaction(context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict) and user_data.get("words_flow_mode") == CATALOG_IMAGE_SAVER_AWAITING_MEDIA_MODE:
         user_data.pop("words_flow_mode", None)
     clear_expected_user_input(context)
 

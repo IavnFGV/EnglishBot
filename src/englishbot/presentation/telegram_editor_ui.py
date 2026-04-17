@@ -234,6 +234,7 @@ def catalog_workbook_menu_keyboard(
         [
             [InlineKeyboardButton(tg("catalog_export_workbook", language=language), callback_data="words:catalog:export")],
             [InlineKeyboardButton(tg("catalog_import_workbook", language=language), callback_data="words:catalog:import")],
+            [InlineKeyboardButton(tg("catalog_image_saver", language=language), callback_data="words:catalog:image_saver")],
             [InlineKeyboardButton(tg("back", language=language), callback_data="words:menu")],
         ]
     )

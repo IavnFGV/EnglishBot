@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import sqlite3
 from datetime import UTC, datetime
 import unicodedata
@@ -8,6 +9,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -63,6 +65,12 @@ class MediaCatalogImportResult:
     updated_count: int
     topic_count: int
     backup_path: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SavedCatalogImageResult:
+    public_url: str
+    asset_path: Path
 
 
 class ExportMediaCatalogWorkbookUseCase:
@@ -211,6 +219,51 @@ class ExportMediaCatalogWorkbookUseCase:
         validation.error = "Select a topic title from the dropdown list."
         words_sheet.add_data_validation(validation)
         validation.add(f"A2:A{max_row}")
+
+
+class SaveCatalogUploadedImageUseCase:
+    def __init__(
+        self,
+        *,
+        assets_dir: Path = Path("assets"),
+        web_app_base_url: str = "",
+        public_asset_signing_secret: str = "",
+    ) -> None:
+        self._assets_dir = assets_dir
+        self._web_app_base_url = web_app_base_url
+        self._public_asset_signing_secret = public_asset_signing_secret
+
+    @logged_service_call(
+        "SaveCatalogUploadedImageUseCase.execute",
+        include=("original_file_name", "mime_type"),
+        result=lambda value: {"asset_path": value.asset_path.as_posix()},
+    )
+    def execute(
+        self,
+        *,
+        input_path: Path,
+        original_file_name: str | None = None,
+        mime_type: str | None = None,
+    ) -> SavedCatalogImageResult:
+        suffix = _catalog_upload_suffix(
+            original_file_name=original_file_name,
+            mime_type=mime_type,
+        )
+        asset_dir = self._assets_dir / "catalog-uploads" / datetime.now(UTC).strftime("%Y%m%d")
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        asset_path = asset_dir / f"catalog-upload-{uuid4().hex}{suffix}"
+        shutil.copy2(input_path, asset_path)
+        public_url = build_public_asset_file_url(
+            base_url=self._web_app_base_url,
+            signing_secret=self._public_asset_signing_secret,
+            image_ref=asset_path.as_posix(),
+            assets_dir=self._assets_dir,
+        )
+        if public_url is None:
+            raise RuntimeError(
+                "Could not build a public image URL. Check WEB_APP_BASE_URL and PUBLIC_ASSET_SIGNING_SECRET."
+            )
+        return SavedCatalogImageResult(public_url=public_url, asset_path=asset_path)
 
 
 class ImportMediaCatalogWorkbookUseCase:
@@ -539,6 +592,24 @@ def _excel_column_name(index: int) -> str:
         current, remainder = divmod(current - 1, 26)
         result = chr(65 + remainder) + result
     return result
+
+
+def _catalog_upload_suffix(*, original_file_name: str | None, mime_type: str | None) -> str:
+    allowed_suffixes = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    if original_file_name:
+        suffix = Path(original_file_name).suffix.lower()
+        if suffix in allowed_suffixes:
+            return suffix
+    normalized_mime = (mime_type or "").strip().lower()
+    if normalized_mime == "image/jpeg":
+        return ".jpg"
+    if normalized_mime == "image/png":
+        return ".png"
+    if normalized_mime == "image/webp":
+        return ".webp"
+    if normalized_mime == "image/gif":
+        return ".gif"
+    return ".jpg"
 
 
 def _create_sqlite_backup(db_path: Path) -> Path | None:

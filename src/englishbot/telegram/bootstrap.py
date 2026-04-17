@@ -45,6 +45,7 @@ from englishbot.application.published_content_use_cases import (
 from englishbot.application.media_catalog_use_cases import (
     ExportMediaCatalogWorkbookUseCase,
     ImportMediaCatalogWorkbookUseCase,
+    SaveCatalogUploadedImageUseCase,
 )
 from englishbot.application.services import QuestionFactory
 from englishbot.application.training_runtime import build_training_service
@@ -173,6 +174,11 @@ def build_application(
         web_app_base_url=settings.web_app_base_url,
         public_asset_signing_secret=settings.public_asset_signing_secret,
     )
+    app.bot_data["save_catalog_uploaded_image_use_case"] = SaveCatalogUploadedImageUseCase(
+        assets_dir=settings.assets_dir,
+        web_app_base_url=settings.web_app_base_url,
+        public_asset_signing_secret=settings.public_asset_signing_secret,
+    )
     app.bot_data["homework_progress_use_case"] = HomeworkProgressUseCase(store=content_store)
     app.bot_data["list_user_goals_use_case"] = ListUserGoalsUseCase(store=content_store)
     app.bot_data["get_user_progress_summary_use_case"] = GetUserProgressSummaryUseCase(
@@ -270,6 +276,9 @@ def build_application(
     )
     app.add_handler(
         CallbackQueryHandler(bot_module.words_catalog_import_callback_handler, pattern=r"^words:catalog:import$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(bot_module.words_catalog_image_saver_callback_handler, pattern=r"^words:catalog:image_saver$")
     )
     app.add_handler(CallbackQueryHandler(bot_module.assign_menu_callback_handler, pattern=r"^assign:menu$"))
     app.add_handler(CallbackQueryHandler(bot_module.noop_callback_handler, pattern=r"^assign:noop$"))
@@ -458,6 +467,7 @@ def build_application(
         CallbackQueryHandler(bot_module.add_words_cancel_callback_handler, pattern=r"^words:cancel:")
     )
     app.add_handler(MessageHandler(filters.PHOTO, bot_module.image_review_photo_handler), group=0)
+    app.add_handler(MessageHandler(filters.PHOTO, bot_module.words_catalog_photo_handler), group=0)
     app.add_handler(MessageHandler(filters.Document.ALL, bot_module.words_catalog_document_handler), group=0)
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, bot_module.add_words_text_handler),

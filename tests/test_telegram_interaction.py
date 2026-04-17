@@ -13,6 +13,7 @@ from englishbot.telegram.interaction import (
     ASSIGNMENT_PROGRESS_TAG,
     AdminGoalCreationState,
     CHAT_MENU_TAG,
+    CATALOG_IMAGE_SAVER_AWAITING_MEDIA_MODE,
     CATALOG_WORKBOOK_AWAITING_DOCUMENT_MODE,
     IMAGE_REVIEW_CONTEXT_TAG,
     IMAGE_REVIEW_STEP_TAG,
@@ -31,6 +32,7 @@ from englishbot.telegram.interaction import (
     clear_admin_goal_prompt_interaction,
     clear_add_words_draft_edit_interaction,
     clear_add_words_text_interaction,
+    clear_catalog_image_saver_interaction,
     clear_catalog_workbook_import_interaction,
     clear_expected_user_input,
     clear_image_review_photo_attach_interaction,
@@ -49,6 +51,7 @@ from englishbot.telegram.interaction import (
     get_add_words_draft_edit_interaction,
     get_published_word_edit_prompt_interaction,
     has_active_interaction_mode,
+    is_catalog_image_saver_interaction,
     is_catalog_workbook_import_interaction,
     is_add_words_text_interaction,
     lesson_interaction_id,
@@ -65,6 +68,7 @@ from englishbot.telegram.interaction import (
     start_admin_goal_prompt_interaction,
     start_add_words_draft_edit_interaction,
     start_add_words_text_interaction,
+    start_catalog_image_saver_interaction,
     start_catalog_workbook_import_interaction,
     start_image_review_photo_attach_interaction,
     start_image_review_text_edit_interaction,
@@ -113,6 +117,7 @@ def test_named_editor_interaction_modes_are_stable() -> None:
     assert ADD_WORDS_AWAITING_EDIT_TEXT_MODE == "awaiting_edit_text"
     assert PUBLISHED_WORD_AWAITING_EDIT_TEXT_MODE == "awaiting_published_word_edit_text"
     assert CATALOG_WORKBOOK_AWAITING_DOCUMENT_MODE == "awaiting_catalog_workbook_document"
+    assert CATALOG_IMAGE_SAVER_AWAITING_MEDIA_MODE == "awaiting_catalog_image_saver_media"
 
 
 def test_admin_goal_state_keys_are_stable() -> None:
@@ -230,6 +235,23 @@ def test_start_and_clear_catalog_workbook_import_interaction() -> None:
     clear_catalog_workbook_import_interaction(context)
 
     assert is_catalog_workbook_import_interaction(context) is False
+    assert get_expected_user_input_prompt(context) is None
+
+
+def test_start_and_clear_catalog_image_saver_interaction() -> None:
+    context = SimpleNamespace(user_data={})
+
+    start_catalog_image_saver_interaction(context, chat_id=12, message_id=34)
+
+    assert is_catalog_image_saver_interaction(context) is True
+    assert get_expected_user_input_prompt(context) == TelegramExpectedInputPrompt(
+        chat_id=12,
+        message_id=34,
+    )
+
+    clear_catalog_image_saver_interaction(context)
+
+    assert is_catalog_image_saver_interaction(context) is False
     assert get_expected_user_input_prompt(context) is None
 
 

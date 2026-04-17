@@ -9,9 +9,14 @@ from englishbot.bot import (
     words_catalog_callback_handler,
     words_catalog_document_handler,
     words_catalog_export_callback_handler,
+    words_catalog_image_saver_callback_handler,
     words_catalog_import_callback_handler,
+    words_catalog_photo_handler,
 )
-from englishbot.telegram.interaction import is_catalog_workbook_import_interaction
+from englishbot.telegram.interaction import (
+    is_catalog_image_saver_interaction,
+    is_catalog_workbook_import_interaction,
+)
 
 
 class _RecordingQuery:
@@ -33,7 +38,9 @@ class _RecordingMessage:
         self.message_id = 88
         self.documents: list[dict[str, object]] = []
         self.replies: list[str] = []
+        self.status_messages: list[_EditableStatusMessage] = []
         self.document = None
+        self.photo = None
 
     async def reply_document(self, *, document, filename: str, caption: str):
         payload = document.read()
@@ -48,7 +55,9 @@ class _RecordingMessage:
 
     async def reply_text(self, text: str):
         self.replies.append(text)
-        return _EditableStatusMessage(text=text)
+        status = _EditableStatusMessage(text=text)
+        self.status_messages.append(status)
+        return status
 
 
 class _EditableStatusMessage:
@@ -71,8 +80,17 @@ class _FakeTelegramFile:
 
 
 class _FakeDocument:
-    def __init__(self, *, file_name: str = "catalog.xlsx") -> None:
+    def __init__(self, *, file_name: str = "catalog.xlsx", mime_type: str = "") -> None:
         self.file_name = file_name
+        self.mime_type = mime_type
+        self._file = _FakeTelegramFile()
+
+    async def get_file(self):
+        return self._file
+
+
+class _FakePhoto:
+    def __init__(self) -> None:
         self._file = _FakeTelegramFile()
 
     async def get_file(self):
@@ -151,6 +169,21 @@ async def test_words_catalog_import_callback_handler_starts_document_wait_state(
 
 
 @pytest.mark.anyio
+async def test_words_catalog_image_saver_callback_handler_starts_media_wait_state() -> None:
+    query = _RecordingQuery()
+    update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=7))
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"admin_user_ids": {7}}),
+        user_data={},
+    )
+
+    await words_catalog_image_saver_callback_handler(update, context)  # type: ignore[arg-type]
+
+    assert is_catalog_image_saver_interaction(context) is True
+    assert query.edits[-1][0].startswith("Send a photo or an image file")
+
+
+@pytest.mark.anyio
 async def test_words_catalog_document_handler_imports_uploaded_workbook() -> None:
     message = _RecordingMessage()
     message.document = _FakeDocument()
@@ -176,3 +209,62 @@ async def test_words_catalog_document_handler_imports_uploaded_workbook() -> Non
     assert is_catalog_workbook_import_interaction(context) is False
     assert message.replies[0] == "Importing workbook..."
     assert context.bot.edits[-1]["text"] == "Workbook import/export"
+
+
+@pytest.mark.anyio
+async def test_words_catalog_photo_handler_saves_uploaded_image_and_returns_link() -> None:
+    message = _RecordingMessage()
+    message.photo = [_FakePhoto()]
+    update = SimpleNamespace(effective_message=message, effective_user=SimpleNamespace(id=7))
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "admin_user_ids": {7},
+                "save_catalog_uploaded_image_use_case": SimpleNamespace(
+                    execute=lambda **kwargs: SimpleNamespace(
+                        public_url="https://admin.example.com/public-assets/file?path=uploads/test.png&sig=123"
+                    )
+                ),
+            }
+        ),
+        user_data={
+            "words_flow_mode": "awaiting_catalog_image_saver_media",
+            "expected_user_input_state": {"chat_id": 77, "message_id": 88},
+        },
+        bot=_RecordingBot(),
+    )
+
+    await words_catalog_photo_handler(update, context)  # type: ignore[arg-type]
+
+    assert is_catalog_image_saver_interaction(context) is True
+    assert message.replies[0] == "Saving image..."
+    assert "https://admin.example.com/public-assets/file" in message.status_messages[0].text
+    assert context.bot.edits[-1]["text"].startswith("Send a photo or an image file")
+
+
+@pytest.mark.anyio
+async def test_words_catalog_document_handler_saves_uploaded_image_document_and_returns_link() -> None:
+    message = _RecordingMessage()
+    message.document = _FakeDocument(file_name="dragon.png", mime_type="image/png")
+    update = SimpleNamespace(effective_message=message, effective_user=SimpleNamespace(id=7))
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={
+                "admin_user_ids": {7},
+                "save_catalog_uploaded_image_use_case": SimpleNamespace(
+                    execute=lambda **kwargs: SimpleNamespace(
+                        public_url="https://admin.example.com/public-assets/file?path=uploads/dragon.png&sig=abc"
+                    )
+                ),
+            }
+        ),
+        user_data={
+            "words_flow_mode": "awaiting_catalog_image_saver_media",
+            "expected_user_input_state": {"chat_id": 77, "message_id": 88},
+        },
+        bot=_RecordingBot(),
+    )
+
+    await words_catalog_document_handler(update, context)  # type: ignore[arg-type]
+
+    assert "https://admin.example.com/public-assets/file" in message.status_messages[0].text
