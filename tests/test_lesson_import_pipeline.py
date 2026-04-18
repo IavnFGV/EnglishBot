@@ -284,6 +284,25 @@ def test_ai_unavailable_fallback_strips_leading_numbers_from_initial_raw_input()
     ]
 
 
+def test_ai_unavailable_fallback_strips_bullet_markers_from_initial_raw_input() -> None:
+    pipeline = LessonImportPipeline(
+        smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="health check failed")),
+        fallback_parser=TemplateLessonFallbackParser(),
+        validator=LessonExtractionValidator(),
+        canonicalizer=DraftToContentPackCanonicalizer(),
+        writer=JsonContentPackWriter(),
+    )
+
+    result = pipeline.extract_draft(raw_text="Birthday\n\n- Birthday boy — именинник")
+
+    assert result.validation.is_valid is True
+    assert [item.english_word for item in result.draft.vocabulary_items] == ["Birthday boy"]
+    assert [item.translation for item in result.draft.vocabulary_items] == ["именинник"]
+    assert [item.source_fragment for item in result.draft.vocabulary_items] == [
+        "Birthday boy — именинник"
+    ]
+
+
 def test_ai_unavailable_fallback_splits_slash_synonyms_in_preview_draft() -> None:
     pipeline = LessonImportPipeline(
         smart_parser=_FakeSmartParser(SmartParseUnavailable(detail="health check failed")),
