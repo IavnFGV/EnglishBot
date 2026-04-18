@@ -19,6 +19,9 @@ _LATIN_RE = re.compile(r"[A-Za-z]")
 _CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 _TRAILING_PUNCTUATION_RE = re.compile(r"[.!?]+$")
 _LEADING_LIST_MARKER_RE = re.compile(r"^\s*\d+[\.\)]\s*")
+_GENERIC_LEADING_LIST_MARKER_RE = re.compile(
+    r"^\s*(?:[-*•▪◦●○]\s+|\[[ xX]\]\s+|\d+[\.)]\s+|[A-Za-z][\.)]\s+)+"
+)
 _PARENTHESES_PAIR_RE = re.compile(
     r"(?P<english>[A-Za-z][A-Za-z0-9'’/\\ -]*[A-Za-z0-9'’/\\-]|[A-Za-z])\s*"
     r"\((?P<translation>[^()]+)\)"
@@ -87,7 +90,7 @@ class TemplateLessonFallbackParser:
 
 
 def _parse_simple_line(line: str) -> list[ExtractedVocabularyItemDraft]:
-    stripped = line.strip()
+    stripped = _strip_leading_list_markers(line)
     if not stripped:
         return []
     parsed_parentheses_items = _parse_parentheses_pair_line(stripped)
@@ -180,3 +183,7 @@ def _looks_like_supported_pair(*, english_word: str, translation: str) -> bool:
 def _normalize_fallback_token(value: str) -> str:
     normalized = " ".join(value.split()).strip()
     return _TRAILING_PUNCTUATION_RE.sub("", normalized).strip()
+
+
+def _strip_leading_list_markers(value: str) -> str:
+    return _GENERIC_LEADING_LIST_MARKER_RE.sub("", value).strip()

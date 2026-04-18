@@ -76,6 +76,23 @@ def test_parse_edited_draft_text_strips_leading_number_from_new_items_source_fra
     ]
 
 
+def test_parse_edited_draft_text_accepts_bullet_markers_for_new_items() -> None:
+    parsed = parse_edited_draft_text(
+        "Topic: Birthday\nLesson: -\n\n- Birthday boy — именинник",
+        previous_draft=LessonExtractionDraft(
+            topic_title="Birthday",
+            lesson_title=None,
+            vocabulary_items=[],
+        ),
+    )
+
+    assert [item.english_word for item in parsed.vocabulary_items] == ["Birthday boy"]
+    assert [item.translation for item in parsed.vocabulary_items] == ["именинник"]
+    assert [item.source_fragment for item in parsed.vocabulary_items] == [
+        "Birthday boy — именинник"
+    ]
+
+
 def test_parse_edited_draft_text_ignores_preview_metadata_lines() -> None:
     parsed = parse_edited_draft_text(
         (

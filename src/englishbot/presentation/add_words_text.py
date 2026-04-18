@@ -9,6 +9,10 @@ from englishbot.importing.models import (
 )
 from englishbot.text_variants import expand_aligned_slash_variants
 
+_LEADING_LIST_MARKER_RE = re.compile(
+    r"^\s*(?:[-*•▪◦●○]\s+|\[[ xX]\]\s+|\d+[\.)]\s+|[A-Za-z][\.)]\s+)+"
+)
+
 
 def format_draft_preview(result: ImportLessonResult) -> str:
     draft = result.draft
@@ -133,12 +137,11 @@ def should_ignore_edited_draft_line(line: str) -> bool:
         normalized_line == "draft preview"
         or normalized_line.startswith("items:")
         or normalized_line.startswith("validation errors:")
-        or normalized_line.startswith("- ")
     )
 
 
 def parse_edited_vocabulary_line(line: str) -> tuple[str, str] | None:
-    normalized_line = re.sub(r"^\d+\.\s*", "", line).strip()
+    normalized_line = _LEADING_LIST_MARKER_RE.sub("", line).strip()
     if not normalized_line:
         return None
     for separator in (":", "|", "—", " - ", " – "):
