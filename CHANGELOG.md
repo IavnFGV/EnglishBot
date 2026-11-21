@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-21
+
+- Require Pillow 13 and patched pytest 9 for development; refresh pip during container builds.
+- Keep tests and dependency auditing in CI, schedule dependency update PRs, and remove the unused legacy auto-deploy workflow.
+
 ## 1.1.0 - 2026-04-16
 
 Bulk media-catalog import/export release for centralized image management.

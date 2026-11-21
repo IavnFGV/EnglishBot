@@ -1,5 +1,9 @@
 # Deployment Recommendations
 
+> Historical reference: this repository is no longer deployed. The old GitHub
+> deployment workflow has been removed; pushes run CI tests and a dependency audit
+> only. The active VPS bot is maintained in `IavnFGV/EnglishBot-with-agents`.
+
 Этот файл фиксирует текущие рекомендации по хостингу и системным требованиям для `EnglishBot`.
 
 Документ намеренно считается временным и должен обновляться по мере развития продукта, архитектуры и внешних интеграций.

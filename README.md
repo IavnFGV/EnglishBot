@@ -1,5 +1,10 @@
 # EnglishBot
 
+> Legacy repository: this bot is no longer deployed. The active VPS application is
+> [EnglishBot-with-agents](https://github.com/IavnFGV/EnglishBot-with-agents).
+> Pushes run tests and a dependency audit only; the obsolete deploy workflow was
+> removed. Existing deployment scripts and documentation remain historical references.
+
 EnglishBot is a Telegram bot for learning foreign words and short expressions.
 The `1.0.0` direction is intentionally narrower than the historical repo surface:
 the core product is now the learner bot itself, with lessons, homework, progress,

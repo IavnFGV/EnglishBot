@@ -252,27 +252,13 @@ def test_server_rollback_script_supports_previous_or_explicit_deploy_tag() -> No
     assert 'docker compose "${compose_args[@]}" up -d --build' in script
 
 
-def test_github_actions_workflow_runs_tests_and_deploys_over_ssh() -> None:
-    workflow = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
-
-    assert "contents: write" in workflow
-    assert "branches:" in workflow
-    assert "- main" in workflow
-    assert 'cache: "pip"' in workflow
-    assert 'cache-dependency-path: "pyproject.toml"' in workflow
-    assert 'python -m pip install -e ".[dev,llm]"' in workflow
-    assert "PYTHONPATH=. pytest -q" in workflow
-    assert "ssh-keyscan" in workflow
-    assert "DEPLOY_SSH_KEY" in workflow
-    assert "DEPLOY_OPTIONAL_SERVICES" in workflow
-    assert "cd /srv/englishbot/app" in workflow
-    assert "git fetch origin ${DEPLOY_BRANCH}" in workflow
-    assert "git reset --hard origin/${DEPLOY_BRANCH}" in workflow
-    assert "bash scripts/deploy-docker-app.sh" in workflow
-    assert "DEPLOY_OPTIONAL_SERVICES=${DEPLOY_OPTIONAL_SERVICES}" in workflow
-    assert "current-release.env" in workflow
-    assert "git tag -a" in workflow
-    assert "git push origin" in workflow
+def test_legacy_repository_never_deploys_on_push() -> None:
+    assert not Path(".github/workflows/deploy.yml").exists()
+    for path in Path(".github/workflows").glob("*.yml"):
+        workflow = path.read_text(encoding="utf-8")
+        assert "DEPLOY_SSH_KEY" not in workflow
+        assert "git push origin" not in workflow
+        assert "contents: write" not in workflow
 
 
 def test_ci_workflow_uses_pip_cache_for_repeated_runner_installs() -> None:
@@ -283,6 +269,7 @@ def test_ci_workflow_uses_pip_cache_for_repeated_runner_installs() -> None:
     assert 'cache-dependency-path: "pyproject.toml"' in workflow
     assert 'python -m pip install -e ".[dev,llm]"' in workflow
     assert "PYTHONPATH=. pytest -q" in workflow
+    assert "pip_audit --skip-editable" in workflow
 
 
 def test_deploy_script_recreates_runtime_containers() -> None:

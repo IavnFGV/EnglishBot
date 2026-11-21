@@ -21,7 +21,8 @@ requirements = list(data["project"].get("dependencies", []))
 print("\n".join(requirements))
 PY
 
-RUN python -m pip install -r /tmp/requirements.txt
+RUN python -m pip install --upgrade "pip>=26.3,<27" \
+    && python -m pip install -r /tmp/requirements.txt
 
 COPY src ./src
 COPY prompts ./prompts
