@@ -2,7 +2,7 @@
 
 ## 2026-11-21
 
-- Require Pillow 13 and patched pytest 9 for development; refresh pip during container builds.
+- Require Pillow 13, patched pytest 9 for development, and setuptools 84.1+; refresh build tools in CI and container builds.
 - Keep tests and dependency auditing in CI, schedule dependency update PRs, and remove the unused legacy auto-deploy workflow.
 
 ## 1.1.0 - 2026-04-16

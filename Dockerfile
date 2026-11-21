@@ -21,7 +21,7 @@ requirements = list(data["project"].get("dependencies", []))
 print("\n".join(requirements))
 PY
 
-RUN python -m pip install --upgrade "pip>=26.3,<27" \
+RUN python -m pip install --upgrade "pip>=26.3,<27" "setuptools>=84.1.0" wheel \
     && python -m pip install -r /tmp/requirements.txt
 
 COPY src ./src
